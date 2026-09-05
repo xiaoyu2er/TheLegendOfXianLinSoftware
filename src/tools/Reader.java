@@ -12,7 +12,7 @@ import scene.SaveAndLoad;
 public class Reader {
 	// 文件流，缓冲流
 	private BufferedReader br;
-	private FileReader fileReader;
+	private java.io.Reader fileReader;
 	// NPC链表
 	private ArrayList<NPC> npcs;
 	private ArrayList<String[]> npcList;
@@ -55,7 +55,7 @@ public class Reader {
 
 	public Reader(String fileName) {
 		try {
-			fileReader = new FileReader("script//" + fileName);
+			fileReader = new java.io.InputStreamReader(new java.io.FileInputStream("script//" + fileName), "GBK");
 			br = new BufferedReader(fileReader);
 			String s;
 			String[] ss;

@@ -69,8 +69,8 @@ public class Loader {
 		ArrayList<String> bufferList = new ArrayList<String>();
 		int readingLineCode = 0;
 		try {
-			reader = new BufferedReader(new FileReader(new File(
-					"sources/Record/´æµµ" + textcode + ".txt")));
+			reader = new BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(new File(
+					"sources/Record/´æµµ" + textcode + ".txt")), "GBK"));
 			String line;
 			while ((line = reader.readLine()) != null) {
 				readingLineCode++;

@@ -49,7 +49,7 @@ public class Recorder {
 	
 	private void writeInfo(int textcode){
 		try {
-			writer=new BufferedWriter(new FileWriter(new File("sources/Record/´æµµ"+textcode+".txt")));
+			writer=new BufferedWriter(new java.io.OutputStreamWriter(new java.io.FileOutputStream(new File("sources/Record/´æµµ"+textcode+".txt")), "GBK"));
 			for(String word:roleAndMapInfo)
 				writer.write(word+"A");
 			writer.newLine();

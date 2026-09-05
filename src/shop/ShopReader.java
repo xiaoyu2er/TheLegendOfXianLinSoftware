@@ -18,7 +18,7 @@ public class ShopReader {
 		ArrayList<Drug> druglist = new ArrayList<Drug>();
 		File file = new File("sources/Shop/drug.txt");
 		try {
-			br = new BufferedReader(new FileReader(file));
+			br = new BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(file), "GBK"));
 			String line;
 			while ((line = br.readLine()) != null) {
 				Drug drug = new Drug();
@@ -44,7 +44,7 @@ public class ShopReader {
 		ArrayList<Equipment> equipmentList = new ArrayList<Equipment>();
 		File file = new File("sources/Shop/" + s + ".txt");
 		try {
-			br = new BufferedReader(new FileReader(file));
+			br = new BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(file), "GBK"));
 			String line;
 			while ((line = br.readLine()) != null) {
 				Equipment equipment = new Equipment();
