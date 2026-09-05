@@ -63,7 +63,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 Two toolchains live side by side: **Java** at the repo root (the original game,
 which is the migration's specification) and **pnpm** under `web/` (the browser
-port, currently just the 1024×640 stage scaffold).
+port: 1024×640 舞台 + 数据烘焙 + 宿舍与大地图两个场景).
 
 ```bash
 brew install openjdk@17          # source targets JavaSE-1.7; 17 compiles it
@@ -74,6 +74,7 @@ tools/export-trace.sh --check    # re-export the behaviour traces, twice, and cm
 
 cd web && pnpm install           # browser port; see web/README.md
 pnpm typecheck && pnpm test && pnpm build
+pnpm bake                        # 重烘场景 JSON 与 WebP（产物入库，改了脚本/烘焙器才要跑）
 ```
 
 `web/`'s three commands run in CI (`.github/workflows/web.yml`); the Java side
@@ -108,6 +109,10 @@ equipment shop, load/save, end. Each panel hand-draws into an offscreen
 **Migration target:** Pixi (scene + battle) and React (menus, shops, dialogue)
 under `web/`, with the game state machine decoupled from rendering. Decisions
 and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
+
+`web/` 现在能烘焙并渲染宿舍与大地图两个场景（xl-9bd.3）。数据烘焙是
+`web/scripts/bake.ts`（`pnpm bake`），产物入库在 `web/src/generated/`，
+黄金测试拿 `tools/ground-truth/` 对齐。
 
 ## Conventions & Patterns
 
