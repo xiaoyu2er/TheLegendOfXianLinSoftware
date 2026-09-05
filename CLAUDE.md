@@ -60,23 +60,31 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-This is a **Java** repo (no `package.json`, no npm). The `web/` port does not
-exist yet.
+Two toolchains live side by side: **Java** at the repo root (the original game,
+which is the migration's specification) and **pnpm** under `web/` (the browser
+port, currently just the 1024×640 stage scaffold).
 
 ```bash
 brew install openjdk@17          # source targets JavaSE-1.7; 17 compiles it
 tools/build.sh                   # game (GBK) + dev tools (UTF-8) -> tools/build/classes
 tools/run-game.sh                # launch the original game
 tools/export-truth.sh            # re-export the 96 script ground-truth JSONs
+
+cd web && pnpm install           # browser port; see web/README.md
+pnpm typecheck && pnpm test && pnpm build
 ```
 
-**Run every command from the repo root** — the game resolves `script/`,
-`sources/`, `image/` as relative paths.
+`web/`'s three commands run in CI (`.github/workflows/web.yml`); the Java side
+has no CI yet.
 
-There is **no automated test suite yet**. The closest thing to a regression
-check today is `tools/export-truth.sh`: re-run it and `git diff
+**Run every Java-side command from the repo root** — the game resolves
+`script/`, `sources/`, `image/` as relative paths. `web/`'s commands run from
+`web/`.
+
+**The Java side has no automated test suite yet.** The closest thing to a
+regression check today is `tools/export-truth.sh`: re-run it and `git diff
 tools/ground-truth` must be empty. Building the real suite is tracked in beads
-(`xl-tkx.3`).
+(`xl-9bd.5`). `web/` has vitest (`pnpm test`).
 
 ## Architecture Overview
 
