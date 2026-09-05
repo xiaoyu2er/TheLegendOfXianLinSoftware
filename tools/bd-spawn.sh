@@ -86,7 +86,7 @@ for ID in "${IDS[@]}"; do
 
   if [ "$CLAIM" -eq 1 ]; then
     if out=$(BEADS_ACTOR="$SLUG" bd update "$ID" --claim 2>&1); then
-      echo "  ✅ 已认领（actor=$SLUG）"
+      echo "  ✅ 已认领（actor=${SLUG}）"
     else
       echo "  ❌ 认领失败: $(printf '%s' "$out" | head -1)"; continue
     fi
@@ -116,5 +116,5 @@ tell application "iTerm"
   end tell
 end tell
 EOF
-  echo "  ✅ 已在 iTerm 新标签页启动（标签名 $ID）"
+  echo "  ✅ 已在 iTerm 新标签页启动（标签名 ${ID}）"
 done
