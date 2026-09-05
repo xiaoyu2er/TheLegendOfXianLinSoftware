@@ -18,11 +18,16 @@
 #     ~/.claude       yzong@turo.com            beads 插件 ❌
 #     ~/.claude-zyq   zhihui.wang711@gmail.com  beads 插件 ✅   ← 两种模式都默认用它
 #
-# ⚠ 无头鉴权会瞬时失效。实测：~/.claude-zyq 的 claude -p 一度连续两次报
-#   "Not logged in"，几分钟后同一条命令连续三次返回正常。不是固定状态。
-#   要命的是**未登录时 claude -p 仍然 exit 0** —— 不预检的话，后台作业会
-#   "成功"地产出一个只写着 Not logged in 的日志，看起来跑完了其实什么都没干。
-#   所以 --bg 每次启动前都实跑一次探针，命中即拒绝启动并说明换哪个目录。
+# ⚠ 未登录时 claude -p 打印 "Not logged in" 却仍然 exit 0 —— 不预检的话，
+#   后台作业会"成功"地产出一个只写着这句话的日志，看起来跑完了其实什么都没干。
+#   所以 --bg 每次启动前实跑一次探针。
+#
+#   典型的踩法（实测 A/B）：
+#     env CLAUDE_CONFIG_DIR=~/.claude-zyq       claude -p  → Not logged in
+#     env CLAUDE_CONFIG_DIR="$HOME/.claude-zyq" claude -p  → OK
+#   前者因为命令前有 timeout/env，bash 不把它当赋值词，**tilde 不展开**，
+#   于是指向当前目录下一个字面名为 ~ 的空目录（还会被顺手创建出来）。
+#   本脚本一律用 "$HOME/..."，并在下面校验目录里确有 .claude.json。
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -83,7 +88,13 @@ command -v bd >/dev/null || { echo "找不到 bd" >&2; exit 1; }
 # 两种模式都默认 zyq（那边有 beads 插件）。无头鉴权若瞬时失效，
 # 下面的预检会拦住并提示改用 --config-dir $HOME/.claude。
 [ -n "$CONFIG_DIR" ] || CONFIG_DIR="$HOME/.claude-zyq"
-[ -d "$CONFIG_DIR" ] || { echo "Claude 配置目录不存在: $CONFIG_DIR" >&2; exit 1; }
+case "$CONFIG_DIR" in
+  *"~"*) echo "❌ 配置目录里有字面量 ~，说明 tilde 没被展开: $CONFIG_DIR" >&2
+         echo "   用 \"\$HOME/...\" 而不是 ~/... " >&2; exit 1 ;;
+esac
+[ -d "$CONFIG_DIR" ] || { echo "❌ Claude 配置目录不存在: $CONFIG_DIR" >&2; exit 1; }
+[ -f "$CONFIG_DIR/.claude.json" ] || {
+  echo "❌ $CONFIG_DIR 里没有 .claude.json，不像一个已登录的配置目录" >&2; exit 1; }
 
 # 无头鉴权预检：必须做，因为未登录时 claude -p 仍然 exit 0
 if [ "$BG" -eq 1 ] && [ "$DRY" -eq 0 ]; then
