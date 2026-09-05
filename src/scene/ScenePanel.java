@@ -213,57 +213,65 @@ public class ScenePanel extends JPanel implements Runnable {
 		}
 	}
 
+	// 主循环的一次推进。原本就是 run() 里 while(true) 的循环体，整块搬出来，
+	// 只去掉一层缩进，语句一条未改。搬出来的唯一理由：trace 导出器要在虚拟
+	// 时钟上逐 tick 调用它，而不能依赖真实时间的 Thread.sleep —— 挂在真实
+	// 时间上的循环，同一份剧本跑两次不可能逐字节一致。
+	// run() 仍然是运行时唯一的调用方。
+	public void step() {
+		// 初始化完毕后再启动
+		if (isInitiateOver) {
+			// 1.检查旁白
+			if (GameLauncher.currentPanel.equals(GameLauncher.scenePanel)
+					&& isScript && !narratage.isNarratage
+					&& !narratage.narratageOver)
+				narratage.checkNarratage();
+			// 2.检查自动的对话
+			if (isScript && !dialogueEvent.isSpeaking
+					&& !dialogueEvent.dialogueEventOver
+					&& !narratage.isNarratage) {
+				dialogueEvent.checkAutoDialogue();
+			}
+			// 3.检查NPC
+			if (!dialogueEvent.isSpeaking && !narratage.isNarratage)
+				npcEvent.checkNPCStop();
+			// 4.检查出口
+			if (exitEvent.getExits() != null) {
+				if (fightEvent.battle1 != null
+						&& fightEvent.battle1.size() > 1) {
+					if (fightEvent.battle1Over)
+						exitEvent.checkExit();
+				} else {
+					exitEvent.checkExit();
+				}
+			}
+			// 5.检查位置对话
+			if (isScript && !dialogueEvent.isSpeaking
+					&& !dialogueEvent.dialogueEventOver
+					&& !narratage.isNarratage) {
+				dialogueEvent.checkLocationDialogue();
+			}
+			// 6.检查宝箱
+			if (reader.getTreasureBox() != null)
+				equipmentEvent.checBoxes(role.getX(), role.getY());
+
+			// 7.检查计步战斗
+			if (fightEvent.battle0 != null) {
+				fightEvent.checkBattle0();
+			}
+			if (GameLauncher.SCENE_SIGNAL == 1) {
+				MusicReader.readBGM(reader.getSceneMusic());
+				GameLauncher.SCENE_SIGNAL = 0;
+			}
+			if (isPaintOver)
+				this.repaint();
+		}
+	}
+
 	@Override
 	public void run() {
-		// TODO Auto-generated method stub
 		while (true) {
-			// 初始化完毕后再启动
-			if (isInitiateOver) {
-				// 1.检查旁白
-				if (GameLauncher.currentPanel.equals(GameLauncher.scenePanel)
-						&& isScript && !narratage.isNarratage
-						&& !narratage.narratageOver)
-					narratage.checkNarratage();
-				// 2.检查自动的对话
-				if (isScript && !dialogueEvent.isSpeaking
-						&& !dialogueEvent.dialogueEventOver
-						&& !narratage.isNarratage) {
-					dialogueEvent.checkAutoDialogue();
-				}
-				// 3.检查NPC
-				if (!dialogueEvent.isSpeaking && !narratage.isNarratage)
-					npcEvent.checkNPCStop();
-				// 4.检查出口
-				if (exitEvent.getExits() != null) {
-					if (fightEvent.battle1 != null
-							&& fightEvent.battle1.size() > 1) {
-						if (fightEvent.battle1Over)
-							exitEvent.checkExit();
-					} else {
-						exitEvent.checkExit();
-					}
-				}
-				// 5.检查位置对话
-				if (isScript && !dialogueEvent.isSpeaking
-						&& !dialogueEvent.dialogueEventOver
-						&& !narratage.isNarratage) {
-					dialogueEvent.checkLocationDialogue();
-				}
-				// 6.检查宝箱
-				if (reader.getTreasureBox() != null)
-					equipmentEvent.checBoxes(role.getX(), role.getY());
-
-				// 7.检查计步战斗
-				if (fightEvent.battle0 != null) {
-					fightEvent.checkBattle0();
-				}
-				if (GameLauncher.SCENE_SIGNAL == 1) {
-					MusicReader.readBGM(reader.getSceneMusic());
-					GameLauncher.SCENE_SIGNAL = 0;
-				}
-				if (isPaintOver)
-					this.repaint();
-			}
+			step();
 			try {
 				tools.Clock.sleep(10);
 			} catch (InterruptedException e) {
