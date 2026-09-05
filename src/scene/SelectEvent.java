@@ -52,9 +52,9 @@ public class SelectEvent {
 	private int maxLength = 22;
 	private int fontSize = 20;
 	private ArrayList<String> currentSentences;
-	Timer wordsRun = new Timer(30, new WordsRun());
-	Timer selectImageMove = new Timer(40, new SelectImageMove());
-	Timer questionImageMove = new Timer(50, new QuestionImageMove());
+	Timer wordsRun = new Timer(tools.Clock.delay(30), new WordsRun());
+	Timer selectImageMove = new Timer(tools.Clock.delay(40), new SelectImageMove());
+	Timer questionImageMove = new Timer(tools.Clock.delay(50), new QuestionImageMove());
 	private boolean shopSelect;
 	private boolean equipmentSelect;
 	private boolean battleSelect;

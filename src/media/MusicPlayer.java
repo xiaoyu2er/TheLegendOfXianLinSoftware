@@ -38,7 +38,7 @@ public class MusicPlayer {
 				isStop = true;
 				while (!hasStop) {
 					try {
-						Thread.sleep(10);
+						tools.Clock.sleep(10);
 					} catch (Exception e) {
 					}
 				}

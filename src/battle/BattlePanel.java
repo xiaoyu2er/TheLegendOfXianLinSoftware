@@ -2,6 +2,7 @@ package battle;
 import javax.swing.*;
 
 import tools.Reader;
+import tools.Clock;
 
 import java.awt.*;
 import java.awt.event.KeyEvent;
@@ -464,7 +465,9 @@ public class BattlePanel extends JPanel implements Runnable{
 		// TODO Auto-generated method stub
 		while(true){
 			try {
-				Thread.sleep(100);
+				// 战斗的时间源就是这一处：每 tick 推进一次行动条。
+				// Clock.factor 默认 1.0，等价于原来的 tools.Clock.sleep(100)。
+				Clock.sleep(100);
 			} catch (Exception e) {
 				// TODO: handle exception
 				e.printStackTrace();

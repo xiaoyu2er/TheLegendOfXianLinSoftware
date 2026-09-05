@@ -36,8 +36,8 @@ public class Role {
 	private boolean isRun;
 	private boolean runOver = false;
 	private boolean canStop;
-	Timer walk = new Timer(80, new walk());
-	Timer run = new Timer(80, new run());
+	Timer walk = new Timer(tools.Clock.delay(80), new walk());
+	Timer run = new Timer(tools.Clock.delay(80), new run());
 
 	public Role(int x, int y, ScenePanel scene) {
 		this.x = x;

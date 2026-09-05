@@ -13,8 +13,8 @@ public class Narratage {
 	private ArrayList<Image> backImages1 = new ArrayList<Image>();
 	private ArrayList<String> narratage;
 	private int index = 0;
-	Timer background = new Timer(180, new Background());
-	Timer wordRun = new Timer(50, new WordRun());
+	Timer background = new Timer(tools.Clock.delay(180), new Background());
+	Timer wordRun = new Timer(tools.Clock.delay(50), new WordRun());
 	// 最大行数
 	private int maxLine = 10;
 	private Color color1;
@@ -106,7 +106,7 @@ public class Narratage {
 				bufferedText[count2] = narratage.get(count0).substring(0,
 						count1);
 				try {
-					Thread.sleep(500);
+					tools.Clock.sleep(500);
 				} catch (InterruptedException e1) {
 					// TODO Auto-generated catch block
 					e1.printStackTrace();
@@ -124,7 +124,7 @@ public class Narratage {
 			}
 			if (count0 == narratage.size()) {
 				try {
-					Thread.sleep(1000);
+					tools.Clock.sleep(1000);
 				} catch (InterruptedException e1) {
 					// TODO Auto-generated catch block
 					e1.printStackTrace();

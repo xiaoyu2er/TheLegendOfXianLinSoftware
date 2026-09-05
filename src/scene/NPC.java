@@ -27,8 +27,8 @@ public class NPC {
 	private int temp;
 	private int direction = 1;
 	private int actionRate;
-	private Timer action = new Timer(200, new action());
-	private Timer walk = new Timer(200, new walk());
+	private Timer action = new Timer(tools.Clock.delay(200), new action());
+	private Timer walk = new Timer(tools.Clock.delay(200), new walk());
 
 	// 构造函数一，静止的
 	public NPC(int x, int y, String fileName, String oral) {

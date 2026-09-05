@@ -57,12 +57,12 @@ public class Dialogue {
 	// 构造函数
 	public Dialogue(ScenePanel scene) {
 		this.scene = scene;
-		dialogueMoveLeft = new Timer(20, new DialogueImageMoveLeft());
-		dialogueMoveRight = new Timer(20, new DialogueImageMoveRight());
-		wordsRun = new Timer(30, new timerWordsRun());
-		icon1Run = new Timer(500, new Icon1Run());
-		headRun = new Timer(10, new HeadMove());
-		nameRun = new Timer(10, new NameMove());
+		dialogueMoveLeft = new Timer(tools.Clock.delay(20), new DialogueImageMoveLeft());
+		dialogueMoveRight = new Timer(tools.Clock.delay(20), new DialogueImageMoveRight());
+		wordsRun = new Timer(tools.Clock.delay(30), new timerWordsRun());
+		icon1Run = new Timer(tools.Clock.delay(500), new Icon1Run());
+		headRun = new Timer(tools.Clock.delay(10), new HeadMove());
+		nameRun = new Timer(tools.Clock.delay(10), new NameMove());
 		// 把头像图片载入（固定的）先读4个
 		for (int i = 1; i <= 91; i++) {
 			Image head = Reader.readImage("heads/heads (" + i + ").png");

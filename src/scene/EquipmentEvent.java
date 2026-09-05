@@ -15,8 +15,8 @@ import media.*;
 public class EquipmentEvent {
 	ScenePanel scene;
 	private int x_presentImage;
-	Timer presentImageMove = new Timer(50, new PresentImage());
-	Timer wordsRun = new Timer(100, new WordsRun());
+	Timer presentImageMove = new Timer(tools.Clock.delay(50), new PresentImage());
+	Timer wordsRun = new Timer(tools.Clock.delay(100), new WordsRun());
 	private String bufferedText;
 	private String text;
 	private int count_word;

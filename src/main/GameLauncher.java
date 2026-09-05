@@ -146,7 +146,7 @@ public class GameLauncher extends JFrame implements KeyListener {
 				currentPanel = startPanel;
 				MusicReader.readBGM("Ö÷ÌâÇú.mp3");
 				try {
-					Thread.sleep(1000);
+					tools.Clock.sleep(1000);
 				} catch (InterruptedException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();

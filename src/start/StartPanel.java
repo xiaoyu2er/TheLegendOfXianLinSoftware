@@ -150,7 +150,7 @@ public class StartPanel extends JPanel {
 			public void run() {
 				while (true) {
 					try {
-						Thread.sleep(100);
+						tools.Clock.sleep(100);
 					} catch (InterruptedException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();

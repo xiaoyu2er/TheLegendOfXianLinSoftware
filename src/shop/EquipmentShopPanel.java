@@ -146,7 +146,7 @@ public class EquipmentShopPanel extends JPanel{
 						for(ShopAnimation animation: ani)
 							animation.image=animation.images.get(i);
 						try {
-							Thread.sleep(120);
+							tools.Clock.sleep(120);
 						} catch (Exception e) {
 							e.printStackTrace();
 						}

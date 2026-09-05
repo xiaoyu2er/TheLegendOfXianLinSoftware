@@ -92,7 +92,7 @@ if(wordY==-1280){
 public void run() {
 	while(true){
 	try {
-		Thread.sleep(100);
+		tools.Clock.sleep(100);
 
 	  }   catch (Exception e) {
 		e.printStackTrace();

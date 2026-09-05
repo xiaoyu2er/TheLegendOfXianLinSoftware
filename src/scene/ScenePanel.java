@@ -265,7 +265,7 @@ public class ScenePanel extends JPanel implements Runnable {
 					this.repaint();
 			}
 			try {
-				Thread.sleep(10);
+				tools.Clock.sleep(10);
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
