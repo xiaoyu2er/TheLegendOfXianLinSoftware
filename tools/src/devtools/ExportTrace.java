@@ -1,0 +1,521 @@
+package devtools;
+
+import java.awt.Graphics;
+import java.awt.event.KeyEvent;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+
+import javax.swing.Timer;
+
+import main.GameLauncher;
+import media.MusicPlayer;
+import scene.NPC;
+import scene.ScenePanel;
+import tools.Clock;
+
+/**
+ * trace 导出器：在原版 Java 程序里执行一份声明式剧本，逐 tick 导出行为真值。
+ *
+ * 为什么需要它：状态层与视口层的票如果没有真值，测试就只能手写期望值 ——
+ * 而写实现和写期望的会是同一个 agent、在同一个上下文窗口里。那样的测试会绿，
+ * 而且是错的。这里导出的每一 tick 都来自原版自己跑出来的结果。
+ *
+ * 确定性从哪来（这是整件事唯一的技术难点）：
+ *
+ *   1. 时间。原版有 17 个 javax.swing.Timer 挂在真实时间上，外加一个
+ *      Thread.sleep(10) 的主循环。真实时间不可重复。这里换成虚拟时钟：
+ *      Clock.freezeTimers 让真实 TimerQueue 永不触发（把间隔整体推远 24 小时），
+ *      再把每个 Timer 对象换成 VirtualTimer，由本类逐 tick 显式触发。
+ *   2. 主循环。ScenePanel.run() 的循环体已提取为 ScenePanel.step()，
+ *      本类每 tick 调一次，不起那个线程。
+ *   3. 顺序。原版里按键在 EDT、定时器在 EDT、主循环在自己的线程上，
+ *      三者的相对顺序本来就是竞态的。这里固定为
+ *      **输入 → 定时器 → step() → paint()**，这个顺序就是 Web 侧要对齐的语义。
+ *   4. 绘制。原版的 paint() 有副作用（对话里的 '@' / '$' 会改状态机），
+ *      所以每 tick 真的调一次 paint()，画进一张离屏图，不省。
+ *   5. 反射字段顺序。Class.getDeclaredFields() 的顺序未经规范保证，
+ *      这里一律按字段名排序后再用。
+ *
+ * 用法: java devtools.ExportTrace <剧本.json> <输出.json>
+ * 必须在仓库根目录运行（原版用相对路径读 script/、sources/、image/）。
+ */
+public final class ExportTrace {
+
+    /** 冻结基数：24 小时。真实 TimerQueue 在一次导出里绝无可能走到。 */
+    private static final long FREEZE_BASE = 24L * 60 * 60 * 1000;
+
+    private final TraceScript script;
+    private final VirtualClock clock = new VirtualClock();
+    private final List<VirtualTimer> timers = new ArrayList<>();
+    private ScenePanel sp;
+    private Graphics sink;
+
+    // ---- 剧本执行状态 ----
+    private int ip;                 // 当前指令
+    private boolean entered;        // 当前指令是否已初始化
+    private int spent;              // 当前指令已消耗的 tick
+    private int phase;              // 指令内阶段：walkTo/runTo 用 0=X 1=Y 2=收尾
+    private int left;               // wait 剩余 tick / advance 剩余次数
+    private int pressedKey = -1;    // 当前按住的方向键
+    private int releaseAt;          // 松手的格子坐标
+    private int legStart;           // 本段起点格子坐标（用于识别"被挡住"）
+    private int lastLegPhase = -1;  // 上一段属于哪个轴，配合 legStart 判"没动"
+    private int stallPos = Integer.MIN_VALUE;  // 上次观察到的当前轴坐标
+    private int stallTicks;                    // 该坐标已经卡了多少 tick
+    private final List<String> pending = new ArrayList<>();   // 本 tick 的输入事件
+
+    private ExportTrace(TraceScript script) { this.script = script; }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 2) {
+            System.err.println("用法: java devtools.ExportTrace <剧本.json> <输出.json>");
+            System.exit(2);
+        }
+        File in = new File(args[0]);
+        if (!in.isFile()) die("找不到剧本文件: " + in.getPath());
+        if (!new File("script").isDirectory()) die("找不到 script/ 目录 —— 必须在仓库根目录运行");
+
+        ExportTrace t = new ExportTrace(TraceScript.load(in));
+        String out = t.run();
+        File dst = new File(args[1]);
+        if (dst.getParentFile() != null) dst.getParentFile().mkdirs();
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(dst), StandardCharsets.UTF_8)) {
+            w.write(out);
+        }
+        System.out.println("导出 " + t.script.name + " -> " + dst.getPath());
+        // 必须显式退出：音频播放线程与 Swing 的 TimerQueue 都不是守护线程。
+        System.exit(0);
+    }
+
+    private static void die(String msg) {
+        System.err.println("[ExportTrace] " + msg);
+        System.exit(2);
+    }
+
+    private void fail(String msg) {
+        String where = ip < script.steps.size()
+                ? "第 " + ip + " 条指令 " + script.steps.get(ip).op
+                : "剧本末尾";
+        die(script.name + " · " + where + " · tick " + (clock.now() / script.tickMs) + "：" + msg);
+    }
+
+    // ================= 主流程 =================
+
+    private String run() throws Exception {
+        // 顺序要紧：冻结必须在任何一个 Timer 被 new 出来之前生效。
+        // NPC 的两个定时器是在构造函数里 start() 的，而构造 NPC 之后
+        // Dialogue 还要读 91 张头像图 —— 那期间足够真实定时器触发好几次。
+        Clock.freezeTimers(FREEZE_BASE);
+        // 背景音乐只取 currentPlayingBGM 这个可断言的值，不需要真的出声。
+        // 注意 play() 无论如何都会设好 currentPlayingBGM，再去开音频设备。
+        media.MusicReader.closeBGM();
+        MusicPlayer.CAN_PLAY_BGM = MusicPlayer.NO;
+
+        sp = new ScenePanel(null);
+        GameLauncher.scenePanel = sp;
+        GameLauncher.currentPanel = sp;
+
+        // 预热：96 个场景里有 20 个没有 Dialogue 段，它们依赖前一个场景残留的
+        // dialogueEvent 对象才能跑；直接 initiation 进去会 NPE。
+        if (script.warmup != null) sp.initiation(script.warmup);
+        sp.initiation(script.scene);
+        sp.isScript = script.isScript;
+
+        sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
+        installTimers();
+
+        StringBuilder body = new StringBuilder();
+        int ticks = 0;
+        boolean first = true;
+        while (ip < script.steps.size()) {
+            if (ticks >= script.maxTicks) fail("超过剧本的 maxTicks=" + script.maxTicks + "，剧本没有跑完");
+            pending.clear();
+            advanceScript();
+            if (ip >= script.steps.size() && pending.isEmpty()) break;  // 最后一条指令在本 tick 之初就完成了
+
+            fireTimers();
+            sp.step();
+            sp.paint(sink);
+
+            if (!first) body.append(",\n");
+            first = false;
+            body.append("    ").append(snapshot(ticks));
+
+            clock.advance(script.tickMs);
+            ticks++;
+            installTimers();   // 场景可能在本 tick 里被重新初始化，新对象要接管
+        }
+
+        StringBuilder b = new StringBuilder();
+        b.append("{\n");
+        b.append("  \"format\": \"xianlin-trace/1\",\n");
+        b.append("  \"script\": ").append(script.toJson()).append(",\n");
+        b.append("  \"tickCount\": ").append(ticks).append(",\n");
+        b.append("  \"ticks\": [\n").append(body).append("\n  ]\n");
+        b.append("}\n");
+        return b.toString();
+    }
+
+    // ================= 定时器 =================
+
+    /** 把对象图里所有还是原版 Timer 的字段换成 VirtualTimer；已换过的跳过。 */
+    private void installTimers() {
+        timers.clear();
+        List<Object> roots = new ArrayList<>(Arrays.asList(
+                sp.role, sp.dialogue, sp.narratage, sp.dialogueEvent, sp.roleEvent,
+                sp.npcEvent, sp.otherEvent, sp.exitEvent, sp.fightEvent,
+                sp.selectEvent, sp.equipmentEvent, sp.sal));
+        if (sp.npcs != null) roots.addAll(sp.npcs);
+        for (Object root : roots) {
+            if (root == null) continue;
+            for (Field f : sortedFields(root.getClass())) {
+                if (!Timer.class.isAssignableFrom(f.getType())) continue;
+                try {
+                    Timer t = (Timer) f.get(root);
+                    if (t == null) continue;
+                    if (!(t instanceof VirtualTimer)) {
+                        long logical = t.getDelay() - Clock.getFreezeBase();
+                        if (logical <= 0 || logical > 10000) {
+                            fail("定时器 " + root.getClass().getSimpleName() + "." + f.getName()
+                                    + " 的间隔反算不出来（getDelay=" + t.getDelay()
+                                    + "，冻结基数=" + Clock.getFreezeBase()
+                                    + "）—— 说明它没走 tools.Clock.delay()");
+                        }
+                        t = new VirtualTimer(clock, (int) logical, t);
+                        f.set(root, t);
+                    }
+                    timers.add((VirtualTimer) t);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+    }
+
+    private void fireTimers() {
+        for (VirtualTimer t : timers) {
+            // 循环而非单发：万一 tick 步长大于某个定时器的间隔，也要把欠的补上。
+            int guard = 0;
+            while (t.fireIfDue(clock.now())) {
+                if (++guard > 64) fail("定时器在一个 tick 内触发超过 64 次");
+            }
+        }
+    }
+
+    private static Field[] sortedFields(Class<?> c) {
+        Field[] fs = c.getDeclaredFields();
+        Arrays.sort(fs, Comparator.comparing(Field::getName));
+        for (Field f : fs) f.setAccessible(true);
+        return fs;
+    }
+
+    // ================= 剧本执行 =================
+
+    private void advanceScript() {
+        int guard = 0;
+        while (ip < script.steps.size()) {
+            if (++guard > 256) fail("指令在一个 tick 内空转");
+            TraceScript.Instruction in = script.steps.get(ip);
+            if (!entered) {
+                entered = true;
+                spent = 0;
+                phase = 0;
+                left = in.op.equals("wait") ? in.ticks
+                     : in.op.equals("advance") ? in.times
+                     : in.op.equals("advanceAll") ? in.max : 0;
+                pressedKey = -1;
+            }
+            if (exec(in)) { ip++; entered = false; continue; }
+            if (++spent > in.budget) {
+                fail("超过本条指令的 tick 预算 " + in.budget + "（主角在 ("
+                        + role().getX() + "," + role().getY() + ")）");
+            }
+            return;
+        }
+    }
+
+    /** 返回 true 表示这条指令已完成。 */
+    private boolean exec(TraceScript.Instruction in) {
+        switch (in.op) {
+            case "walkTo":     return moveTo(in, false);
+            case "runTo":      return moveTo(in, true);
+            case "talk":
+                if (phase == 0) { pressSpace(); phase = 1; return false; }
+                return true;
+            case "advance":
+                if (left == 0) return true;
+                if (!dialogueActive()) fail("对话在按满 " + in.times + " 次之前就结束了");
+                if (!sentenceSettled()) return false;
+                pressSpace(); left--; return false;
+            case "advanceAll":
+                if (!dialogueActive()) return true;
+                if (left == 0) fail("按了 " + in.max + " 次空格对话仍未结束");
+                if (!sentenceSettled()) return false;
+                pressSpace(); left--; return false;
+            case "wait":
+                if (left <= 0) return true;
+                left--; return false;
+            case "waitIdle":
+                return !roleMoving();
+            case "waitNarratage":
+                return getBool(sp.narratage, "narratageOver");
+            default:
+                fail("不认识的指令 " + in.op);
+                return true;
+        }
+    }
+
+    /**
+     * 走/跑到目标格。先 X 后 Y。
+     *
+     * 松手的时机是这里唯一有讲究的地方。原版松手（keyReleased）只是把 canStop
+     * 置位，主角要走到下一个"可停点"才真的停：走路每 4 次定时器触发 = 32px =
+     * 恰好一格，跑步每 4 次 = 64px = 两格。所以"到了目标格再松手"必然多走一格。
+     * 这里改成提前一格松手（跑步先跑到剩 3 格以内，再切走路收尾），
+     * 每一段结束后重新判位，不对就再补一段 —— 补段总是 1 格且精确，必然收敛。
+     *
+     * 一段走完位置没变 = 被墙或 NPC 挡住 —— 硬失败。不能静默跳过：
+     * "走不到就当走到了"会导出一份看上去正常、实际整条错位的 trace。
+     */
+    private boolean moveTo(TraceScript.Instruction in, boolean canRun) {
+        while (true) {
+            if (phase >= 2) return true;
+            boolean axisX = phase == 0;
+            int tgt = axisX ? in.x : in.y;
+
+            if (pressedKey != -1) {
+                // 按着方向键却一直不动 = 撞墙或撞 NPC，而且永远不会松手（松手条件
+                // 是走到某一格）。这里不拦，最后只会报一句"超预算"，看不出是撞住了。
+                // 阈值 150 tick = 1.5s：走一格要 32 tick，刚构造出来的 Role
+                // 第一段要 64 tick，都远小于它。
+                int now = axisPos(axisX);
+                if (now == stallPos) {
+                    if (++stallTicks > 150) {
+                        fail("按着方向键 1.5 秒没挪窝，主角卡在 (" + role().getX() + ","
+                                + role().getY() + ")，去不了 (" + in.x + "," + in.y + ") —— 被挡住了");
+                    }
+                } else {
+                    stallPos = now;
+                    stallTicks = 0;
+                }
+                if (now == releaseAt) { release(pressedKey); pressedKey = -1; }
+                return false;
+            }
+            if (roleMoving()) return false;
+
+            int cur = axisPos(axisX);
+            if (cur == tgt) { phase++; continue; }
+            if (cur == legStart && spent > 0 && phase == lastLegPhase) {
+                fail("一段走完位置没变，(" + role().getX() + "," + role().getY()
+                        + ") 到不了 (" + in.x + "," + in.y + ") —— 被挡住了");
+            }
+
+            int sign = tgt > cur ? 1 : -1;
+            int dist = Math.abs(tgt - cur);
+            boolean useRun = canRun && dist >= 4;
+            int lead = useRun ? 3 : 1;
+            releaseAt = tgt - sign * lead;
+            legStart = cur;
+            lastLegPhase = phase;
+            stallPos = cur;
+            stallTicks = 0;
+
+            int key = axisX ? (sign > 0 ? KeyEvent.VK_RIGHT : KeyEvent.VK_LEFT)
+                            : (sign > 0 ? KeyEvent.VK_DOWN  : KeyEvent.VK_UP);
+            press(key, useRun);
+            pressedKey = key;
+            if (cur == releaseAt) { release(key); pressedKey = -1; }
+            return false;
+        }
+    }
+
+    private int axisPos(boolean axisX) { return axisX ? role().getX() : role().getY(); }
+
+    // ================= 输入 =================
+
+    private void press(int keyCode, boolean ctrl) {
+        sp.keyPressed(keyCode, ctrl);
+        pending.add("{\"e\":\"press\",\"k\":" + Json.str(keyName(keyCode)) + ",\"ctrl\":" + ctrl + "}");
+    }
+
+    private void release(int keyCode) {
+        sp.keyReleased(keyCode);
+        pending.add("{\"e\":\"release\",\"k\":" + Json.str(keyName(keyCode)) + "}");
+    }
+
+    private void pressSpace() { press(KeyEvent.VK_SPACE, false); }
+
+    private static String keyName(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.VK_LEFT:  return "left";
+            case KeyEvent.VK_RIGHT: return "right";
+            case KeyEvent.VK_UP:    return "up";
+            case KeyEvent.VK_DOWN:  return "down";
+            case KeyEvent.VK_SPACE: return "space";
+            default: return "vk" + keyCode;
+        }
+    }
+
+    // ================= 状态读取 =================
+
+    private scene.Role role() { return sp.role; }
+
+    private boolean roleMoving() {
+        return timerRunning(role(), "walk") || timerRunning(role(), "run");
+    }
+
+    private boolean dialogueActive() {
+        return getBool(sp.npcEvent, "isOral") || getBool(sp.dialogueEvent, "isSpeaking");
+    }
+
+    /** 当前句已经逐字打完（或打满了整屏），可以按空格推进了。 */
+    private boolean sentenceSettled() {
+        return getBool(sp.dialogue, "isSentenceOver") || getBool(sp.dialogue, "isBufferedTextOver");
+    }
+
+    private boolean timerRunning(Object o, String name) {
+        Timer t = (Timer) get(o, name);
+        return t != null && t.isRunning();
+    }
+
+    private static Object get(Object o, String name) {
+        Class<?> c = o.getClass();
+        while (c != null) {
+            try {
+                Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f.get(o);
+            } catch (NoSuchFieldException e) {
+                c = c.getSuperclass();
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        throw new RuntimeException("没有字段 " + name + " on " + o.getClass());
+    }
+
+    private static int getInt(Object o, String name)     { return (Integer) get(o, name); }
+    private static boolean getBool(Object o, String name) { return (Boolean) get(o, name); }
+
+    private static String bgm() {
+        try {
+            Field bf = media.MusicReader.class.getDeclaredField("background");
+            bf.setAccessible(true);
+            Object player = bf.get(null);
+            return (String) get(player, "currentPlayingBGM");
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static String dirName(int d) {
+        switch (d) {
+            case 0:  return "down";
+            case 8:  return "up";
+            case 16: return "left";
+            case 24: return "right";
+            default: return "d" + d;
+        }
+    }
+
+    // ================= 快照 =================
+
+    private String snapshot(int tick) {
+        scene.Role r = role();
+        Object oe = sp.otherEvent;
+
+        StringBuilder b = new StringBuilder();
+        b.append("{\"t\":").append(tick);
+        b.append(",\"vt\":").append(clock.now());
+        b.append(",\"ip\":").append(Math.min(ip, script.steps.size() - 1));
+        b.append(",\"input\":[").append(String.join(",", pending)).append("]");
+
+        b.append(",\"role\":{\"x\":").append(r.getX())
+         .append(",\"y\":").append(r.getY())
+         .append(",\"px\":").append(r.getRealX())
+         .append(",\"py\":").append(r.getRealY())
+         .append(",\"dir\":").append(Json.str(dirName(r.getDirection())))
+         .append(",\"frame\":").append(r.getCount())
+         .append(",\"running\":").append(r.isRun())
+         .append(",\"moving\":").append(roleMoving())
+         .append(",\"stepNum\":").append(r.stepNum)
+         .append("}");
+
+        b.append(",\"npcs\":[");
+        for (int i = 0; i < sp.npcs.size(); i++) {
+            NPC n = sp.npcs.get(i);
+            if (i > 0) b.append(',');
+            b.append("{\"x\":").append(n.getX())
+             .append(",\"y\":").append(n.getY())
+             .append(",\"px\":").append(getInt(n, "x"))
+             .append(",\"py\":").append(getInt(n, "y"))
+             .append(",\"type\":").append(n.getType())
+             .append(",\"dir\":").append(n.getDirection())
+             .append(",\"frame\":").append(n.getCount())
+             .append("}");
+        }
+        b.append("]");
+
+        Object dlg = sp.dialogue;
+        boolean oral = getBool(sp.npcEvent, "isOral");
+        boolean speaking = getBool(sp.dialogueEvent, "isSpeaking");
+        b.append(",\"dialogue\":{\"active\":").append(oral || speaking)
+         .append(",\"source\":").append(Json.str(oral ? "npc" : speaking ? "script" : "none"))
+         .append(",\"type\":").append(getInt(dlg, "type"))
+         .append(",\"head\":").append(getInt(dlg, "headNo"))
+         .append(",\"name\":").append(Json.str((String) get(dlg, "name")))
+         .append(",\"sentence\":").append(Json.str((String) get(dlg, "currentSentence")))
+         .append(",\"cursor\":").append(getInt(dlg, "count_sentence"))
+         .append(",\"row\":").append(getInt(dlg, "count_row"))
+         .append(",\"col\":").append(getInt(dlg, "count_col"))
+         .append(",\"printing\":").append(getBool(dlg, "isPrint"))
+         .append(",\"sentenceOver\":").append(getBool(dlg, "isSentenceOver"))
+         .append(",\"pageOver\":").append(getBool(dlg, "isBufferedTextOver"))
+         .append("}");
+
+        Object nar = sp.narratage;
+        b.append(",\"narratage\":{\"active\":").append(getBool(nar, "isNarratage"))
+         .append(",\"over\":").append(getBool(nar, "narratageOver"))
+         .append(",\"line\":").append(getInt(nar, "count0"))
+         .append(",\"cursor\":").append(getInt(nar, "count1"))
+         .append(",\"row\":").append(getInt(nar, "count2"))
+         .append(",\"bg\":").append(getInt(nar, "index"))
+         .append("}");
+
+        b.append(",\"audio\":{\"bgm\":").append(Json.str(bgm())).append("}");
+
+        b.append(",\"viewport\":{\"offsetX\":").append(getInt(oe, "offsetX"))
+         .append(",\"offsetY\":").append(getInt(oe, "offsetY"))
+         .append(",\"firstTileX\":").append(getInt(oe, "firstTileX"))
+         .append(",\"lastTileX\":").append(getInt(oe, "lastTileX"))
+         .append(",\"firstTileY\":").append(getInt(oe, "firstTileY"))
+         .append(",\"lastTileY\":").append(getInt(oe, "lastTileY"))
+         .append("}");
+
+        b.append(",\"drawOrder\":").append(Json.str(drawOrder()));
+        return b.append("}").toString();
+    }
+
+    /**
+     * 绘制顺序。ScenePanel.paint() 里那个局部变量 b：为真时先画 NPC 再画主角。
+     * 判据在原版里是局部的，取不到，只能按同一个表达式重算一遍。
+     */
+    private String drawOrder() {
+        scene.Role r = role();
+        for (NPC n : sp.npcs) {
+            if (r.getY() > n.getY() && r.getX() - 2 <= n.getX() && r.getX() + 1 >= n.getX()) {
+                return "npcs-first";
+            }
+        }
+        return "hero-first";
+    }
+}

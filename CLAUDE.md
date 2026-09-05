@@ -68,15 +68,23 @@ brew install openjdk@17          # source targets JavaSE-1.7; 17 compiles it
 tools/build.sh                   # game (GBK) + dev tools (UTF-8) -> tools/build/classes
 tools/run-game.sh                # launch the original game
 tools/export-truth.sh            # re-export the 96 script ground-truth JSONs
+tools/export-trace.sh --check    # re-export the behaviour traces, twice, and cmp
 ```
 
 **Run every command from the repo root** — the game resolves `script/`,
 `sources/`, `image/` as relative paths.
 
-There is **no automated test suite yet**. The closest thing to a regression
-check today is `tools/export-truth.sh`: re-run it and `git diff
-tools/ground-truth` must be empty. Building the real suite is tracked in beads
-(`xl-tkx.3`).
+There is **no automated test suite yet**. The two regression checks that exist
+today are both re-export-and-diff:
+
+- `tools/export-truth.sh` — re-run it and `git diff tools/ground-truth` must be
+  empty (data layer: 96 scripts × 26 fields).
+- `tools/export-trace.sh --check` — re-run it and `git diff tools/traces/out`
+  must be empty; `--check` additionally exports each script twice in separate
+  JVMs and `cmp`s the two, which is what makes the traces usable as truth at
+  all. See `docs/trace-format.md`.
+
+Building the real suite is tracked in beads (`xl-tkx.3`).
 
 ## Architecture Overview
 
@@ -110,7 +118,12 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   `script/剧情1.txt` and `script/迷宫1.txt` are deliberate test fixtures for the
   web data-baking pipeline's path normalisation.
 - `tools.Reader.readImage` warns on stderr for missing files; `tools.Clock`
-  scales all timing with `factor` defaulting to `1.0` (identity).
+  scales all timing with `factor` defaulting to `1.0` (identity), and has a
+  default-off timer-freeze mode used only by the trace exporter.
+- **Behaviour truth lives in `tools/traces/`.** Declarative scripts in
+  `traces/scripts/`, exported per-tick traces in `traces/out/` — both are
+  committed, and any diff in `out/` is a signal. Do not hand-write expected
+  values for the state or viewport layers; read them out of a trace.
 
 ## Agent skills
 

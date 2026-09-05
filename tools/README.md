@@ -19,6 +19,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # build.sh 默认就是这个路
 | `tools/build.sh` | 编译游戏本体（GBK）+ 开发工具（UTF-8）到 `tools/build/classes` |
 | `tools/run-game.sh` | 启动原版游戏 |
 | `tools/export-truth.sh` | 导出 96 个脚本的解析真值到 `tools/ground-truth/*.json` |
+| `tools/export-trace.sh [名字…] [--check]` | 在原版上执行声明式剧本，逐 tick 导出行为真值到 `tools/traces/out/`；`--check` 跑两遍验证逐字节一致 |
 | `tools/to-webp.sh <src> <dst>` | 把取景器产出的 PNG 批量转 WebP q80 |
 | `tools/bd-spawn.sh <issue-id>…` | 为 issue 开 worktree、认领、在新的 iTerm 标签页启动 Claude 会话 |
 
@@ -53,7 +54,11 @@ tools/bd-spawn.sh xl-9bd.1 xl-9bd.2      # 真开两个
 ## 目录
 
 - `src/devtools/ExportGroundTruth.java` — 真值导出器（Q15 的黄金基线）
-- `src/devtools/Json.java` — 极简 JSON 写出，无第三方依赖
+- `src/devtools/ExportTrace.java` — 行为 trace 导出器：在虚拟时钟上驱动原版，逐 tick 录状态
+- `src/devtools/TraceScript.java` — 声明式剧本的模型与加载
+- `src/devtools/VirtualTimer.java` `VirtualClock.java` — 挂在虚拟时钟上的 `javax.swing.Timer` 替身
+- `src/devtools/Json.java` `JsonIn.java` — 极简 JSON 写出/读入，无第三方依赖
+- `traces/scripts/` — 剧本（入库）；`traces/out/` — 导出的 trace（**入库，是状态层的真值**）
 - `src/battle/Shot3.java` — 会打架的战斗取景器：检测到指令菜单就点「击」再点敌人
 - `src/battle/Shot2.java` — 战斗取景器（不驱动输入），用于对照
 - `src/ShotFull.java` `src/ShotFix.java` — 场景/对话/旁白/问答/选择/宝箱/面板取景
@@ -77,3 +82,17 @@ tools/bd-spawn.sh xl-9bd.1 xl-9bd.2      # 真开两个
   连续开战会累积。取景器改成一场一个 JVM。
 - `EnemySlector.checkMoveIn()` 判定 em3 时用了 `height1`。
 - 31 个资源路径缺失，详见 commit `fix(diag):`。
+
+## 行为 trace 与确定性
+
+`tools/export-trace.sh` 在原版程序里执行一份**声明式**剧本（"走到 (14,19)"，
+不是"按 12 次下键"），逐 tick 把主角、NPC、对话游标、旁白、BGM、视口六元组、
+绘制顺序录成 JSON。这是状态层与视口层所有票的真值来源。
+
+做到"同一份剧本重跑两次逐字节一致"需要把原版的三处真实时间全部换掉：
+17 个 `javax.swing.Timer`、`while(true){...sleep(10)}` 的主循环、EDT 上的
+`paint()`。手法与理由见 `docs/trace-format.md`；为此对 `src/` 做了两处
+**行为中性**的改动：`tools.Clock` 增加默认关闭的定时器冻结模式，
+`ScenePanel.run()` 的循环体整块提取为 `ScenePanel.step()`。
+
+    tools/export-trace.sh --check      # 每份剧本导两遍并 cmp
