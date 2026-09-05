@@ -1,0 +1,18 @@
+{
+  "name": "dorm-walk",
+  "description": "宿舍走动：走、跑、拐弯，走到萧逸才身边搭话，看完他的一句口头语。覆盖碰撞、走跑切换、静止视口、NPC 口头语的逐字打印。",
+  "warmup": "脚本1.txt",
+  "scene": "宿舍.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "walkTo", "x": 13, "y": 8 },
+    { "op": "walkTo", "x": 13, "y": 11 },
+    { "op": "runTo",  "x": 20, "y": 11 },
+    { "op": "walkTo", "x": 20, "y": 9 },
+    { "op": "talk" },
+    { "op": "advanceAll", "max": 8 },
+    { "op": "wait", "ticks": 30 }
+  ]
+}
