@@ -20,6 +20,27 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # build.sh 默认就是这个路
 | `tools/run-game.sh` | 启动原版游戏 |
 | `tools/export-truth.sh` | 导出 96 个脚本的解析真值到 `tools/ground-truth/*.json` |
 | `tools/to-webp.sh <src> <dst>` | 把取景器产出的 PNG 批量转 WebP q80 |
+| `tools/bd-spawn.sh <issue-id>…` | 为 issue 开 worktree、认领、在新的 iTerm 标签页启动 Claude 会话 |
+
+## 并行开发：bd-spawn.sh
+
+bd 本身没有拉起终端的能力 —— `bd swarm create` 只写一条协调记录，等别人来捡。
+`tools/bd-spawn.sh` 就是那个"捡"的动作：
+
+```bash
+tools/bd-spawn.sh --dry-run xl-9bd.1     # 先看它要做什么
+tools/bd-spawn.sh xl-9bd.1 xl-9bd.2      # 真开两个
+```
+
+每个 issue 会得到：仓库外的一个 git worktree（`../<repo>-agents/<id>`，
+所以不污染 `.gitignore`）、一次原子认领、以及一个 iTerm 标签页里的 Claude 会话。
+不在 `bd ready` 里的 issue 会被拒绝（除非 `--force`），认领冲突时硬失败。
+
+**⚠ 本机有两个 Claude 配置目录**：`~/.claude`（别名 `ccd-turo`）与
+`~/.claude-zyq`（别名 `ccd-zyq`）。**beads 插件只装在后者**，所以脚本默认用
+`~/.claude-zyq`。用前者起的会话仍有项目级的 SessionStart hook 与 CLAUDE.md，
+但没有 `/beads:*` 那 22 个斜杠命令，也没有 `beads:task-agent`。
+需要时用 `--config-dir` 覆盖。
 
 ## 编码
 
