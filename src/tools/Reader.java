@@ -294,8 +294,21 @@ public class Reader {
 		return path == null ? null : path.replace('\\', '/');
 	}
 
+	// 已经警告过的缺失路径。readImage 有 300+ 处调用，很多在动画循环里，
+	// 不去重会刷屏。
+	private static final java.util.Set<String> MISSING_WARNED =
+			java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+
 	public static Image readImage(String imageName) {
-		ImageIcon icon = new ImageIcon(normalizePath(imageName));
+		String path = normalizePath(imageName);
+		// ImageIcon 在路径错误时既不抛异常也不返回 null，只给一个宽度为 -1 的
+		// 空壳，调用方察觉不到。把这个静默失败显式说出来，否则缺图只会表现为
+		// "画面上少了点东西"，没人会去查。
+		if (path != null && !new java.io.File(path).isFile() && MISSING_WARNED.add(path)) {
+			System.err.println("[readImage] 图片缺失: " + path
+					+ (path.equals(imageName) ? "" : "   (原始路径: " + imageName + ")"));
+		}
+		ImageIcon icon = new ImageIcon(path);
 		return icon.getImage();
 	}
 
