@@ -75,3 +75,20 @@ _Add a brief overview of your project architecture_
 ## Conventions & Patterns
 
 _Add your project-specific conventions here_
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in **beads** (`bd`, prefix `xl`), not GitHub Issues — the GitHub
+remote hosts code only. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, applied as bd labels with their default names. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (neither exists
+yet; created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
