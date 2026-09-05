@@ -51,7 +51,7 @@ UTF-8 JSON，放在 `tools/traces/scripts/*.json`。
 |---|---|---|
 | `walkTo` | `x`, `y` | 走到目标格。先 X 后 Y。到不了 —— 硬失败。 |
 | `runTo` | `x`, `y` | 同上，按住 Ctrl 跑。 |
-| `talk` | — | 按一次空格（站在相邻 NPC 旁就是搭话）。 |
+| `talk` | — | 按一次空格（站在相邻 NPC 旁就是搭话）。按完没有对话开始 —— 硬失败。 |
 | `advance` | `times` | 推进对话 `times` 次，每次都等当前句逐字打完再按空格。对话提前结束 —— 硬失败。 |
 | `advanceAll` | `max` | 一直推进到对话结束，最多 `max` 次。到 `max` 还没结束 —— 硬失败。 |
 | `wait` | `ticks` | 空等。 |
@@ -127,7 +127,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `narratage.line/cursor/row/bg` | 第几句 / 第几个字 / 第几行 / 背景动画帧。 |
 | `audio.bgm` | `MusicPlayer.currentPlayingBGM`。是一个可断言的字符串，不是"调用了 play()"。 |
 | `viewport` | `OtherEvent.calOffset()` 算出的六元组，对应 spec 里的 `computeViewport`。 |
-| `drawOrder` | `npcs-first` / `hero-first`，对应 spec 里的 `computeDrawOrder`。 |
+| `drawOrder` | `npcs-first` / `hero-first`，对应 spec 里的 `computeDrawOrder`。**旁白期间是 `null`** —— 原版 `paint()` 里主角与 NPC 的绘制整个在 `if (!narratage.isNarratage)` 里面，那些帧没有绘制顺序这回事。 |
 
 ## 确定性是怎么做到的
 
@@ -141,11 +141,22 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
    `timer.getDelay()` 反算回原始间隔。随后每个 `Timer` 对象被换成
    `devtools.VirtualTimer`，`start/stop/restart/isRunning` 全部改挂虚拟时钟。
 
-   为什么必须**换对象**而不是在外面记一张到期时间表：原版有若干处对
-   *正在运行的*定时器再次 `start()`（`NPCEvent.checkNPCStop` 对 type==2 的
-   NPC 是无条件 `action.start()`），Swing 的语义是重新计时。外部记账看不见
-   这次调用，会把本该永远不推进的动画推进起来 —— 那样的 trace 是错的，
-   而且看不出错。
+   为什么必须**换对象**而不是在外面记一张到期时间表：外部记账只看得见
+   `isRunning()` 的状态，看不见调用本身，到期时间只能从状态变化去*推断*。
+   而 Swing 这两个方法的语义正好相反，推错了不会报错，只会让动画不动：
+
+   - `start()` 对已经在跑的定时器是**空操作**（`TimerQueue.addTimer` 直接
+     忽略已入队的定时器），到期时间不变；
+   - `restart()` 才是 `stop()` + `start()`，会重新计时。
+
+   实测（openjdk 17，一个 100ms 的定时器，每 10ms 调一次，持续 1 秒）：
+   反复 `start()` 触发 8 次，反复 `restart()` 触发 0 次。
+
+   这条区别是有后果的：`NPCEvent.checkNPCStop` 对 type==2 的 NPC 是**无条件**
+   `action.start()`，而主循环每 10ms 走一次。按真实语义那个原地动画照常播。
+   本工具第一版把 `start()` 写成了重新计时，结果三份 trace 里所有 type==2 的
+   NPC 都被记成永远停在第 0 帧 —— 导出成功、退出码 0、`--check` 也全绿，
+   是代码审查按 JDK 语义反查才发现的。
 
    冻结必须在任何一个 `Timer` 被 new 出来之前生效：NPC 的两个定时器是在
    构造函数里 `start()` 的，而构造完 NPC 之后 `Dialogue` 还要读 91 张头像图，
@@ -172,17 +183,25 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 已实测（macOS / openjdk 17，两次独立 JVM 进程）：
 
 ```
-确定性 OK：bigmap-walk 两次导出逐字节一致（1154623 字节）
-确定性 OK：dorm-intro  两次导出逐字节一致（3441060 字节）
+确定性 OK：bigmap-walk 两次导出逐字节一致（1154743 字节）
+确定性 OK：dorm-intro  两次导出逐字节一致（3434580 字节）
 确定性 OK：dorm-walk   两次导出逐字节一致（374314 字节）
 ```
 
 跨机器、跨 JDK 版本的一致性**未验证**。
+
+还有一处未做结构性隔离的真实时间依赖：`MusicPlayer.play()` 开头有
+`while (!hasStop) { Clock.sleep(10); }`。`MusicReader.closeBGM()` 并不能
+阻止它 —— `play()` 根本不看 `CAN_PLAY_BGM`，照样开音频设备、起播放线程，
+只有播放线程自己在第一次 write 之前退出。`hasStop` 初值为 true，所以实测
+从未自旋；但这取决于宿主机的音频设备，要做成结构性保证得给 `MusicPlayer`
+加桩，那要改 `src/`。`audio.bgm` 本身是准的：`currentPlayingBGM` 在这一切
+之前就已设好。
 
 ## 现有的三份剧本
 
 | 剧本 | 场景 | 覆盖 |
 |---|---|---|
 | `dorm-walk` | `宿舍.txt` | 走、跑、四向拐弯、碰撞、静止地图的视口、绘制顺序翻转、NPC 口头语的逐字打印 |
-| `bigmap-walk` | `大地图.txt` | 100×80 卷动地图的视口跟随与边缘夹取（53 个不同视口）、两段跑、会走动与原地动的 NPC |
+| `bigmap-walk` | `大地图.txt` | 100×80 卷动地图的视口跟随与边缘夹取（53 个不同视口）、两段跑、13 个 NPC 里 8 个单向走动 + 4 个原地动画都在跑帧 |
 | `dorm-intro` | `脚本1.txt` | 6 句旁白逐字播完（46 个背景帧）、接一整段 23 句主线对话，头像式与名字式两种对话框、翻页 |
