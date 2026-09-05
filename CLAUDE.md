@@ -60,21 +60,57 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
+This is a **Java** repo (no `package.json`, no npm). The `web/` port does not
+exist yet.
 
 ```bash
-# Example:
-# npm install
-# npm test
+brew install openjdk@17          # source targets JavaSE-1.7; 17 compiles it
+tools/build.sh                   # game (GBK) + dev tools (UTF-8) -> tools/build/classes
+tools/run-game.sh                # launch the original game
+tools/export-truth.sh            # re-export the 96 script ground-truth JSONs
 ```
+
+**Run every command from the repo root** — the game resolves `script/`,
+`sources/`, `image/` as relative paths.
+
+There is **no automated test suite yet**. The closest thing to a regression
+check today is `tools/export-truth.sh`: re-run it and `git diff
+tools/ground-truth` must be empty. Building the real suite is tracked in beads
+(`xl-tkx.3`).
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+**Original (`src/`, 87 files / 18k lines):** Swing, one `JFrame` with a
+`CardLayout` switching eight panels — start, scene, battle, menu, shop,
+equipment shop, load/save, end. Each panel hand-draws into an offscreen
+`BufferedImage`. Game content lives in 96 GBK text files under `script/`
+(collision grid + NPCs + dialogue + events), parsed by the single entry point
+`tools.Reader`.
+
+**Migration target:** Pixi (scene + battle) and React (menus, shops, dialogue)
+under `web/`, with the game state machine decoupled from rendering. Decisions
+and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- **Source files are GBK-encoded with CRLF line endings.** Compile with
+  `-encoding GBK`. To edit programmatically, round-trip through UTF-8 and write
+  back as GBK+CRLF — verified lossless across all 88 `.java` files. Never write
+  a bare LF into `src/`.
+- **Data files are GBK too** (`script/*.txt`, `sources/Shop/*.txt`, saves), and
+  they are also **CRLF** — `grep`/`awk` patterns anchored with `$` need
+  `tr -d '\r'` first, or they silently match nothing.
+- **No `-Dfile.encoding` flags are needed or effective.** Encoding is specified
+  explicitly at the four I/O points; JVM-level charset flags were measured to
+  have no effect on openjdk 17.
+- **During migration the Java source is the specification.** Keep it runnable;
+  do not change game logic. The only sanctioned edits are portability and
+  diagnostics, each as its own commit (see `fix(io)`, `fix(path)`, `fix(diag)`).
+- **Do not "fix" the script data.** The three backslash paths in
+  `script/剧情1.txt` and `script/迷宫1.txt` are deliberate test fixtures for the
+  web data-baking pipeline's path normalisation.
+- `tools.Reader.readImage` warns on stderr for missing files; `tools.Clock`
+  scales all timing with `factor` defaulting to `1.0` (identity).
 
 ## Agent skills
 

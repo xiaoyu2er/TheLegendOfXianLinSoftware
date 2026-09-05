@@ -58,8 +58,18 @@ Issues live in a local Dolt database under `.beads/`. Cross-machine sync is
 remote. `.beads/issues.jsonl` is a **passive export** — useful for review and
 disaster recovery, but `bd import` during normal operation is an anti-pattern.
 
-**A Dolt remote is not configured yet.** Until `bd dolt remote add` is run,
-this database exists only on one machine.
+**The issue data has never left this machine.** Two bd commands disagree about
+the remote, so check with git rather than trusting either:
+
+- `bd dolt remote list` reports `origin git+https://github.com/...` — that is
+  `sync.remote` from `config.yaml`, a declared intent.
+- `bd dolt show` reports `Remotes: (none)` — the embedded Dolt engine itself
+  has no remote registered.
+- `git ls-remote origin 'refs/dolt/*'` returns **nothing** — decisive: no beads
+  data has ever been pushed.
+
+Before relying on cross-machine sync, run that `git ls-remote` and then an
+actual `bd dolt push`; do not infer from the two commands above.
 
 ## Label inheritance gotcha
 
