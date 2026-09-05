@@ -1,0 +1,55 @@
+name: web
+
+on:
+  push:
+    branches: [master]
+    paths: ['web/**', '.github/workflows/web.yml']
+  pull_request:
+    paths: ['web/**', '.github/workflows/web.yml']
+
+# 只在 web/ 或本工作流自身变动时跑：Java 侧改动与这条流水线无关。
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      # --frozen-lockfile：lockfile 与 package.json 不一致时**失败**，
+      # 而不是悄悄解析出一组别的版本 —— CI 装的必须是本地装的那一组。
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm build
+
+      # 产物能不能静态部署，靠"它确实被生成了且资源路径是相对的"来判定，
+      # 而不是靠 build 退出码为 0（空目录也能让 build 成功）。
+      - name: 校验产物可静态部署
+        run: |
+          test -f dist/index.html
+          grep -q 'src="\./assets/' dist/index.html
+          test -n "$(ls dist/assets/*.js)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist

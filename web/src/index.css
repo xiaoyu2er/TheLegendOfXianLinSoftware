@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: #efe6d2;
+  /* letterbox 是设计的一部分，不是溢出：任何方向的滚动条都说明尺寸算错了。 */
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#root {
+  height: 100%;
+}
+
+/* 全屏 API 的目标元素。全屏时只有它的子树会被渲染，所以工具栏也在里面。 */
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+/* 舞台的可用空间：占满外壳，负责居中。 */
+.stage-box {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage {
+  position: relative;
+  /* 宽高由 JS 按 1024:640 算好，这里只保证内容严丝合缝地铺满 */
+  line-height: 0;
+}
+
+.stage-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* React 画的 UI 叠在 canvas 上，用 CSS 缩放跟着舞台一起放大，
+   这样菜单与场景永远对得上，不需要各自换算坐标。 */
+.stage-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1024px;
+  height: 640px;
+  transform: scale(var(--stage-scale, 1));
+  transform-origin: top left;
+  line-height: normal;
+}
+
+.toolbar {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+.toolbar button {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #3a3346;
+  background: rgb(20 16 24 / 82%);
+  color: #efe6d2;
+  cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  border-color: #c8a45c;
+}
+
+.toolbar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

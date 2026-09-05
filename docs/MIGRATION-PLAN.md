@@ -168,7 +168,8 @@ tools/ground-truth/ 96 个脚本的解析真值 JSON（冻结产物，任何 dif
 tools/reference/    1327 张原版参考截图（WebP q80，112MB）
 .beads/             issue 追踪（Dolt 库不入 git，提交 issues.jsonl 快照）
 docs/               本文档
-web/                （待建）
+web/                浏览器版（Vite + React + TS）—— 见 web/README.md
+                    目前只有 1024×640 舞台脚手架（xl-9bd.1），无游戏内容
 ```
 
 **工具能重新生成产物，产物不能反过来生成工具** —— 这是 `tools/` 比
