@@ -159,6 +159,9 @@ public class BattlePanel extends JPanel implements Runnable{
 	
 	//初始化方法
 	public void initial(String s,ZhangXiaoFan z,YuJie y,LuXueQi l,Enemy e1,Enemy e2,Enemy e3){
+		// 先规范化：否则下面 switch(s) 的 case 全是正斜杠字面量，
+		// 用反斜杠路径的那 3 条 Fight 数据既没有背景图、也不会播 BGM。
+		s=Reader.normalizePath(s);
 		background=Reader.readImage(s);
 		//根据背景加入音乐
 		switch(s){

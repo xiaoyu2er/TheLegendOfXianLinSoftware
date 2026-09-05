@@ -283,8 +283,19 @@ public class Reader {
 	}
 
 	// 读取图片的静态函数
+	// 路径跨平台规范化。
+	// 脚本数据里存在 Windows 风格的反斜杠路径（例 script/剧情1.txt 第 128 行的
+	// "image\\背景图\\伏魔山树林.png"）。反斜杠只在 Windows 上是合法分隔符，
+	// 在 macOS/Linux 上会让文件找不到。统一转成 '/'：Java 在 Windows 上同样
+	// 接受正斜杠，所以这个方向三个平台都成立。
+	// 不要改用 File.separator——那会在 Windows 上把正斜杠转成反斜杠，
+	// 反而把 22/25 条本来正常的数据在别的平台上弄坏。
+	public static String normalizePath(String path) {
+		return path == null ? null : path.replace('\\', '/');
+	}
+
 	public static Image readImage(String imageName) {
-		ImageIcon icon = new ImageIcon(imageName);
+		ImageIcon icon = new ImageIcon(normalizePath(imageName));
 		return icon.getImage();
 	}
 
