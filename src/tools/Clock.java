@@ -32,10 +32,35 @@ public final class Clock {
 		return Math.max(1L, (long) (millis / factor));
 	}
 
-	/** 缩放后的 javax.swing.Timer delay。 */
+	/** 缩放后的 javax.swing.Timer delay。冻结模式下改为把间隔整体推远。 */
 	public static int delay(int millis) {
+		long base = freezeBase;
+		if (base > 0) return (int) Math.min(Integer.MAX_VALUE, base + millis);
 		if (factor == 1.0) return millis;
 		return (int) Math.max(1L, (long) (millis / factor));
+	}
+
+	// ---- 定时器冻结（只服务于 trace 导出，默认关闭，关闭时恒等） ----
+	//
+	// 把所有 javax.swing.Timer 的间隔整体推远，使它们永不自行触发。
+	// trace 导出器在虚拟时钟上逐 tick 手动触发这些定时器；只要真实的
+	// TimerQueue 还在后台按真实时间触发，同一份剧本跑两次就不可能逐字节一致。
+	//
+	// 为什么是 base + millis 而不是一个统一的大常数：导出器要能从
+	// timer.getDelay() 反算回原始间隔（减去 base），否则 80ms 的走路定时器
+	// 和 200ms 的 NPC 定时器就分不出来了。
+	//
+	// 为什么只动 delay() 不动 ms()/sleep()：后两者是 Thread.sleep 的调用点，
+	// 把它们推远等于把进程挂死。
+	private static volatile long freezeBase = 0L;
+
+	/** base <= 0 表示关闭冻结。开启后 delay(x) 返回 base + x。 */
+	public static void freezeTimers(long base) {
+		freezeBase = Math.max(0L, base);
+	}
+
+	public static long getFreezeBase() {
+		return freezeBase;
 	}
 
 	public static void sleep(long millis) throws InterruptedException {
