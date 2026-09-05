@@ -66,12 +66,30 @@ for d in "${DIRS[@]}"; do
         if printf '%s' "$cur" | grep -q 'disable-model-invocation'; then
           printf "   %-12s ・ 无需改动\n" "$s"
         else
-          perl -ni -e 'print; print "disable-model-invocation: true\n" if /^description:/' "$f"
+          # 插在闭合 --- 之前。不要挂在 description 后面：handoff 的
+          # argument-hint 在 description 之后，那样会插到 frontmatter 中间。
+          perl -ni -e 'BEGIN{$n=0} $n++ if /^---$/; print "disable-model-invocation: true\n" if $n==2 && !$done && ($done=1); print' "$f"
           printf "   %-12s 🔒 已还原\n" "$s"; changed=$((changed+1))
         fi ;;
     esac
   done
 done
+# 改完立刻校验 frontmatter 完整性。之前有一版脚本用 s/…\s*$/…/ 替换，
+# \s*$ 吃掉了换行符把闭合的 --- 并进同一行，下一次删整行时 --- 也跟着没了 ——
+# 而这种损坏不会报错，只会让 skill 静默失效。
+if [ "$MODE" != check ]; then
+  bad=0
+  for d in "${DIRS[@]}"; do
+    base="$d/$REL"; [ -d "$base" ] || continue
+    for s2 in "${SKILLS[@]}"; do
+      f2=$(find "$base" -type d -name "$s2" -exec test -f {}/SKILL.md \; -print 2>/dev/null | head -1)
+      [ -n "$f2" ] || continue
+      n2=$(awk 'NR<=12 && /^---$/{c++} END{print c+0}' "$f2/SKILL.md")
+      [ "$n2" -eq 2 ] || { echo "❌ frontmatter 损坏（--- 只有 $n2 个）: $f2/SKILL.md"; bad=$((bad+1)); }
+    done
+  done
+  [ "$bad" -eq 0 ] && echo "frontmatter 完整性校验: 全部通过" || { echo "⚠ $bad 个文件 frontmatter 损坏"; exit 1; }
+fi
 echo "───────"
 echo "目标 skill 数: ${#SKILLS[@]} × ${#DIRS[@]} 个目录 = $total ；实际命中 $hit"
 [ "$MODE" = check ] || echo "本次改动: $changed 个文件"
