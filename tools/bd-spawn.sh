@@ -71,6 +71,7 @@ for ID in "${IDS[@]}"; do
     echo "  [dry-run] 分支         : $SLUG"
     echo "  [dry-run] 认领         : $([ $CLAIM -eq 1 ] && echo "BEADS_ACTOR=$SLUG bd update $ID --claim" || echo '(跳过)')"
     echo "  [dry-run] 配置目录     : $CONFIG_DIR"
+    echo "  [dry-run] 启动脚本     : $WT_ROOT/.spawn/$SLUG/start.sh （在 worktree 外）"
     echo "  [dry-run] 会在 iTerm 新标签页执行:"
     echo "              cd $WT && CLAUDE_CONFIG_DIR=$CONFIG_DIR claude --dangerously-skip-permissions '<提示词>'"
     continue
@@ -92,14 +93,17 @@ for ID in "${IDS[@]}"; do
     fi
   fi
 
-  # 提示词写到文件，避免 AppleScript 里嵌套引号
-  printf '%s\n' "$PROMPT" > "$WT/.agent-task.txt"
-  cat > "$WT/.agent-start.sh" <<EOF
+  # 提示词与启动脚本放在 worktree *外面*：放里面会让每个 agent 的
+  # git status 一开局就不干净，很容易被顺手 commit 进去。
+  SPAWN_DIR="$WT_ROOT/.spawn/$SLUG"
+  mkdir -p "$SPAWN_DIR"
+  printf '%s\n' "$PROMPT" > "$SPAWN_DIR/task.txt"
+  cat > "$SPAWN_DIR/start.sh" <<EOF
 #!/usr/bin/env bash
 cd "$WT"
-exec env CLAUDE_CONFIG_DIR="$CONFIG_DIR" claude --dangerously-skip-permissions "\$(cat .agent-task.txt)"
+exec env CLAUDE_CONFIG_DIR="$CONFIG_DIR" claude --dangerously-skip-permissions "\$(cat "$SPAWN_DIR/task.txt")"
 EOF
-  chmod +x "$WT/.agent-start.sh"
+  chmod +x "$SPAWN_DIR/start.sh"
 
   osascript >/dev/null <<EOF
 tell application "iTerm"
@@ -112,7 +116,7 @@ tell application "iTerm"
   end if
   tell current session of targetTab
     set name to "$ID"
-    write text "$WT/.agent-start.sh"
+    write text "$SPAWN_DIR/start.sh"
   end tell
 end tell
 EOF
