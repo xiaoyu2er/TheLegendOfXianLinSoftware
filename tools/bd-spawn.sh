@@ -61,10 +61,15 @@ for ID in "${IDS[@]}"; do
   # 不用 head：它会提前关闭管道，bd 收到 SIGPIPE 返回非零，set -e 会静默中断整个循环。
   TITLE=$(bd show "$ID" 2>/dev/null | sed -n '1s/^[^ ]* //p' | cut -c1-60 || true)
 
+  # 注意：不要在这里写 /implement。上游 mattpocock-skills 的 implement 带
+  # disable-model-invocation: true，模型看不见也调不了（实测：被派工的 agent
+  # 报「没有 /implement 这个 skill」）。本仓库用项目级的 implement-ticket 代替，
+  # 它是模型可自调用的。
   PROMPT="你负责 bd issue ${ID}（${TITLE}）。
-先跑 bd show ${ID} 读清楚它的正文与验收标准，再读 docs/agents/issue-tracker.md 了解本仓库的 bd 约定。
-然后用 /implement 完成它。完成后 bd close ${ID} --reason \"<改了什么>\"。
-你在一个独立的 git worktree 里，分支是 ${SLUG}，不要动 master。"
+第一步：用 implement-ticket 这个 skill，它写明了本仓库的实现流程与硬约束。
+第二步：bd show ${ID} 读清楚正文与验收标准——那是唯一的需求来源。
+完成后 bd close ${ID} --reason \"<改了什么>\"。
+你在一个独立的 git worktree 里，分支是 ${SLUG}，不要动 master，不要推送。"
 
   if [ "$DRY" -eq 1 ]; then
     echo "  [dry-run] worktree     : $WT"
