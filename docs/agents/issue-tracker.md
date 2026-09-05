@@ -1,9 +1,31 @@
-# Issue tracker: beads (bd)
+# Issue tracker: beads (bd), inside a Gas Town rig
 
 Issues for this repo live in **beads**, not GitHub Issues. The GitHub remote
 (`xiaoyu2er/TheLegendOfXianLinSoftware`) hosts the code only.
 
 Issue prefix: `xl`. Child issues get hierarchical IDs (`xl-tkx` → `xl-tkx.1`).
+
+## Where the database actually is
+
+**The rig is the single authoritative beads database.** There is exactly one:
+
+    ~/gt/xianlin/mayor/rig/.beads/          ← the real database
+    ~/gt/xianlin/.beads/redirect            → points at the line above
+
+The original working copy at `~/code/TheLegendOfXianLinSoftware` **no longer has
+a usable beads database** — it was archived to `.beads/embeddeddolt.archived-*`
+on purpose. Running any `bd` command there now fails loudly:
+
+    Error: no beads database found
+
+That is the intended behaviour. Both copies share the same tracked
+`.beads/config.yaml`, so both would have pushed to the same `sync.remote`;
+two live databases behind one remote is a silent-divergence trap. A loud
+failure beats a quiet fork.
+
+To resurrect the old database (only for archaeology): the archived directory is
+still there, and `.beads/issues.jsonl` is a committed snapshot that
+`bd import` can restore into a fresh database.
 
 Run `bd prime` for bd's own full workflow reference.
 

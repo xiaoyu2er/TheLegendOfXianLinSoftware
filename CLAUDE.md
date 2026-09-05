@@ -135,12 +135,34 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   committed, and any diff in `out/` is a signal. Do not hand-write expected
   values for the state or viewport layers; read them out of a trace.
 
+## Workspace layout (Gas Town)
+
+This project is a **Gas Town rig**. There are two working copies of this repo
+on disk and they are not interchangeable:
+
+    ~/gt/xianlin/                    the rig — authoritative for issues
+      ├── .repo.git/                 self-contained shared bare repo
+      ├── mayor/rig/                 coordinator's clone; holds the ONE beads DB
+      ├── refinery/rig/              worktree used by the merge queue
+      ├── crew/<you>/                your workspace (gt crew add)
+      └── polecats/                  worker agents
+
+    ~/code/TheLegendOfXianLinSoftware   original clone — code only, no beads
+
+Run `bd` from anywhere inside `~/gt/xianlin`. Running it in the original clone
+fails loudly on purpose — see `docs/agents/issue-tracker.md`.
+
+The rig's `.repo.git` used to borrow git objects from the original clone via
+`objects/info/alternates`. That link was removed and the bare repo repacked, so
+the rig no longer breaks if the original clone is moved or deleted (verified by
+renaming it away and re-reading HEAD and a blob).
+
 ## Agent skills
 
 ### Issue tracker
 
-Issues live in **beads** (`bd`, prefix `xl`), not GitHub Issues — the GitHub
-remote hosts code only. See `docs/agents/issue-tracker.md`.
+Issues live in **beads** (`bd`, prefix `xl`) inside the rig, not GitHub Issues —
+the GitHub remote hosts code only. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
