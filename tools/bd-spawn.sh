@@ -124,10 +124,24 @@ for ID in "${IDS[@]}"; do
   TITLE=$(bd show "$ID" 2>/dev/null | sed -n '1s/^[^ ]* //p' | cut -c1-60 || true)
 
   PROMPT="你负责 bd issue ${ID}（${TITLE}）。
+
 先跑 bd show ${ID} 读清楚正文与验收标准——那是唯一的需求来源，
 再读 CLAUDE.md 与 docs/agents/issue-tracker.md 了解本仓库的约定。
-然后用 /implement 完成它。完成后 bd close ${ID} --reason \"<改了什么>\"。
-你在一个独立的 git worktree 里，分支是 ${SLUG}，不要动 master，不要推送。"
+然后用 /implement 完成它。
+
+三条纪律，违反任何一条都算没做完：
+
+1. **关票之前必须先 commit。** 分支上没有 commit 就 bd close，等于成果只
+   存在于你的工作区里，别人 checkout 这个分支什么都看不到。顺序是：
+   git add -> git commit -> bd close ${ID} --reason \"<改了什么>\"。
+   收尾前跑一次 git status，确认没有该提交而未提交的东西。
+
+2. **不要改这张票范围之外的共享文件。** CLAUDE.md、docs/MIGRATION-PLAN.md、
+   docs/agents/*、.beads/* 都是多个 agent 并行时的公共品，你改了就会和别人
+   冲突。确实需要改的，写进 bd close 的 reason 里说明，交给主干处理。
+
+3. 你在一个独立的 git worktree 里，分支是 ${SLUG}。不要动 master，不要推送，
+   不要合并。"
 
   if [ "$DRY" -eq 1 ]; then
     echo "  [dry-run] 模式       : $([ $BG -eq 1 ] && echo '后台无头' || echo 'iTerm 标签页')"
