@@ -13,11 +13,24 @@ import javax.swing.Timer;
  * 每次都不同，trace 也就每次都不同。
  *
  * 这里把每个定时器对象整体换掉：start/stop/restart/isRunning 全部改成对虚拟
- * 时钟的操作，触发由导出器在每 tick 显式驱动。之所以是"换对象"而不是"在外面
- * 记一张到期时间表"：原版有若干处对**正在运行的**定时器再次调用 start()
- * （例如 NPCEvent.checkNPCStop 里对 type==2 的 NPC 无条件 action.start()），
- * Swing 的语义是重新计时。外部记账看不见这次调用，会把本该永远不推进的动画
- * 推进起来——那样的 trace 是错的，而且看不出错。
+ * 时钟的操作，触发由导出器在每 tick 显式驱动。
+ *
+ * 之所以是"换对象"而不是"在外面记一张到期时间表"：外部记账只看得见
+ * isRunning() 的状态，看不见调用本身，到期时间只能从状态变化去**推断**。
+ * 而 Swing 这两个方法的语义正好相反，推错了不会报错，只会让动画不动：
+ *
+ *   start()   对已经在跑的定时器是**空操作**（TimerQueue.addTimer 直接忽略
+ *             已入队的定时器），到期时间不变；
+ *   restart() 才是 stop() + start()，会重新计时。
+ *
+ * 实测（openjdk 17，一个 100ms 的定时器，每 10ms 调一次，持续 1 秒）：
+ * 反复 start() 触发 8 次，反复 restart() 触发 0 次。
+ *
+ * 这条区别是有后果的：NPCEvent.checkNPCStop 对 type==2 的 NPC 是**无条件**
+ * action.start()，而主循环每 10ms 走一次。按真实语义那个原地动画照常播；
+ * 把 start() 写成重新计时，它就再也不会推进——导出的 trace 会把"原地动的
+ * NPC"记成永远停在第 0 帧，而且看不出错。（本文件第一版正是这么写的，
+ * 三份 trace 里所有 type==2 的 NPC 都被记成了静止。）
  */
 public final class VirtualTimer extends Timer {
 
@@ -45,8 +58,14 @@ public final class VirtualTimer extends Timer {
 
     public int logicalDelay() { return logicalDelay; }
 
-    @Override public void start()   { running = true; due = clock.now() + logicalDelay; }
-    @Override public void restart() { start(); }
+    /** 对已经在跑的定时器是空操作——与 javax.swing.Timer 一致，见类注释。 */
+    @Override public void start() {
+        if (running) return;
+        running = true;
+        due = clock.now() + logicalDelay;
+    }
+
+    @Override public void restart() { stop(); start(); }
     @Override public void stop()    { running = false; }
     @Override public boolean isRunning() { return running; }
 

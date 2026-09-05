@@ -116,7 +116,17 @@ public final class ExportTrace {
         // Dialogue 还要读 91 张头像图 —— 那期间足够真实定时器触发好几次。
         Clock.freezeTimers(FREEZE_BASE);
         // 背景音乐只取 currentPlayingBGM 这个可断言的值，不需要真的出声。
-        // 注意 play() 无论如何都会设好 currentPlayingBGM，再去开音频设备。
+        //
+        // 说清楚这个开关到底管什么：MusicPlayer.play() 根本不看 CAN_PLAY_BGM，
+        // 它照样开 SourceDataLine、照样起一条非守护的播放线程；只有播放线程
+        // 自己在第一次 write 之前会因为这个标志退出。currentPlayingBGM 在这
+        // 一切之前就已经设好，所以 trace 里的值是准的。
+        //
+        // 未做结构性隔离的一处真实时间依赖：play() 开头有
+        // while (!hasStop) { Clock.sleep(10); }。hasStop 初值为 true，而播放
+        // 线程在开写前就退出，所以实测从未自旋（三份剧本各两遍导出逐字节一致）。
+        // 但它确实取决于宿主机有没有音频设备 —— 真要做成结构性保证，得给
+        // MusicPlayer 一个桩，那要改 src/，超出本票范围。
         media.MusicReader.closeBGM();
         MusicPlayer.CAN_PLAY_BGM = MusicPlayer.NO;
 
@@ -250,6 +260,13 @@ public final class ExportTrace {
             case "runTo":      return moveTo(in, true);
             case "talk":
                 if (phase == 0) { pressSpace(); phase = 1; return false; }
+                // 按下去没搭上话就得响。sayOral() 是同步的，按完这一 tick 就该
+                // isOral=true；不拦的话，一次差一格的 walkTo 会导出一份干干净净、
+                // 退出码 0、却一句对话都没有的 trace。
+                if (!dialogueActive()) {
+                    fail("按了空格但没有对话开始，主角在 (" + role().getX() + ","
+                            + role().getY() + ") —— 旁边没有能搭话的 NPC");
+                }
                 return true;
             case "advance":
                 if (left == 0) return true;
@@ -508,8 +525,13 @@ public final class ExportTrace {
     /**
      * 绘制顺序。ScenePanel.paint() 里那个局部变量 b：为真时先画 NPC 再画主角。
      * 判据在原版里是局部的，取不到，只能按同一个表达式重算一遍。
+     *
+     * 旁白期间返回 null：原版 paint() 里主角与 NPC 的绘制（连同那个局部变量）
+     * 整个在 if (!narratage.isNarratage) 里面，这些帧根本没有绘制顺序这回事。
+     * 照样填一个值，等于逼着 Web 侧为不画任何精灵的帧断言一个绘制顺序。
      */
     private String drawOrder() {
+        if (getBool(sp.narratage, "isNarratage")) return null;
         scene.Role r = role();
         for (NPC n : sp.npcs) {
             if (r.getY() > n.getY() && r.getX() - 2 <= n.getX() && r.getX() + 1 >= n.getX()) {
