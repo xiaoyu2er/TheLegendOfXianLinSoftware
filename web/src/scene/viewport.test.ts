@@ -6,8 +6,8 @@ import { TRACE_NAMES, readTrace, sceneNameOf } from '../state/trace'
 import type { TraceTick } from '../state/trace'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import type { SceneScript } from '../data/types'
-import type { World } from '../state/types'
-import { computeDrawOrder, computeViewport, mapTiles } from './viewport'
+import { computeDrawOrder, computeViewport, mapTiles, npcLayerOffset } from './viewport'
+import type { ViewportInput } from './viewport'
 
 /**
  * 视口与绘制顺序的真值对齐。
@@ -285,10 +285,34 @@ describe('视口与绘制顺序对齐真值', () => {
     expect(scene.col * 32 + far.offsetX).toBe(STAGE_WIDTH)
     expect(scene.row * 32 + far.offsetY).toBe(STAGE_HEIGHT)
   })
+
+  /**
+   * NPC 层的偏移（xl-9bd.9）。原版画 NPC 用的是 `-firstTile*8`，画主角用的是
+   * `offset` —— 两个不同的量。这条现场量一遍它们差多少。
+   */
+  it('三份真值的每一帧，NPC 层与主角层的偏移都恰好相等', () => {
+    let frames = 0
+    let apart = 0
+    for (const trace of traces) {
+      for (const tick of trace.ticks) {
+        frames++
+        const offset = npcLayerOffset(tick.viewport)
+        if (offset.x !== 0 || offset.y !== 0) apart++
+      }
+    }
+    // 分母先响：一帧都没扫到的话，下面那个 0 是没有意义的。
+    expect(frames).toBeGreaterThan(0)
+    // `offsetX = 512 - role.px`，主角每次挪 8 或 16，两个夹取的界也都是 8 的
+    // 倍数，所以 `-offsetX` 恒为 8 的倍数、截断不掉任何东西。**这是实测的
+    // 结论，不是恒等式**：换一张尺寸不同的地图、或者主角的步长改了，它就不再
+    // 成立，而那时画面上的样子是所有 NPC 整体偏几个像素。所以 `sceneRenderer`
+    // 照样每帧设一次这个偏移，不把它当 0 省掉。
+    expect(apart).toBe(0)
+  })
 })
 
 /** 拿 trace 里那一 tick 的快照现搭一个世界——只填这两个函数读的字段。 */
-function worldAt(scene: SceneScript, tick: TraceTick): World {
+function worldAt(scene: SceneScript, tick: TraceTick): ViewportInput {
   return worldOf(
     scene,
     tick.role.px,
@@ -302,7 +326,7 @@ function worldOf(
   px: number,
   py: number,
   npcs: readonly { x: number; y: number }[],
-): World {
+): ViewportInput {
   const base = createWorld(scene)
   return { ...base, npcs, role: { ...base.role, px, py } }
 }

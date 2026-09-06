@@ -1,4 +1,5 @@
 import manifest from '../generated/assets.json'
+import missingIds from '../generated/missingAssets.json'
 import type { AssetId } from './ids'
 
 /**
@@ -33,6 +34,26 @@ export function resolveAsset(id: AssetId): string {
     throw new Error(`资产 ${id} 的映射表指向 ${relative}，但产物不存在；跑一次 pnpm bake。`)
   }
   return url
+}
+
+/**
+ * 仓库里**确实没有**这份素材的逻辑 ID。烘焙期写出来（见 `scripts/bake.ts`），
+ * 每一条都对应 `knownMissing.ts` 里一条挂着 bd issue 的记录。
+ */
+const MISSING = new Set(missingIds as string[])
+
+/**
+ * 同 `resolveAsset`，但**已知缺失的素材返回 `null`** 而不是抛。
+ *
+ * 为什么要有这个而不是"查不到就不画"：仓库里 28 帧 NPC 素材从未交付，原版
+ * 在那几处画的是一个宽度 −1 的空壳，也就是什么都没画。Web 侧要复刻这件事，
+ * 就得能表达"这里本来就没有图"。但它必须跟"烘焙漏了一帧"分得开 —— 后者
+ * 表现成"某个 NPC 偶尔不见了"，是查不出来的那种错。所以放行的只有名单上的，
+ * 名单外的照旧抛。
+ */
+export function resolveAssetOrNull(id: AssetId): string | null {
+  if (MISSING.has(id)) return null
+  return resolveAsset(id)
 }
 
 /** 映射表里已有的全部逻辑 ID，按字典序。诊断与测试用。 */

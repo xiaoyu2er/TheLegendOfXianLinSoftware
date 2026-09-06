@@ -1,12 +1,15 @@
 import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
-import { mapAssetId, roleAssetId } from '../assets/ids'
-import { resolveAsset } from '../assets/resolve'
+import { mapAssetId, npcAssetId, roleAssetId } from '../assets/ids'
+import type { AssetId } from '../assets/ids'
+import { resolveAsset, resolveAssetOrNull } from '../assets/resolve'
 import type { SceneScript } from '../data/types'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
+import type { NpcState } from '../state/npc'
 import { createWorld } from '../state/step'
 import type { World } from '../state/types'
+import { npcSprite } from './npcSprite'
 import { roleSprite } from './roleSprite'
-import { computeDrawOrder, computeViewport, mapTiles } from './viewport'
+import { computeDrawOrder, computeViewport, mapTiles, npcLayerOffset } from './viewport'
 
 /** 一个瓦片的边长（像素）。原版 `scene.Map.CS = 32`。 */
 export const TILE = 32
@@ -50,8 +53,8 @@ export interface SceneRenderer {
 /**
  * 场景层渲染器（Pixi）。
  *
- * 现在画地图底图与主角，镜头跟着主角走并在地图边缘停住（xl-9bd.6 / .7）。
- * NPC 与遮掩层是 xl-9bd.9 —— NPC 那一层已经建好并按绘制顺序排位，只是还空着。
+ * 现在画地图底图、主角与 NPC，镜头跟着主角走并在地图边缘停住
+ * （xl-9bd.6 / .7 / .9）。地图遮掩层（`OtherEvent.addMap`）还没有。
  *
  * 这一层**没有测试缝**，是 spec 的明确决策：给渲染硬加缝只会得到一堆断言
  * "我调用了 drawSprite" 的实现细节测试。真实像素由跨端剧本逐帧比对兜底
@@ -103,10 +106,14 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   let mapTexture: Texture | null = null
   const mapPieces: { sprite: Sprite; texture: Texture }[] = []
 
-  // NPC 是 xl-9bd.9，现在这一层是空的。**它照样要存在**：绘制顺序就是靠
-  // 它与主角谁先 addChild 表达的，等有了 NPC 再补一个容器，等于把这一票的
-  // 结论重新实现一遍。
+  // NPC 全部挂在这一层里：绘制顺序是**整层一起翻**的（原版那个局部变量 `b`
+  // 一置真，所有 NPC 一起画到主角前面），不是逐个排序。见 `computeDrawOrder`。
   const npcLayer = new Container()
+  // 精灵与 `world.npcs` 逐下标对应，`showScene` 时按这个场景的 NPC 条数重建。
+  let npcSprites: Sprite[] = []
+  // `null` = 仓库里确实没有这份素材（`assets/resolve.ts` 的已知缺失名单）。
+  // 原版在那几处画的是一个宽度 −1 的空壳，也就是什么都没画。
+  const npcTextures = new Map<AssetId, Texture | null>()
 
   // 主角的 48 帧一次性载入。逐帧按需加载会让走动的第一圈掉帧，而这批图
   // 一共 100 KB 出头，没有按需的理由。
@@ -115,6 +122,24 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   heroSprite.visible = false
   camera.addChild(npcLayer)
   camera.addChild(heroSprite)
+
+  /**
+   * 这个场景的 NPC 用到的每一帧。**一次全载**，跟主角那 48 帧同一个理由：
+   * 一个走动的 NPC 8 帧轮播，按需加载会让它第一圈一卡一卡的，而这批图一共
+   * 几十 KB。已经载过的跳过 —— 同一个 NPC 在十几个场景里出现是常事。
+   */
+  async function loadNpcTextures(npcs: readonly NpcState[]): Promise<void> {
+    const wanted = [
+      ...new Set(npcs.flatMap((npc) => npc.images.map((image) => npcAssetId(image)))),
+    ].filter((id) => !npcTextures.has(id))
+    const textures = await Promise.all(
+      wanted.map(async (id) => {
+        const url = resolveAssetOrNull(id)
+        return url === null ? null : await Assets.load<Texture>(url)
+      }),
+    )
+    wanted.forEach((id, i) => npcTextures.set(id, textures[i] ?? null))
+  }
 
   async function loadRoleTextures(): Promise<void> {
     if (roleTextures.size > 0) return
@@ -173,6 +198,11 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
         piece.sprite.visible = true
       })
     }
+    // NPC 用的是 `-firstTile*8` 而不是 `offset`，两者今天恒等；见
+    // `npcLayerOffset`。恒等的量照样每帧设一次，是为了它哪天不恒等时不必回来
+    // 改这里 —— 那种偏移在画面上跟"画错了一个精灵"分不开。
+    const npcOffset = npcLayerOffset(viewport)
+    npcLayer.position.set(npcOffset.x, npcOffset.y)
     if (computeDrawOrder(world) === 'npcs-first') {
       camera.setChildIndex(npcLayer, 0)
       camera.setChildIndex(heroSprite, 1)
@@ -180,6 +210,56 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       camera.setChildIndex(heroSprite, 0)
       camera.setChildIndex(npcLayer, 1)
     }
+  }
+
+  function showWorld(world: World): void {
+    place(world)
+    drawNpcs(world)
+    // 纹理还没到（首帧、或者场景正在切）就先不画，别画成一个白方块。
+    if (roleTextures.size === 0) return
+    const sprite = roleSprite(world.role)
+    const texture = roleTextures.get(sprite.asset)
+    if (!texture) {
+      // 下标算错了。静默不画会表现为"主角偶尔消失"，那是查不出来的。
+      throw new Error(`主角没有 ${sprite.asset} 这一帧（dir=${world.role.dir}）。`)
+    }
+    heroSprite.texture = texture
+    heroSprite.position.set(sprite.x, sprite.y)
+    heroSprite.setSize(sprite.width, sprite.height)
+    heroSprite.visible = true
+  }
+
+  /**
+   * NPC 这一帧：换纹理、摆位置。
+   *
+   * 精灵数与 `world.npcs` 对不上是硬失败：那意味着 `showWorld` 拿到的是**另一个
+   * 场景**的世界，而画面上的表现是少画或多画一个 NPC —— 恰好是最不容易看出来的
+   * 那种错。不设尺寸，按纹理的原尺寸画（见 `npcSprite.ts`）。
+   */
+  function drawNpcs(world: World): void {
+    if (npcSprites.length !== world.npcs.length) {
+      throw new Error(
+        `这一帧有 ${world.npcs.length} 个 NPC，而渲染器建了 ${npcSprites.length} 个精灵；` +
+          `showScene 与 showWorld 拿到的不是同一个场景。`,
+      )
+    }
+    world.npcs.forEach((npc, i) => {
+      const sprite = npcSprites[i]!
+      const placement = npcSprite(npc)
+      const texture = npcTextures.get(placement.asset)
+      if (texture === undefined) {
+        // 载入时漏了这个 ID。静默不画就是"这个 NPC 偶尔不见了"。
+        throw new Error(`NPC ${npc.name} 要 ${placement.asset}，但这个场景没载入它。`)
+      }
+      // 已知缺失的素材：原版在这里也什么都没画（xl-1dv.1）。
+      if (texture === null) {
+        sprite.visible = false
+        return
+      }
+      sprite.texture = texture
+      sprite.position.set(placement.x, placement.y)
+      sprite.visible = true
+    })
   }
 
   return {
@@ -205,26 +285,26 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       // 保住了解码结果，池子保住了精灵。
       mapTexture = texture
       for (const piece of mapPieces) piece.texture.source = texture.source
-      // 第一帧还没来，先按这个场景的初始世界把镜头摆好。不摆的话换场景那一瞬
-      // 会闪一下上一张地图的镜头位置（两张地图尺寸不同时尤其明显）。
-      place(createWorld(scene))
+
+      // 这个场景的 NPC：先把素材载齐，再按条数重建精灵。**重建而不是复用**，
+      // 因为上一个场景的 NPC 条数与这个场景无关，留着多出来的那几个就会在
+      // 新场景里画出上一张地图的人。
+      const world = createWorld(scene)
+      await loadNpcTextures(world.npcs)
+      for (const child of npcLayer.removeChildren()) child.destroy({ texture: false })
+      npcSprites = world.npcs.map(() => {
+        const sprite = new Sprite()
+        sprite.visible = false
+        npcLayer.addChild(sprite)
+        return sprite
+      })
+
+      // 第一帧还没来，先按这个场景的初始世界把镜头与人物摆好。不摆的话换场景
+      // 那一瞬会闪一下上一张地图的镜头位置（两张地图尺寸不同时尤其明显）。
+      showWorld(world)
     },
 
-    showWorld(world: World): void {
-      place(world)
-      // 纹理还没到（首帧、或者场景正在切）就先不画，别画成一个白方块。
-      if (roleTextures.size === 0) return
-      const sprite = roleSprite(world.role)
-      const texture = roleTextures.get(sprite.asset)
-      if (!texture) {
-        // 下标算错了。静默不画会表现为"主角偶尔消失"，那是查不出来的。
-        throw new Error(`主角没有 ${sprite.asset} 这一帧（dir=${world.role.dir}）。`)
-      }
-      heroSprite.texture = texture
-      heroSprite.position.set(sprite.x, sprite.y)
-      heroSprite.setSize(sprite.width, sprite.height)
-      heroSprite.visible = true
-    },
+    showWorld,
 
     destroy(): void {
       app.destroy({ removeView: true }, { children: true })

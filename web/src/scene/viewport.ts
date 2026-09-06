@@ -1,6 +1,6 @@
 import { roleTileX, roleTileY } from '../state/role'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
-import type { World } from '../state/types'
+import type { CollisionMap, RoleState, TilePos } from '../state/types'
 
 /**
  * 视口层：从世界状态算出"镜头在哪"与"谁先画"。
@@ -36,6 +36,20 @@ export interface SceneViewport {
 
 /** 主角与 NPC 谁先画。原版 `ScenePanel.paint()` 里那个局部变量 `b`。 */
 export type DrawOrder = 'npcs-first' | 'hero-first'
+
+/**
+ * 这两个纯函数要的全部：镜头看地图尺寸与主角像素坐标，绘制顺序看主角与 NPC
+ * 的格子坐标。
+ *
+ * **收的不是整个 `World`**，而且 `npcs` 只按 `TilePos` 读 —— 于是用例可以拿
+ * 两三个坐标搭出一个场面来钉那条全局翻转，不必伪造一整套 NPC 状态（伪造出来
+ * 的那套多半还是错的）。`World` 本身是它的子类型，调用方照传不误。
+ */
+export interface ViewportInput {
+  readonly collision: CollisionMap
+  readonly role: RoleState
+  readonly npcs: readonly TilePos[]
+}
 
 /** 碰撞格的边长。原版 `Map.CS = 32`。 */
 const TILE_PX = 32
@@ -73,7 +87,7 @@ function intDiv(a: number, b: number): number {
  * 注意夹取用的是 `Role.getRealX()`（像素），不是格子坐标：镜头是逐 8 px 跟的，
  * 按格子跟会一格一跳。
  */
-export function computeViewport(world: World): SceneViewport {
+export function computeViewport(world: ViewportInput): SceneViewport {
   const { col, row } = world.collision
   const mapWidth = col * TILE_PX
   const mapHeight = row * TILE_PX
@@ -117,13 +131,39 @@ export function computeViewport(world: World): SceneViewport {
  * 绘制顺序这回事，trace 里记的是 `null`。旁白是 xl-9bd.11，这里不假装知道；
  * 调用方在旁白期间根本不该问这个函数。
  */
-export function computeDrawOrder(world: World): DrawOrder {
+export function computeDrawOrder(world: ViewportInput): DrawOrder {
   const rx = roleTileX(world.role)
   const ry = roleTileY(world.role)
   for (const npc of world.npcs) {
     if (ry > npc.y && rx - 2 <= npc.x && rx + 1 >= npc.x) return 'npcs-first'
   }
   return 'hero-first'
+}
+
+/**
+ * NPC 层相对 `camera` 的偏移。
+ *
+ * 原版画主角和画 NPC 用的**不是同一个量**：主角是 `offsetX/offsetY`
+ * （`Role.drawHero`），NPC 是 `-firstTileX*8 / -firstTileY*8`
+ * （`NPC.drawNPC`）。后者是前者除以 8 再截断再乘回 8，两者只在
+ * `offsetX` 不是 8 的倍数时才分家。
+ *
+ * 今天分不开：`offsetX = 512 - role.px`，而 `role.px` 每次挪 8 或 16，
+ * 夹取用的两个界是 0 与 `1024 - col*32`，都是 8 的倍数。
+ * `viewport.test.ts` 现场扫三份真值确认这一点。
+ *
+ * 那为什么还要有这个函数：**因为分不开是一个可以变的事实**，而它变了的样子是
+ * 所有 NPC 整体偏几个像素 —— 跟"画错了一个精灵"长得一模一样，肉眼分不出。
+ * 照抄原文，这条差异就永远不会出现。
+ */
+export function npcLayerOffset(viewport: SceneViewport): {
+  readonly x: number
+  readonly y: number
+} {
+  return {
+    x: -viewport.firstTileX * MAP_UNIT - viewport.offsetX,
+    y: -viewport.firstTileY * MAP_UNIT - viewport.offsetY,
+  }
 }
 
 /**

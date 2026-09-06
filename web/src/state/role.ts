@@ -1,3 +1,4 @@
+import { startTimer } from './timer'
 import type { CollisionMap, Direction, RoleState, TilePos, TimerState } from './types'
 
 /** 一个瓦片的边长。原版 `scene.Map.CS = 32`。 */
@@ -250,34 +251,12 @@ export function pressDirection(d: RoleDraft, dir: Direction, now: number): void 
     if (!d.run.running && !d.walk.running) {
       d.walk.running = false
       d.event = dir
-      startTimer(d.run, now)
+      startTimer(d.run, now, ROLE_TIMER_MS)
     }
   } else {
     if (!d.walk.running && !d.run.running) {
       d.event = dir
-      startTimer(d.walk, now)
+      startTimer(d.walk, now, ROLE_TIMER_MS)
     }
   }
-}
-
-/** `Timer.start()`：**对已经在跑的定时器是空操作**，到期时刻不变。 */
-function startTimer(t: { running: boolean; dueMs: number }, now: number): void {
-  if (t.running) return
-  t.running = true
-  t.dueMs = now + ROLE_TIMER_MS
-}
-
-/**
- * 到期就触发；返回是否触发过。先推进 `dueMs` 再执行，因为监听器里可能把自己
- * 停掉（`snapWalk`），顺序反了会把它刚设好的状态覆盖回去。
- */
-export function fireIfDue(
-  t: { running: boolean; dueMs: number },
-  now: number,
-  run: () => void,
-): boolean {
-  if (!t.running || now < t.dueMs) return false
-  t.dueMs += ROLE_TIMER_MS
-  run()
-  return true
 }

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
 import { createRole, isAllow, roleMoving, roleTileX, roleTileY } from './role'
-import { TICK_MS, collisionOf, npcTilesOf, step } from './step'
+import { TICK_MS, collisionOf, createWorld, npcTilesOf, step } from './step'
 import type { InputEvent, World } from './types'
 
 /**
@@ -16,12 +16,9 @@ import type { InputEvent, World } from './types'
 const scene = getScene('宿舍')
 
 function worldAt(tileX: number, tileY: number): World {
-  return {
-    timeMs: 0,
-    collision: collisionOf(scene),
-    npcs: npcTilesOf(scene),
-    role: createRole(tileX, tileY),
-  }
+  // NPC 照 `createWorld` 建（它们自己会动，见 state/npc.ts），只把主角挪到
+  // 要试的那一格。
+  return { ...createWorld(scene), role: createRole(tileX, tileY) }
 }
 
 /** 按住某个方向键跑 `ticks` 个 tick，中途不松手。 */

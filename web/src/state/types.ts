@@ -8,6 +8,8 @@
  * 彻底无关了（见 `loop.ts`）。
  */
 
+import type { NpcState } from './npc'
+
 /** 主角朝向。原版是 `Role.DOWN/UP/LEFT/RIGHT` = 0/8/16/24。 */
 export type Direction = 'down' | 'up' | 'left' | 'right'
 
@@ -106,13 +108,15 @@ export interface RoleState {
  * 它已经加上了 `dtMs`。所以 `step()` 返回的世界就是 trace 里 `vt == 入参
  * 的 timeMs` 那一行的快照。
  *
- * `npcs` 只用于碰撞（`RoleEvent.isAllow` 里那条 `y == npc.y + 1`）。NPC 自己
- * 怎么动是 xl-9bd.9，在那之前由调用方喂进来：回放真值时喂 trace 里的 NPC
- * 坐标，跑起来时喂脚本里的初始坐标。
+ * `npcs` 参与两件事：碰撞（`RoleEvent.isAllow` 里那条 `y == npc.y + 1`）与
+ * 绘制顺序（`ScenePanel.paint` 里那个全局翻转）。它们**自己会动** —— 四种运动
+ * 状态与"主角走近就停下"都在 `state/npc.ts` 里，由 `step()` 逐 tick 推进
+ * （xl-9bd.9）。`NpcState` 带着派生的格子坐标 `x`/`y`，所以它同时是一个
+ * `TilePos`，上面那两处照读不误。
  */
 export interface World {
   readonly timeMs: number
   readonly collision: CollisionMap
-  readonly npcs: readonly TilePos[]
+  readonly npcs: readonly NpcState[]
   readonly role: RoleState
 }
