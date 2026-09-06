@@ -140,34 +140,46 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   committed, and any diff in `out/` is a signal. Do not hand-write expected
   values for the state or viewport layers; read them out of a trace.
 
-## Workspace layout (Gas Town)
+## Workspace layout
 
-This project is a **Gas Town rig**. There are two working copies of this repo
-on disk and they are not interchangeable:
+One working copy, one beads DB, no long-running services:
 
-    ~/gt/xianlin/                    the rig — authoritative for issues
-      ├── .repo.git/                 self-contained shared bare repo
-      ├── mayor/rig/                 coordinator's clone; holds the ONE beads DB
-      ├── refinery/rig/              worktree used by the merge queue
-      ├── crew/<you>/                your workspace (gt crew add)
-      └── polecats/                  worker agents
+    ~/code/TheLegendOfXianLinSoftware/   the only working copy
+      └── .beads/embeddeddolt/xl/        the beads DB (embedded Dolt)
 
-    ~/code/TheLegendOfXianLinSoftware   original clone — code only, no beads
+Run `bd` from anywhere inside it.
 
-Run `bd` from anywhere inside `~/gt/xianlin`. Running it in the original clone
-fails loudly on purpose — see `docs/agents/issue-tracker.md`.
+**Gas Town was tried and dropped (2026-09-06).** The rig at `~/gt/xianlin` is
+stopped and is no longer authoritative for anything. Its services are down and
+its Dolt server is off, so `bd` under `~/gt` now fails with `connection
+refused` instead of answering from a stale database. `~/gt` is kept on disk for
+now, but nothing reads it. Three things learned the hard way, worth knowing
+before anyone revives it:
 
-The rig's `.repo.git` used to borrow git objects from the original clone via
-`objects/info/alternates`. That link was removed and the bare repo repacked, so
-the rig no longer breaks if the original clone is moved or deleted (verified by
-renaming it away and re-reading HEAD and a blob).
+- **`gt doctor --fix` corrupts the beads config.** It appends empty `prefix:`
+  and `issue-prefix:` values to `.beads/config.yaml` and rewrites
+  `metadata.json` to point at a different database, turning `bd count` into
+  `Total: 0`. It also ignores the check name you pass it and always fixes
+  everything. See `bd memories gt-doctor`.
+- **gt 1.1.0 cannot read a beads 1.2.2 database at all.** Its `ready_issues`
+  view still queries `depends_on_id`, a column beads split into
+  `depends_on_issue_id` / `_wisp_id` / `_external`. Fixed on gt's `main`
+  (`HEAD-649b832`), not in the released 1.1.0.
+- **Every gt-spawned agent blocks on Claude Code's trust-folder dialog**, and
+  gt spins forever waiting rather than reporting it.
+
+**A silent-failure warning that outlived the rig:** `bd` in a repo whose
+embedded DB is empty answers `0` — it does not error. Any check that reads
+"no issues found" as success cannot distinguish an empty database from a
+healthy one. The previous version of this section claimed running `bd` in this
+clone "fails loudly on purpose"; that was measured to be false.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live in **beads** (`bd`, prefix `xl`) inside the rig, not GitHub Issues —
-the GitHub remote hosts code only. See `docs/agents/issue-tracker.md`.
+Issues live in **beads** (`bd`, prefix `xl`) in this repo's `.beads/`, not
+GitHub Issues — the GitHub remote hosts code only. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

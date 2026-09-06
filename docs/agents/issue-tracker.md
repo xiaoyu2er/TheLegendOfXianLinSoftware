@@ -1,31 +1,38 @@
-# Issue tracker: beads (bd), inside a Gas Town rig
+# Issue tracker: beads (bd)
 
 Issues for this repo live in **beads**, not GitHub Issues. The GitHub remote
 (`xiaoyu2er/TheLegendOfXianLinSoftware`) hosts the code only.
 
-Issue prefix: `xl`. Child issues get hierarchical IDs (`xl-tkx` → `xl-tkx.1`).
+Issue prefix: `xl`. Child issues get hierarchical IDs (`xl-tkx` -> `xl-tkx.1`).
 
 ## Where the database actually is
 
-**The rig is the single authoritative beads database.** There is exactly one:
+One database, in this working copy, embedded — nothing to start:
 
-    ~/gt/xianlin/mayor/rig/.beads/          ← the real database
-    ~/gt/xianlin/.beads/redirect            → points at the line above
+    ~/code/TheLegendOfXianLinSoftware/.beads/embeddeddolt/xl/
 
-The original working copy at `~/code/TheLegendOfXianLinSoftware` **no longer has
-a usable beads database** — it was archived to `.beads/embeddeddolt.archived-*`
-on purpose. Running any `bd` command there now fails loudly:
+Run `bd` from anywhere inside the repo.
 
-    Error: no beads database found
+**This replaced a Gas Town rig on 2026-09-06.** The rig at `~/gt/xianlin` held
+the authoritative database until then; it is stopped, its Dolt server is off,
+and `bd` under `~/gt` now fails with `connection refused`. `~/gt` is still on
+disk but nothing reads it. The 55 issues were carried across by copying the
+Dolt database directory, then verified by count and by spot-check, not by
+re-import.
 
-That is the intended behaviour. Both copies share the same tracked
-`.beads/config.yaml`, so both would have pushed to the same `sync.remote`;
-two live databases behind one remote is a silent-divergence trap. A loud
-failure beats a quiet fork.
+## The failure mode this file used to get wrong
 
-To resurrect the old database (only for archaeology): the archived directory is
-still there, and `.beads/issues.jsonl` is a committed snapshot that
-`bd import` can restore into a fresh database.
+An earlier version of this section claimed that running `bd` in this clone
+"fails loudly" with `Error: no beads database found`. **That was measured to be
+false on 2026-09-06.** With an empty embedded database, `bd count` answers:
+
+    0
+
+No error, exit code 0. This is the project's signature hazard in its purest
+form: an empty database and a healthy one are indistinguishable to any check
+whose pass condition is "found no problems". Whenever you verify beads state,
+assert a *number you knew before you started* — `bd count` equals the expected
+total — never merely that the command succeeded.
 
 Run `bd prime` for bd's own full workflow reference.
 
