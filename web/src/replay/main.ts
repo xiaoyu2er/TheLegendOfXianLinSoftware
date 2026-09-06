@@ -1,4 +1,4 @@
-import { getScene } from '../data/scenes'
+import { loadScene } from '../data/scenes'
 import { createSceneRenderer } from '../scene/sceneRenderer'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { createWorld, npcTilesOf, step } from '../state/step'
@@ -47,7 +47,7 @@ const api: ReplayApi = {
   async load(traceJson: string) {
     const parsed = JSON.parse(traceJson) as ReplayTrace
     const sceneName = parsed.script.scene.replace(/\.txt$/, '')
-    const scene = getScene(sceneName)
+    const scene = await loadScene(sceneName)
     if (!renderer) {
       const host = document.getElementById('host')
       if (!host) throw new Error('取图页没有 #host')

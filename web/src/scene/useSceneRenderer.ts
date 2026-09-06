@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { RefObject } from 'react'
-import { getScene } from '../data/scenes'
+import { loadScene } from '../data/scenes'
 import { createSceneRenderer } from './sceneRenderer'
 import type { SceneRenderer } from './sceneRenderer'
 
@@ -68,14 +68,18 @@ export function useSceneRenderer(
     if (!renderer) return
     let disposed = false
     setStatus({ kind: 'loading' })
-    renderer.showScene(getScene(sceneName)).then(
-      () => {
-        if (!disposed) setStatus({ kind: 'ready' })
-      },
-      (error: unknown) => {
-        if (!disposed) setStatus({ kind: 'failed', message: describe(error) })
-      },
-    )
+    // 取场景本身也是异步的（按需加载，见 `data/scenes.ts`）：它和贴图一样
+    // 属于"载入"，失败也一样要显示在舞台上，所以接在同一条链上。
+    loadScene(sceneName)
+      .then((scene) => renderer.showScene(scene))
+      .then(
+        () => {
+          if (!disposed) setStatus({ kind: 'ready' })
+        },
+        (error: unknown) => {
+          if (!disposed) setStatus({ kind: 'failed', message: describe(error) })
+        },
+      )
     return () => {
       disposed = true
     }

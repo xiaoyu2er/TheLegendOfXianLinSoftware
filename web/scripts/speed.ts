@@ -1,4 +1,4 @@
-import { getScene } from '../src/data/scenes'
+import { getScene } from '../src/data/scenesEager'
 import { advance, createTicker } from '../src/state/loop'
 import { createWorld } from '../src/state/step'
 import type { InputEvent } from '../src/state/types'

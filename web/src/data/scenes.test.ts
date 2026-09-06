@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import { bakeScript } from './bakeScript'
-import { SCENE_NAMES, START_SCENE, getScene } from './scenes'
+import { SCENE_NAMES, START_SCENE } from './scenes'
+import { getScene } from './scenesEager'
 
 /**
  * 入库的烘焙产物有没有陈旧 —— 现场重烘一遍源脚本来判定。

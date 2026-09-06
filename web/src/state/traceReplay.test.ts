@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SCENE_NAMES, getScene } from '../data/scenes'
+import { SCENE_NAMES } from '../data/scenes'
+import { getScene } from '../data/scenesEager'
 import { createWorld, npcTilesOf, step } from './step'
 import { roleMoving, roleTileX, roleTileY } from './role'
 import { TRACE_NAMES, readTrace, sceneNameOf } from './trace'

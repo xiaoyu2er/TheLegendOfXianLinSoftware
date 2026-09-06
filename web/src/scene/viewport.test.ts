@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SCENE_NAMES, getScene } from '../data/scenes'
+import { SCENE_NAMES } from '../data/scenes'
+import { getScene } from '../data/scenesEager'
 import { createWorld } from '../state/step'
 import { TRACE_NAMES, readTrace, sceneNameOf } from '../state/trace'
 import type { TraceTick } from '../state/trace'
