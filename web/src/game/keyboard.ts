@@ -23,6 +23,26 @@ const ARROWS: Readonly<Record<string, string>> = {
 }
 
 /**
+ * 方向键之外认下来的键。
+ *
+ * `space` 是原版的：搭话、推进对话、翻页都走它（`ScenePanel.keyPressed` 里
+ * `KeyEvent.VK_SPACE` 那几条分支），trace 里也是这个名字，所以状态层收到的
+ * 键名与真值逐字一致。
+ *
+ * `skip` **不是**原版的 —— 原版没有跳过逐字打印这回事。这一票的验收标准要求
+ * 有，所以它挂在回车上，而**不是**挂在空格上。理由是可证伪性：真值里的空格
+ * 永远只在整句打完或整屏打满之后才按下，往空格上加一条"打印中就跳过"的分支，
+ * 逐 tick 比对一次都踩不到，那条分支会成为状态层唯一没有真值管着的行为，
+ * 而它改的恰恰是别人都在对齐的那个游标。详见 `state/dialogue.ts` 的
+ * `skipPrinting`。
+ */
+const KEYS: Readonly<Record<string, string>> = {
+  ' ': 'space',
+  Spacebar: 'space',
+  Enter: 'skip',
+}
+
+/**
  * 跑步键。
  *
  * 原版用的是控制键（`ScenePanel.keyPressed` 的 `isControl`）。**在 macOS 上
@@ -36,7 +56,16 @@ function isRunModifier(raw: RawKey): boolean {
 
 /** 认不出来的键返回 `null`——调用方据此决定要不要 `preventDefault`。 */
 export function toInputEvent(raw: RawKey): InputEvent | null {
-  const k = ARROWS[raw.key]
-  if (k === undefined || !isArrowKey(k)) return null
-  return raw.type === 'keydown' ? { e: 'press', k, ctrl: isRunModifier(raw) } : { e: 'release', k }
+  const arrow = ARROWS[raw.key]
+  if (arrow !== undefined && isArrowKey(arrow)) {
+    return raw.type === 'keydown'
+      ? { e: 'press', k: arrow, ctrl: isRunModifier(raw) }
+      : { e: 'release', k: arrow }
+  }
+  const key = KEYS[raw.key]
+  if (key === undefined) return null
+  // 松开非方向键状态层一概不理（`ScenePanel.keyReleased` 的 switch 里只有四个
+  // 方向键），但仍然认下来 —— 调用方要靠返回值决定 preventDefault，
+  // 不认就会让空格把页面滚下去。
+  return raw.type === 'keydown' ? { e: 'press', k: key, ctrl: isRunModifier(raw) } : { e: 'release', k: key }
 }

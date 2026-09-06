@@ -54,6 +54,28 @@ export function npcAssetId(imageName: string): AssetId {
   return `npc:${normalizePath(imageName)}`
 }
 
+/**
+ * 对话框的一张头像。
+ *
+ * 入参是 `Dialogue.heads` 这个 `ArrayList` 的**下标**（脚本数据里 `0/59/正文`
+ * 的那个 `59`），不是文件编号：原版的构造函数是
+ * `for (int i = 1; i <= 91; i++) heads.add(read("heads/heads (" + i + ").png"))`，
+ * 于是下标 59 对应文件 `heads (60).png`。这个差 1 跟主角跑步图那处是同一个
+ * 套路（见 `roleAssetId`）——留在烘焙器里，渲染层就永远不必知道它。
+ */
+export function headAssetId(index: number): AssetId {
+  return `head:${index}`
+}
+
+/**
+ * 对话框自己的几张固定图（`Dialogue` 的构造函数一次性读的那四张）。
+ * `name` 是这里定义的逻辑名，不是文件名 —— 文件名里有中文和 `36-18` 这种
+ * 编号，都不该漏进渲染层。映射见 `scripts/bake.ts` 的 `DIALOGUE_IMAGES`。
+ */
+export function dialogueAssetId(name: 'box' | 'name' | 'icon0' | 'icon1'): AssetId {
+  return `dialogue:${name}`
+}
+
 /** `舒缓.mp3` → `bgm:舒缓`。BGM 的转码与播放在 xl-9bd.12。 */
 export function bgmAssetId(musicName: string): AssetId {
   return `bgm:${stem(basename(musicName))}`

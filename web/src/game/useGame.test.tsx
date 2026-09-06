@@ -2,6 +2,7 @@ import { renderHook } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadScene } from '../data/scenes'
+import { getScene } from '../data/scenesEager'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { roleTileX } from '../state/role'
 import type { RoleState, World } from '../state/types'
@@ -78,6 +79,34 @@ describe('useGame 接线', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(seen.at(-1)!.px).toBe(12 * 32)
+  })
+
+  /**
+   * 对话状态要真的走到 React 手里 —— 对话框是真 DOM，接不上的表现是"游戏在
+   * 动、对话框永远不出现"，而状态层与组件各自的测试都还是绿的。
+   *
+   * 用 `脚本4`：它的 `Dialogue` 段触发码是 `-1`，也就是**进场自动播**
+   * （`DialogueEvent.checkAutoDialogue`），不用先把主角走到谁跟前。
+   */
+  it('自动对话会走到 React 手里，空格能把它推下去', async () => {
+    const scene = getScene('脚本4')
+    const sentences = scene.dialogue![0]!
+    const { result } = await mount('脚本4')
+
+    // 弹出动画 + 逐字打印。多给一点时间，判据是"这一句打完了"而不是某个 tick 数。
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(result.current?.speaking).toBe(true)
+    expect(result.current?.sentence).toBe(sentences[0]![2])
+    expect(result.current?.sentenceOver).toBe(true)
+
+    // 空格推进到下一句。键名与 trace 里逐字一致（见 keyboard.ts）。
+    press(' ')
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(result.current?.sentence).toBe(sentences[1]![2])
   })
 
   it('卸载之后不再推进，也不再收键', async () => {

@@ -27,9 +27,15 @@ export interface Expectation {
 export const EXPECTED: Readonly<Record<string, Expectation>> = {
   'dorm-walk': {
     status: 'gap',
-    // 地图底图已逐像素对齐（xl-9bd.16），NPC 已实现并逐 tick 对齐（xl-9bd.9）。
-    // 剩下的偏离全部是原版画了、这边还没画的东西。
-    why: '宿舍的宝箱 + 走到萧逸才跟前的对话框',
+    // 地图底图已逐像素对齐（xl-9bd.16），NPC 已实现并逐 tick 对齐（xl-9bd.9），
+    // 对话框已实现（xl-9bd.10）。
+    //
+    // 对话框接进来之后最差帧从 12.73% 降到 1.01%（实测 --every 100），剩下的
+    // 那一块**只有正文的字形**：差异图上对话框的边框、名字牌与头像整个是暗的
+    // （= 逐像素相同），亮起来的只有字。原因是原版用的 `文鼎粗钢笔行楷` 绝大
+    // 多数机器上没有，Java2D 的基线与 DOM 的行盒也不是一回事 —— 这一条不是
+    // 待补的功能，是一笔要么换字体、要么接受的账。
+    why: '右下角的金币 HUD + 对话正文的字形（字体不在，基线也不同）',
     issue: 'xl-yg6.1 / xl-9bd.10',
   },
   'bigmap-walk': {
@@ -41,8 +47,15 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
   },
   'dorm-intro': {
     status: 'gap',
-    why: '旁白与主线对话框',
-    issue: 'xl-9bd.10 / xl-9bd.11',
+    // 旁白（xl-9bd.11）还没画，而这条剧本前 810 个 tick 全是旁白 —— 原版那几帧
+    // 是一张铺满屏幕的动画背景，Web 侧画的还是场景，最差帧 99.97%。
+    //
+    // 对话那一段（xl-9bd.10）已经接上了，而且有一个可核的证据：采样到的 42 帧里
+    // **有一帧完全没偏**（#2600），那一帧正是"头像式对话框已经弹出、头像正在
+    // 滑入、但一个字都还没打"（真值：type=0 head=90 printing=false）。也就是说
+    // 对话框的边框、头像与它们的滑入动画是逐像素对上的，偏的只有字形。
+    why: '旁白（占前 810 个 tick）+ 对话正文的字形',
+    issue: 'xl-9bd.11 / xl-9bd.10',
   },
 }
 

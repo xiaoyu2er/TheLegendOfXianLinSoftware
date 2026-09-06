@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { loadScene } from '../data/scenes'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { advance, createTicker } from '../state/loop'
 import type { Ticker } from '../state/loop'
 import { TICK_MS, createWorld } from '../state/step'
-import type { InputEvent } from '../state/types'
+import type { DialogueState } from '../state/dialogue'
+import type { InputEvent, World } from '../state/types'
 import { toInputEvent } from './keyboard'
 
 /**
@@ -24,10 +25,20 @@ import { toInputEvent } from './keyboard'
  *
  * 画面另说：Pixi 有自己的渲染循环，后台不可见时它自然不画。这正是"状态推进
  * 与渲染解耦"的意义——不画不等于不动。
+ *
+ * ## 为什么要把对话状态交出去
+ *
+ * 对话框是真 DOM（`ui/DialogueBox.tsx`），要由 React 画，所以它得进 React 的
+ * 状态。但**不能每个 tick 都 setState**：那是每秒 100 次重渲染，而其中绝大
+ * 多数 tick 里对话根本没开着。所以只在"画出来会不一样"时才 setState，判据是
+ * 一个从渲染层真正读到的字段算出来的签名（见 `dialogueSignature`）——
+ * 按整个 `DialogueState` 比引用是没用的，`step()` 每 tick 都返回新对象。
  */
-export function useGame(renderer: SceneRenderer | null, sceneName: string): void {
+export function useGame(renderer: SceneRenderer | null, sceneName: string): DialogueState | null {
   const tickerRef = useRef<Ticker | null>(null)
   const queueRef = useRef<InputEvent[]>([])
+  const [dialogue, setDialogue] = useState<DialogueState | null>(null)
+  const signatureRef = useRef<string | null>(null)
 
   // 换场景 = 换一个世界。主角回到脚本里的出生格。
   //
@@ -38,6 +49,8 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): void
     let disposed = false
     tickerRef.current = null
     queueRef.current = []
+    signatureRef.current = null
+    setDialogue(null)
     void loadScene(sceneName).then((scene) => {
       if (disposed) return
       tickerRef.current = createTicker(createWorld(scene))
@@ -82,8 +95,45 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): void
       const next = advance(ticker, input, elapsed)
       tickerRef.current = next
       renderer.showWorld(next.world)
+      const signature = dialogueSignature(next.world)
+      if (signature !== signatureRef.current) {
+        signatureRef.current = signature
+        setDialogue(next.world.dialogue)
+      }
     }
     const id = window.setInterval(pump, TICK_MS)
     return () => window.clearInterval(id)
   }, [renderer])
+
+  return dialogue
+}
+
+/**
+ * "画出来会不会不一样"的签名。
+ *
+ * 只包含 `DialogueBox` 真正读到的字段：开没开、什么样式、哪张头像、名字、
+ * 三个滑入动画的位置、闪烁帧、以及这一屏的字符网格。整句 `sentence` 也算上
+ * ——读屏用的那一行整句读它。
+ *
+ * **不能只拿 `cursor` 代替字符网格**：翻页会把网格清空而 `cursor` 照涨，
+ * 两屏之间会有一帧签名相同、画面却该换的时刻。
+ */
+function dialogueSignature(world: World): string {
+  const d = world.dialogue
+  if (!d.speaking && !d.oral) return ''
+  return [
+    d.type,
+    d.headNo,
+    d.name,
+    d.sentence,
+    d.boxX,
+    d.boxY,
+    d.headX,
+    d.nameX,
+    d.iconFrame,
+    d.printing,
+    d.sentenceOver,
+    d.pageOver,
+    d.text.map((row) => row.map((c) => c ?? ' ').join('')).join('|'),
+  ].join('\u0000')
 }

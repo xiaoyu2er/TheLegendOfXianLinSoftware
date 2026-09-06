@@ -1,4 +1,10 @@
+import { createElement } from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
+import type { Root } from 'react-dom/client'
 import { loadScene } from '../data/scenes'
+import { DialogueBox } from '../ui/DialogueBox'
+import '../index.css'
 import { createSceneRenderer } from '../scene/sceneRenderer'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { createWorld, step } from '../state/step'
@@ -13,6 +19,10 @@ import type { InputEvent, World } from '../state/types'
  *
  * 为什么回放的是按键而不是坐标：坐标是结论，按键是输入。喂坐标等于把两端
  * 的分歧提前抹平，比出来的图会一直一致，而游戏是错的。
+ *
+ * **画一帧包含对话框**（xl-9bd.10）。对话框是真 DOM，不在 Pixi 的画布上，
+ * 所以这里也得把那一层叠上去 —— 少了它，跨端比对量到的是"Web 侧整个没画
+ * 对话框"，那会把这一票的真实缺口（字体与基线对不到逐像素）盖掉。
  */
 
 interface ReplayTick {
@@ -48,6 +58,7 @@ export interface ReplayApi {
 }
 
 let renderer: SceneRenderer | null = null
+let overlay: Root | null = null
 let trace: ReplayTrace | null = null
 let world: World | null = null
 let next = 0
@@ -62,11 +73,17 @@ const api: ReplayApi = {
       if (!host) throw new Error('取图页没有 #host')
       renderer = await createSceneRenderer(host)
     }
+    if (!overlay) {
+      const host = document.getElementById('overlay')
+      if (!host) throw new Error('取图页没有 #overlay')
+      overlay = createRoot(host)
+    }
     await renderer.showScene(scene)
     trace = parsed
     world = createWorld(scene, parsed.script.isScript)
     next = 0
     renderer.showWorld(world)
+    drawOverlay(world)
     return { scene: sceneName, tickCount: parsed.tickCount }
   },
 
@@ -83,9 +100,25 @@ const api: ReplayApi = {
       world = step(world, tick.input, trace.script.tickMs, { narratage: tick.narratage.active })
     }
     renderer.showWorld(breakRender(world, t))
+    drawOverlay(world)
     await twoFrames()
     return { t, timeMs: world.timeMs, x: world.role.px >> 5, y: world.role.py >> 5 }
   },
+}
+
+/**
+ * 把 DOM 那一层（今天只有对话框）画成这一帧的样子。
+ *
+ * `flushSync` 是必须的：React 18 起 `root.render` 是异步的，而截图只等两次
+ * rAF。不同步刷新的话，对话框会**永远晚一帧**，而画面看起来完全正常 ——
+ * 正是 `twoFrames` 那段注释说的那类错。
+ */
+function drawOverlay(world: World): void {
+  if (!overlay) return
+  const root = overlay
+  flushSync(() => {
+    root.render(createElement(DialogueBox, { dialogue: world.dialogue }))
+  })
 }
 
 /**

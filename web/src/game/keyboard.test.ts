@@ -35,8 +35,22 @@ describe('键盘映射', () => {
     }
   })
 
-  it('别的键一概返回 null（空格、Esc 属于别的票）', () => {
-    for (const key of [' ', 'Escape', 'a', 'Enter', 'Tab']) {
+  it('空格认成 space —— 与 trace 里的键名逐字一致', () => {
+    expect(toInputEvent({ type: 'keydown', key: ' ', ctrlKey: false, shiftKey: false })).toEqual({
+      e: 'press',
+      k: 'space',
+      ctrl: false,
+    })
+  })
+
+  it('回车认成 skip（跳过逐字打印，原版没有这个键，见 keyboard.ts）', () => {
+    expect(toInputEvent({ type: 'keydown', key: 'Enter', ctrlKey: false, shiftKey: false })).toEqual(
+      { e: 'press', k: 'skip', ctrl: false },
+    )
+  })
+
+  it('别的键一概返回 null（Esc 进菜单属于别的票）', () => {
+    for (const key of ['Escape', 'a', 'Tab']) {
       expect(toInputEvent({ type: 'keydown', key, ctrlKey: false, shiftKey: false })).toBeNull()
     }
   })

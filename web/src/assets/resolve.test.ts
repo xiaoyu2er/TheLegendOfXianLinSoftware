@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
@@ -5,6 +6,12 @@ import MISSING_IDS from '../generated/missingAssets.json'
 import { bgmAssetId, mapAssetId, npcAssetId, roleAssetId } from './ids'
 import { knownAssetIds, resolveAsset, resolveAssetOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
+import { repoPath } from '../test/repoPath'
+
+/** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
+function headFilesInRepo(): number {
+  return readdirSync(repoPath('heads')).filter((f) => /^heads \(\d+\)\.png$/.test(f)).length
+}
 
 describe('资产逻辑 ID', () => {
   it('从地图文件名推出 ID，扩展名与目录都不参与', () => {
@@ -66,7 +73,22 @@ describe('资产逻辑 ID', () => {
     expect(ids.filter((id) => id.startsWith('npc:'))).toHaveLength(
       expectedNpcIds().size - MISSING_IDS.length,
     )
-    const known = ['map:', 'role:walk:', 'role:run:', 'npc:']
+    // 头像的分母从素材源头数：`heads/heads (n).png` 有几个就该烘几个
+    // （原版 `Dialogue` 的构造函数读的是 1..91）。写死 91 的话，哪天素材
+    // 少了一张，这里会跟着烘焙器一起沉默。
+    expect(ids.filter((id) => id.startsWith('head:'))).toHaveLength(headFilesInRepo())
+    // 下标必须是连着的 0..n-1：`headAssetId` 收的是 ArrayList 的下标，
+    // 中间缺一个就会在某句对话上查不到图。
+    expect(ids.filter((id) => id.startsWith('head:')).map((id) => Number(id.slice(5))).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: headFilesInRepo() }, (_, i) => i),
+    )
+    expect(ids.filter((id) => id.startsWith('dialogue:')).sort()).toEqual([
+      'dialogue:box',
+      'dialogue:icon0',
+      'dialogue:icon1',
+      'dialogue:name',
+    ])
+    const known = ['map:', 'role:walk:', 'role:run:', 'npc:', 'head:', 'dialogue:']
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })
 
