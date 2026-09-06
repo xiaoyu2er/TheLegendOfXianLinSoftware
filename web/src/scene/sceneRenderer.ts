@@ -1,9 +1,11 @@
 import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
-import { mapAssetId, npcAssetId, roleAssetId } from '../assets/ids'
+import { mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../assets/ids'
 import type { AssetId } from '../assets/ids'
 import { resolveAsset, resolveAssetOrNull } from '../assets/resolve'
 import type { SceneScript } from '../data/types'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
+import { BG_COUNT, MAX_LINE } from '../state/narratage'
+import type { NarratageState } from '../state/narratage'
 import type { NpcState } from '../state/npc'
 import { createWorld } from '../state/step'
 import type { World } from '../state/types'
@@ -32,6 +34,20 @@ function nearest(texture: Texture): Texture {
   texture.source.scaleMode = 'nearest'
   return texture
 }
+
+/**
+ * 旁白文字的排版，四个数照抄原版 `Narratage.drawNarratage` / `init`：
+ * 字号 20 的粗体白字，左边距 50，第 `i` 行的**基线**在 `fontSize * (3 + 2i)`
+ * ——也就是 60 / 100 / 140 …，行距正好两倍字号。
+ *
+ * 字体原版写的是 `文鼎粗钢笔行楷`，那是一款没有随游戏交付的中文字体：
+ * 十三年前的机器上装了就是行楷、没装就退到 Java 的默认字体。浏览器里同样
+ * 退回后备字体，所以**字形与原版不会逐像素相同**，这是已知偏离，记在
+ * `compare/expected.ts` 的 dorm-intro 那条里。位置与颜色是准的。
+ */
+const TEXT_LEFT = 50
+const FONT_SIZE = 20
+const FONT_STACK = '"文鼎粗钢笔行楷", "STKaiti", "KaiTi", serif'
 
 export interface SceneRenderer {
   /** 切到某个场景：解析地图资产、加载、贴上去。同一张图第二次是缓存命中。 */
@@ -115,6 +131,35 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   // 原版在那几处画的是一个宽度 −1 的空壳，也就是什么都没画。
   const npcTextures = new Map<AssetId, Texture | null>()
 
+  // 旁白：一张铺满画布的背景动画 + 一层文字（xl-9bd.11）。
+  //
+  // 整层挂在最上面，**旁白进行中把地图与人物那两层整个藏掉**——原版
+  // `ScenePanel.paint()` 里主角、NPC、地图、宝箱、对话框全在
+  // `if (!narratage.isNarratage)` 里面，那些帧一个精灵都不画。藏而不是"画在
+  // 上面盖住"：背景图有黑边，盖不严的话地图会从缝里露出来。
+  const narratageLayer = new Container()
+  narratageLayer.visible = false
+  app.stage.addChild(narratageLayer)
+  const narratageBg = new Sprite()
+  narratageLayer.addChild(narratageBg)
+  // 52 帧背景，只在这个场景真的有旁白时才载（`showScene`）。
+  const narratageTextures: Texture[] = []
+
+  // 文字画在自己的一张离屏画布上，再当纹理贴上去。**不用 Pixi 的 Text**：
+  // 原版给的是基线坐标，而 `Text` 摆的是行盒的左上角，两者差一个随字体而变的
+  // ascent —— 自己画就能把 `fillText(line, 50, baseline)` 一字不差地照抄。
+  const textCanvas = document.createElement('canvas')
+  textCanvas.width = STAGE_WIDTH
+  textCanvas.height = STAGE_HEIGHT
+  const ctx2d = textCanvas.getContext('2d')
+  if (!ctx2d) throw new Error('取不到旁白文字层的 2D context')
+  const textCtx = ctx2d
+  const narratageText = new Sprite(Texture.from(textCanvas))
+  narratageLayer.addChild(narratageText)
+  // 上一次画的是哪几行。每帧重画一次要把 1024×640 的画布重新上传一遍纹理，
+  // 而这几行 50 ms 才变一次。
+  let drawnText = ''
+
   // 主角的 48 帧一次性载入。逐帧按需加载会让走动的第一圈掉帧，而这批图
   // 一共 100 KB 出头，没有按需的理由。
   const roleTextures = new Map<string, Texture>()
@@ -139,6 +184,21 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       }),
     )
     wanted.forEach((id, i) => npcTextures.set(id, textures[i] ?? null))
+  }
+
+  /**
+   * 旁白背景的 52 帧。**只在这个场景真的有旁白时才载**：96 个场景里绝大多数
+   * 没有 `Narratage` 段，替它们载 3.3 MB 图是白费。载过一次就留着——旁白只在
+   * 进场时播一次，但场景来回切是常事。
+   */
+  async function loadNarratageTextures(scene: SceneScript): Promise<void> {
+    if (scene.narratage === null || narratageTextures.length > 0) return
+    const textures = await Promise.all(
+      Array.from({ length: BG_COUNT }, (_, frame) =>
+        Assets.load<Texture>(resolveAsset(narratageBgAssetId(frame))).then(nearest),
+      ),
+    )
+    narratageTextures.push(...textures)
   }
 
   async function loadRoleTextures(): Promise<void> {
@@ -212,7 +272,51 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     }
   }
 
+  /**
+   * 旁白这一帧：`Narratage.drawNarratage` 的两句话。
+   *
+   * 背景那张 639×395 的图被拉满 1024×640（原版
+   * `drawImage(img, 0,0,1024,640, 0,0,639,395)`），文字压在它上面。
+   */
+  function drawNarratage(narratage: NarratageState): void {
+    const texture = narratageTextures[narratage.bg]
+    if (!texture) {
+      // 背景帧没载入。静默不画会表现为"旁白偶尔黑一下"，那是查不出来的。
+      throw new Error(`旁白的第 ${narratage.bg} 帧背景没载入（共 ${narratageTextures.length} 帧）。`)
+    }
+    narratageBg.texture = texture
+    narratageBg.setSize(STAGE_WIDTH, STAGE_HEIGHT)
+
+    // `null` 的行原版不画（`if (bufferedText[i] != null)`），空串也不用画。
+    const key = narratage.text.map((line) => line ?? '').join('\n')
+    if (key !== drawnText) {
+      textCtx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+      textCtx.font = `bold ${FONT_SIZE}px ${FONT_STACK}`
+      textCtx.fillStyle = '#ffffff'
+      textCtx.textBaseline = 'alphabetic'
+      for (let i = 0; i < MAX_LINE; i++) {
+        const line = narratage.text[i]
+        if (line == null) continue
+        textCtx.fillText(line, TEXT_LEFT, FONT_SIZE * (3 + 2 * i))
+      }
+      narratageText.texture.source.update()
+      drawnText = key
+    }
+  }
+
   function showWorld(world: World): void {
+    // 旁白进行中：地图与人物那两层整个不画，跟原版 `paint()` 的那个 if 一致。
+    // `narratageOver` 也要看——原版的 else 分支里还套着 `if (!narratageOver)`，
+    // 两个标志同时为真的那一帧什么都不画。
+    const showingNarratage = world.narratage.active && !world.narratage.over
+    narratageLayer.visible = showingNarratage
+    mapLayer.visible = !world.narratage.active
+    camera.visible = !world.narratage.active
+    if (world.narratage.active) {
+      if (showingNarratage) drawNarratage(world.narratage)
+      return
+    }
+
     place(world)
     drawNpcs(world)
     // 纹理还没到（首帧、或者场景正在切）就先不画，别画成一个白方块。
@@ -265,6 +369,7 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   return {
     async showScene(scene: SceneScript): Promise<void> {
       await loadRoleTextures()
+      await loadNarratageTextures(scene)
       const texture = nearest(
         await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
       )

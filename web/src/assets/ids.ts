@@ -54,6 +54,19 @@ export function npcAssetId(imageName: string): AssetId {
   return `npc:${normalizePath(imageName)}`
 }
 
+/**
+ * 旁白背景动画的一帧（xl-9bd.11）。
+ *
+ * 原版 `Narratage` 的构造函数读的是
+ * `backImages//NarratageBackImages//all_magic_21-{2..53}.png`，而 `index`
+ * 在 `0 .. 51` 之间循环。**这里的 `frame` 就是那个 `index`**，文件名从 2 起
+ * 编号的那个偏移只出现在烘焙器里（`scripts/bake.ts`），跟主角跑步图那 1 的
+ * 差是同一个处理法：渲染层永远不必知道它。
+ */
+export function narratageBgAssetId(frame: number): AssetId {
+  return `narratage:bg:${frame}`
+}
+
 /** `舒缓.mp3` → `bgm:舒缓`。BGM 的转码与播放在 xl-9bd.12。 */
 export function bgmAssetId(musicName: string): AssetId {
   return `bgm:${stem(basename(musicName))}`

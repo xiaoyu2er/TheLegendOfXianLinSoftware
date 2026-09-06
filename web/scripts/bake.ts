@@ -19,11 +19,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
-import { mapAssetId, npcAssetId, roleAssetId } from '../src/assets/ids'
+import { mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
+import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(WEB, '..')
@@ -39,6 +40,14 @@ const ROLE_SPRITES = {
   walk: { dir: 'roles/zhangxiaofan', count: 32, firstFile: 0 },
   run: { dir: 'roles/zhangxiaofanRun', count: 16, firstFile: 1 },
 } as const
+
+/**
+ * 旁白的背景动画。张数与文件编号都照抄原版 `scene.Narratage` 的构造函数：
+ * `all_magic_21-{2..53}.png`，共 52 张。**两个常量从 `state/narratage.ts`
+ * 进口**，不在这里再抄一遍 —— 抄两份，哪天改了一处就是"背景少播几帧"，
+ * 画面上跟正常的循环分不开。
+ */
+const NARRATAGE_BG_DIR = 'backImages/NarratageBackImages'
 
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
@@ -149,6 +158,21 @@ function main(): void {
     console.log(`  主角${gait === 'walk' ? '行走' : '跑步'}图 ${spec.count} 帧 → roles/${gait}/*.webp`)
   }
 
+  // 旁白的背景动画。跟主角精灵一样不在 checkSceneAssets 的覆盖范围内 ——
+  // 那一层查的是场景数据引用到的资源，而这 52 张的路径是原版 `Narratage`
+  // 的构造函数写死的，脚本里一个字都没提。
+  for (let frame = 0; frame < BG_COUNT; frame++) {
+    const source = resolve(REPO, NARRATAGE_BG_DIR, `all_magic_21-${frame + BG_FIRST_FILE}.png`)
+    if (!existsSync(source)) {
+      missing.push(`旁白背景图 ${NARRATAGE_BG_DIR}/all_magic_21-${frame + BG_FIRST_FILE}.png`)
+      continue
+    }
+    const relative = `narratage/${frame}.webp`
+    manifest[narratageBgAssetId(frame)] = relative
+    bytes += toWebp(source, resolve(ASSETS_OUT, relative))
+  }
+  console.log(`  旁白背景图 ${BG_COUNT} 帧 → narratage/*.webp`)
+
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)
     for (const m of missing) console.error(`  ${m}`)
@@ -158,7 +182,7 @@ function main(): void {
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧）→ WebP 共 ${kb(bytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 旁白背景 ${BG_COUNT} 帧）→ WebP 共 ${kb(bytes)}`,
   )
 }
 

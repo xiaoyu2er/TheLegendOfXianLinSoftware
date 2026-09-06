@@ -134,31 +134,31 @@ async function capture(
 }
 
 /**
- * 只把回放真正要用的字段送进浏览器：tick 号、那一 tick 的按键、NPC 坐标。
+ * 只把回放真正要用的字段送进浏览器：剧本头、tick 号、那一 tick 的按键。
  * 整份 trace 里对话与旁白的逐字游标占了绝大部分体积（dorm-intro 3.4 MB），
  * 而取图页一个字段都不读它们。
  */
 function slimTrace(json: string): string {
   const trace = JSON.parse(json) as {
-    script: { name: string; scene: string; tickMs: number }
+    script: { name: string; scene: string; tickMs: number; isScript: boolean }
     tickCount: number
     ticks: {
       t: number
       input: unknown[]
       dialogue: { source: string }
-      narratage: { active: boolean }
     }[]
   }
   return JSON.stringify({
     script: trace.script,
     tickCount: trace.tickCount,
-    // NPC 的坐标**不再传**（xl-9bd.9）：取图页自己推进 NPC，喂真值等于把两端的
-    // 分歧提前抹平。留下的两个字段是 `ScenePanel.step()` 第 3 步那道门的条件。
+    // NPC 的坐标（xl-9bd.9）与旁白的状态（xl-9bd.11）**都不再传**：取图页自己
+    // 推进它们，喂真值等于把两端的分歧提前抹平。剩下的 `dialogue.source` 是
+    // `ScenePanel.step()` 第 3 步那道门里还没实现的那一半（xl-9bd.10）。
+    // `script` 整个回显，取图页要从里面读 `isScript`——它决定进场放不放旁白。
     ticks: trace.ticks.map((tick) => ({
       t: tick.t,
       input: tick.input,
       dialogue: { source: tick.dialogue.source },
-      narratage: { active: tick.narratage.active },
     })),
   })
 }

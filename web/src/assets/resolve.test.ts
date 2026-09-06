@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import MISSING_IDS from '../generated/missingAssets.json'
-import { bgmAssetId, mapAssetId, npcAssetId, roleAssetId } from './ids'
+import { BG_COUNT } from '../state/narratage'
+import { bgmAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from './ids'
 import { knownAssetIds, resolveAsset, resolveAssetOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
 
@@ -66,8 +67,20 @@ describe('资产逻辑 ID', () => {
     expect(ids.filter((id) => id.startsWith('npc:'))).toHaveLength(
       expectedNpcIds().size - MISSING_IDS.length,
     )
-    const known = ['map:', 'role:walk:', 'role:run:', 'npc:']
+    // 旁白背景的分母来自 `state/narratage.ts` 的 BG_COUNT，也就是原版
+    // `Narratage` 构造函数里那个 2..53 的循环，不在这里另抄一个数字。
+    expect(ids.filter((id) => id.startsWith('narratage:bg:'))).toHaveLength(BG_COUNT)
+    const known = ['map:', 'role:walk:', 'role:run:', 'npc:', 'narratage:bg:']
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
+  })
+
+  it('旁白背景的每一帧都在映射表里', () => {
+    // 少一帧的表现是"旁白播到一半黑一下"——渲染层为此宁可抛（见 sceneRenderer）。
+    for (let frame = 0; frame < BG_COUNT; frame++) {
+      expect(decodeURIComponent(resolveAsset(narratageBgAssetId(frame)))).toContain(
+        `narratage/${frame}.webp`,
+      )
+    }
   })
 
   it('已知缺失的素材查出来是 null，别的查不到照旧抛', () => {
