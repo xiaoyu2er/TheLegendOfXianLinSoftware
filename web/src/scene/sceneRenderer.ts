@@ -188,7 +188,9 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
 
   /**
    * 旁白背景的 52 帧。**只在这个场景真的有旁白时才载**：96 个场景里绝大多数
-   * 没有 `Narratage` 段，替它们载 3.3 MB 图是白费。载过一次就留着——旁白只在
+   * 没有 `Narratage` 段，替它们载 3.17 MB 图是白费（52 帧无损 WebP，实测
+   * 3 326 738 字节；同一批走 q80 是 1.55 MB，按 `toWebp` 的规矩 PNG 源走无损）。
+   * 载过一次就留着——旁白只在
    * 进场时播一次，但场景来回切是常事。
    */
   async function loadNarratageTextures(scene: SceneScript): Promise<void> {
