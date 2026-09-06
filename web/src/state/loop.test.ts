@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getScene } from '../data/scenes'
+import { getScene } from '../data/scenesEager'
 import { advance, createTicker, withTimeScale } from './loop'
 import { createWorld } from './step'
 import type { InputEvent } from './types'

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { getScene } from '../data/scenes'
+import { loadScene } from '../data/scenes'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { advance, createTicker } from '../state/loop'
 import type { Ticker } from '../state/loop'
@@ -30,9 +30,21 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): void
   const queueRef = useRef<InputEvent[]>([])
 
   // 换场景 = 换一个世界。主角回到脚本里的出生格。
+  //
+  // 场景 JSON 是按需取的（见 `data/scenes.ts`），所以这里有一段"世界还没建好"
+  // 的时间：`tickerRef` 先清空，下面的 pump 认得 `null` 并跳过这一拍。旧世界
+  // 必须当场清掉——留着它，切场景的这几十毫秒里主角会在旧地图上继续走。
   useEffect(() => {
-    tickerRef.current = createTicker(createWorld(getScene(sceneName)))
+    let disposed = false
+    tickerRef.current = null
     queueRef.current = []
+    void loadScene(sceneName).then((scene) => {
+      if (disposed) return
+      tickerRef.current = createTicker(createWorld(scene))
+    })
+    return () => {
+      disposed = true
+    }
   }, [sceneName])
 
   useEffect(() => {

@@ -58,9 +58,18 @@ NPC 图片、战斗背景、出口目标脚本，拼法逐条对着原版（见
 `src/assets/sceneAssets.test.ts` 拿它们当夹具：**不要"修好"数据**，
 改掉了这段逻辑就永远测不到。
 
-一个已知的代价：`src/data/scenes.ts` 的 glob 是 eager 的，96 份场景 JSON
-（源文件共 952 KB）因此整个进主 bundle。地图图片没有这个问题（`?url`，
-谁用谁 fetch）。改成按需加载会把 `getScene` 变成异步，是 xl-9bd.15。
+场景 JSON **按需加载**（xl-9bd.15）：`src/data/scenes.ts` 的 glob 不是 eager 的，
+一个场景一个 chunk，名单仍然是同步的（选择器不用等任何一份 JSON）。取场景因此
+是异步的 `loadScene`，这条边界本来就在——渲染器的 `showScene` 一直是异步的。
+量出来的代价与收益（当时烘了 96 个场景，手法是把 glob 换成空表再 `pnpm build`
+相减）：场景 JSON 占主 chunk 597.56 kB / gzip 85.81 kB，即一半 / 四分之一，
+改完主 chunk 从 gzip 340.60 kB 降到 257.34 kB。其中 89.9% 是碰撞网格，
+而玩家一次只站在一个场景里。
+
+同一批产物还有一个**同步**取法 `src/data/scenesEager.ts`，一次性全读进来，
+**只给测试与 `scripts/` 下的 node 工具用**：应用代码 import 它就等于把上面这件事
+悄悄撤销（功能全对，只是主 chunk 又胖回去）。`src/data/sceneLoading.test.ts`
+里那条用例数的是"谁在 import 它"的名单，扫不到人也会红。
 
 资产走**逻辑 ID**：游戏逻辑说 `map:宿舍`，`resolveAsset` 查表拿到实际 URL。
 将来换素材、换格式、换目录都不动游戏逻辑（素材还有版权问题要处理，一定会换）。
