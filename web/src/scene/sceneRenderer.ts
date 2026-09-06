@@ -9,6 +9,7 @@ import type { NarratageState } from '../state/narratage'
 import type { NpcState } from '../state/npc'
 import { createWorld } from '../state/step'
 import type { World } from '../state/types'
+import { TEXT_FONT_STACK } from '../textFont'
 import { npcSprite } from './npcSprite'
 import { roleSprite } from './roleSprite'
 import { computeDrawOrder, computeViewport, mapTiles, npcLayerOffset } from './viewport'
@@ -40,14 +41,14 @@ function nearest(texture: Texture): Texture {
  * 字号 20 的粗体白字，左边距 50，第 `i` 行的**基线**在 `fontSize * (3 + 2i)`
  * ——也就是 60 / 100 / 140 …，行距正好两倍字号。
  *
- * 字体原版写的是 `文鼎粗钢笔行楷`，那是一款没有随游戏交付的中文字体：
- * 十三年前的机器上装了就是行楷、没装就退到 Java 的默认字体。浏览器里同样
- * 退回后备字体，所以**字形与原版不会逐像素相同**，这是已知偏离，记在
- * `compare/expected.ts` 的 dorm-intro 那条里。位置与颜色是准的。
+ * 字体原版写的是 `文鼎粗钢笔行楷`，那是一款没有随游戏交付的中文字体，两端
+ * 各自退到本机的默认字体。**字形因此不会逐像素相同**，这是已知偏离，记在
+ * `compare/expected.ts` 的 dorm-intro 那条里；为什么不打包一款字体来消掉它，
+ * 见 `src/textFont.ts`。位置与颜色是准的。
  */
 const TEXT_LEFT = 50
 const FONT_SIZE = 20
-const FONT_STACK = '"文鼎粗钢笔行楷", "STKaiti", "KaiTi", serif'
+const FONT_STACK = TEXT_FONT_STACK
 
 export interface SceneRenderer {
   /** 切到某个场景：解析地图资产、加载、贴上去。同一张图第二次是缓存命中。 */
