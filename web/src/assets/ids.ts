@@ -10,7 +10,7 @@
  * `mapName` 在烘焙期（生成映射表）和运行期（查映射表）要得到同一个 ID，
  * 两边算不一样就会表现为"这张图查不到"。
  */
-import { basename, stem } from './path'
+import { basename, normalizePath, stem } from './path'
 
 export type AssetId = string
 
@@ -31,6 +31,27 @@ export function mapAssetId(mapName: string): AssetId {
  */
 export function roleAssetId(gait: 'walk' | 'run', frame: number): AssetId {
   return `role:${gait}:${frame}`
+}
+
+/**
+ * NPC 的一帧。入参是 `scene.NPC` 的三个构造函数拼出来的**文件名**，
+ * 也就是 `NpcState.images` 里的一条：
+ *
+ *   静止     `老头.png`      → `npc:老头.png`
+ *   原地运动 `篮球公主/1.png` → `npc:篮球公主/1.png`
+ *   单向走动 `曾书书/9.png`   → `npc:曾书书/9.png`
+ *
+ * **目录那一层留在 ID 里**：同一个名字既可能是一张静止图，也可能是一个目录
+ * （`商塔阿威哥.png` 与 `商塔阿威哥/3.png`），压成一层就撞了。
+ *
+ * **扩展名也留着**，跟地图那条不一样，理由是数据里有一条真实的坏路径：
+ * `NPCs/商塔副堂主` 漏了 `.png`（xl-1dv.3），而 `NPCs/商塔副堂主.png` 是有的。
+ * 去掉扩展名，这两条就是同一个 ID —— 那条十三年画不出来的引用会悄悄查到好图，
+ * 于是 Web 版画出一个原版没有的 NPC，而 `knownMissing.ts` 还照旧说它缺着。
+ * 留着扩展名，两者就是两个 ID，坏的那条查不到、画不出来，与原版一致。
+ */
+export function npcAssetId(imageName: string): AssetId {
+  return `npc:${normalizePath(imageName)}`
 }
 
 /** `舒缓.mp3` → `bgm:舒缓`。BGM 的转码与播放在 xl-9bd.12。 */

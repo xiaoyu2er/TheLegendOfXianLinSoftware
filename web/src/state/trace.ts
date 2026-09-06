@@ -15,6 +15,19 @@ export interface Trace {
   readonly ticks: readonly TraceTick[]
 }
 
+/**
+ * trace 里一个 NPC 的快照。`dir` 用的是**原版的方向码**（1 左 / 5 右 / 9 下 /
+ * 13 上），不是主角那套 `down/up/left/right` —— 脚本数据里就是这么写的，
+ * 翻译一道只会多一个错位的机会。
+ */
+export interface TraceNpc extends TilePos {
+  readonly px: number
+  readonly py: number
+  readonly type: number
+  readonly dir: number
+  readonly frame: number
+}
+
 export interface TraceTick {
   readonly t: number
   readonly vt: number
@@ -30,7 +43,17 @@ export interface TraceTick {
     readonly running: boolean
     readonly moving: boolean
   }
-  readonly npcs: readonly (TilePos & { readonly type: number })[]
+  readonly npcs: readonly TraceNpc[]
+  /**
+   * 对话与旁白，**只取 `step()` 那两道门要用的字段**（`ScenePanel.step()` 的
+   * 第 3 步：`!dialogueEvent.isSpeaking && !narratage.isNarratage` 时才检查
+   * NPC）。逐字打印那一套是 xl-9bd.10 / .11 的事，那边自己去补。
+   *
+   * `source` 为 `script` 才是 `isSpeaking`；`npc`（NPC 口头语）走的是
+   * `npcEvent.isOral`，**不在**那道门里。
+   */
+  readonly dialogue: { readonly active: boolean; readonly source: 'npc' | 'script' | 'none' }
+  readonly narratage: { readonly active: boolean }
   /** `OtherEvent.calOffset()` 的六元组，见 `scene/viewport.ts`。 */
   readonly viewport: {
     readonly offsetX: number

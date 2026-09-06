@@ -19,8 +19,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
-import { mapAssetId, roleAssetId } from '../src/assets/ids'
+import { mapAssetId, npcAssetId, roleAssetId } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
+import { scanSceneAssets } from '../src/assets/sceneAssets'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 
@@ -42,6 +43,10 @@ const ROLE_SPRITES = {
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
 const MANIFEST_OUT = resolve(WEB, 'src/generated/assets.json')
+const MISSING_OUT = resolve(WEB, 'src/generated/missingAssets.json')
+
+/** `NPCs/曾书书/9.png` 里 `NPCs/` 那一段。`sceneAssets.ts` 拼的就是这个前缀。 */
+const NPC_PREFIX = 'NPCs/'
 
 function main(): void {
   requireCwebp()
@@ -86,6 +91,45 @@ function main(): void {
   const mapCount = Object.keys(manifest).length
   console.log(`地图 ${mapCount} 张 → WebP`)
 
+  // NPC 精灵。96 个场景引用到的每一帧，按逻辑 ID 去重 —— 同一个 NPC 在十几个
+  // 场景里出现是常事。
+  //
+  // **仓库里确实没有的那些不是失败**：`knownMissing.ts` 记着那批素材从未
+  // 交付，上面的硬校验已经替它们表过态了。它们在这里落成一份"故意查不到"的
+  // 名单，运行时按名单放行、名单外的一律抛（见 `assets/resolve.ts`）。
+  // 换成"查不到就不画"，一个真正的烘焙遗漏就会表现为"某个 NPC 偶尔不见了"。
+  const missingIds: string[] = []
+  let npcFrames = 0
+  const npcSources = new Map<string, string>()
+  for (const scene of scenes) {
+    for (const ref of scanSceneAssets(scene).refs) {
+      if (ref.kind !== 'npc') continue
+      const id = npcAssetId(ref.path.slice(NPC_PREFIX.length))
+      if (npcSources.has(id)) continue
+      npcSources.set(id, ref.path)
+    }
+  }
+  for (const [id, source] of [...npcSources].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (!existsSync(resolve(REPO, source))) {
+      missingIds.push(id)
+      continue
+    }
+    const relative = `npcs/${stripExtension(source.slice(NPC_PREFIX.length))}.webp`
+    // 两个不同的 ID 落到同一个产物上，说明 ID 的拼法把两条数据压成了一条。
+    // 那是画错人的成因，而且悄无声息。
+    const clash = Object.entries(manifest).find(([, r]) => r === relative)
+    if (clash) {
+      console.error(`资产 ${id} 与 ${clash[0]} 都要写到 ${relative}`)
+      process.exit(1)
+    }
+    manifest[id] = relative
+    bytes += toWebp(resolve(REPO, source), resolve(ASSETS_OUT, relative))
+    npcFrames++
+  }
+  console.log(
+    `NPC ${npcFrames} 帧 → npcs/**.webp（仓库里没有、按已知清单放行 ${missingIds.length} 帧）`,
+  )
+
   // 主角精灵不在 checkSceneAssets 的覆盖范围内 —— 那一层查的是场景数据引用到的
   // 资源，而这批图的路径是这里按原版 scene.Role 的编号规则算出来的。所以自己
   // 收一份缺失清单，形状跟上面那层保持一致：一次报全，不是撞见第一张就退出。
@@ -112,8 +156,9 @@ function main(): void {
   }
 
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧）→ WebP 共 ${kb(bytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧）→ WebP 共 ${kb(bytes)}`,
   )
 }
 
@@ -192,6 +237,8 @@ function requireCwebp(): void {
 }
 
 const stem = (fileName: string) => fileName.replace(/\.[^.]+$/, '')
+/** 去掉扩展名，但**保留目录**：`曾书书/9.png` → `曾书书/9`。 */
+const stripExtension = (path: string) => path.replace(/\.[^./]+$/, '')
 const basename = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 const kb = (bytes: number) => `${(bytes / 1024).toFixed(0)} KB`
 

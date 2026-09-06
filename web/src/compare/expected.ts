@@ -4,7 +4,8 @@ import { repoPath } from '../test/repoPath'
 /**
  * 每条剧本在**当前这个移植进度下**应该是什么结果。
  *
- * 为什么需要这张表：Web 版还没画 NPC、没做旁白与对话框，跨端比对现在必然红。
+ * 为什么需要这张表：Web 版还没做旁白与对话框、地图还差一层拉伸，跨端比对
+ * 现在必然红。
  * 一条"现在肯定红"的流水线不会有人看，第二天就变成噪声；而把阈值放松到能过，
  * 就变成了这个项目最贵的那种检查 —— 通过条件是"没找到问题"。
  *
@@ -26,13 +27,13 @@ export interface Expectation {
 export const EXPECTED: Readonly<Record<string, Expectation>> = {
   'dorm-walk': {
     status: 'gap',
-    why: '地图拉伸（原版把 1016×632 的源区拉到 1024×640）+ 宿舍的 2 个 NPC',
-    issue: 'xl-9bd.16 / xl-9bd.9',
+    why: '地图拉伸（原版把 1016×632 的源区拉到 1024×640）',
+    issue: 'xl-9bd.16',
   },
   'bigmap-walk': {
     status: 'gap',
-    why: '地图拉伸 + 镜头跟随 + 大地图的 13 个 NPC',
-    issue: 'xl-9bd.16 / xl-9bd.7 / xl-9bd.9',
+    why: '地图拉伸 + 镜头跟随',
+    issue: 'xl-9bd.16 / xl-9bd.7',
   },
   'dorm-intro': {
     status: 'gap',

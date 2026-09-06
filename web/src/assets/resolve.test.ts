@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
-import { bgmAssetId, mapAssetId, roleAssetId } from './ids'
-import { knownAssetIds, resolveAsset } from './resolve'
+import MISSING_IDS from '../generated/missingAssets.json'
+import { bgmAssetId, mapAssetId, npcAssetId, roleAssetId } from './ids'
+import { knownAssetIds, resolveAsset, resolveAssetOrNull } from './resolve'
+import { scanSceneAssets } from './sceneAssets'
 
 describe('资产逻辑 ID', () => {
   it('从地图文件名推出 ID，扩展名与目录都不参与', () => {
@@ -49,14 +51,42 @@ describe('资产逻辑 ID', () => {
     // 静默返回 undefined 的话，缺图只会表现为"画面上少了点东西"——
     // 原版那 31 条缺失路径藏了十三年就是因为失败形态和成功一模一样。
     expect(() => resolveAsset('map:不存在的地图')).toThrowError(/映射表里没有资产/)
-    // 分母写死：96 个场景共用的 28 张地图 + 主角 32 帧行走图 + 16 帧跑步图。
-    // 烘焙器少烘了一批，这里要响，而不是等到画面上少了点东西才发现。
+    // 分母不写死一个总数：地图 28 张、主角 32+16 帧是原版结构定死的，NPC 的
+    // 帧数则跟着脚本数据走（xl-9bd.9），写一个当天数出来的总数，别人加一帧
+    // 素材这里就会红成一片。改成**逐类点名 + 不许有名外之物**：
+    // 少烘一类要响，多出一类不认识的 ID 也要响。
     const ids = knownAssetIds()
     expect(ids.filter((id) => id.startsWith('map:'))).toHaveLength(28)
     expect(ids).toContain('map:宿舍')
     expect(ids).toContain('map:大地图')
     expect(ids.filter((id) => id.startsWith('role:walk:'))).toHaveLength(32)
     expect(ids.filter((id) => id.startsWith('role:run:'))).toHaveLength(16)
-    expect(ids).toHaveLength(76)
+    // NPC 的分母从数据源头算：96 个场景引用到的互异帧，减去仓库里确实没有的
+    // 那些（`missingAssets.json`，每条都挂着 bd issue）。
+    expect(ids.filter((id) => id.startsWith('npc:'))).toHaveLength(
+      expectedNpcIds().size - MISSING_IDS.length,
+    )
+    const known = ['map:', 'role:walk:', 'role:run:', 'npc:']
+    expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
+  })
+
+  it('已知缺失的素材查出来是 null，别的查不到照旧抛', () => {
+    // 两头都会红：名单上的静默放行（原版在那里也什么都没画），名单外的一律抛。
+    // 只留"查不到就不画"的话，一次真正的烘焙遗漏会表现为"某个 NPC 不见了"。
+    expect(MISSING_IDS.length).toBeGreaterThan(0)
+    for (const id of MISSING_IDS) expect(resolveAssetOrNull(id)).toBeNull()
+    expect(() => resolveAssetOrNull('npc:不存在的人.png')).toThrowError(/映射表里没有资产/)
+    expect(resolveAssetOrNull(mapAssetId('宿舍.png'))).toBe(resolveAsset(mapAssetId('宿舍.png')))
   })
 })
+
+/** 96 个场景的数据引用到的互异 NPC 帧，按 `npcAssetId` 去重。 */
+function expectedNpcIds(): Set<string> {
+  const ids = new Set<string>()
+  for (const name of SCENE_NAMES) {
+    for (const ref of scanSceneAssets(getScene(name)).refs) {
+      if (ref.kind === 'npc') ids.add(npcAssetId(ref.path.slice('NPCs/'.length)))
+    }
+  }
+  return ids
+}

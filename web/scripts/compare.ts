@@ -142,15 +142,23 @@ function slimTrace(json: string): string {
   const trace = JSON.parse(json) as {
     script: { name: string; scene: string; tickMs: number }
     tickCount: number
-    ticks: { t: number; input: unknown[]; npcs: { x: number; y: number }[] }[]
+    ticks: {
+      t: number
+      input: unknown[]
+      dialogue: { source: string }
+      narratage: { active: boolean }
+    }[]
   }
   return JSON.stringify({
     script: trace.script,
     tickCount: trace.tickCount,
+    // NPC 的坐标**不再传**（xl-9bd.9）：取图页自己推进 NPC，喂真值等于把两端的
+    // 分歧提前抹平。留下的两个字段是 `ScenePanel.step()` 第 3 步那道门的条件。
     ticks: trace.ticks.map((tick) => ({
       t: tick.t,
       input: tick.input,
-      npcs: tick.npcs.map((n) => ({ x: n.x, y: n.y })),
+      dialogue: { source: tick.dialogue.source },
+      narratage: { active: tick.narratage.active },
     })),
   })
 }

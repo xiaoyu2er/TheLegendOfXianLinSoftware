@@ -1,8 +1,9 @@
 import { loadScene } from '../data/scenes'
 import { createSceneRenderer } from '../scene/sceneRenderer'
 import type { SceneRenderer } from '../scene/sceneRenderer'
-import { createWorld, npcTilesOf, step } from '../state/step'
-import type { InputEvent, TilePos, World } from '../state/types'
+import { createWorld, step } from '../state/step'
+import type { SceneGates } from '../state/step'
+import type { InputEvent, World } from '../state/types'
 
 /**
  * 取图页：**只在跨端逐帧比对里用**，不进游戏产物（`vite build` 只打
@@ -18,7 +19,13 @@ import type { InputEvent, TilePos, World } from '../state/types'
 interface ReplayTick {
   readonly t: number
   readonly input: readonly InputEvent[]
-  readonly npcs: readonly TilePos[]
+  /**
+   * `ScenePanel.step()` 第 3 步那道门的两个条件。**NPC 本身不从真值里喂** ——
+   * 它们由 `state/npc.ts` 自己推进（xl-9bd.9），喂进来就等于把两端的分歧提前
+   * 抹平，跟喂坐标是同一个错。
+   */
+  readonly dialogue: { readonly source: 'npc' | 'script' | 'none' }
+  readonly narratage: { readonly active: boolean }
 }
 
 interface ReplayTrace {
@@ -40,7 +47,6 @@ export interface ReplayApi {
 let renderer: SceneRenderer | null = null
 let trace: ReplayTrace | null = null
 let world: World | null = null
-let npcs: readonly TilePos[] = []
 let next = 0
 
 const api: ReplayApi = {
@@ -56,7 +62,6 @@ const api: ReplayApi = {
     await renderer.showScene(scene)
     trace = parsed
     world = createWorld(scene)
-    npcs = npcTilesOf(scene)
     next = 0
     renderer.showWorld(world)
     return { scene: sceneName, tickCount: parsed.tickCount }
@@ -72,15 +77,23 @@ const api: ReplayApi = {
     }
     for (; next <= t; next++) {
       const tick = trace.ticks[next]!
-      world = step({ ...world, npcs }, tick.input, trace.script.tickMs)
-      // NPC 取**上一 tick** 的快照：导出器按根对象顺序装定时器，role 排在
-      // npcs 前面，所以主角判碰撞时看到的是 NPC 上一 tick 末的位置。
-      npcs = tick.npcs.map((n) => ({ x: n.x, y: n.y }))
+      world = step(world, tick.input, trace.script.tickMs, gatesBefore(trace, next))
     }
     renderer.showWorld(breakRender(world, t))
     await twoFrames()
     return { t, timeMs: world.timeMs, x: world.role.px >> 5, y: world.role.py >> 5 }
   },
+}
+
+/**
+ * 第 `t` 个 tick 跑 `step()` 时那道门的两个条件，取**上一 tick 的快照**。
+ * 与 `state/traceReplay.test.ts` 的 `gatesBefore` 是同一件事、同一个近似，
+ * 理由（以及"今天的真值分辨不出它"这条实测）写在那里。
+ */
+function gatesBefore(trace: ReplayTrace, t: number): SceneGates {
+  const before = trace.ticks[t - 1]
+  if (!before) return { speaking: false, narratage: false }
+  return { speaking: before.dialogue.source === 'script', narratage: before.narratage.active }
 }
 
 /**
