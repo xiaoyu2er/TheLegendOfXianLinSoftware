@@ -21,10 +21,22 @@ export function App() {
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
   const [sceneName, setSceneName] = useState<string>(START_SCENE)
   const fullscreen = useFullscreen(shellRef)
-  const { status, renderer } = useSceneRenderer(stageHostRef, sceneName)
+  /**
+   * 画面跟着**世界**走，不跟着选择器走（xl-9bd.12）：走到出口是世界自己换的
+   * 场景，选择器只决定从哪儿开局。世界还没建好时先照选择器画。
+   */
+  const [game, setGame] = useState<{ scene: string | null }>({ scene: null })
+  const shownScene = game.scene ?? sceneName
+  const { status, renderer } = useSceneRenderer(stageHostRef, shownScene)
   // 方向键走动、按住 Ctrl（或 Shift）跑动、空格搭话。世界的推进与画面无关，
   // 见 useGame；对话框是它交出来的那份状态的投影。
-  const dialogue = useGame(renderer, sceneName)
+  //
+  // **渲染器没就绪就不给它**：场景正在换的那几十毫秒里，世界已经在新场景里，
+  // 而渲染器手上还是旧地图。这时候推进世界就得往旧渲染器上画，撞它那道
+  // NPC 条数的校验。停一拍就是原版 `initiation` 读盘时停的那一拍。
+  const view = useGame(status.kind === 'ready' ? renderer : null, sceneName)
+  const dialogue = view.dialogue
+  if (view.scene !== game.scene) setGame({ scene: view.scene })
 
   return (
     <div className="app-shell" ref={shellRef}>
@@ -35,7 +47,7 @@ export function App() {
           <>
             {status.kind === 'ready' ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
-                {status.kind === 'loading' ? `正在载入 ${sceneName}…` : status.message}
+                {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
             {dialogue ? <DialogueBox dialogue={dialogue} /> : null}

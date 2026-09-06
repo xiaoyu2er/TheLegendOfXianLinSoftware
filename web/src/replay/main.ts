@@ -2,12 +2,13 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
+import { exitsReady, loadedSceneSource, prepareExits, rememberScene } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
 import { DialogueBox } from '../ui/DialogueBox'
 import '../index.css'
 import { createSceneRenderer } from '../scene/sceneRenderer'
 import type { SceneRenderer } from '../scene/sceneRenderer'
-import { createWorld, step } from '../state/step'
+import { initiate, step } from '../state/step'
 import type { InputEvent, World } from '../state/types'
 
 /**
@@ -28,11 +29,15 @@ import type { InputEvent, World } from '../state/types'
 interface ReplayTick {
   readonly t: number
   readonly input: readonly InputEvent[]
+  /** 这一 tick 走的是哪个脚本（`ScenePanel.fileName`）。出口切换之后一份 trace 横跨几个场景。 */
+  readonly scene: string
 }
 
 interface ReplayTrace {
   readonly script: {
     readonly name: string
+    /** 预热脚本，可为 null。**回放必须照做**，理由见 `state/trace.ts` 的 `replayWorld`。 */
+    readonly warmup: string | null
     readonly scene: string
     readonly tickMs: number
     /** `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。 */
@@ -57,12 +62,23 @@ let overlay: Root | null = null
 let trace: ReplayTrace | null = null
 let world: World | null = null
 let next = 0
+/** 渲染器手上是哪个场景。世界换了场景，这里要跟着换图。 */
+let shown: string | null = null
+
+/** 取一个场景，并放进同步查得到的那张表里（出口切换要同步取，见 data/loadedScenes.ts）。 */
+async function take(name: string) {
+  const scene = await loadScene(name)
+  rememberScene(name, scene)
+  return scene
+}
+
+const stem = (file: string) => file.replace(/\.txt$/, '')
 
 const api: ReplayApi = {
   async load(traceJson: string) {
     const parsed = JSON.parse(traceJson) as ReplayTrace
-    const sceneName = parsed.script.scene.replace(/\.txt$/, '')
-    const scene = await loadScene(sceneName)
+    const sceneName = stem(parsed.script.scene)
+    const scene = await take(sceneName)
     if (!renderer) {
       const host = document.getElementById('host')
       if (!host) throw new Error('取图页没有 #host')
@@ -74,8 +90,12 @@ const api: ReplayApi = {
       overlay = createRoot(host)
     }
     await renderer.showScene(scene)
+    shown = sceneName
     trace = parsed
-    world = createWorld(scene, parsed.script.isScript)
+    // 照剧本头建世界：先 warmup 再进 scene（跟 `state/trace.ts` 的 `replayWorld`
+    // 是同一件事，这里不能 import 它 —— 那个模块跑在 node 上）。
+    const warm = parsed.script.warmup === null ? null : initiate(null, await take(stem(parsed.script.warmup)))
+    world = { ...initiate(warm, scene), isScript: parsed.script.isScript }
     next = 0
     renderer.showWorld(world)
     drawOverlay(world)
@@ -92,7 +112,17 @@ const api: ReplayApi = {
     }
     for (; next <= t; next++) {
       const tick = trace.ticks[next]!
-      world = step(world, tick.input, trace.script.tickMs)
+      // 出口切换是同步的，所以下一个场景要**在踩上去之前**取到手。
+      // 这里按世界当前场景的出口预取，不看 trace 说它接下来去哪 —— 从真值里
+      // 读"接下来该在哪个场景"，就等于把要比的那件事先喂了进来。
+      if (!exitsReady(world)) await prepareExits(world)
+      world = step(world, tick.input, trace.script.tickMs, loadedSceneSource)
+    }
+    // 世界自己换了场景，画面跟上（原版的 initiation 同步换掉整张地图与全部精灵）。
+    const entered = stem(world.scene)
+    if (entered !== shown) {
+      await renderer.showScene(await take(entered))
+      shown = entered
     }
     renderer.showWorld(breakRender(world, t))
     drawOverlay(world)

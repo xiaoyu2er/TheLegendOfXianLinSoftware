@@ -1,4 +1,5 @@
 import { TICK_MS, step } from './step'
+import type { SceneSource } from './step'
 import type { InputEvent, World } from './types'
 
 /**
@@ -53,11 +54,16 @@ export function withTimeScale(ticker: Ticker, timeScale: number): Ticker {
  * 丢掉的表现是"偶尔按一下没反应"，是最难复现的那种。
  *
  * `elapsedMs` 为负（时钟被调过）按 0 处理：宁可停一帧，不可倒着走。
+ *
+ * `scenes` 原样递给 `step()`：走到出口要换场景，而换场景的数据只能同步取
+ * （见 `state/step.ts` 的 `SceneSource`）。不传就等于"这一局不会走出门"，
+ * 真踩到出口时 `step()` 会抛。
  */
 export function advance(
   ticker: Ticker,
   arriving: readonly InputEvent[],
   elapsedMs: number,
+  scenes?: SceneSource,
 ): Ticker {
   const queue = arriving.length === 0 ? ticker.pending : [...ticker.pending, ...arriving]
   const budget = ticker.carryMs + Math.max(0, elapsedMs) * ticker.timeScale
@@ -68,7 +74,7 @@ export function advance(
 
   let world = ticker.world
   for (let i = 0; i < ticks; i++) {
-    world = step(world, i === 0 ? queue : EMPTY, TICK_MS)
+    world = step(world, i === 0 ? queue : EMPTY, TICK_MS, scenes)
   }
   return { ...ticker, world, carryMs: budget - ticks * TICK_MS, pending: [] }
 }

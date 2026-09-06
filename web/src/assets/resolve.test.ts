@@ -2,10 +2,11 @@ import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
+import DEFERRED_BGM_IDS from '../generated/deferredBgm.json'
 import MISSING_IDS from '../generated/missingAssets.json'
 import { BG_COUNT } from '../state/narratage'
 import { bgmAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from './ids'
-import { knownAssetIds, resolveAsset, resolveAssetOrNull } from './resolve'
+import { knownAssetIds, resolveAsset, resolveAssetOrNull, resolveBgmOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
 import { repoPath } from '../test/repoPath'
 
@@ -100,8 +101,38 @@ describe('资产逻辑 ID', () => {
       'head:',
       'dialogue:',
       'narratage:bg:',
+      // 背景音乐（xl-9bd.12）。烘的只有 M1 用到的那几首，其余的落在
+      // `deferredBgm.json` 上，不在映射表里 —— 见 `assets/resolve.ts`。
+      'bgm:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
+  })
+
+  /**
+   * 背景音乐的范围（xl-9bd.12）：**两头都会红**。
+   *
+   * 96 个场景引用到的每一首曲子，要么在映射表里（已转码），要么在
+   * `deferredBgm.json` 上（这一票故意还没转码）—— 不能两头都不在（那是烘焙
+   * 漏了），也不能两头都在（那是名单过期了，转好了却还当没转）。
+   *
+   * 分母是场景数据自己：`sceneMusic` 有多少个不同的值就是多少。
+   */
+  it('每个场景引用的背景音乐，要么已转码要么在"故意没转"的名单上，不会两头都在', () => {
+    const declared = new Set(
+      SCENE_NAMES.map((name) => getScene(name).sceneMusic).filter((m): m is string => m !== null),
+    )
+    expect(declared.size).toBeGreaterThan(0)
+    const baked = new Set(knownAssetIds().filter((id) => id.startsWith('bgm:')))
+    const deferred = new Set(DEFERRED_BGM_IDS as string[])
+    // 两边不重叠，合起来正好盖住数据里出现过的每一首。
+    expect([...baked].filter((id) => deferred.has(id))).toEqual([])
+    expect([...declared].map(bgmAssetId).filter((id) => !baked.has(id) && !deferred.has(id))).toEqual(
+      [],
+    )
+    expect(baked.size + deferred.size).toBe(declared.size)
+    // 名单上的查出来是 null，映射表里的查出来是 URL，都不抛。
+    for (const id of deferred) expect(resolveBgmOrNull(id)).toBeNull()
+    for (const id of baked) expect(resolveBgmOrNull(id)).toContain('bgm/')
   })
 
   it('旁白背景的每一帧都在映射表里', () => {

@@ -97,16 +97,16 @@ describe('useGame 接线', () => {
     act(() => {
       vi.advanceTimersByTime(5000)
     })
-    expect(result.current?.speaking).toBe(true)
-    expect(result.current?.sentence).toBe(sentences[0]![2])
-    expect(result.current?.sentenceOver).toBe(true)
+    expect(result.current.dialogue?.speaking).toBe(true)
+    expect(result.current.dialogue?.sentence).toBe(sentences[0]![2])
+    expect(result.current.dialogue?.sentenceOver).toBe(true)
 
     // 空格推进到下一句。键名与 trace 里逐字一致（见 keyboard.ts）。
     press(' ')
     act(() => {
       vi.advanceTimersByTime(5000)
     })
-    expect(result.current?.sentence).toBe(sentences[1]![2])
+    expect(result.current.dialogue?.sentence).toBe(sentences[1]![2])
   })
 
   it('卸载之后不再推进，也不再收键', async () => {
