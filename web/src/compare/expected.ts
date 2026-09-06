@@ -34,9 +34,9 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 那一块**只有正文的字形**：差异图上对话框的边框、名字牌与头像整个是暗的
     // （= 逐像素相同），亮起来的只有字。原因是原版用的 `文鼎粗钢笔行楷` 绝大
     // 多数机器上没有，Java2D 的基线与 DOM 的行盒也不是一回事 —— 这一条不是
-    // 待补的功能，是一笔要么换字体、要么接受的账。
+    // 待补的功能，是一笔要么换字体、要么接受的账（xl-9bd.17）。
     why: '右下角的金币 HUD + 对话正文的字形（字体不在，基线也不同）',
-    issue: 'xl-yg6.1 / xl-9bd.10',
+    issue: 'xl-yg6.1 / xl-9bd.17',
   },
   'bigmap-walk': {
     status: 'gap',
@@ -55,7 +55,7 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 滑入、但一个字都还没打"（真值：type=0 head=90 printing=false）。也就是说
     // 对话框的边框、头像与它们的滑入动画是逐像素对上的，偏的只有字形。
     why: '旁白（占前 810 个 tick）+ 对话正文的字形',
-    issue: 'xl-9bd.11 / xl-9bd.10',
+    issue: 'xl-9bd.11 / xl-9bd.17',
   },
 }
 
