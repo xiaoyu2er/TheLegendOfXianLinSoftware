@@ -20,6 +20,24 @@ const LOADED = new Map<string, SceneScript>()
 export const loadedSceneSource: SceneSource = (file) => LOADED.get(stem(file))
 
 /**
+ * 踩上出口那一刻可能进的**全部**场景，不只是 `nextScene` 那几条。
+ *
+ * `state/step.ts` 的 `applyExit` 有三条分支，进的分别是 `nextScene[i]`、
+ * `nextScript[2]` 与 `currentScript[2]` —— 后两条是剧情往前走/走回同一段剧情
+ * 那两支，**目标场景名压根不在出口表里**。少预取它们的表现是：走出宿舍的门
+ * 时 `step()` 抛"这个场景没准备好"，而在 xl-9bd.13 之前一直没人撞上，因为
+ * 已有的剧本里那个目标恰好是预热脚本、早就在手上了（dorm-exit 走回的 脚本1）。
+ */
+function exitTargets(world: World): string[] {
+  const targets = [...(world.exit?.nextScene ?? [])]
+  for (const spec of [world.currentScript, world.nextScript]) {
+    const file = spec?.[2]
+    if (file !== undefined) targets.push(file)
+  }
+  return targets
+}
+
+/**
  * 这个世界当前场景的出口目标是不是都到手了。
  *
  * 96 个场景里有 92 个有出口，`nextScene` 里有 9 条**指向根本不是脚本文件的
@@ -28,8 +46,7 @@ export const loadedSceneSource: SceneSource = (file) => LOADED.get(stem(file))
  * 那几个场景会永远卡在"等邻居"上。
  */
 export function exitsReady(world: World): boolean {
-  const targets = world.exit?.nextScene ?? []
-  return targets.every((file) => LOADED.has(stem(file)) || TRIED.has(stem(file)))
+  return exitTargets(world).every((file) => LOADED.has(stem(file)) || TRIED.has(stem(file)))
 }
 
 /** 试过、但取不到的（数据里那 9 条坏路径）。 */
@@ -44,7 +61,7 @@ const TRIED = new Set<string>()
  * 失败留在踩上去的那一刻，而不是提前变成"这个场景进不去"。
  */
 export async function prepareExits(world: World): Promise<void> {
-  const targets = world.exit?.nextScene ?? []
+  const targets = exitTargets(world)
   await Promise.all(
     targets.map(async (file) => {
       const name = stem(file)
