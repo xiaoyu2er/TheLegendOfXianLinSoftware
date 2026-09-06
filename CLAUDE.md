@@ -186,6 +186,11 @@ GitHub Issues — the GitHub remote hosts code only. See `docs/agents/issue-trac
 The five canonical roles, applied as bd labels with their default names. See
 `docs/agents/triage-labels.md`.
 
+### Dispatch
+
+派一张票给 agent 时，prompt 只需要一句话——纪律、命名约定与验收方式都在
+`docs/agents/dispatch.md` 里，被派的 agent 自己读。
+
 ### Domain docs
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (neither exists
