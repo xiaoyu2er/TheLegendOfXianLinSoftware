@@ -3,7 +3,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { roleTileX } from '../state/role'
-import type { RoleState } from '../state/types'
+import type { RoleState, World } from '../state/types'
 import { useGame } from './useGame'
 
 /**
@@ -17,8 +17,8 @@ describe('useGame 接线', () => {
   let seen: RoleState[] = []
   const renderer = {
     showScene: async () => {},
-    showRole: (role: RoleState) => {
-      seen.push(role)
+    showWorld: (world: World) => {
+      seen.push(world.role)
     },
     destroy: () => {},
   } satisfies SceneRenderer
