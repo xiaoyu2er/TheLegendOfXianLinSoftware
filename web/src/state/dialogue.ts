@@ -70,12 +70,6 @@ const STOPPED: TimerState = { running: false, dueMs: 0 }
  * 状态推进是纯函数，它要的东西必须都在世界里。
  */
 export interface DialogueScript {
-  /**
-   * `ScenePanel.isScript`：这个场景是"剧情脚本"还是普通场景。
-   * `false` 时旁白、自动对话、位置对话、按空格触发的主线对话全部跳过 ——
-   * 从大地图走进宿舍时原版就是这个状态（见 `docs/trace-format.md`）。
-   */
-  readonly isScript: boolean
   /** `Reader.dialogueCode`。`null` = 这个脚本没有 `Dialogue` 段。 */
   readonly code: readonly string[] | null
   /** `Reader.dialogue`：`[段][句] = [样式, 头像号或名字, 正文]`。 */
@@ -218,12 +212,12 @@ export function createDialogue(script: DialogueScript): DialogueState {
 /**
  * 从一份烘焙好的场景脚本取出对话要用的那几段。
  *
- * `isScript` 由调用方给：它是 `ScenePanel` 的字段，不在脚本数据里
- * （`trace` 的剧本头里有，游戏里由"怎么进的这个场景"决定）。
+ * `ScenePanel.isScript` **不在这里**：它是 `ScenePanel` 的字段而不是脚本数据，
+ * 原版里旁白与对话读的是同一个，所以它挂在 `World` 上（见 `step.ts` 的
+ * `createWorld`），要用的地方按参数传进来。
  */
-export function dialogueScriptOf(scene: SceneScript, isScript: boolean): DialogueScript {
+export function dialogueScriptOf(scene: SceneScript): DialogueScript {
   return {
-    isScript,
     code: scene.dialogueCode,
     groups: scene.dialogue,
     selectNpcs: selectNpcsOf(scene),
@@ -666,12 +660,13 @@ export function checkLocationDialogue(
 export function checkDialogue(
   d: DialogueDraft,
   script: DialogueScript,
+  isScript: boolean,
   npcs: readonly NpcState[],
   roleX: number,
   roleY: number,
   now: number,
 ): boolean {
-  if (!script.isScript || d.eventOver) return false
+  if (!isScript || d.eventOver) return false
   const code = script.code
   const entry = code?.[d.groupOrder]
   if (entry === undefined || entry.length > 2) return false

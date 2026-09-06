@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import { createWorld, step } from './step'
-import type { SceneGates } from './step'
 import { roleMoving, roleTileX, roleTileY } from './role'
 import { TRACE_NAMES, readTrace, sceneNameOf } from './trace'
 import type { TraceTick } from './trace'
@@ -18,15 +17,15 @@ import type { World } from './types'
  *
  * **不启动渲染**：整个文件没有 canvas、没有 Pixi、没有 React、没有 DOM。
  *
- * 喂给状态层的只有两样东西，都来自真值：
+ * 喂给状态层的只有三样东西，都来自真值：
  *
  * - `input`：trace 里那一 tick 实际喂给原版的按键事件，照着回放；
- * - `narratage.active`：`ScenePanel.step()` 那几道门里旁白那一半。旁白是
- *   xl-9bd.11，这一层还不实现它。
+ * - `script.isScript`：`ScenePanel.isScript`，旁白与主线对话的总开关。
  *
- * **NPC 不再从真值里喂**（xl-9bd.9 之前是喂的），**对话也不再喂**
- * （xl-9bd.10 之前那道门的 `isSpeaking` 是喂的）。两者都由状态层自己推进，
- * 然后跟真值逐 tick 比对 —— 喂进去再比对等于让真值给自己打分。
+ * **状态字段一个都不喂**：NPC（xl-9bd.9）、主线对话（xl-9bd.10）、旁白
+ * （xl-9bd.11）都由状态层自己推进，然后跟真值逐 tick 比对 —— 喂进去再比对
+ * 等于让真值给自己打分。`ScenePanel.step()` 那几道门也一样：两张票各自留过
+ * 一个"另一半先从真值喂"的临时口子，两半到齐之后一起关掉了（xl-4rx）。
  */
 describe('回放行为真值', () => {
   /**
@@ -60,7 +59,7 @@ describe('回放行为真值', () => {
 
       for (const tick of trace.ticks) {
         expect(world.timeMs).toBe(tick.vt)
-        world = step(world, tick.input, trace.script.tickMs, gatesAt(tick))
+        world = step(world, tick.input, trace.script.tickMs)
         // 带上 t：比对失败时要一眼看得出是第几个 tick 开始偏的。
         expect(observed(tick.t, world)).toEqual(expected(tick))
       }
@@ -75,7 +74,7 @@ describe('回放行为真值', () => {
       expect(world.npcs).toHaveLength(trace.ticks[0]!.npcs.length)
 
       for (const tick of trace.ticks) {
-        world = step(world, tick.input, trace.script.tickMs, gatesAt(tick))
+        world = step(world, tick.input, trace.script.tickMs)
         expect(observedNpcs(tick.t, world)).toEqual(expectedNpcs(tick))
       }
     })
@@ -86,8 +85,19 @@ describe('回放行为真值', () => {
       let world = createWorld(scene, trace.script.isScript)
 
       for (const tick of trace.ticks) {
-        world = step(world, tick.input, trace.script.tickMs, gatesAt(tick))
+        world = step(world, tick.input, trace.script.tickMs)
         expect(observedDialogue(tick.t, world)).toEqual(expectedDialogue(tick))
+      }
+    })
+
+    it(`${name}：逐 tick 的旁白状态与真值一致`, () => {
+      const trace = readTrace(name)
+      const scene = getScene(sceneNameOf(trace))
+      let world = createWorld(scene, trace.script.isScript)
+
+      for (const tick of trace.ticks) {
+        world = step(world, tick.input, trace.script.tickMs)
+        expect(observedNarratage(tick.t, world)).toEqual(expectedNarratage(tick))
       }
     })
   }
@@ -128,6 +138,39 @@ describe('回放行为真值', () => {
     expect(pageTurns).toBeGreaterThan(0)
     // 对话真的收过框，不是"开了就一直开着到剧本结束"。
     expect(ended).toBeGreaterThan(0)
+  })
+
+  /**
+   * 旁白的覆盖：**分母从真值里数**，不写死"有一份剧本播了 6 句"。
+   *
+   * 没有这一条，上面那个逐 tick 用例在"所有剧本都没有旁白"时也是绿的 —— 一个
+   * 恒为 `{active:false, over:true}` 的实现能通过它，而那正是 xl-9bd.11 之前
+   * 的状态。
+   */
+  it('真值里确实有一段旁白从头播到尾', () => {
+    let played = 0
+    let finished = 0
+    let lines = 0
+    let bgFrames = 0
+    for (const name of replayable) {
+      const trace = readTrace(name)
+      let prev = trace.ticks[0]!
+      for (const tick of trace.ticks) {
+        const n = tick.narratage
+        if (n.active) played++
+        if (prev.narratage.active && !n.active && n.over) finished++
+        if (n.active && n.line !== prev.narratage.line) lines++
+        if (n.bg !== prev.narratage.bg) bgFrames++
+        prev = tick
+      }
+    }
+    expect(played).toBeGreaterThan(0)
+    // 播完那一下（active 落、over 起）必须在真值里出现过，否则"结束"这条
+    // 分支从来没被跑到。
+    expect(finished).toBeGreaterThan(0)
+    // 换行与换背景帧也都要真的发生过。
+    expect(lines).toBeGreaterThan(0)
+    expect(bgFrames).toBeGreaterThan(0)
   })
 
   /**
@@ -220,18 +263,16 @@ describe('回放行为真值', () => {
 })
 
 /**
- * 第 `t` 个 tick 跑 `step()` 时，`isNarratage` 是什么。
- *
- * **取当前这一 tick 的快照**（xl-9bd.10 之前取的是上一 tick 的）。理由写在
- * `state/step.ts` 的 `SceneGates` 上，一句话是：`isNarratage` 只被旁白自己的
- * 定时器与 `ScenePanel.step()` 第 1 步改写，`paint()` 不碰它，所以写在
- * `paint()` 之后的第 t 行快照正是第 2/3/5 步当时看到的值。
- *
- * `isSpeaking` **不再从这里喂** —— 对话就在状态层里，喂进去再比对等于让真值
- * 给自己打分。
+ * 旁白的可断言字段（`NarratageState` 的六个）。
  */
-function gatesAt(tick: TraceTick): SceneGates {
-  return { narratage: tick.narratage.active }
+function observedNarratage(t: number, world: World) {
+  const n = world.narratage
+  return { t, active: n.active, over: n.over, line: n.line, cursor: n.cursor, row: n.row, bg: n.bg }
+}
+
+function expectedNarratage(tick: TraceTick) {
+  const { active, over, line, cursor, row, bg } = tick.narratage
+  return { t: tick.t, active, over, line, cursor, row, bg }
 }
 
 function observedNpcs(t: number, world: World) {

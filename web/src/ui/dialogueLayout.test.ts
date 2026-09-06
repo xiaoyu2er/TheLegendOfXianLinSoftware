@@ -22,7 +22,7 @@ function dialogueFrames(name: string): DialogueState[] {
   let world = createWorld(getScene(sceneNameOf(trace)), trace.script.isScript)
   const frames: DialogueState[] = []
   for (const tick of trace.ticks) {
-    world = step(world, tick.input, trace.script.tickMs, { narratage: tick.narratage.active })
+    world = step(world, tick.input, trace.script.tickMs)
     if (world.dialogue.speaking || world.dialogue.oral) frames.push(world.dialogue)
   }
   return frames

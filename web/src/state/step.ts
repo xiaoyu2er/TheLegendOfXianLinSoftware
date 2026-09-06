@@ -12,6 +12,13 @@ import {
   tickDialogueTimers,
   toDialogueDraft,
 } from './dialogue'
+import {
+  checkNarratage,
+  createNarratage,
+  fromNarratageDraft,
+  tickNarratageTimers,
+  toNarratageDraft,
+} from './narratage'
 import { checkNpcStop, createNpcs, fromNpcDraft, tickNpcTimers, toNpcDraft } from './npc'
 import {
   ROLE_TIMER_MS,
@@ -55,12 +62,16 @@ export function npcTilesOf(scene: SceneScript): TilePos[] {
  *
  * `isScript` 就是 `ScenePanel.isScript`：这个场景是当成"剧情脚本"进的
  * （放旁白、放自动对话、按空格能触发主线对话），还是当成普通场景进的。
- * 它**不在脚本数据里**——原版是 `ScenePanel` 的字段，默认 `true`，从大地图
- * 走进宿舍那种切场景会把它置 `false`（出口事件，另一张票）。这里同样默认
- * `true`，回放真值时由剧本头的 `isScript` 决定。
+ * 它**不在脚本数据里**——原版是 `ScenePanel` 的字段，默认 `true`（原版的字段
+ * 初值），从大地图走进宿舍那种"回到已经走过的场景"会把它置 `false`（出口
+ * 事件，另一张票）。回放真值时由剧本头的 `isScript` 决定。
+ *
+ * 原版里它是**一个**字段，旁白与对话两边都读同一个（`Narratage.checkNarratage`
+ * 与 `DialogueEvent.checkDialogue` 里都写着 `scene.isScript`），所以这里也只存
+ * 一份，挂在 `World` 上，不再往 `DialogueScript` 里抄一遍。
  */
 export function createWorld(scene: SceneScript, isScript = true): World {
-  const script = dialogueScriptOf(scene, isScript)
+  const script = dialogueScriptOf(scene)
   return {
     timeMs: 0,
     collision: collisionOf(scene),
@@ -68,35 +79,10 @@ export function createWorld(scene: SceneScript, isScript = true): World {
     role: createRole(scene.roleX, scene.roleY),
     script,
     dialogue: createDialogue(script),
+    narratage: createNarratage(scene),
+    isScript,
   }
 }
-
-/**
- * `ScenePanel.step()` 里那几道 `if` 的门中，**状态层今天还答不上来的那个**。
- *
- * 第 1/2/3/5 步的条件是 `!dialogueEvent.isSpeaking && !narratage.isNarratage`。
- * 左边那个自 xl-9bd.10 起由这一层自己算（`world.dialogue.speaking`）——
- * 对话就在这里，再从外面喂等于让真值给自己打分。右边那个是旁白（xl-9bd.11），
- * 还没实现，所以仍然由调用方喂：回放真值时从 trace 的 `narratage.active` 读，
- * 跑起来时恒为 false。
- *
- * **喂的是当前这一 tick 的快照，不是上一 tick 的。** 这一条要紧，而且是能
- * 论证的：`isNarratage` 只被两处改写——旁白自己的定时器（在 `step()` 之前
- * 触发）和 `ScenePanel.step()` 的第 1 步 `checkNarratage()`；`paint()` 里的
- * `drawNarratage` 一个字段都不改（`scene/Narratage.java`）。所以 trace 第 t
- * 行那个写在 `paint()` 之后的快照，正是第 2/3/5 步当时看到的值。
- *
- * 取上一 tick 就会差一拍，而这一拍是看得见的：dorm-intro 的旁白在 t=810 这一
- * tick 里结束，同一 tick 的第 2 步就把主线对话开了口（真值的 t=810 那行
- * `narratage.active=false` 且 `dialogue.active=true`）。喂 t=809 的快照，
- * 整段 23 句对话会整体晚一个 tick，逐字游标从头错到尾。
- */
-export interface SceneGates {
-  /** `narratage.isNarratage`：旁白进行中。 */
-  readonly narratage: boolean
-}
-
-const NO_GATES: SceneGates = { narratage: false }
 
 /**
  * 世界推进一个 tick。**纯函数**：不读时钟、不碰 DOM、不画一个像素。
@@ -106,51 +92,61 @@ const NO_GATES: SceneGates = { narratage: false }
  * 是对话正文里的 `@` / `$`，那两个标志改在写进字符缓冲的那一刻
  * （见 `dialogue.ts` 的 `writeChar`）。
  *
- * 定时器的次序**要紧**，照抄导出器 `installTimers` 的装表顺序：
- * `sp.role`（字段名排序 → `run`、`walk`）→ `sp.dialogue`（六个，字段名排序）
- * → `sp.npcs` 里的每个 NPC（`action`、`walk`）。所以主角在第 t 个 tick 判碰撞
- * 时看到的是 NPC 在第 t-1 个 tick 末的位置 —— 这一格的时差在真值里看得见，
- * 把 NPC 提前推进就对不上。
+ * **`ScenePanel.step()` 的那几道门今天全由这一层自己算**：旁白由
+ * `state/narratage.ts` 推进，主线对话由 `state/dialogue.ts` 推进，`step()` 不再
+ * 从调用方（更不用说从真值）接任何一个门的状态。xl-9bd.10 与 xl-9bd.11 各自
+ * 在只有一半的时候留过一个"另一半先从真值喂"的临时口子，两边的注释都写着同一
+ * 句话：喂进来就等于把两端的分歧提前抹平，跟喂主角坐标是同一个错。两半都到齐
+ * 之后，那两个口子在这里一起关掉（xl-4rx）。
+ *
+ * 定时器的次序**要紧**，照抄导出器 `installTimers` 的装表顺序（根对象依次是
+ * `sp.role`、`sp.dialogue`、`sp.narratage`、…、然后才是 `sp.npcs`，每个根对象
+ * 内部按字段名排序）：`sp.role`（`run`、`walk`）→ `sp.dialogue`（六个）→
+ * `sp.narratage`（`background`、`wordRun`）→ 每个 NPC（`action`、`walk`）。
+ * 所以主角在第 t 个 tick 判碰撞时看到的是 NPC 在第 t-1 个 tick 末的位置 ——
+ * 这一格的时差在真值里看得见，把 NPC 提前推进就对不上。旁白那两个的先后同样
+ * 分辨得出来，理由写在 `narratage.ts` 的 `tickNarratageTimers`。
  *
  * 主角自己的两个定时器实际上永远不会同时在跑（`setEvent` 起跑步之前先
  * `walk.stop()`），钉死次序只是不留"万一"。
+ *
+ * `input` 是本 tick 收到的输入事件，按到达顺序（见 `applyInput`）。
  */
-export function step(
-  world: World,
-  input: readonly InputEvent[],
-  dtMs: number,
-  gates: SceneGates = NO_GATES,
-): World {
+export function step(world: World, input: readonly InputEvent[], dtMs: number): World {
   const now = world.timeMs
   const d = toDraft(world.role)
   // NPC 的格子坐标在主角的定时器跑完之前是冻住的：它们这一 tick 还没动。
   const tiles: readonly TilePos[] = world.npcs
   const npcs = world.npcs.map(toNpcDraft)
   const dlg = toDialogueDraft(world.dialogue)
+  const nar = toNarratageDraft(world.narratage)
   const script = world.script
 
-  for (const event of input) applyInput(world, d, dlg, event, gates, now)
+  for (const event of input) applyInput(world, d, dlg, event, now)
 
   fireDue(d.run, now, ROLE_TIMER_MS, () => tickRun(d, world.collision, tiles), '跑步定时器')
   fireDue(d.walk, now, ROLE_TIMER_MS, () => tickWalk(d, world.collision, tiles), '走路定时器')
   tickDialogueTimers(dlg, now)
+  tickNarratageTimers(nar, now)
   for (const npc of npcs) tickNpcTimers(npc, now)
 
   // ——— `ScenePanel.step()` ———
   // 主角的位置取**定时器跑完之后**的：原版就是这个次序。
-  // 第 1 步（检查旁白）是 xl-9bd.11；第 4 步（出口）、第 6 步（宝箱）、
-  // 第 7 步（计步战斗）各是别的票。
+  // 第 4 步（出口）、第 6 步（宝箱）、第 7 步（计步战斗）各是别的票。
   const rx = roleTile(d.px)
   const ry = roleTile(d.py)
+  // 1. 检查旁白。它在第 2/3/5 步之前，所以**起旁白的那一 tick 就已经把后面
+  //    三道门关上了**——真值第 0 tick 记的就是 active。
+  checkNarratage(nar, world.isScript, now)
   // 2. 检查自动的对话（进场就播的那一段，触发码写着 -1）
-  if (storyGateOpen(script, dlg, gates) && checkAutoDialogue(dlg, script, now)) {
+  if (storyGateOpen(world, dlg, nar) && checkAutoDialogue(dlg, script, now)) {
     // `startSpeak` 里那句 `scene.role.setEvent(true)`：开口就松手。
     d.canStop = true
   }
   // 3. 检查 NPC
-  if (!dlg.speaking && !gates.narratage) checkNpcStop(npcs, rx, ry, now)
+  if (!dlg.speaking && !nar.active) checkNpcStop(npcs, rx, ry, now)
   // 5. 检查位置对话
-  if (storyGateOpen(script, dlg, gates) && checkLocationDialogue(dlg, script, rx, ry, now)) {
+  if (storyGateOpen(world, dlg, nar) && checkLocationDialogue(dlg, script, rx, ry, now)) {
     d.canStop = true
   }
 
@@ -160,16 +156,25 @@ export function step(
     role: fromDraft(d),
     npcs: npcs.map(fromNpcDraft),
     dialogue: fromDialogueDraft(dlg),
+    narratage: fromNarratageDraft(nar),
   }
 }
 
-/** `ScenePanel.step()` 第 2 / 5 步共用的那道门。 */
+/**
+ * `ScenePanel.step()` 第 2 / 5 步共用的那道门：
+ * `isScript && !isSpeaking && !dialogueEventOver && !isNarratage`。
+ *
+ * **旁白那一项读的是第 1 步之后的草稿**（`nar.active`），不是本 tick 之初的
+ * 快照——原版这四个条件是在 `checkNarratage()` 已经跑过之后才求值的。差别看得
+ * 见：dorm-intro 的旁白在第 0 tick 就起来了，取旧值的话进场那段自动对话会抢在
+ * 旁白前面开口。
+ */
 function storyGateOpen(
-  script: World['script'],
+  world: World,
   dlg: ReturnType<typeof toDialogueDraft>,
-  gates: SceneGates,
+  nar: ReturnType<typeof toNarratageDraft>,
 ): boolean {
-  return script.isScript && !dlg.speaking && !dlg.eventOver && !gates.narratage
+  return world.isScript && !dlg.speaking && !dlg.eventOver && !nar.active
 }
 
 /** `Role.getX()` / `getY()`：像素的整数除法。草稿上直接算，不必先冻。 */
@@ -190,7 +195,15 @@ function roleTile(px: number): number {
  *   原版那个 `b` 就是干这个的。
  *
  * `keyReleased` 不在这几层 `if` 里面：它是另一个方法，任何时候松开方向键都会
- * 置 `canStop`。
+ * 置 `canStop`。差别看得见：旁白起来时主角正走着，玩家松了手 —— 漏了这条，
+ * 他会一直走到旁白结束。
+ *
+ * 旁白那道门读的是 `world.narratage`，也就是**本 tick 的定时器与 `step()` 都
+ * 还没跑之前**的值 —— 原版的按键正是在那个时刻到达的。
+ *
+ * **今天的真值分辨不出这道门**：dorm-intro 从头到尾没有一次按键落在旁白期间。
+ * 所以它是照着 `ScenePanel.keyPressed` 抄的，由 `step.test.ts` 钉住，不是从
+ * trace 里读出来的。
  *
  * 选择框（`selectEvent.isSelect`）、宝箱、ESC 进菜单各是别的票，那几行在原版
  * 里与这里的分支并列，不影响这几条的先后。
@@ -200,7 +213,6 @@ function applyInput(
   d: ReturnType<typeof toDraft>,
   dlg: ReturnType<typeof toDialogueDraft>,
   event: InputEvent,
-  gates: SceneGates,
   now: number,
 ): void {
   if (event.e === 'release') {
@@ -208,7 +220,7 @@ function applyInput(
     if (isArrowKey(event.k)) d.canStop = true
     return
   }
-  if (gates.narratage) return
+  if (world.narratage.active) return
 
   // 跳过逐字打印。**原版没有这个键**，见 `dialogue.ts` 的 `skipPrinting`。
   if (event.k === 'skip') {
@@ -225,7 +237,17 @@ function applyInput(
   // 空格先试主线对话。`reader.getDialogueCode() != null` 那道门 = `code` 非空。
   let started = false
   if (space && world.script.code !== null) {
-    if (checkDialogue(dlg, world.script, world.npcs, roleTile(d.px), roleTile(d.py), now)) {
+    if (
+      checkDialogue(
+        dlg,
+        world.script,
+        world.isScript,
+        world.npcs,
+        roleTile(d.px),
+        roleTile(d.py),
+        now,
+      )
+    ) {
       d.canStop = true
       started = true
     }

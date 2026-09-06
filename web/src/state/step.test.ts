@@ -129,6 +129,44 @@ describe('走与跑', () => {
   })
 })
 
+describe('旁白进行中的按键', () => {
+  // 脚本1 是有 Narratage 段的那个场景（dorm-intro 走的就是它）。第 0 个 tick
+  // 的 `ScenePanel.step()` 就会把旁白起来，之后 810 个 tick 都是旁白。
+  const intro = getScene('脚本1')
+
+  it('旁白起来之后按方向键，主角一步都不动', () => {
+    // 起点也是分母：先确认这个场景真的有旁白，否则下面测的是个空壳。
+    expect(intro.narratage).not.toBeNull()
+    let world = step(createWorld(intro), [], TICK_MS)
+    expect(world.narratage.active).toBe(true)
+
+    const before = world.role
+    for (let i = 0; i < 100; i++) {
+      world = step(world, i === 0 ? [{ e: 'press', k: 'right', ctrl: false }] : [], TICK_MS)
+    }
+    expect(world.narratage.active).toBe(true)
+    expect({ px: world.role.px, py: world.role.py, dir: world.role.dir }).toEqual({
+      px: before.px,
+      py: before.py,
+      dir: before.dir,
+    })
+  })
+
+  it('旁白期间松手照样置位 canStop —— keyReleased 不在那道门里面', () => {
+    let world = step(createWorld(intro), [], TICK_MS)
+    expect(world.narratage.active).toBe(true)
+    world = step(world, [{ e: 'release', k: 'right' }], TICK_MS)
+    expect(world.role.canStop).toBe(true)
+  })
+
+  it('没有 Narratage 段的场景，按键照常', () => {
+    // 反面：上面那两条不能是"主角本来就不动"。宿舍没有旁白段。
+    expect(scene.narratage).toBeNull()
+    const world = hold(worldAt(13, 11), 'right', 100)
+    expect(world.role.px).toBeGreaterThan(13 * 32)
+  })
+})
+
 describe('step 是纯函数', () => {
   it('不改入参的世界', () => {
     const before = worldAt(scene.roleX, scene.roleY)

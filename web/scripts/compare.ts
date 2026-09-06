@@ -134,30 +134,31 @@ async function capture(
 }
 
 /**
- * 只把回放真正要用的字段送进浏览器：tick 号、那一 tick 的按键、旁白那道门。
+ * 只把回放真正要用的字段送进浏览器：剧本头、tick 号、那一 tick 的按键。
  * 整份 trace 里对话与旁白的逐字游标占了绝大部分体积（dorm-intro 3.4 MB），
- * 而取图页只读旁白那一个布尔 —— 对话由取图页自己推进（xl-9bd.10）。
+ * 而取图页一个状态字段都不读 —— 对话与旁白都由它自己推进（xl-9bd.10 /
+ * xl-9bd.11，口子在 xl-4rx 关上）。
  */
 function slimTrace(json: string): string {
   const trace = JSON.parse(json) as {
-    script: { name: string; scene: string; tickMs: number }
+    script: { name: string; scene: string; tickMs: number; isScript: boolean }
     tickCount: number
     ticks: {
       t: number
       input: unknown[]
-      narratage: { active: boolean }
     }[]
   }
   return JSON.stringify({
     script: trace.script,
     tickCount: trace.tickCount,
-    // NPC 的坐标（xl-9bd.9）与对话的逐字游标（xl-9bd.10）**都不再传**：取图页
-    // 自己推进它们，喂真值等于把两端的分歧提前抹平。留下的这一个字段是
-    // `ScenePanel.step()` 那几道门里旁白那一半（xl-9bd.11 之前只能喂）。
+    // 状态字段**一个都不传**：NPC 的坐标（xl-9bd.9）、对话的逐字游标
+    // （xl-9bd.10）、旁白的整个状态机（xl-9bd.11）都由取图页自己推进，喂真值
+    // 等于把两端的分歧提前抹平。`ScenePanel.step()` 那几道门也一样：两边各自
+    // 留的临时口子在 xl-4rx 一起关掉了。
+    // `script` 整个回显，取图页要从里面读 `isScript`——它决定进场放不放旁白。
     ticks: trace.ticks.map((tick) => ({
       t: tick.t,
       input: tick.input,
-      narratage: { active: tick.narratage.active },
     })),
   })
 }

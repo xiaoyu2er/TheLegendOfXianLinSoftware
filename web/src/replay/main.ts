@@ -28,12 +28,6 @@ import type { InputEvent, World } from '../state/types'
 interface ReplayTick {
   readonly t: number
   readonly input: readonly InputEvent[]
-  /**
-   * `ScenePanel.step()` 那几道门里旁白那一半。**NPC 与对话都不从真值里喂** ——
-   * 它们由 `state/npc.ts`（xl-9bd.9）与 `state/dialogue.ts`（xl-9bd.10）自己
-   * 推进，喂进来就等于把两端的分歧提前抹平，跟喂坐标是同一个错。
-   */
-  readonly narratage: { readonly active: boolean }
 }
 
 interface ReplayTrace {
@@ -41,6 +35,7 @@ interface ReplayTrace {
     readonly name: string
     readonly scene: string
     readonly tickMs: number
+    /** `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。 */
     readonly isScript: boolean
   }
   readonly tickCount: number
@@ -97,7 +92,7 @@ const api: ReplayApi = {
     }
     for (; next <= t; next++) {
       const tick = trace.ticks[next]!
-      world = step(world, tick.input, trace.script.tickMs, { narratage: tick.narratage.active })
+      world = step(world, tick.input, trace.script.tickMs)
     }
     renderer.showWorld(breakRender(world, t))
     drawOverlay(world)

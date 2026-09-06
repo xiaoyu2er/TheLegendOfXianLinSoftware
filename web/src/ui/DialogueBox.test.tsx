@@ -29,7 +29,7 @@ function replayUntil(name: string, done: (world: World) => boolean): DialogueSta
   const trace = readTrace(name)
   let world = createWorld(getScene(sceneNameOf(trace)), trace.script.isScript)
   for (const tick of trace.ticks) {
-    world = step(world, tick.input, trace.script.tickMs, { narratage: tick.narratage.active })
+    world = step(world, tick.input, trace.script.tickMs)
     if (done(world)) return world.dialogue
   }
   throw new Error(

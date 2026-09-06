@@ -4,8 +4,7 @@ import type { InputEvent, TilePos } from './types'
 
 /**
  * `tools/traces/out/*.trace.json` 的形状——**只声明已经有人对齐的字段**。
- * 今天是主角、NPC、对话框、视口与绘制顺序；旁白（xl-9bd.11）还只取了
- * `step()` 那道门要用的一个布尔。
+ * 今天是主角、NPC、对话框、旁白、视口与绘制顺序。
  *
  * 这是**测试与开发工具用的读取器**，跑在 Node 上（`node:fs`），不进浏览器包。
  */
@@ -15,7 +14,10 @@ export interface Trace {
     readonly name: string
     readonly scene: string
     readonly tickMs: number
-    /** `ScenePanel.isScript`，见 `docs/trace-format.md` 的剧本字段表。 */
+    /**
+     * `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。
+     * 见 `docs/trace-format.md` 的剧本字段表。
+     */
     readonly isScript: boolean
   }
   readonly tickCount: number
@@ -77,10 +79,18 @@ export interface TraceTick {
     readonly pageOver: boolean
   }
   /**
-   * 旁白是 xl-9bd.11。这里只取 `ScenePanel.step()` 那道门要用的
-   * `isNarratage`（见 `state/step.ts` 的 `SceneGates`）。
+   * 旁白的整个状态机（xl-9bd.11）。六个字段与 `state/narratage.ts` 的
+   * `NarratageState` 逐字段对应，`traceReplay.test.ts` 逐 tick 比对它们 ——
+   * 只比 `active` 的话，逐字游标整个写错也照样是绿的。
    */
-  readonly narratage: { readonly active: boolean }
+  readonly narratage: {
+    readonly active: boolean
+    readonly over: boolean
+    readonly line: number
+    readonly cursor: number
+    readonly row: number
+    readonly bg: number
+  }
   /** `OtherEvent.calOffset()` 的六元组，见 `scene/viewport.ts`。 */
   readonly viewport: {
     readonly offsetX: number

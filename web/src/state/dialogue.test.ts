@@ -35,7 +35,7 @@ describe('跳过逐字打印（原版没有的加法）', () => {
     let t = 0
     for (; t < trace.ticks.length; t++) {
       const tick = trace.ticks[t]!
-      world = step(world, tick.input, trace.script.tickMs, { narratage: tick.narratage.active })
+      world = step(world, tick.input, trace.script.tickMs)
       const d = world.dialogue
       if (d.printing && d.cursor > 0 && !d.sentenceOver && !d.pageOver) break
     }
@@ -43,15 +43,13 @@ describe('跳过逐字打印（原版没有的加法）', () => {
     expect(t).toBeLessThan(trace.ticks.length)
 
     // 一条路：按一下跳过键。
-    const skipped = step(world, [{ e: 'press', k: 'skip', ctrl: false }], TICK_MS, {
-      narratage: false,
-    })
+    const skipped = step(world, [{ e: 'press', k: 'skip', ctrl: false }], TICK_MS)
 
     // 另一条路：照着真值继续喂，直到原版自己把这一句打完。
     let waited = world
     for (let i = t + 1; i < trace.ticks.length; i++) {
       const tick = trace.ticks[i]!
-      waited = step(waited, tick.input, trace.script.tickMs, { narratage: tick.narratage.active })
+      waited = step(waited, tick.input, trace.script.tickMs)
       if (waited.dialogue.sentenceOver || waited.dialogue.pageOver) break
     }
 
@@ -68,16 +66,14 @@ describe('跳过逐字打印（原版没有的加法）', () => {
     let t = 0
     for (; t < trace.ticks.length; t++) {
       const tick = trace.ticks[t]!
-      world = step(world, tick.input, trace.script.tickMs, { narratage: tick.narratage.active })
+      world = step(world, tick.input, trace.script.tickMs)
       // 对话开了、但弹出动画还没播完。
       if (world.dialogue.oral && !world.dialogue.printing) break
     }
     expect(t).toBeLessThan(trace.ticks.length)
 
-    const skipped = step(world, [{ e: 'press', k: 'skip', ctrl: false }], TICK_MS, {
-      narratage: false,
-    })
-    const idle = step(world, [], TICK_MS, { narratage: false })
+    const skipped = step(world, [{ e: 'press', k: 'skip', ctrl: false }], TICK_MS)
+    const idle = step(world, [], TICK_MS)
     // 跳过键不能把弹出动画一起跳掉：那会让 isPrint 提前变真，而 isPrint 什么
     // 时候变真是逐 tick 对着真值断言的。
     expect(cursorOf(skipped)).toEqual(cursorOf(idle))
@@ -117,7 +113,7 @@ describe('选择框会截胡 NPC 的口头语', () => {
 
   it('同一个夹具去掉选择数据之后，他就说话了', () => {
     const scene = getScene(SCENE)
-    const bare = { ...createWorld(scene), script: { ...dialogueScriptOf(scene, true), selectNpcs: [] } }
+    const bare = { ...createWorld(scene), script: { ...dialogueScriptOf(scene), selectNpcs: [] } }
     const world = facingTheDoctor(bare)
 
     const after = step(world, [{ e: 'press', k: 'space', ctrl: false }], TICK_MS)
