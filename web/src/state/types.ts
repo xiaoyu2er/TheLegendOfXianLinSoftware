@@ -8,6 +8,7 @@
  * 彻底无关了（见 `loop.ts`）。
  */
 
+import type { NarratageState } from './narratage'
 import type { NpcState } from './npc'
 
 /** 主角朝向。原版是 `Role.DOWN/UP/LEFT/RIGHT` = 0/8/16/24。 */
@@ -119,4 +120,20 @@ export interface World {
   readonly collision: CollisionMap
   readonly npcs: readonly NpcState[]
   readonly role: RoleState
+  /**
+   * 旁白（xl-9bd.11）。逐字打印、背景动画、以及"播完就再也不起"这三件事都在
+   * `state/narratage.ts` 里，由 `step()` 逐 tick 推进。
+   *
+   * **它同时是一道绘制开关**：旁白进行中原版一个精灵都不画（`ScenePanel.paint()`
+   * 里主角、NPC、地图整个在 `if (!narratage.isNarratage)` 里面），所以渲染层
+   * 也要读它。
+   */
+  readonly narratage: NarratageState
+  /**
+   * `ScenePanel.isScript`。旁白与主线对话的轮询只在它为真时进行——从大地图走
+   * 进宿舍时原版把它置成 false，那时进场脚本不该再播一遍。
+   *
+   * 原版的字段初值是 `true`，这里同样默认 `true`（见 `createWorld`）。
+   */
+  readonly isScript: boolean
 }

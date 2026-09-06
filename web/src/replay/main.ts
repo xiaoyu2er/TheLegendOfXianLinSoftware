@@ -20,16 +20,22 @@ interface ReplayTick {
   readonly t: number
   readonly input: readonly InputEvent[]
   /**
-   * `ScenePanel.step()` 第 3 步那道门的两个条件。**NPC 本身不从真值里喂** ——
-   * 它们由 `state/npc.ts` 自己推进（xl-9bd.9），喂进来就等于把两端的分歧提前
-   * 抹平，跟喂坐标是同一个错。
+   * `ScenePanel.step()` 第 3 步那道门里的 `isSpeaking`。**NPC 与旁白都不从真值
+   * 里喂** —— 它们由 `state/npc.ts`（xl-9bd.9）与 `state/narratage.ts`
+   * （xl-9bd.11）自己推进，喂进来就等于把两端的分歧提前抹平，跟喂坐标是同一
+   * 个错。
    */
   readonly dialogue: { readonly source: 'npc' | 'script' | 'none' }
-  readonly narratage: { readonly active: boolean }
 }
 
 interface ReplayTrace {
-  readonly script: { readonly name: string; readonly scene: string; readonly tickMs: number }
+  readonly script: {
+    readonly name: string
+    readonly scene: string
+    readonly tickMs: number
+    /** `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。 */
+    readonly isScript: boolean
+  }
   readonly tickCount: number
   readonly ticks: readonly ReplayTick[]
 }
@@ -61,7 +67,7 @@ const api: ReplayApi = {
     }
     await renderer.showScene(scene)
     trace = parsed
-    world = createWorld(scene)
+    world = createWorld(scene, parsed.script.isScript)
     next = 0
     renderer.showWorld(world)
     return { scene: sceneName, tickCount: parsed.tickCount }
@@ -77,7 +83,7 @@ const api: ReplayApi = {
     }
     for (; next <= t; next++) {
       const tick = trace.ticks[next]!
-      world = step(world, tick.input, trace.script.tickMs, gatesBefore(trace, next))
+      world = step(world, tick.input, trace.script.tickMs, speakingBefore(trace, next))
     }
     renderer.showWorld(breakRender(world, t))
     await twoFrames()
@@ -86,14 +92,12 @@ const api: ReplayApi = {
 }
 
 /**
- * 第 `t` 个 tick 跑 `step()` 时那道门的两个条件，取**上一 tick 的快照**。
- * 与 `state/traceReplay.test.ts` 的 `gatesBefore` 是同一件事、同一个近似，
+ * 第 `t` 个 tick 跑 `step()` 时那道门的条件，取**上一 tick 的快照**。
+ * 与 `state/traceReplay.test.ts` 的 `speakingBefore` 是同一件事、同一个近似，
  * 理由（以及"今天的真值分辨不出它"这条实测）写在那里。
  */
-function gatesBefore(trace: ReplayTrace, t: number): SceneGates {
-  const before = trace.ticks[t - 1]
-  if (!before) return { speaking: false, narratage: false }
-  return { speaking: before.dialogue.source === 'script', narratage: before.narratage.active }
+function speakingBefore(trace: ReplayTrace, t: number): SceneGates {
+  return { speaking: trace.ticks[t - 1]?.dialogue.source === 'script' }
 }
 
 /**

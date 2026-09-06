@@ -1,4 +1,11 @@
 import type { SceneScript } from '../data/types'
+import {
+  checkNarratage,
+  createNarratage,
+  fromNarratageDraft,
+  tickNarratageTimers,
+  toNarratageDraft,
+} from './narratage'
 import { checkNpcStop, createNpcs, fromNpcDraft, tickNpcTimers, toNpcDraft } from './npc'
 import {
   ROLE_TIMER_MS,
@@ -38,13 +45,21 @@ export function npcTilesOf(scene: SceneScript): TilePos[] {
   return createNpcs(scene).map((npc) => ({ x: npc.x, y: npc.y }))
 }
 
-/** 一个场景的初始世界。 */
-export function createWorld(scene: SceneScript): World {
+/**
+ * 一个场景的初始世界。
+ *
+ * `isScript` 就是原版的 `ScenePanel.isScript`，**默认 `true`**（原版的字段
+ * 初值）。它决定进场时要不要播旁白与主线对话；从大地图走进宿舍那种"回到已经
+ * 走过的场景"，原版把它置成 false。真值回放时从剧本的 `isScript` 读。
+ */
+export function createWorld(scene: SceneScript, isScript = true): World {
   return {
     timeMs: 0,
     collision: collisionOf(scene),
     npcs: createNpcs(scene),
     role: createRole(scene.roleX, scene.roleY),
+    narratage: createNarratage(scene),
+    isScript,
   }
 }
 
@@ -52,27 +67,26 @@ export function createWorld(scene: SceneScript): World {
  * `ScenePanel.step()` 里那几道 `if` 的门。
  *
  * 第 3 步（检查 NPC）写着 `if (!dialogueEvent.isSpeaking && !narratage.isNarratage)`
- * ——主线对话或旁白进行中时**不**替 NPC 决定停走。对话与旁白是 xl-9bd.10 / .11，
- * 状态层今天还不知道它们，所以由调用方喂：回放真值时从 trace 的
- * `dialogue` / `narratage` 两个字段读，跑起来时两个都是 false。
+ * ——主线对话或旁白进行中时**不**替 NPC 决定停走。**旁白那一半已经不再由调用方
+ * 喂**（xl-9bd.11）：`world.narratage` 自己就知道，`step()` 直接读它。剩下的
+ * `speaking` 是主线对话（xl-9bd.10），状态层今天还不知道它，所以仍由调用方喂：
+ * 回放真值时从 trace 的 `dialogue` 字段读，跑起来时是 false。
  *
  * 做成入参而不是"先不管"，是因为不管的后果只在一种情形下看得见：一个 NPC 在
  * 对话开始前恰好被停住，对话期间原版不会去重启它，而漏了这道门的实现会重启。
  * 那是一帧的差别，肉眼看不出来。
  *
- * **今天的三份真值分辨不出这道门**（实测：整个拿掉，逐 tick 比对照样全绿）——
- * 三份剧本里主角贴身的那几段都不在对话或旁白期间。所以它是照着
+ * **今天的真值分辨不出这道门**（实测：整个拿掉，逐 tick 比对照样全绿）——
+ * 剧本里主角贴身的那几段都不在对话或旁白期间。所以它是照着
  * `ScenePanel.step()` 抄的，不是测出来的；见 `traceReplay.test.ts` 的
- * `gatesBefore`。
+ * `speakingBefore`。
  */
 export interface SceneGates {
   /** `dialogueEvent.isSpeaking`：主线对话进行中。 */
   readonly speaking: boolean
-  /** `narratage.isNarratage`：旁白进行中。 */
-  readonly narratage: boolean
 }
 
-const NO_GATES: SceneGates = { speaking: false, narratage: false }
+const NO_GATES: SceneGates = { speaking: false }
 
 /**
  * 世界推进一个 tick。**纯函数**：不读时钟、不碰 DOM、不画一个像素。
@@ -82,9 +96,11 @@ const NO_GATES: SceneGates = { speaking: false, narratage: false }
  * 在对话层，xl-9bd.10 / .11）。
  *
  * 定时器的次序**要紧**，照抄导出器 `installTimers` 的装表顺序：
- * 先 `sp.role`（字段名排序 → `run`、`walk`），再 `sp.npcs` 里的每个 NPC
- * （`action`、`walk`）。所以主角在第 t 个 tick 判碰撞时看到的是 NPC 在第
- * t-1 个 tick 末的位置 —— 这一格的时差在真值里看得见，把 NPC 提前推进就对不上。
+ * 先 `sp.role`（字段名排序 → `run`、`walk`），再 `sp.narratage`
+ * （`background`、`wordRun`），最后 `sp.npcs` 里的每个 NPC（`action`、`walk`）。
+ * 所以主角在第 t 个 tick 判碰撞时看到的是 NPC 在第 t-1 个 tick 末的位置 ——
+ * 这一格的时差在真值里看得见，把 NPC 提前推进就对不上。旁白那两个的先后同样
+ * 分辨得出来，理由写在 `narratage.ts` 的 `tickNarratageTimers`。
  *
  * 主角自己的两个定时器实际上永远不会同时在跑（`setEvent` 起跑步之前先
  * `walk.stop()`），钉死次序只是不留"万一"。
@@ -104,6 +120,7 @@ export function step(
   // NPC 的格子坐标在主角的定时器跑完之前是冻住的：它们这一 tick 还没动。
   const tiles: readonly TilePos[] = world.npcs
   const npcs = world.npcs.map(toNpcDraft)
+  const nar = toNarratageDraft(world.narratage)
 
   for (const event of input) {
     // 方向键之外一概不认。原版 `ScenePanel.keyPressed` 里空格走的是搭话/
@@ -124,14 +141,25 @@ export function step(
 
   fireDue(d.run, now, ROLE_TIMER_MS, () => tickRun(d, world.collision, tiles), '跑步定时器')
   fireDue(d.walk, now, ROLE_TIMER_MS, () => tickWalk(d, world.collision, tiles), '走路定时器')
+  tickNarratageTimers(nar, now)
   for (const npc of npcs) tickNpcTimers(npc, now)
+
+  // `ScenePanel.step()` 的第 1 步：该不该起旁白。它在第 3 步之前，所以**起旁白
+  // 的那一 tick 就已经把 NPC 那道门关上了**——真值第 0 tick 记的就是 active。
+  checkNarratage(nar, world.isScript, now)
 
   // `ScenePanel.step()` 的第 3 步。主角的位置取**定时器跑完之后**的——原版
   // 就是这个次序，checkNPCStop 读的是 role 当前的格子。
   const role = fromDraft(d)
-  if (!gates.speaking && !gates.narratage) {
+  if (!gates.speaking && !nar.active) {
     checkNpcStop(npcs, roleTileX(role), roleTileY(role), now)
   }
 
-  return { ...world, timeMs: now + dtMs, role, npcs: npcs.map(fromNpcDraft) }
+  return {
+    ...world,
+    timeMs: now + dtMs,
+    role,
+    npcs: npcs.map(fromNpcDraft),
+    narratage: fromNarratageDraft(nar),
+  }
 }
