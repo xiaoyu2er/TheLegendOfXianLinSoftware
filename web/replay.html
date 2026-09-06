@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>逐帧比对取图</title>
+    <style>
+      /* 画布必须是**未经缩放**的 1024×640：截图按逻辑像素裁，
+         舞台那套 CSS 缩放会让截出来的图不是位图本身。 */
+      html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+      #host, #host canvas { width: 1024px; height: 640px; display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="host"></div>
+    <script type="module" src="/src/replay/main.ts"></script>
+  </body>
+</html>

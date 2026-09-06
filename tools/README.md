@@ -20,6 +20,8 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # build.sh 默认就是这个路
 | `tools/run-game.sh` | 启动原版游戏 |
 | `tools/export-truth.sh` | 导出 96 个脚本的解析真值到 `tools/ground-truth/*.json` |
 | `tools/export-trace.sh [名字…] [--check]` | 在原版上执行声明式剧本，逐 tick 导出行为真值到 `tools/traces/out/`；`--check` 跑两遍验证逐字节一致 |
+| `tools/compare-frames.sh [名字…]` | 跨端逐帧比对：同一份剧本在原版与 Web 版各出 N 帧，逐帧算差异，报告首个偏离帧号；`--self-check` 故意改坏一处渲染验流水线响不响。见 `docs/frame-compare.md` |
+| `tools/speed-probe.sh [倍率…]` | 两端时间加速倍率的墙钟线性度实测 |
 | `tools/to-webp.sh <src> <dst>` | 把取景器产出的 PNG 批量转 WebP q80 |
 | `tools/bd-spawn.sh <issue-id>…` | 为 issue 开 worktree、认领、在新的 iTerm 标签页启动 Claude 会话 |
 
@@ -96,3 +98,7 @@ tools/bd-spawn.sh xl-9bd.1 xl-9bd.2      # 真开两个
 `ScenePanel.run()` 的循环体整块提取为 `ScenePanel.step()`。
 
     tools/export-trace.sh --check      # 每份剧本导两遍并 cmp
+
+同一个导出器加 `--frames <目录>` 还能把原版**真的画出来的**那张 1024×640 位图
+每 n 个 tick 存一张 PNG，外加一份帧清单——那是跨端逐帧比对的原版侧那一半
+（`tools/compare-frames.sh`，见 `docs/frame-compare.md`）。

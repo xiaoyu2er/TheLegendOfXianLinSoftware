@@ -1,6 +1,7 @@
 package devtools;
 
 import java.awt.Graphics;
+import java.awt.Image;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -14,6 +15,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
+import javax.imageio.ImageIO;
 import javax.swing.Timer;
 
 import main.GameLauncher;
@@ -45,8 +47,13 @@ import tools.Clock;
  *   5. 反射字段顺序。Class.getDeclaredFields() 的顺序未经规范保证，
  *      这里一律按字段名排序后再用。
  *
- * 用法: java devtools.ExportTrace <剧本.json> <输出.json>
+ * 用法: java devtools.ExportTrace <剧本.json> <输出.json> [--frames <目录> [--every <n>]]
  * 必须在仓库根目录运行（原版用相对路径读 script/、sources/、image/）。
+ *
+ * --frames 额外把**原版真的画出来的那张 1024×640 位图**（ScenePanel.backImage）
+ * 每 n 个 tick 存一张 PNG，并写一份 frames.json 清单。这份清单是跨端逐帧比对
+ * （xl-9bd.8）里"比哪些帧"的**唯一来源**：Web 侧照着同一组 tick 出图，
+ * 两边帧数对不上就是硬失败，而不是各挑各的帧然后比个寂寞。
  */
 public final class ExportTrace {
 
@@ -58,6 +65,11 @@ public final class ExportTrace {
     private final List<VirtualTimer> timers = new ArrayList<>();
     private ScenePanel sp;
     private Graphics sink;
+
+    // ---- 帧导出（--frames，默认关闭；关闭时下面两个字段一个都不读） ----
+    private File framesDir;
+    private int every = 25;
+    private final List<Integer> sampled = new ArrayList<>();
 
     // ---- 剧本执行状态 ----
     private int ip;                 // 当前指令
@@ -77,7 +89,7 @@ public final class ExportTrace {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("用法: java devtools.ExportTrace <剧本.json> <输出.json>");
+            System.err.println("用法: java devtools.ExportTrace <剧本.json> <输出.json> [--frames <目录> [--every <n>]]");
             System.exit(2);
         }
         File in = new File(args[0]);
@@ -85,13 +97,29 @@ public final class ExportTrace {
         if (!new File("script").isDirectory()) die("找不到 script/ 目录 —— 必须在仓库根目录运行");
 
         ExportTrace t = new ExportTrace(TraceScript.load(in));
+        for (int i = 2; i < args.length; i++) {
+            switch (args[i]) {
+                case "--frames":
+                    if (++i >= args.length) die("--frames 后面要跟目录");
+                    t.framesDir = new File(args[i]);
+                    break;
+                case "--every":
+                    if (++i >= args.length) die("--every 后面要跟正整数");
+                    t.every = Integer.parseInt(args[i]);
+                    if (t.every <= 0) die("--every 必须为正整数，收到 " + args[i]);
+                    break;
+                default:
+                    die("不认识的参数 " + args[i]);
+            }
+        }
         String out = t.run();
         File dst = new File(args[1]);
         if (dst.getParentFile() != null) dst.getParentFile().mkdirs();
         try (Writer w = new OutputStreamWriter(new FileOutputStream(dst), StandardCharsets.UTF_8)) {
             w.write(out);
         }
-        System.out.println("导出 " + t.script.name + " -> " + dst.getPath());
+        System.out.println("导出 " + t.script.name + " -> " + dst.getPath()
+                + (t.framesDir == null ? "" : "（" + t.sampled.size() + " 帧 -> " + t.framesDir.getPath() + "）"));
         // 必须显式退出：音频播放线程与 Swing 的 TimerQueue 都不是守护线程。
         System.exit(0);
     }
@@ -141,6 +169,7 @@ public final class ExportTrace {
         sp.isScript = script.isScript;
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
+        prepareFramesDir();
         installTimers();
 
         StringBuilder body = new StringBuilder();
@@ -159,11 +188,14 @@ public final class ExportTrace {
             if (!first) body.append(",\n");
             first = false;
             body.append("    ").append(snapshot(ticks));
+            if (framesDir != null && ticks % every == 0) dumpFrame(ticks);
 
             clock.advance(script.tickMs);
             ticks++;
             installTimers();   // 场景可能在本 tick 里被重新初始化，新对象要接管
         }
+
+        if (framesDir != null) writeFrameManifest(ticks);
 
         StringBuilder b = new StringBuilder();
         b.append("{\n");
@@ -173,6 +205,78 @@ public final class ExportTrace {
         b.append("  \"ticks\": [\n").append(body).append("\n  ]\n");
         b.append("}\n");
         return b.toString();
+    }
+
+    // ================= 帧导出 =================
+
+    /**
+     * 清空帧目录里上一次的产物。
+     *
+     * 为什么非清不可：帧文件是按 tick 编号命名的，剧本变短之后旧的高位帧会**留在
+     * 原地**，而比对器按清单读文件，读到的是一份"这一次根本没画过"的图。那种失败
+     * 长得和成功一模一样（文件在、能解码、尺寸对），正是本项目最贵的那类坑。
+     */
+    private void prepareFramesDir() {
+        if (framesDir == null) return;
+        if (!framesDir.isDirectory() && !framesDir.mkdirs()) die("建不出帧目录 " + framesDir.getPath());
+        File[] old = framesDir.listFiles();
+        if (old != null) {
+            for (File f : old) {
+                if ((f.getName().endsWith(".png") || f.getName().equals("frames.json")) && !f.delete()) {
+                    die("删不掉旧帧 " + f.getPath());
+                }
+            }
+        }
+    }
+
+    /** 把原版这一 tick 真的画出来的那张位图存成 PNG。 */
+    private void dumpFrame(int tick) {
+        Image img = sp.getBackImage();
+        if (!(img instanceof BufferedImage)) {
+            fail("ScenePanel.backImage 不是 BufferedImage（是 "
+                    + (img == null ? "null" : img.getClass().getName()) + "），存不了 PNG");
+        }
+        BufferedImage b = (BufferedImage) img;
+        if (b.getWidth() != ScenePanel.WIDTH || b.getHeight() != ScenePanel.HEIGHT) {
+            fail("原版位图是 " + b.getWidth() + "×" + b.getHeight()
+                    + "，应为 " + ScenePanel.WIDTH + "×" + ScenePanel.HEIGHT);
+        }
+        File f = new File(framesDir, String.format("f%06d.png", tick));
+        try {
+            if (!ImageIO.write(b, "png", f)) fail("这个 JDK 没有 PNG 编码器");
+        } catch (java.io.IOException e) {
+            fail("写不出 " + f.getPath() + "：" + e);
+        }
+        sampled.add(tick);
+    }
+
+    /**
+     * 帧清单。它是跨端比对里"比哪些帧"的唯一来源 —— Web 侧读它，不自己算，
+     * 两端各算各的采样点是错位的现成入口。
+     */
+    private void writeFrameManifest(int tickCount) {
+        StringBuilder b = new StringBuilder();
+        b.append("{\n");
+        b.append("  \"format\": \"xianlin-frames/1\",\n");
+        b.append("  \"script\": ").append(Json.str(script.name)).append(",\n");
+        b.append("  \"scene\": ").append(Json.str(script.scene)).append(",\n");
+        b.append("  \"tickMs\": ").append(script.tickMs).append(",\n");
+        b.append("  \"width\": ").append(ScenePanel.WIDTH).append(",\n");
+        b.append("  \"height\": ").append(ScenePanel.HEIGHT).append(",\n");
+        b.append("  \"every\": ").append(every).append(",\n");
+        b.append("  \"tickCount\": ").append(tickCount).append(",\n");
+        b.append("  \"ticks\": [");
+        for (int i = 0; i < sampled.size(); i++) {
+            if (i > 0) b.append(", ");
+            b.append(sampled.get(i));
+        }
+        b.append("]\n}\n");
+        File dst = new File(framesDir, "frames.json");
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(dst), StandardCharsets.UTF_8)) {
+            w.write(b.toString());
+        } catch (java.io.IOException e) {
+            fail("写不出 " + dst.getPath() + "：" + e);
+        }
     }
 
     // ================= 定时器 =================

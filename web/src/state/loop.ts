@@ -17,10 +17,31 @@ export interface Ticker {
   readonly carryMs: number
   /** 还没有 tick 可以承载的输入。攒着，不丢——见下面的说明。 */
   readonly pending: readonly InputEvent[]
+  /**
+   * 时间加速倍率。`2` 表示一秒真实时间推进两秒游戏时间，`1` 是恒等。
+   *
+   * 它是 Java 侧 `tools.Clock.factor` 的对应物：原版把 30 处时间常数收拢进
+   * `Clock`，Web 侧因为"时间是 `step()` 的入参"根本不需要收拢——**乘在真实
+   * 流逝的毫秒上就够了**，这是状态推进与渲染解耦白拿的第二个好处
+   * （见 `docs/MIGRATION-PLAN.md` §4）。
+   *
+   * 加速只改"真实毫秒 → 虚拟毫秒"这一步的换算，不改 tick 步长：世界仍然是
+   * 一个 10 ms 一个 tick 地走的，所以**加速后跑出来的世界与 1× 跑同样长的
+   * 游戏时间逐字段相同**。把步长乘上倍率就不是这样了——那会跳过定时器的
+   * 触发时刻，主角走的距离对不上真值（`step.ts` 里 `TICK_MS` 那段说过为什么）。
+   */
+  readonly timeScale: number
 }
 
-export function createTicker(world: World): Ticker {
-  return { world, carryMs: 0, pending: [] }
+export function createTicker(world: World, timeScale = 1): Ticker {
+  if (!(timeScale > 0)) throw new Error(`时间倍率必须为正，收到 ${timeScale}`)
+  return { world, carryMs: 0, pending: [], timeScale }
+}
+
+/** 换一个倍率，世界与攒着的余量/输入都不动。 */
+export function withTimeScale(ticker: Ticker, timeScale: number): Ticker {
+  if (!(timeScale > 0)) throw new Error(`时间倍率必须为正，收到 ${timeScale}`)
+  return { ...ticker, timeScale }
 }
 
 /**
@@ -39,17 +60,17 @@ export function advance(
   elapsedMs: number,
 ): Ticker {
   const queue = arriving.length === 0 ? ticker.pending : [...ticker.pending, ...arriving]
-  const budget = ticker.carryMs + Math.max(0, elapsedMs)
+  const budget = ticker.carryMs + Math.max(0, elapsedMs) * ticker.timeScale
   const ticks = Math.floor(budget / TICK_MS)
   if (ticks === 0) {
-    return { world: ticker.world, carryMs: budget, pending: queue }
+    return { ...ticker, carryMs: budget, pending: queue }
   }
 
   let world = ticker.world
   for (let i = 0; i < ticks; i++) {
     world = step(world, i === 0 ? queue : EMPTY, TICK_MS)
   }
-  return { world, carryMs: budget - ticks * TICK_MS, pending: [] }
+  return { ...ticker, world, carryMs: budget - ticks * TICK_MS, pending: [] }
 }
 
 const EMPTY: readonly InputEvent[] = []

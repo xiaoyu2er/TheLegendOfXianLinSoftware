@@ -102,6 +102,30 @@ rAF 在标签页不可见时完全不触发，而 `setInterval` 只是被节流�
 三份 trace 里能回放两份，`dorm-intro` 的场景（`脚本1.txt`）还没烘焙
 （xl-9bd.4）；这个名单在测试里写死，少回放一份要响。
 
+## 跨端逐帧比对（xl-9bd.8）
+
+逐 tick 对齐**状态**之外，还有一条对齐**像素**的流水线：同一份剧本在原版与
+Web 版各跑一遍，各出 N 帧，逐帧算差异，超阈值即回归，并报告第一个偏离的帧号。
+
+    tools/compare-frames.sh                          # 从仓库根目录跑
+    tools/compare-frames.sh dorm-walk --self-check   # 故意改坏一处渲染，验它响不响
+
+Web 侧那一半在这里：`replay.html` + `src/replay/`（dev-only 取图页，`vite build`
+不打它）、`scripts/cdp.ts`（一百来行的无头 Chrome 驱动，不引 puppeteer）、
+`scripts/compare.ts`（取图 + 报告）、`src/compare/`（判据、PNG 编解码、期望表）。
+
+要 Java 与本机 Chrome，所以整条流水线不在 CI 里；**进 CI 的是它的判据**
+（`src/compare/*.test.ts`）。判据为什么不是哈希、"现在必然红"为什么不等于没用、
+以及它量出来的第一个真问题（原版画地图是拉伸的，`xl-9bd.16`），见
+`docs/frame-compare.md`。
+
+## 时间加速
+
+`state/loop.ts` 的 `Ticker.timeScale`：倍率乘在**真实流逝的毫秒**上，不乘在
+tick 步长上——后者会跳过定时器的触发时刻，主角走的距离立刻对不上真值。
+判据是一条不变量：**k× 跑 T 毫秒，与 1× 跑 k·T 毫秒得到逐字段相同的世界**
+（`src/state/loop.test.ts`，四个倍率）。墙钟实测见 `tools/speed-probe.sh`。
+
 ## 1024×640 是硬约束
 
 逻辑画布锁死 1024×640（`src/stage/constants.ts`），与原版
