@@ -108,8 +108,11 @@ rAF 在标签页不可见时完全不触发，而 `setInterval` 只是被节流�
 照着 trace 里的按键回放，逐 tick 比主角的格子坐标、像素坐标、朝向、帧号、
 走跑状态。手写期望值的测试会绿、而且是错的：写实现和写期望的是同一个 agent。
 
-三份 trace 里能回放两份，`dorm-intro` 的场景（`脚本1.txt`）还没烘焙
-（xl-9bd.4）；这个名单在测试里写死，少回放一份要响。
+剧本名单**从 `tools/traces/out/` 现数**（`src/state/trace.ts` 的 `TRACE_NAMES`），
+不抄一份出来：加了剧本立刻多一组回放用例，少导出一份名单立刻短一截。
+回放照剧本头的 `warmup` 先进一遍预热脚本 —— 原版的 `initiation` 只在新场景
+有 `Dialogue` 段时才换 `DialogueEvent`，不预热的话 `dialogueEventOver` 是反的，
+而出口的分支正是靠它分开的。
 
 ## 跨端逐帧比对（xl-9bd.8）
 
@@ -163,6 +166,27 @@ canvas 的位图恒为 1024×640，只有它的 CSS 尺寸随窗口变化，所�
 - **Vite 会静态改写 `new URL('…', import.meta.url)`**，把它当资源引用去解析；
   参数是模板字符串时还会退化成对整个目录的 glob。测试要读仓库里的文件，
   用 `src/test/repoPath.ts`。
+
+## 出口切换与背景音乐（xl-9bd.12）
+
+走到出口格，世界自己换场景：`state/step.ts` 的第 4 步照抄 `ExitEvent.checkExit`
+的三条分支（进目标场景 / 走回当前剧情脚本 / 剧情往前推一段），落点是数据里的
+`entrance`。换场景的数据只能**同步**取——原版的 `initiation` 就在 `step()` 里
+同步跑完——所以调用方要先把当前场景那几个出口的目标预取到手
+（`src/data/loadedScenes.ts`，取的是邻居，不是 96 个）。
+
+**背景音乐是世界状态里的一个声明值**：`world.audio.bgm` 就是原版
+`MusicPlayer.currentPlayingBGM` 那个字符串，逐 tick 对着真值比
+（`state/traceReplay.test.ts`）。`audio/bgmPlayer.ts` 只是把它同步到实际输出的
+订阅者，一个决定都不做；**不重叠是结构性的**——整个播放器只有一个播放对象。
+
+音频烘成 96 kbps 的 AAC-LC（`.m4a`，`afconvert`），**只烘 M1 走到的那三个场景
+用到的三首**，其余 24 首落在 `src/generated/deferredBgm.json` 上：查不到与
+"故意还没转"必须分得开，否则烘焙漏了一首的表现只是某个场景是哑的。
+产物走 `?url`，谁放谁下载。
+
+浏览器在用户碰过页面之前不让出声（实测 headless Chrome：`play()` 抛
+`NotAllowedError`），播放器为此等一次手势再试。
 
 ## 开发用场景跳转
 
