@@ -1,10 +1,13 @@
 import { renderHook } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { prepareExits } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
+import { readTrace } from '../state/trace'
 import { getScene } from '../data/scenesEager'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { roleTileX } from '../state/role'
+import { createWorld } from '../state/step'
 import type { RoleState, World } from '../state/types'
 import { useGame } from './useGame'
 
@@ -39,11 +42,29 @@ describe('useGame 接线', () => {
    * 表现是"渲染器一帧都没收到"，看上去像接线断了。
    */
   async function mount(scene = '宿舍') {
+    // 出口的目标也要先取到手：世界要等它们到齐才开始推进
+    // （见 `data/loadedScenes.ts`）。这里先取一遍，钩子里那一遍就是缓存命中，
+    // 一个微任务就过去了 —— 不然假定时器下要等一次真的 I/O，谁也说不准几拍。
+    await prepareExits(createWorld(await loadScene(scene)))
     const rendered = renderHook(() => useGame(renderer, scene))
     await act(async () => {
       await loadScene(scene)
     })
     return rendered
+  }
+
+  /** trace 里的按键事件 → 页面上的 KeyboardEvent。`toInputEvent` 那张表的反向。 */
+  function dispatch(input: { e: string; k: string; ctrl?: boolean }) {
+    const key =
+      input.k === 'space'
+        ? ' '
+        : `Arrow${input.k.charAt(0).toUpperCase()}${input.k.slice(1)}`
+    window.dispatchEvent(
+      new KeyboardEvent(input.e === 'press' ? 'keydown' : 'keyup', {
+        key,
+        ctrlKey: input.ctrl === true,
+      }),
+    )
   }
 
   function press(key: string, init: KeyboardEventInit = {}) {
@@ -107,6 +128,34 @@ describe('useGame 接线', () => {
       vi.advanceTimersByTime(5000)
     })
     expect(result.current.dialogue?.sentence).toBe(sentences[1]![2])
+  })
+
+  /**
+   * 出口切换的接线（xl-9bd.12）：**世界换了场景，调用方要能知道**。
+   *
+   * 画面是跟着 `useGame` 报出来的这个场景走的（见 `app/App.tsx`），接不上的
+   * 表现是"走出门之后人在新场景里跑，画面还是旧地图"——而状态层与渲染器
+   * 各自的测试都还是绿的。
+   *
+   * 按键不是手编的：照着真值 `dorm-exit` 里那一 tick 实际喂给原版的事件回放
+   * （`docs/trace-format.md`）。一 tick 一次 `setInterval`，10 ms 一拍，与
+   * `advance` 的步长严丝合缝。换场景发生在第几 tick 也来自真值，不写死。
+   */
+  it('走到出口，报出来的场景跟着真值换掉', async () => {
+    const trace = readTrace('dorm-exit')
+    const switchAt = trace.ticks.findIndex((tick) => tick.scene !== trace.ticks[0]!.scene)
+    expect(switchAt).toBeGreaterThan(0)
+
+    const { result } = await mount(trace.script.scene.replace(/\.txt$/, ''))
+    expect(result.current.scene).toBe('宿舍')
+
+    for (const tick of trace.ticks.slice(0, switchAt + 1)) {
+      act(() => {
+        for (const input of tick.input) dispatch(input)
+        vi.advanceTimersByTime(10)
+      })
+    }
+    expect(result.current.scene).toBe(trace.ticks[switchAt]!.scene.replace(/\.txt$/, ''))
   })
 
   it('卸载之后不再推进，也不再收键', async () => {

@@ -103,14 +103,22 @@ export function createBgmPlayer(options: BgmPlayerOptions = {}): BgmPlayer {
     if (!sound) sound = create()
     sound.loop = true
     sound.src = url
-    const started = sound.play()
-    if (started && typeof started.then === 'function') {
-      started.then(
-        () => {
-          blocked = false
-        },
-        () => arm(),
-      )
+    // `play()` 有两种失败法：返回一个 reject 的 Promise（浏览器的自动播放
+    // 策略，实测 headless Chrome 上就是 NotAllowedError），或者当场抛
+    // （jsdom 的 HTMLMediaElement 根本没实现它）。两种都当"被挡下来了"处理 ——
+    // 让一次放不出声去掀翻整个游戏循环，是这里最不该有的事。
+    try {
+      const started = sound.play()
+      if (started && typeof started.then === 'function') {
+        started.then(
+          () => {
+            blocked = false
+          },
+          () => arm(),
+        )
+      }
+    } catch {
+      arm()
     }
   }
 
