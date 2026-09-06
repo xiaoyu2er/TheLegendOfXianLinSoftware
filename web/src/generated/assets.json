@@ -592,6 +592,8 @@
   "narratage:bg:50": "narratage/50.webp",
   "narratage:bg:51": "narratage/51.webp",
   "bgm:大地图": "bgm/大地图.m4a",
+  "bgm:大地图夜": "bgm/大地图夜.m4a",
+  "bgm:欢乐": "bgm/欢乐.m4a",
   "bgm:欢乐的宿舍": "bgm/欢乐的宿舍.m4a",
   "bgm:舒缓": "bgm/舒缓.m4a"
 }
