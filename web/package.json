@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "bake": "vite-node scripts/bake.ts",
     "check:assets": "vite-node scripts/checkAssets.ts",
+    "compare": "vite-node scripts/compare.ts --",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

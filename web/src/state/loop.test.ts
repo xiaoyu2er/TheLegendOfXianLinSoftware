@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenes'
-import { advance, createTicker } from './loop'
+import { advance, createTicker, withTimeScale } from './loop'
 import { createWorld } from './step'
 import type { InputEvent } from './types'
 
@@ -64,5 +64,62 @@ describe('定步长推进器', () => {
   it('时间倒流按 0 处理，不倒着推进', () => {
     const start = createTicker(createWorld(scene))
     expect(advance(start, [], -1000)).toEqual(start)
+  })
+})
+
+/**
+ * 时间加速。原版把 30 处时间常数收拢进 `tools.Clock` 才做得到这件事；这一侧
+ * 因为时间本来就是 `step()` 的入参，加速只是把真实流逝的毫秒乘一个数。
+ *
+ * 判据不是"跑得快了"（那没法断言），而是**加速 k 倍跑 T 毫秒，与 1× 跑 k·T
+ * 毫秒得到逐字段相同的世界**。这条为真，加速就严格线性，且不改变游戏行为；
+ * 一旦谁把倍率乘到 tick 步长上（那是最顺手的写法），定时器的触发时刻会被跳过，
+ * 主角走的距离立刻对不上，这里就红。
+ */
+describe('时间加速', () => {
+  const scene = getScene('宿舍')
+  const walkRight: InputEvent[] = [{ e: 'press', k: 'right', ctrl: false }]
+  // 分母写在这儿：四个倍率，一个都不能少测。
+  const FACTORS = [1, 2, 5, 10]
+
+  function runScaled(scale: number, chunks: readonly number[]) {
+    let ticker = createTicker(createWorld(scene), scale)
+    let first = true
+    for (const ms of chunks) {
+      ticker = advance(ticker, first ? walkRight : [], ms)
+      first = false
+    }
+    return ticker.world
+  }
+
+  for (const k of FACTORS) {
+    it(`${k}× 跑 1 秒 == 1× 跑 ${k} 秒，逐字段相同`, () => {
+      expect(runScaled(k, [1000])).toEqual(runScaled(1, [1000 * k]))
+    })
+  }
+
+  it('倍率不改变余量的攒法：碎片化地喂也和一口气喂一样', () => {
+    const frames = Array(60).fill(16.7)
+    expect(runScaled(5, frames)).toEqual(runScaled(5, [frames.reduce((a, b) => a + b, 0)]))
+  })
+
+  it('这四个倍率确实跑出了不同的世界——否则上面比的是四个静止的世界', () => {
+    const worlds = FACTORS.map((k) => JSON.stringify(runScaled(k, [1000])))
+    expect(new Set(worlds).size).toBe(FACTORS.length)
+  })
+
+  it('换倍率不动世界，也不丢攒着的余量与输入', () => {
+    const ticker = advance(createTicker(createWorld(scene)), walkRight, 5)
+    const faster = withTimeScale(ticker, 4)
+    expect(faster.world).toEqual(ticker.world)
+    expect(faster.carryMs).toBe(ticker.carryMs)
+    expect(faster.pending).toEqual(ticker.pending)
+    expect(faster.timeScale).toBe(4)
+  })
+
+  it('非正的倍率是硬失败，不是"当作 1 处理"', () => {
+    expect(() => createTicker(createWorld(scene), 0)).toThrow(/必须为正/)
+    expect(() => createTicker(createWorld(scene), -1)).toThrow(/必须为正/)
+    expect(() => withTimeScale(createTicker(createWorld(scene)), Number.NaN)).toThrow(/必须为正/)
   })
 })
