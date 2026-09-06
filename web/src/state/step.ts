@@ -106,8 +106,9 @@ const NO_GATES: SceneGates = { speaking: false }
  * `walk.stop()`），钉死次序只是不留"万一"。
  *
  * `input` 是本 tick 收到的输入事件，按到达顺序；方向键之外的键在这里被显式
- * 忽略（trace 里就混着 `space`）。对话/旁白期间要不要屏蔽方向键则是调用方的事
- * （原版 `ScenePanel.keyPressed` 的那几层 `if`），状态层不替它做判断。
+ * 忽略（trace 里就混着 `space`）。**旁白进行中按键不算数**——原版
+ * `ScenePanel.keyPressed` 整个函数体在 `if (!narratage.isNarratage)` 里面
+ * （xl-9bd.11）。对话期间的那几层 `if` 还在调用方手上（xl-9bd.10）。
  */
 export function step(
   world: World,
@@ -124,9 +125,21 @@ export function step(
 
   for (const event of input) {
     // 方向键之外一概不认。原版 `ScenePanel.keyPressed` 里空格走的是搭话/
-    // 推进对话那几条分支（xl-9bd.9 / .11），跟主角的移动没有关系。
+    // 推进对话那几条分支（xl-9bd.9 / .10），跟主角的移动没有关系。
     if (!isArrowKey(event.k)) continue
     if (event.e === 'press') {
+      // 旁白进行中，`ScenePanel.keyPressed` 一个分支都不走。读的是**本 tick
+      // 开跑前**的标志，因为原版的按键在定时器与 step() 之前到达 —— 与这里
+      // 的 `world.narratage` 正是同一个时刻。
+      //
+      // 松手不受这道门管：`keyReleased` 是另一个方法，外面没有那个 if，
+      // 旁白期间松手照样把 `canStop` 置位。差别看得见：旁白起来时主角正走着，
+      // 玩家松了手 —— 漏了这条，他会一直走到旁白结束。
+      //
+      // **今天的真值分辨不出这道门**：dorm-intro 从头到尾没有一次按键落在
+      // 旁白期间。所以它是照着 `ScenePanel.keyPressed` 抄的，由
+      // `step.test.ts` 钉住，不是从 trace 里读出来的。
+      if (world.narratage.active) continue
       // 原版 `ScenePanel.keyPressed`：先 `checkRun()`（只做 setRun(true)），
       // 再 `switchWalk()`。按住控制键**只在按下方向键的那一刻**置位跑步，
       // 松开控制键什么也不做——跑步是在跑步定时器停下时自己清掉的。
