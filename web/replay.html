@@ -7,11 +7,19 @@
       /* 画布必须是**未经缩放**的 1024×640：截图按逻辑像素裁，
          舞台那套 CSS 缩放会让截出来的图不是位图本身。 */
       html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+      #stage { position: relative; width: 1024px; height: 640px; }
       #host, #host canvas { width: 1024px; height: 640px; display: block; }
+      /* 对话框是真 DOM（xl-9bd.10），所以取图页也得把它叠上来 —— 少了它，
+         比对量到的是"Web 侧整个没画对话框"，而不是这一票真正的缺口。
+         逻辑坐标系与 stage/Stage.tsx 的 overlay 一致，只是这里不缩放。 */
+      #overlay { position: absolute; inset: 0; }
     </style>
   </head>
   <body>
-    <div id="host"></div>
+    <div id="stage">
+      <div id="host"></div>
+      <div id="overlay"></div>
+    </div>
     <script type="module" src="/src/replay/main.ts"></script>
   </body>
 </html>

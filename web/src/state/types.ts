@@ -8,6 +8,8 @@
  * 彻底无关了（见 `loop.ts`）。
  */
 
+import type { DialogueScript, DialogueState } from './dialogue'
+import type { NarratageState } from './narratage'
 import type { NpcState } from './npc'
 
 /** 主角朝向。原版是 `Role.DOWN/UP/LEFT/RIGHT` = 0/8/16/24。 */
@@ -108,6 +110,11 @@ export interface RoleState {
  * 它已经加上了 `dtMs`。所以 `step()` 返回的世界就是 trace 里 `vt == 入参
  * 的 timeMs` 那一行的快照。
  *
+ * `dialogue` 是对话框、逐字游标与头像（xl-9bd.10），`script` 是它要用的那几段
+ * 脚本数据加上 `ScenePanel.isScript`。它们在这里而不是在渲染层，是因为逐字
+ * 游标**是可断言的世界状态**：trace 每一 tick 都记着原版此刻打到第几个字，
+ * 两端只能对齐，不能协商。
+ *
  * `npcs` 参与两件事：碰撞（`RoleEvent.isAllow` 里那条 `y == npc.y + 1`）与
  * 绘制顺序（`ScenePanel.paint` 里那个全局翻转）。它们**自己会动** —— 四种运动
  * 状态与"主角走近就停下"都在 `state/npc.ts` 里，由 `step()` 逐 tick 推进
@@ -119,4 +126,22 @@ export interface World {
   readonly collision: CollisionMap
   readonly npcs: readonly NpcState[]
   readonly role: RoleState
+  readonly script: DialogueScript
+  readonly dialogue: DialogueState
+  /**
+   * 旁白（xl-9bd.11）。逐字打印、背景动画、以及"播完就再也不起"这三件事都在
+   * `state/narratage.ts` 里，由 `step()` 逐 tick 推进。
+   *
+   * **它同时是一道绘制开关**：旁白进行中原版一个精灵都不画（`ScenePanel.paint()`
+   * 里主角、NPC、地图整个在 `if (!narratage.isNarratage)` 里面），所以渲染层
+   * 也要读它。
+   */
+  readonly narratage: NarratageState
+  /**
+   * `ScenePanel.isScript`。旁白与主线对话的轮询只在它为真时进行——从大地图走
+   * 进宿舍时原版把它置成 false，那时进场脚本不该再播一遍。
+   *
+   * 原版的字段初值是 `true`，这里同样默认 `true`（见 `createWorld`）。
+   */
+  readonly isScript: boolean
 }

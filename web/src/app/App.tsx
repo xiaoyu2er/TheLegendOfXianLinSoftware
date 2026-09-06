@@ -6,6 +6,7 @@ import type { ScalingMode } from '../stage/scaling'
 import { useFullscreen } from '../stage/useFullscreen'
 import { useSceneRenderer } from '../scene/useSceneRenderer'
 import { useGame } from '../game/useGame'
+import { DialogueBox } from '../ui/DialogueBox'
 import { devToolsEnabled } from './devTools'
 
 export function App() {
@@ -21,8 +22,9 @@ export function App() {
   const [sceneName, setSceneName] = useState<string>(START_SCENE)
   const fullscreen = useFullscreen(shellRef)
   const { status, renderer } = useSceneRenderer(stageHostRef, sceneName)
-  // 方向键走动、按住 Ctrl（或 Shift）跑动。世界的推进与画面无关，见 useGame。
-  useGame(renderer, sceneName)
+  // 方向键走动、按住 Ctrl（或 Shift）跑动、空格搭话。世界的推进与画面无关，
+  // 见 useGame；对话框是它交出来的那份状态的投影。
+  const dialogue = useGame(renderer, sceneName)
 
   return (
     <div className="app-shell" ref={shellRef}>
@@ -30,11 +32,14 @@ export function App() {
         scalingMode={scalingMode}
         hostRef={stageHostRef}
         overlay={
-          status.kind === 'ready' ? null : (
-            <p className={`stage-notice stage-notice--${status.kind}`} role="status">
-              {status.kind === 'loading' ? `正在载入 ${sceneName}…` : status.message}
-            </p>
-          )
+          <>
+            {status.kind === 'ready' ? null : (
+              <p className={`stage-notice stage-notice--${status.kind}`} role="status">
+                {status.kind === 'loading' ? `正在载入 ${sceneName}…` : status.message}
+              </p>
+            )}
+            {dialogue ? <DialogueBox dialogue={dialogue} /> : null}
+          </>
         }
       />
       <div className="toolbar">
@@ -50,7 +55,9 @@ export function App() {
             </select>
           </label>
         ) : null}
-        <p className="toolbar-hint">方向键走动，按住 Ctrl 或 Shift 跑动</p>
+        <p className="toolbar-hint">
+          方向键走动，按住 Ctrl 或 Shift 跑动，空格搭话／推进对话，回车跳过逐字打印
+        </p>
         <button
           type="button"
           onClick={fullscreen.toggle}

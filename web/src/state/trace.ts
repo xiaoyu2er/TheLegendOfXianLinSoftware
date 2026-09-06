@@ -4,13 +4,22 @@ import type { InputEvent, TilePos } from './types'
 
 /**
  * `tools/traces/out/*.trace.json` 的形状——**只声明已经有人对齐的字段**。
- * 其余字段（对话、旁白）属于别的票，那边自己去读。
+ * 今天是主角、NPC、对话框、旁白、视口与绘制顺序。
  *
  * 这是**测试与开发工具用的读取器**，跑在 Node 上（`node:fs`），不进浏览器包。
  */
 export interface Trace {
   readonly format: string
-  readonly script: { readonly name: string; readonly scene: string; readonly tickMs: number }
+  readonly script: {
+    readonly name: string
+    readonly scene: string
+    readonly tickMs: number
+    /**
+     * `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。
+     * 见 `docs/trace-format.md` 的剧本字段表。
+     */
+    readonly isScript: boolean
+  }
   readonly tickCount: number
   readonly ticks: readonly TraceTick[]
 }
@@ -45,15 +54,43 @@ export interface TraceTick {
   }
   readonly npcs: readonly TraceNpc[]
   /**
-   * 对话与旁白，**只取 `step()` 那两道门要用的字段**（`ScenePanel.step()` 的
-   * 第 3 步：`!dialogueEvent.isSpeaking && !narratage.isNarratage` 时才检查
-   * NPC）。逐字打印那一套是 xl-9bd.10 / .11 的事，那边自己去补。
+   * 对话框的**全部**可断言字段（xl-9bd.10 起）。字段名与 `state/dialogue.ts`
+   * 的 `DialogueState` 一一对应，逐 tick 比对时不必翻译一道。
    *
-   * `source` 为 `script` 才是 `isSpeaking`；`npc`（NPC 口头语）走的是
-   * `npcEvent.isOral`，**不在**那道门里。
+   * `source` 为 `script` 才是 `dialogueEvent.isSpeaking`；`npc` 走的是
+   * `npcEvent.isOral`。两者共用同一个 `Dialogue` 对象，所以下面那十个字段
+   * 两种来源都有效。
    */
-  readonly dialogue: { readonly active: boolean; readonly source: 'npc' | 'script' | 'none' }
-  readonly narratage: { readonly active: boolean }
+  readonly dialogue: {
+    readonly active: boolean
+    readonly source: 'npc' | 'script' | 'none'
+    readonly type: number
+    readonly head: number
+    readonly name: string | null
+    readonly sentence: string | null
+    /** `count_sentence`：整句的游标，**翻页不清零**。 */
+    readonly cursor: number
+    readonly row: number
+    readonly col: number
+    /** `isPrint`：弹出动画播完、开始打字。 */
+    readonly printing: boolean
+    readonly sentenceOver: boolean
+    /** `isBufferedTextOver`：一屏 4×20 打满，等翻页。 */
+    readonly pageOver: boolean
+  }
+  /**
+   * 旁白的整个状态机（xl-9bd.11）。六个字段与 `state/narratage.ts` 的
+   * `NarratageState` 逐字段对应，`traceReplay.test.ts` 逐 tick 比对它们 ——
+   * 只比 `active` 的话，逐字游标整个写错也照样是绿的。
+   */
+  readonly narratage: {
+    readonly active: boolean
+    readonly over: boolean
+    readonly line: number
+    readonly cursor: number
+    readonly row: number
+    readonly bg: number
+  }
   /** `OtherEvent.calOffset()` 的六元组，见 `scene/viewport.ts`。 */
   readonly viewport: {
     readonly offsetX: number

@@ -1,8 +1,13 @@
+import { createElement } from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
+import type { Root } from 'react-dom/client'
 import { loadScene } from '../data/scenes'
+import { DialogueBox } from '../ui/DialogueBox'
+import '../index.css'
 import { createSceneRenderer } from '../scene/sceneRenderer'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { createWorld, step } from '../state/step'
-import type { SceneGates } from '../state/step'
 import type { InputEvent, World } from '../state/types'
 
 /**
@@ -14,22 +19,25 @@ import type { InputEvent, World } from '../state/types'
  *
  * 为什么回放的是按键而不是坐标：坐标是结论，按键是输入。喂坐标等于把两端
  * 的分歧提前抹平，比出来的图会一直一致，而游戏是错的。
+ *
+ * **画一帧包含对话框**（xl-9bd.10）。对话框是真 DOM，不在 Pixi 的画布上，
+ * 所以这里也得把那一层叠上去 —— 少了它，跨端比对量到的是"Web 侧整个没画
+ * 对话框"，那会把这一票的真实缺口（字体与基线对不到逐像素）盖掉。
  */
 
 interface ReplayTick {
   readonly t: number
   readonly input: readonly InputEvent[]
-  /**
-   * `ScenePanel.step()` 第 3 步那道门的两个条件。**NPC 本身不从真值里喂** ——
-   * 它们由 `state/npc.ts` 自己推进（xl-9bd.9），喂进来就等于把两端的分歧提前
-   * 抹平，跟喂坐标是同一个错。
-   */
-  readonly dialogue: { readonly source: 'npc' | 'script' | 'none' }
-  readonly narratage: { readonly active: boolean }
 }
 
 interface ReplayTrace {
-  readonly script: { readonly name: string; readonly scene: string; readonly tickMs: number }
+  readonly script: {
+    readonly name: string
+    readonly scene: string
+    readonly tickMs: number
+    /** `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。 */
+    readonly isScript: boolean
+  }
   readonly tickCount: number
   readonly ticks: readonly ReplayTick[]
 }
@@ -45,6 +53,7 @@ export interface ReplayApi {
 }
 
 let renderer: SceneRenderer | null = null
+let overlay: Root | null = null
 let trace: ReplayTrace | null = null
 let world: World | null = null
 let next = 0
@@ -59,11 +68,17 @@ const api: ReplayApi = {
       if (!host) throw new Error('取图页没有 #host')
       renderer = await createSceneRenderer(host)
     }
+    if (!overlay) {
+      const host = document.getElementById('overlay')
+      if (!host) throw new Error('取图页没有 #overlay')
+      overlay = createRoot(host)
+    }
     await renderer.showScene(scene)
     trace = parsed
-    world = createWorld(scene)
+    world = createWorld(scene, parsed.script.isScript)
     next = 0
     renderer.showWorld(world)
+    drawOverlay(world)
     return { scene: sceneName, tickCount: parsed.tickCount }
   },
 
@@ -77,23 +92,28 @@ const api: ReplayApi = {
     }
     for (; next <= t; next++) {
       const tick = trace.ticks[next]!
-      world = step(world, tick.input, trace.script.tickMs, gatesBefore(trace, next))
+      world = step(world, tick.input, trace.script.tickMs)
     }
     renderer.showWorld(breakRender(world, t))
+    drawOverlay(world)
     await twoFrames()
     return { t, timeMs: world.timeMs, x: world.role.px >> 5, y: world.role.py >> 5 }
   },
 }
 
 /**
- * 第 `t` 个 tick 跑 `step()` 时那道门的两个条件，取**上一 tick 的快照**。
- * 与 `state/traceReplay.test.ts` 的 `gatesBefore` 是同一件事、同一个近似，
- * 理由（以及"今天的真值分辨不出它"这条实测）写在那里。
+ * 把 DOM 那一层（今天只有对话框）画成这一帧的样子。
+ *
+ * `flushSync` 是必须的：React 18 起 `root.render` 是异步的，而截图只等两次
+ * rAF。不同步刷新的话，对话框会**永远晚一帧**，而画面看起来完全正常 ——
+ * 正是 `twoFrames` 那段注释说的那类错。
  */
-function gatesBefore(trace: ReplayTrace, t: number): SceneGates {
-  const before = trace.ticks[t - 1]
-  if (!before) return { speaking: false, narratage: false }
-  return { speaking: before.dialogue.source === 'script', narratage: before.narratage.active }
+function drawOverlay(world: World): void {
+  if (!overlay) return
+  const root = overlay
+  flushSync(() => {
+    root.render(createElement(DialogueBox, { dialogue: world.dialogue }))
+  })
 }
 
 /**

@@ -19,11 +19,19 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
-import { mapAssetId, npcAssetId, roleAssetId } from '../src/assets/ids'
+import {
+  dialogueAssetId,
+  headAssetId,
+  mapAssetId,
+  narratageBgAssetId,
+  npcAssetId,
+  roleAssetId,
+} from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
+import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(WEB, '..')
@@ -39,6 +47,32 @@ const ROLE_SPRITES = {
   walk: { dir: 'roles/zhangxiaofan', count: 32, firstFile: 0 },
   run: { dir: 'roles/zhangxiaofanRun', count: 16, firstFile: 1 },
 } as const
+
+/**
+ * 对话框的固定素材（xl-9bd.10），照抄 `scene/Dialogue.java` 的构造函数：
+ * 它一次性读 91 张头像 + 对话框 + 名字牌 + 两帧等待提示，与场景数据无关，
+ * 所以跟主角精灵一样由烘焙器按规则算路径，不走 `scanSceneAssets`。
+ *
+ * **91 是那个 for 循环的上界**，不是今天数据里用到了多少个头像
+ * （实测只用到 72 个）。按源码的上界烘，缺一张就跟主角精灵一样硬失败。
+ */
+const HEAD_COUNT = 91
+
+/** 逻辑名 → 仓库里的文件。`dialogueAssetId` 的另一半。 */
+const DIALOGUE_IMAGES = {
+  box: 'dialogue/对话框.png',
+  name: 'dialogue/name.png',
+  icon0: 'dialogue/36-18.png',
+  icon1: 'dialogue/36-19.png',
+} as const
+
+/**
+ * 旁白的背景动画。张数与文件编号都照抄原版 `scene.Narratage` 的构造函数：
+ * `all_magic_21-{2..53}.png`，共 52 张。**两个常量从 `state/narratage.ts`
+ * 进口**，不在这里再抄一遍 —— 抄两份，哪天改了一处就是"背景少播几帧"，
+ * 画面上跟正常的循环分不开。
+ */
+const NARRATAGE_BG_DIR = 'backImages/NarratageBackImages'
 
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
@@ -149,6 +183,48 @@ function main(): void {
     console.log(`  主角${gait === 'walk' ? '行走' : '跑步'}图 ${spec.count} 帧 → roles/${gait}/*.webp`)
   }
 
+  // 对话框与头像（xl-9bd.10）。跟主角精灵同一套：路径由规则算出来，缺了就攒进
+  // 上面那份 missing 清单一次报全，而不是撞见第一张就退出。
+  for (const [name, source] of Object.entries(DIALOGUE_IMAGES)) {
+    const absolute = resolve(REPO, source)
+    if (!existsSync(absolute)) {
+      missing.push(`对话框素材 ${source}`)
+      continue
+    }
+    const relative = `dialogue/${name}.webp`
+    manifest[dialogueAssetId(name as keyof typeof DIALOGUE_IMAGES)] = relative
+    bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
+  }
+  for (let index = 0; index < HEAD_COUNT; index++) {
+    // 下标 → 文件编号差 1，见 `headAssetId`。
+    const source = resolve(REPO, 'heads', `heads (${index + 1}).png`)
+    if (!existsSync(source)) {
+      missing.push(`头像 heads/heads (${index + 1}).png`)
+      continue
+    }
+    const relative = `heads/${index}.webp`
+    manifest[headAssetId(index)] = relative
+    bytes += toWebp(source, resolve(ASSETS_OUT, relative))
+  }
+  console.log(
+    `对话框素材 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 头像 ${HEAD_COUNT} 张 → dialogue/*.webp、heads/*.webp`,
+  )
+
+  // 旁白的背景动画。跟主角精灵一样不在 checkSceneAssets 的覆盖范围内 ——
+  // 那一层查的是场景数据引用到的资源，而这 52 张的路径是原版 `Narratage`
+  // 的构造函数写死的，脚本里一个字都没提。
+  for (let frame = 0; frame < BG_COUNT; frame++) {
+    const source = resolve(REPO, NARRATAGE_BG_DIR, `all_magic_21-${frame + BG_FIRST_FILE}.png`)
+    if (!existsSync(source)) {
+      missing.push(`旁白背景图 ${NARRATAGE_BG_DIR}/all_magic_21-${frame + BG_FIRST_FILE}.png`)
+      continue
+    }
+    const relative = `narratage/${frame}.webp`
+    manifest[narratageBgAssetId(frame)] = relative
+    bytes += toWebp(source, resolve(ASSETS_OUT, relative))
+  }
+  console.log(`  旁白背景图 ${BG_COUNT} 帧 → narratage/*.webp`)
+
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)
     for (const m of missing) console.error(`  ${m}`)
@@ -158,7 +234,7 @@ function main(): void {
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧）→ WebP 共 ${kb(bytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧）→ WebP 共 ${kb(bytes)}`,
   )
 }
 

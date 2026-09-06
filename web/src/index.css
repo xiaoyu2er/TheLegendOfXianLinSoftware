@@ -150,3 +150,72 @@ body {
   color: #a99fb8;
   white-space: nowrap;
 }
+
+/* ===================== 对话框（xl-9bd.10） =====================
+   叠在舞台的 overlay 层里，坐标全部是 1024×640 逻辑画布上的绝对坐标，
+   与原版 `scene/Dialogue.java` 的 drawDialogue 一一对应（换算在
+   `ui/dialogueLayout.ts`）。这里只管样子，不管位置。 */
+
+.dialogue {
+  position: absolute;
+  inset: 0;
+  /* 对话框不吃点击：它是画面，不是控件。玩家推进对话按的是空格。 */
+  pointer-events: none;
+}
+
+/* 整句话的无障碍副本。绝对定位的 80 个单字读屏读不出一句人话，所以另给一份。
+   `clip-path` 而不是 `display:none` —— 后者读屏也读不到。 */
+.dialogue-transcript {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dialogue-box {
+  position: absolute;
+  background-repeat: no-repeat;
+  image-rendering: inherit;
+}
+
+.dialogue-head,
+.dialogue-icon {
+  position: absolute;
+  image-rendering: inherit;
+}
+
+.dialogue-name {
+  position: absolute;
+  background-repeat: no-repeat;
+}
+
+/* 名字：原版是 30 px 的粗体黑字，画在名字牌上。 */
+.dialogue-name-text {
+  position: absolute;
+  left: 0;
+  font-weight: bold;
+  color: #000;
+  line-height: 1;
+  white-space: nowrap;
+  font-family: '文鼎粗钢笔行楷', 'STKaiti', 'KaiTi', 'Kaiti SC', serif;
+}
+
+/* 正文：一个字一个格，格宽就是字号（原版的 `j * fontSize_dialogue`）。
+   字体在绝大多数机器上装不了，退化到楷体一路；对话框这一块因此永远对不到
+   逐像素，见 `src/compare/expected.ts`。 */
+.dialogue-char {
+  position: absolute;
+  display: block;
+  font-weight: bold;
+  color: #00f;
+  line-height: 1;
+  font-family: '文鼎粗钢笔行楷', 'STKaiti', 'KaiTi', 'Kaiti SC', serif;
+}
+
+/* 【…】之间是红的，两个括号本身也是。 */
+.dialogue-char--red {
+  color: #f00;
+}
