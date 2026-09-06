@@ -1,7 +1,8 @@
 # web/ —— 浏览器版
 
 Vite + React + TypeScript + Pixi。现在能打开网页看到**宿舍**，开发模式下可以
-跳到**大地图**（xl-9bd.3）。主角、NPC、对话、镜头跟随都还没有。
+跳到**全部 96 个场景**里的任意一个（xl-9bd.3 / xl-9bd.4）。主角、NPC、对话、
+镜头跟随都还没有。
 
 ## 命令
 
@@ -9,12 +10,13 @@ Vite + React + TypeScript + Pixi。现在能打开网页看到**宿舍**，开�
 
 ```bash
 pnpm install
-pnpm dev         # 开发服务器
-pnpm bake        # 重烘场景 JSON 与 WebP（见下）
-pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest run
-pnpm build       # 产物在 dist/，可直接静态部署
-pnpm preview     # 本地预览 dist/
+pnpm dev          # 开发服务器
+pnpm bake         # 重烘场景 JSON 与 WebP（见下）
+pnpm check:assets # 对入库产物跑一遍资源存在性硬校验（bake 里也会跑）
+pnpm typecheck    # tsc --noEmit
+pnpm test         # vitest run
+pnpm build        # 产物在 dist/，可直接静态部署
+pnpm preview      # 本地预览 dist/
 ```
 
 `typecheck` / `test` / `build` 三条在 CI 里跑，见 `.github/workflows/web.yml`。
@@ -22,24 +24,53 @@ pnpm preview     # 本地预览 dist/
 
 ## 数据烘焙
 
-`pnpm bake`（`scripts/bake.ts`）把 `script/*.txt`（GBK）烘成 JSON，把它们的
-地图图片转成 WebP，并写一张"逻辑 ID → 文件"的映射表。产物在
-`src/generated/`，**全部入库**：
+`pnpm bake`（`scripts/bake.ts`）把 `script/` 下**全部 96 个** `.txt`（GBK）
+烘成 JSON，把它们用到的 28 张地图转成 WebP（共 9.5 MB），并写一张
+"逻辑 ID → 文件"的映射表。产物在 `src/generated/`，**全部入库**：
 
 - CI 与 `pnpm build` 因此不需要 Java、不需要 cwebp、不需要仓库外的原始素材；
 - 代价是产物可能陈旧，`src/data/scenes.test.ts` 会现场重烘一遍来判定。
 
 判据不是"跑通了"，是**与原版解析器自己导出的冻结真值逐字段相等**：
 `tools/ground-truth/*.json` 由 `tools/export-truth.sh` 从 `tools.Reader` 导出，
-`src/data/bakeScript.test.ts` 逐字段对，分母是 2 个场景 × 26 个字段。
-M1 只烘宿舍与大地图；扩到 96 个是 xl-9bd.4 / xl-9bd.5。
+`src/data/bakeScript.test.ts` 逐字段对。分母分两层：M1 链路上的宿舍与大地图对
+全部 26 个字段，96 个脚本对基础段的 13 个字段（字段怎么切见
+`src/data/types.ts`；剩下 13 个剧情段字段是 xl-9bd.5）。
+
+## 资源存在性硬校验
+
+烘焙前先把数据引用到的**每一条**资源路径 stat 一遍，缺一条就非零退出，
+一个字节都不落盘。1602 条引用（互异 523 条）分五类：地图、场景 BGM、
+NPC 图片、战斗背景、出口目标脚本，拼法逐条对着原版（见
+`src/assets/sceneAssets.ts` 的表）。
+
+理由是本项目最贵的那种坑：原版 `ImageIcon` 路径错了既不抛异常也不返回 null，
+只给一个宽度 −1 的空壳。27 帧 NPC 素材缺了十三年、3 场战斗背景白了十三年，
+没人发现，因为**失败长得和成功一模一样**。
+
+仓库当下确实缺 37 条（27 帧素材 + 1 条漏扩展名的 NPC 路径 + 9 个不是文件的
+出口目标），它们列在 `src/assets/knownMissing.ts`，每条挂一个 bd issue。
+这张表**两头都会红**：表外的缺失红，表内的路径哪天存在了也红 —— 否则
+"清单里全都还缺着"与"清单早就过期了"看起来会一模一样。
+
+那 3 条 Windows 反斜杠路径（`剧情1` / `迷宫1` 的战斗背景）在这里被规范化，
+`src/assets/sceneAssets.test.ts` 拿它们当夹具：**不要"修好"数据**，
+改掉了这段逻辑就永远测不到。
+
+一个已知的代价：`src/data/scenes.ts` 的 glob 是 eager 的，96 份场景 JSON
+（源文件共 952 KB）因此整个进主 bundle。地图图片没有这个问题（`?url`，
+谁用谁 fetch）。改成按需加载会把 `getScene` 变成异步，是 xl-9bd.15。
 
 资产走**逻辑 ID**：游戏逻辑说 `map:宿舍`，`resolveAsset` 查表拿到实际 URL。
 将来换素材、换格式、换目录都不动游戏逻辑（素材还有版权问题要处理，一定会换）。
 
-WebP 的编码参数按源分：PNG 用无损，JPG 用 q80。实测（KiB / MiB）：
-宿舍 136 KB → 无损 47 KB，转有损 q80 反而涨到 159 KB；
-大地图 4.2 MB → q80 2.0 MB。
+WebP 的编码参数按源分：PNG 用无损，JPG 用 q80。实测（KB）：
+宿舍 136 → 无损 47，转有损 q80 反而涨到 159；大地图 4.2 MB → q80 2.0 MB。
+
+"PNG 转有损反而更大"这句话扩到 28 张之后**只对其中大部分成立**：
+大迷宫.png 无损 2579 / q80 449，一张就占了 9.5 MB 里的 2.5 MB。
+仍然按源格式走，没有改成"哪个小选哪个"——后者会在没人看的情况下把像素图
+降质。这两张要不要开例外是 xl-9bd.14。
 
 ## 1024×640 是硬约束
 

@@ -30,7 +30,10 @@ export const SCENE_NAMES: readonly string[] = Object.keys(SCENES).sort()
 export function getScene(name: string): SceneScript {
   const scene = SCENES[name]
   if (!scene) {
-    throw new Error(`没有烘焙过的场景 ${name}；已有 ${SCENE_NAMES.join('、')}。`)
+    // 96 个名字全列出来是一堵墙，不是信息。说清楚"有多少、在哪儿看"就够了。
+    throw new Error(
+      `没有烘焙过的场景 ${name}；已烘焙 ${SCENE_NAMES.length} 个，见 src/generated/scenes/。`,
+    )
   }
   return scene
 }

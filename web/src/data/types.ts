@@ -77,3 +77,47 @@ export const SCENE_SCRIPT_FIELDS = [
   'treasureBox',
   'mapSet',
 ] as const satisfies readonly (keyof SceneScript)[]
+
+/**
+ * 26 个字段切成两半：**基础段**与**剧情段**。切法照 xl-9bd 的拆票方式——
+ * 基础段（地图头 + Music / Exit / NextScript / NPC / Role / Task）是
+ * xl-9bd.4，剧情段（Dialogue / Narratage / Fight / Select* / TreasureBox）
+ * 是 xl-9bd.5。
+ *
+ * `Role` 与 `Task` 两段原版存进静态字段，不在这 26 个之内，烘焙器只把那一行
+ * 吃掉（见 `bakeScript.ts` 的 `readSection`）。
+ *
+ * 两张表**必须凑齐 26 个且互不重叠**，`bakeScript.test.ts` 断言了这一点：
+ * 否则"基础段全部逐字段相等"可以靠把不合的字段挪去另一半来通过。
+ */
+export const BASE_SECTION_FIELDS = [
+  'script',
+  'mapName',
+  'col',
+  'row',
+  'roleX',
+  'roleY',
+  'mapSet',
+  'sceneMusic',
+  'nextScript',
+  'npcList',
+  'exits',
+  'nextScene',
+  'entrance',
+] as const satisfies readonly (keyof SceneScript)[]
+
+export const STORY_SECTION_FIELDS = [
+  'dialogueCode',
+  'dialogue',
+  'narratage',
+  'battle0',
+  'battle1',
+  'battle2',
+  'selectShopPanel',
+  'selectEquipmentShopPanel',
+  'selectBattlePanel',
+  'selectQuestion',
+  'question',
+  'answer',
+  'treasureBox',
+] as const satisfies readonly (keyof SceneScript)[]

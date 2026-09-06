@@ -18,7 +18,8 @@ describe('资产逻辑 ID', () => {
   })
 
   it('每个已烘焙场景的地图都能解析到一个产物 URL', () => {
-    // 分母 = 已烘焙的场景数，不是"找到几条算几条"。
+    // 分母 = 已烘焙的场景数（96），不是"找到几条算几条"。
+    expect(SCENE_NAMES.length).toBe(96)
     for (const name of SCENE_NAMES) {
       const scene = getScene(name)
       const url = resolveAsset(mapAssetId(scene.mapName))
@@ -32,6 +33,9 @@ describe('资产逻辑 ID', () => {
     // 静默返回 undefined 的话，缺图只会表现为"画面上少了点东西"——
     // 原版那 31 条缺失路径藏了十三年就是因为失败形态和成功一模一样。
     expect(() => resolveAsset('map:不存在的地图')).toThrowError(/映射表里没有资产/)
-    expect(knownAssetIds()).toEqual(['map:大地图', 'map:宿舍'])
+    // 96 个场景共用 28 张地图，映射表里就该正好是这 28 条。
+    expect(knownAssetIds().length).toBe(28)
+    expect(knownAssetIds()).toContain('map:宿舍')
+    expect(knownAssetIds().every((id) => id.startsWith('map:'))).toBe(true)
   })
 })
