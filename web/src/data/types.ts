@@ -19,7 +19,11 @@ export interface SceneScript {
   col: number
   /** 地图行数（瓦片） */
   row: number
-  /** 主角精灵的帧宽高，原版恒为 12 / 8，96 个脚本无一例外（实测） */
+  /**
+   * 主角进场时站的格子。**恒为 (12, 8)**：`tools.Reader` 把这两个字段初始化成
+   * 12 / 8，而 96 个脚本里没有一处给它们赋值（实测 96 份真值全是 12 / 8）。
+   * 真正的进场位置来自上一个场景的 `entrance`（出口事件，另一张票）。
+   */
   roleX: number
   roleY: number
   sceneMusic: string | null
@@ -44,7 +48,13 @@ export interface SceneScript {
   question: string[][] | null
   answer: string[][] | null
   treasureBox: string[][] | null
-  /** 碰撞网格：`mapSet[y][x]`，1 = 可走，0 = 挡住 */
+  /**
+   * 碰撞网格：`mapSet[y][x]`，**0 = 可走，非 0 = 挡住**。
+   *
+   * 极性跟直觉是反的，别记反了：原版 `RoleEvent.isAllow` 写的是
+   * `if (mapSet[y][x] != 0) return false;`。（这行注释此前写反了，
+   * 说的是"1 = 可走"；数据也证伪它——宿舍 (15, 8) 那面墙在网格里是 1。）
+   */
   mapSet: number[][]
 }
 

@@ -17,13 +17,23 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bakeScript } from '../src/data/bakeScript'
-import { mapAssetId } from '../src/assets/ids'
+import { mapAssetId, roleAssetId } from '../src/assets/ids'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(WEB, '..')
 
 /** M1 可玩链路：宿舍 →（出口）→ 大地图。 */
 const SCENES = ['宿舍', '大地图']
+
+/**
+ * 主角的行走图与跑步图。张数与文件编号都照抄原版 `scene.Role` 的构造函数：
+ * 走 `0..31`（4 个朝向 × 8 帧），跑 `1..16`（4 个朝向 × 4 帧）。
+ * **跑步图的文件从 1 开始**，而绘制时的下标从 0 开始，差的这个 1 在这里抹平。
+ */
+const ROLE_SPRITES = {
+  walk: { dir: 'roles/zhangxiaofan', count: 32, firstFile: 0 },
+  run: { dir: 'roles/zhangxiaofanRun', count: 16, firstFile: 1 },
+} as const
 
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
@@ -60,6 +70,21 @@ function main(): void {
     )
   }
 
+  for (const gait of ['walk', 'run'] as const) {
+    const spec = ROLE_SPRITES[gait]
+    for (let frame = 0; frame < spec.count; frame++) {
+      const source = resolve(REPO, spec.dir, `${frame + spec.firstFile}.png`)
+      if (!existsSync(source)) {
+        missing.push(`主角${gait === 'walk' ? '行走' : '跑步'}图 ${spec.dir}/${frame + spec.firstFile}.png`)
+        continue
+      }
+      const relative = `roles/${gait}/${frame}.webp`
+      manifest[roleAssetId(gait, frame)] = relative
+      toWebp(source, resolve(ASSETS_OUT, relative))
+    }
+    console.log(`  主角${gait === 'walk' ? '行走' : '跑步'}图 ${spec.count} 帧 → roles/${gait}/*.webp`)
+  }
+
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)
     for (const m of missing) console.error(`  ${m}`)
@@ -67,7 +92,7 @@ function main(): void {
   }
 
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-  console.log(`烘焙 ${SCENES.length} 个场景，映射表 ${Object.keys(manifest).length} 条`)
+  console.log(`烘焙 ${SCENES.length} 个场景与 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧主角图，映射表 ${Object.keys(manifest).length} 条`)
 }
 
 /**

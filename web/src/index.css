@@ -141,3 +141,12 @@ body {
   color: #efe6d2;
   cursor: pointer;
 }
+
+/* 操作提示。原版没有任何提示，键位全靠说明书——迁移期起码得让人知道怎么走。 */
+.toolbar-hint {
+  margin: 0;
+  align-self: center;
+  font-size: 13px;
+  color: #a99fb8;
+  white-space: nowrap;
+}

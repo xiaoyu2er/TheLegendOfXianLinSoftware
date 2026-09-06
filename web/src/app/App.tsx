@@ -5,6 +5,7 @@ import { DEFAULT_SCALING_MODE } from '../stage/scaling'
 import type { ScalingMode } from '../stage/scaling'
 import { useFullscreen } from '../stage/useFullscreen'
 import { useSceneRenderer } from '../scene/useSceneRenderer'
+import { useGame } from '../game/useGame'
 import { devToolsEnabled } from './devTools'
 
 export function App() {
@@ -19,7 +20,9 @@ export function App() {
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
   const [sceneName, setSceneName] = useState<string>(START_SCENE)
   const fullscreen = useFullscreen(shellRef)
-  const status = useSceneRenderer(stageHostRef, sceneName)
+  const { status, renderer } = useSceneRenderer(stageHostRef, sceneName)
+  // 方向键走动、按住 Ctrl（或 Shift）跑动。世界的推进与画面无关，见 useGame。
+  useGame(renderer, sceneName)
 
   return (
     <div className="app-shell" ref={shellRef}>
@@ -47,6 +50,7 @@ export function App() {
             </select>
           </label>
         ) : null}
+        <p className="toolbar-hint">方向键走动，按住 Ctrl 或 Shift 跑动</p>
         <button
           type="button"
           onClick={fullscreen.toggle}

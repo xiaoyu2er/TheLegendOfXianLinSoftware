@@ -1,8 +1,10 @@
 import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
-import { mapAssetId } from '../assets/ids'
+import { mapAssetId, roleAssetId } from '../assets/ids'
 import { resolveAsset } from '../assets/resolve'
 import type { SceneScript } from '../data/types'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
+import type { RoleState } from '../state/types'
+import { roleSprite } from './roleSprite'
 
 /** 一个瓦片的边长（像素）。原版 `scene.Map.CS = 32`。 */
 export const TILE = 32
@@ -10,13 +12,19 @@ export const TILE = 32
 export interface SceneRenderer {
   /** 切到某个场景：解析地图资产、加载、贴上去。同一张图第二次是缓存命中。 */
   showScene(scene: SceneScript): Promise<void>
+  /**
+   * 把主角画到世界状态所在的位置。**只读 `role`，一个字段都不写回去**——
+   * 状态推进是 `state/step.ts` 那个纯函数的事，绘制在这里只是它的一个投影。
+   * 每帧调一次，成本是改两个数加换一张纹理。
+   */
+  showRole(role: RoleState): void
   destroy(): void
 }
 
 /**
  * 场景层渲染器（Pixi）。
  *
- * 现在只画地图底图。主角、NPC、遮掩层分别是 xl-9bd.6 / .9，
+ * 现在画地图底图与主角（xl-9bd.6）。NPC 与遮掩层是 xl-9bd.9，
  * 镜头跟随是 xl-9bd.7 —— 在那之前世界容器恒定停在 (0, 0)，
  * 大地图因此显示左上角那一屏。
  *
@@ -59,8 +67,27 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   app.stage.addChild(world)
   let mapSprite: Sprite | null = null
 
+  // 主角的 48 帧一次性载入。逐帧按需加载会让走动的第一圈掉帧，而这批图
+  // 一共 100 KB 出头，没有按需的理由。
+  const roleTextures = new Map<string, Texture>()
+  const heroSprite = new Sprite()
+  heroSprite.visible = false
+  world.addChild(heroSprite)
+
+  async function loadRoleTextures(): Promise<void> {
+    if (roleTextures.size > 0) return
+    const ids: string[] = []
+    for (let frame = 0; frame < 32; frame++) ids.push(roleAssetId('walk', frame))
+    for (let frame = 0; frame < 16; frame++) ids.push(roleAssetId('run', frame))
+    const textures = await Promise.all(
+      ids.map((id) => Assets.load<Texture>(resolveAsset(id))),
+    )
+    ids.forEach((id, i) => roleTextures.set(id, textures[i]!))
+  }
+
   return {
     async showScene(scene: SceneScript): Promise<void> {
+      await loadRoleTextures()
       const texture = await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName)))
 
       // 地图图片必须正好是 瓦片数 × 32。原版就是这么画的（`Map.drawMap` 的源
@@ -81,8 +108,25 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       }
       mapSprite = new Sprite(texture)
       world.addChild(mapSprite)
+      // 主角要压在地图上面。addChild 只是追加，换过地图之后得把它再提到顶。
+      world.addChild(heroSprite)
       // 视口跟随在 xl-9bd.7；在那之前恒为左上角。
       world.position.set(0, 0)
+    },
+
+    showRole(role: RoleState): void {
+      // 纹理还没到（首帧、或者场景正在切）就先不画，别画成一个白方块。
+      if (roleTextures.size === 0) return
+      const sprite = roleSprite(role)
+      const texture = roleTextures.get(sprite.asset)
+      if (!texture) {
+        // 下标算错了。静默不画会表现为"主角偶尔消失"，那是查不出来的。
+        throw new Error(`主角没有 ${sprite.asset} 这一帧（dir=${role.dir}）。`)
+      }
+      heroSprite.texture = texture
+      heroSprite.position.set(sprite.x, sprite.y)
+      heroSprite.setSize(sprite.width, sprite.height)
+      heroSprite.visible = true
     },
 
     destroy(): void {

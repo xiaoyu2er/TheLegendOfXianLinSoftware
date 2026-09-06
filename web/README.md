@@ -1,7 +1,8 @@
 # web/ —— 浏览器版
 
-Vite + React + TypeScript + Pixi。现在能打开网页看到**宿舍**，开发模式下可以
-跳到**大地图**（xl-9bd.3）。主角、NPC、对话、镜头跟随都还没有。
+Vite + React + TypeScript + Pixi。现在能打开网页看到**宿舍**，用方向键走动、
+按住 Ctrl 或 Shift 跑动，撞到墙和家具会被挡住（xl-9bd.6）；开发模式下可以跳到
+**大地图**（xl-9bd.3）。NPC、对话、镜头跟随还没有。
 
 ## 命令
 
@@ -40,6 +41,35 @@ M1 只烘宿舍与大地图；扩到 96 个是 xl-9bd.4 / xl-9bd.5。
 WebP 的编码参数按源分：PNG 用无损，JPG 用 q80。实测（KiB / MiB）：
 宿舍 136 KB → 无损 47 KB，转有损 q80 反而涨到 159 KB；
 大地图 4.2 MB → q80 2.0 MB。
+
+## 状态层：一个纯函数，跟渲染没有关系
+
+游戏状态在 `src/state/`，对外只有一个
+
+```ts
+step(world: World, input: InputEvent[], dtMs: number): World
+```
+
+不读时钟、不碰 DOM、不认识 Pixi（`src/state/step.test.ts` 里有一条测试逐个文件
+查 import，分母是 `src/state/` 下的每一个文件）。原版的状态推进挂在绘制上
+——`ScenePanel.paint()` 有副作用，不画就不推进——照抄到浏览器里就是"切后台
+游戏冻住、切回来补跑几百帧"。
+
+驱动在 `src/game/useGame.ts`，用 `setInterval` 而**不是** `requestAnimationFrame`：
+rAF 在标签页不可见时完全不触发，而 `setInterval` 只是被节流到 ~1 秒一次，
+流逝的时间从 `performance.now()` 现算，所以每次醒来补的是那一秒。
+"前后台行为一致"这条写成了可执行的不变量：**同样的总时长、同样的输入，
+切成几段喂进来世界一模一样**（`src/state/loop.test.ts`）。
+
+### 期望值一个都不是手写的
+
+逐 tick 的行为对齐 `tools/traces/out/*.trace.json` —— 那是原版 Java 程序自己
+跑出来的每一帧（见 `docs/trace-format.md`）。`src/state/traceReplay.test.ts`
+照着 trace 里的按键回放，逐 tick 比主角的格子坐标、像素坐标、朝向、帧号、
+走跑状态。手写期望值的测试会绿、而且是错的：写实现和写期望的是同一个 agent。
+
+三份 trace 里能回放两份，`dorm-intro` 的场景（`脚本1.txt`）还没烘焙
+（xl-9bd.4）；这个名单在测试里写死，少回放一份要响。
 
 ## 1024×640 是硬约束
 
