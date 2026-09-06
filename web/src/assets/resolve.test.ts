@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES, getScene } from '../data/scenes'
-import { bgmAssetId, mapAssetId } from './ids'
+import { bgmAssetId, mapAssetId, roleAssetId } from './ids'
 import { knownAssetIds, resolveAsset } from './resolve'
 
 describe('资产逻辑 ID', () => {
@@ -29,13 +29,33 @@ describe('资产逻辑 ID', () => {
     }
   })
 
+  it('主角的每一帧都在映射表里，走 32 帧、跑 16 帧', () => {
+    // 下标就是原版绘制时用的下标（走 direction+count、跑 direction/2+count2），
+    // 少一帧的表现是"主角走到某个朝向的某一帧就消失"，不逐帧查是查不出来的。
+    for (let frame = 0; frame < 32; frame++) {
+      expect(decodeURIComponent(resolveAsset(roleAssetId('walk', frame)))).toContain(
+        `roles/walk/${frame}.webp`,
+      )
+    }
+    for (let frame = 0; frame < 16; frame++) {
+      expect(decodeURIComponent(resolveAsset(roleAssetId('run', frame)))).toContain(
+        `roles/run/${frame}.webp`,
+      )
+    }
+  })
+
   it('查一个映射表里没有的 ID 会抛错，并报出表里有什么', () => {
     // 静默返回 undefined 的话，缺图只会表现为"画面上少了点东西"——
     // 原版那 31 条缺失路径藏了十三年就是因为失败形态和成功一模一样。
     expect(() => resolveAsset('map:不存在的地图')).toThrowError(/映射表里没有资产/)
-    // 96 个场景共用 28 张地图，映射表里就该正好是这 28 条。
-    expect(knownAssetIds().length).toBe(28)
-    expect(knownAssetIds()).toContain('map:宿舍')
-    expect(knownAssetIds().every((id) => id.startsWith('map:'))).toBe(true)
+    // 分母写死：96 个场景共用的 28 张地图 + 主角 32 帧行走图 + 16 帧跑步图。
+    // 烘焙器少烘了一批，这里要响，而不是等到画面上少了点东西才发现。
+    const ids = knownAssetIds()
+    expect(ids.filter((id) => id.startsWith('map:'))).toHaveLength(28)
+    expect(ids).toContain('map:宿舍')
+    expect(ids).toContain('map:大地图')
+    expect(ids.filter((id) => id.startsWith('role:walk:'))).toHaveLength(32)
+    expect(ids.filter((id) => id.startsWith('role:run:'))).toHaveLength(16)
+    expect(ids).toHaveLength(76)
   })
 })

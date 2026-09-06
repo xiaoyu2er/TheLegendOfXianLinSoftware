@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
-import { mapAssetId } from '../src/assets/ids'
+import { mapAssetId, roleAssetId } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
@@ -28,6 +28,17 @@ const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(WEB, '..')
 
 const SCRIPTS = resolve(REPO, 'script')
+
+/**
+ * 主角的行走图与跑步图。张数与文件编号都照抄原版 `scene.Role` 的构造函数：
+ * 走 `0..31`（4 个朝向 × 8 帧），跑 `1..16`（4 个朝向 × 4 帧）。
+ * **跑步图的文件从 1 开始**，而绘制时的下标从 0 开始，差的这个 1 在这里抹平。
+ */
+const ROLE_SPRITES = {
+  walk: { dir: 'roles/zhangxiaofan', count: 32, firstFile: 0 },
+  run: { dir: 'roles/zhangxiaofanRun', count: 16, firstFile: 1 },
+} as const
+
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
 const MANIFEST_OUT = resolve(WEB, 'src/generated/assets.json')
@@ -72,8 +83,38 @@ function main(): void {
     manifest[id] = relative
     bytes += toWebp(resolve(REPO, source), resolve(ASSETS_OUT, relative))
   }
+  const mapCount = Object.keys(manifest).length
+  console.log(`地图 ${mapCount} 张 → WebP`)
+
+  // 主角精灵不在 checkSceneAssets 的覆盖范围内 —— 那一层查的是场景数据引用到的
+  // 资源，而这批图的路径是这里按原版 scene.Role 的编号规则算出来的。所以自己
+  // 收一份缺失清单，形状跟上面那层保持一致：一次报全，不是撞见第一张就退出。
+  const missing: string[] = []
+  for (const gait of ['walk', 'run'] as const) {
+    const spec = ROLE_SPRITES[gait]
+    for (let frame = 0; frame < spec.count; frame++) {
+      const source = resolve(REPO, spec.dir, `${frame + spec.firstFile}.png`)
+      if (!existsSync(source)) {
+        missing.push(`主角${gait === 'walk' ? '行走' : '跑步'}图 ${spec.dir}/${frame + spec.firstFile}.png`)
+        continue
+      }
+      const relative = `roles/${gait}/${frame}.webp`
+      manifest[roleAssetId(gait, frame)] = relative
+      bytes += toWebp(source, resolve(ASSETS_OUT, relative))
+    }
+    console.log(`  主角${gait === 'walk' ? '行走' : '跑步'}图 ${spec.count} 帧 → roles/${gait}/*.webp`)
+  }
+
+  if (missing.length > 0) {
+    console.error(`资源缺失 ${missing.length} 条：`)
+    for (const m of missing) console.error(`  ${m}`)
+    process.exit(1)
+  }
+
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-  console.log(`地图 ${Object.keys(manifest).length} 张 → WebP 共 ${kb(bytes)}`)
+  console.log(
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧）→ WebP 共 ${kb(bytes)}`,
+  )
 }
 
 /** 96 个场景引用到的地图源文件（仓库相对路径），按出现顺序去重。 */

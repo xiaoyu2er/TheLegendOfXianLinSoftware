@@ -20,10 +20,19 @@ export type SceneStatus =
  * `disposed` 就会留下一个孤儿 Application 继续画，表现为开发模式下画面
  * 闪烁而生产模式正常 —— 最难查的那类差异。
  */
+/**
+ * 渲染器就绪之后，调用方（`useGame`）要拿它来画主角，所以这里除了状态还要把
+ * 渲染器本身交出去。场景还没画完时 `renderer` 为 `null`。
+ */
+export interface SceneRendering {
+  readonly status: SceneStatus
+  readonly renderer: SceneRenderer | null
+}
+
 export function useSceneRenderer(
   hostRef: RefObject<HTMLElement | null>,
   sceneName: string,
-): SceneStatus {
+): SceneRendering {
   const [renderer, setRenderer] = useState<SceneRenderer | null>(null)
   const [status, setStatus] = useState<SceneStatus>({ kind: 'loading' })
 
@@ -72,7 +81,7 @@ export function useSceneRenderer(
     }
   }, [renderer, sceneName])
 
-  return status
+  return { status, renderer }
 }
 
 function describe(error: unknown): string {
