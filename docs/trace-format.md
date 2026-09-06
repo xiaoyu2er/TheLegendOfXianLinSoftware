@@ -51,6 +51,7 @@ UTF-8 JSON，放在 `tools/traces/scripts/*.json`。
 |---|---|---|
 | `walkTo` | `x`, `y` | 走到目标格。先 X 后 Y。到不了 —— 硬失败。 |
 | `runTo` | `x`, `y` | 同上，按住 Ctrl 跑。 |
+| `exitTo` | `x`, `y` | 走向出口格，等场景真的换掉（`ScenePanel.fileName` 变了）才算完。走到了而场景没换 —— 硬失败。 |
 | `talk` | — | 按一次空格（站在相邻 NPC 旁就是搭话）。按完没有对话开始 —— 硬失败。 |
 | `advance` | `times` | 推进对话 `times` 次，每次都等当前句逐字打完再按空格。对话提前结束 —— 硬失败。 |
 | `advanceAll` | `max` | 一直推进到对话结束，最多 `max` 次。到 `max` 还没结束 —— 硬失败。 |
@@ -102,6 +103,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
                  "sentence":null,"cursor":0,"row":0,"col":0,
                  "printing":false,"sentenceOver":false,"pageOver":false},
      "narratage":{"active":false,"over":true,"line":0,"cursor":0,"row":0,"bg":0},
+     "scene":"宿舍.txt","isScript":false,
      "audio":{"bgm":"舒缓.mp3"},
      "viewport":{"offsetX":0,"offsetY":0,"firstTileX":0,"lastTileX":128,
                  "firstTileY":0,"lastTileY":80},
@@ -125,6 +127,8 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `dialogue.cursor/row/col` | 逐字打印的游标：第几个字、第几行、第几列。 |
 | `dialogue.pageOver` | 一屏 4×20 打满、等玩家翻页。 |
 | `narratage.line/cursor/row/bg` | 第几句 / 第几个字 / 第几行 / 背景动画帧。 |
+| `scene` | `ScenePanel.fileName`，当前这一 tick 走的是哪个脚本。出口生效的那一 tick 它就变了 —— 只记主角坐标的话，"切到了大地图"与"在原地被瞬移"分不开。 |
+| `isScript` | `ScenePanel.isScript`。出口的三条分支各自把它置成什么，是可断言的（见 `scene/ExitEvent.java`）。 |
 | `audio.bgm` | `MusicPlayer.currentPlayingBGM`。是一个可断言的字符串，不是"调用了 play()"。 |
 | `viewport` | `OtherEvent.calOffset()` 算出的六元组，对应 spec 里的 `computeViewport`。 |
 | `drawOrder` | `npcs-first` / `hero-first`，对应 spec 里的 `computeDrawOrder`。**旁白期间是 `null`** —— 原版 `paint()` 里主角与 NPC 的绘制整个在 `if (!narratage.isNarratage)` 里面，那些帧没有绘制顺序这回事。 |
@@ -205,3 +209,4 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `dorm-walk` | `宿舍.txt` | 走、跑、四向拐弯、碰撞、静止地图的视口、绘制顺序翻转、NPC 口头语的逐字打印 |
 | `bigmap-walk` | `大地图.txt` | 100×80 卷动地图的视口跟随与边缘夹取（53 个不同视口）、两段跑、13 个 NPC 里 8 个单向走动 + 4 个原地动画都在跑帧 |
 | `dorm-intro` | `脚本1.txt` | 6 句旁白逐字播完（46 个背景帧）、接一整段 23 句主线对话，头像式与名字式两种对话框、翻页 |
+| `dorm-exit` | `宿舍.txt` → `大地图.txt` → `脚本1.txt` | 出口切换的两条分支：走到 `宿舍` 门口进 `大地图`（`isScript` 置假），再从 `大地图` 走回来 —— 回的是 `currentScript[2]`（`脚本1`）而不是 `宿舍`，`isScript` 重新为真、旁白被 `narratageOver` 压掉、主线对话的进度按 `dialogueOrder` 还原。三次背景音乐切换、两个入口坐标 |

@@ -83,6 +83,7 @@ public final class ExportTrace {
     private int lastLegPhase = -1;  // 上一段属于哪个轴，配合 legStart 判"没动"
     private int stallPos = Integer.MIN_VALUE;  // 上次观察到的当前轴坐标
     private int stallTicks;                    // 该坐标已经卡了多少 tick
+    private String sceneAtEntry;               // 进入当前指令时所在的场景（exitTo 用）
     private final List<String> pending = new ArrayList<>();   // 本 tick 的输入事件
 
     private ExportTrace(TraceScript script) { this.script = script; }
@@ -343,6 +344,7 @@ public final class ExportTrace {
                 entered = true;
                 spent = 0;
                 phase = 0;
+                sceneAtEntry = sp.fileName;
                 left = in.op.equals("wait") ? in.ticks
                      : in.op.equals("advance") ? in.times
                      : in.op.equals("advanceAll") ? in.max : 0;
@@ -362,6 +364,21 @@ public final class ExportTrace {
         switch (in.op) {
             case "walkTo":     return moveTo(in, false);
             case "runTo":      return moveTo(in, true);
+            case "exitTo":
+                // 场景真的换掉了才算完。换掉的那一刻主角对象已经被 initiation
+                // 换成新的一个（站在 entrance 上、定时器全停），所以按着的那个
+                // 方向键要在这里松掉 —— 松手事件照样进 input，Web 侧照着回放。
+                if (!sp.fileName.equals(sceneAtEntry)) {
+                    if (pressedKey != -1) { release(pressedKey); pressedKey = -1; }
+                    return true;
+                }
+                if (moveTo(in, false)) {
+                    // 走到了出口格而场景没换。不拦的话导出的是一份"人站在门口、
+                    // 一切正常"的 trace ——出口没生效与出口生效了长得一模一样。
+                    fail("走到了 (" + in.x + "," + in.y + ") 而场景仍是 " + sp.fileName
+                            + " —— 这一格不是出口，或者出口没有生效");
+                }
+                return false;
             case "talk":
                 if (phase == 0) { pressSpace(); phase = 1; return false; }
                 // 按下去没搭上话就得响。sayOral() 是同步的，按完这一 tick 就该
@@ -559,6 +576,10 @@ public final class ExportTrace {
         b.append(",\"vt\":").append(clock.now());
         b.append(",\"ip\":").append(Math.min(ip, script.steps.size() - 1));
         b.append(",\"input\":[").append(String.join(",", pending)).append("]");
+        // 当前场景与 ScenePanel.isScript：出口切换（xl-9bd.12）唯一的可断言事实。
+        // 只记主角坐标的话，"切到了大地图" 与 "在宿舍里被瞬移到 (4,23)" 分不开。
+        b.append(",\"scene\":").append(Json.str(sp.fileName));
+        b.append(",\"isScript\":").append(sp.isScript);
 
         b.append(",\"role\":{\"x\":").append(r.getX())
          .append(",\"y\":").append(r.getY())

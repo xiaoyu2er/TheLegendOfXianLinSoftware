@@ -20,6 +20,8 @@ import java.util.Map;
  *
  *   walkTo  {x, y}     走到目标格（先 X 后 Y）。到不了就硬失败。
  *   runTo   {x, y}     同上，按住 Ctrl 跑。
+ *   exitTo  {x, y}     走向出口格 (x, y)，等场景真的换掉。走到了而场景没换 ——
+ *                      硬失败（"出口没生效"与"走到了"在 trace 里长得一模一样）。
  *   talk               按一次空格（对着相邻 NPC 就是搭话）。
  *   advance {times}    推进对话 times 次；每次都等当前句逐字打完再按空格。
  *                      对话在按满 times 次之前就结束了 —— 硬失败。
@@ -52,13 +54,19 @@ public final class TraceScript {
     }
 
     private static final List<String> OPS = Arrays.asList(
-            "walkTo", "runTo", "talk", "advance", "advanceAll", "wait", "waitIdle", "waitNarratage");
+            "walkTo", "runTo", "exitTo", "talk", "advance", "advanceAll", "wait", "waitIdle",
+            "waitNarratage");
 
     private TraceScript(String name, String description, String warmup, String scene,
                         boolean isScript, int tickMs, int maxTicks, List<Instruction> steps) {
         this.name = name; this.description = description; this.warmup = warmup;
         this.scene = scene; this.isScript = isScript;
         this.tickMs = tickMs; this.maxTicks = maxTicks; this.steps = steps;
+    }
+
+    /** 带目标格的三条指令。 */
+    static boolean isMove(String op) {
+        return op.equals("walkTo") || op.equals("runTo") || op.equals("exitTo");
     }
 
     public static TraceScript load(File f) throws Exception {
@@ -87,7 +95,7 @@ public final class TraceScript {
                 throw new IllegalArgumentException("不认识的指令 " + op + "，可用的是 " + OPS);
             }
             int x = 0, y = 0, ticks = 0, times = 0, max = 0;
-            if (op.equals("walkTo") || op.equals("runTo")) { x = JsonIn.i(s, "x"); y = JsonIn.i(s, "y"); }
+            if (isMove(op)) { x = JsonIn.i(s, "x"); y = JsonIn.i(s, "y"); }
             if (op.equals("wait"))       ticks = JsonIn.i(s, "ticks");
             if (op.equals("advance"))    times = JsonIn.i(s, "times");
             if (op.equals("advanceAll")) max   = JsonIn.iOr(s, "max", 64);
@@ -113,7 +121,7 @@ public final class TraceScript {
             Instruction s = steps.get(i);
             if (i > 0) b.append(',');
             b.append("{\"op\":").append(Json.str(s.op));
-            if (s.op.equals("walkTo") || s.op.equals("runTo")) b.append(",\"x\":").append(s.x).append(",\"y\":").append(s.y);
+            if (isMove(s.op)) b.append(",\"x\":").append(s.x).append(",\"y\":").append(s.y);
             if (s.op.equals("wait"))       b.append(",\"ticks\":").append(s.ticks);
             if (s.op.equals("advance"))    b.append(",\"times\":").append(s.times);
             if (s.op.equals("advanceAll")) b.append(",\"max\":").append(s.max);
