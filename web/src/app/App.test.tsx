@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { App } from './App'
+import { SCENE_NAMES, START_SCENE } from '../data/scenes'
 
 /**
  * jsdom 根本没有 `document.fullscreenEnabled` / `fullscreenElement` 这两个属性
@@ -35,26 +36,35 @@ afterEach(() => {
 describe('App', () => {
   it('默认用平滑放大，点一下切到锐利，再点切回来', () => {
     render(<App />)
-    const canvas = document.querySelector('canvas')
-    expect(canvas).not.toBeNull()
+    // 缩放模式写在渲染器的宿主元素上：image-rendering 是可继承属性，
+    // 里面那张 canvas（由 Pixi 建，jsdom 里建不出来）跟着走。
+    const host = screen.getByTestId('stage-canvas-host')
 
-    expect(canvas!.style.imageRendering).toBe('auto')
+    expect(host.style.imageRendering).toBe('auto')
     const button = screen.getByRole('button', { name: /放大/ })
     expect(button.textContent).toContain('平滑')
 
     fireEvent.click(button)
-    expect(canvas!.style.imageRendering).toBe('pixelated')
+    expect(host.style.imageRendering).toBe('pixelated')
     expect(button.textContent).toContain('锐利')
 
     fireEvent.click(button)
-    expect(canvas!.style.imageRendering).toBe('auto')
+    expect(host.style.imageRendering).toBe('auto')
   })
 
-  it('canvas 位图恒为 1024×640', () => {
+  it('开发模式下能跳到另一个场景', () => {
+    // 开发用入口，用来"不必每次从头玩到那里"。选项就是已烘焙的场景，
+    // 不是另抄一份名单。
     render(<App />)
-    const canvas = document.querySelector('canvas')!
-    expect(canvas.width).toBe(1024)
-    expect(canvas.height).toBe(640)
+    const picker = screen.getByRole('combobox', { name: /场景/ })
+    expect([...picker.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+      ...SCENE_NAMES,
+    ])
+    // 打开网页看到的是宿舍 —— 原版 ScenePanel 的起始场景。
+    expect(picker).toHaveValue(START_SCENE)
+
+    fireEvent.change(picker, { target: { value: '大地图' } })
+    expect(picker).toHaveValue('大地图')
   })
 
   it('点全屏调用 requestFullscreen，进入后再点调用 exitFullscreen', () => {

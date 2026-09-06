@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react'
+import { SCENE_NAMES, START_SCENE } from '../data/scenes'
 import { Stage } from '../stage/Stage'
 import { DEFAULT_SCALING_MODE } from '../stage/scaling'
 import type { ScalingMode } from '../stage/scaling'
 import { useFullscreen } from '../stage/useFullscreen'
+import { useSceneRenderer } from '../scene/useSceneRenderer'
+import { devToolsEnabled } from './devTools'
 
 export function App() {
   /**
@@ -12,13 +15,38 @@ export function App() {
    * 玩家就只剩 Esc 一条退路了。凡是全屏下还要能点的东西，都得在这个容器里面。
    */
   const shellRef = useRef<HTMLDivElement>(null)
+  const stageHostRef = useRef<HTMLDivElement>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
+  const [sceneName, setSceneName] = useState<string>(START_SCENE)
   const fullscreen = useFullscreen(shellRef)
+  const status = useSceneRenderer(stageHostRef, sceneName)
 
   return (
     <div className="app-shell" ref={shellRef}>
-      <Stage scalingMode={scalingMode} />
+      <Stage
+        scalingMode={scalingMode}
+        hostRef={stageHostRef}
+        overlay={
+          status.kind === 'ready' ? null : (
+            <p className={`stage-notice stage-notice--${status.kind}`} role="status">
+              {status.kind === 'loading' ? `正在载入 ${sceneName}…` : status.message}
+            </p>
+          )
+        }
+      />
       <div className="toolbar">
+        {devToolsEnabled() ? (
+          <label className="toolbar-field">
+            场景
+            <select value={sceneName} onChange={(e) => setSceneName(e.target.value)}>
+              {SCENE_NAMES.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button
           type="button"
           onClick={fullscreen.toggle}
