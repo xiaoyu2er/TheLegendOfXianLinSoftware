@@ -1,4 +1,4 @@
-import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
+import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
 import { mapAssetId, roleAssetId } from '../assets/ids'
 import { resolveAsset } from '../assets/resolve'
 import type { SceneScript } from '../data/types'
@@ -6,10 +6,29 @@ import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { createWorld } from '../state/step'
 import type { World } from '../state/types'
 import { roleSprite } from './roleSprite'
-import { computeDrawOrder, computeViewport, mapPlacement } from './viewport'
+import { computeDrawOrder, computeViewport, mapTiles } from './viewport'
 
 /** 一个瓦片的边长（像素）。原版 `scene.Map.CS = 32`。 */
 export const TILE = 32
+
+/**
+ * 把纹理的采样方式钉成最近邻，**这是复刻，不是画质偏好**（xl-9bd.16）。
+ *
+ * 原版画的每一张图都走 `Graphics.drawImage`，而 Java2D 的
+ * `RenderingHints.KEY_INTERPOLATION` 默认值是最近邻；Pixi 的 `TextureSource`
+ * 默认是线性过滤。地图那一路原先还叠了一个 1.0079/1.0127 的缩放（见
+ * `viewport.ts` 的 `mapTiles`），两件事合起来的后果是整屏每一个像素都在变：
+ * 实测 dorm-walk 第 0 帧，按 64×64 分格统计，160 个格子全部有偏离、每格
+ * 28–59%，全帧 38.51%。
+ *
+ * 缩放已经改成分段 1:1 平移，理论上采样点正落在源像素正中、线性过滤也取得到
+ * 原值；这里仍然钉死最近邻，是因为那个"正中"含 GPU 的插值误差（实测约
+ * 0.03 px），线性过滤会把它变成一点点邻居颜色 —— 而最近邻把这段余量整个吃掉。
+ */
+function nearest(texture: Texture): Texture {
+  texture.source.scaleMode = 'nearest'
+  return texture
+}
 
 export interface SceneRenderer {
   /** 切到某个场景：解析地图资产、加载、贴上去。同一张图第二次是缓存命中。 */
@@ -73,12 +92,16 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   //
   // 地图**不在** `camera` 里面：原版的地图是用一个源矩形铺满整块画布的，
   // 边缘帧那个源矩形会短 8 px，于是地图被轻微拉伸，而人物只是平移。
-  // 两者的变换不一样，就不能共用一个容器（见 `viewport.ts` 的 `mapPlacement`）。
+  // 两者的变换不一样，就不能共用一个容器（见 `viewport.ts` 的 `mapTiles`）。
   const mapLayer = new Container()
   const camera = new Container()
   app.stage.addChild(mapLayer)
   app.stage.addChild(camera)
-  let mapSprite: Sprite | null = null
+
+  // 地图这一帧被切成若干块 1:1 贴上去（见 `viewport.ts` 的 `mapTiles`）。
+  // 池子按需长大、只增不减：块数只有 1 或 81 两种，来回切场景不值得反复建精灵。
+  let mapTexture: Texture | null = null
+  const mapPieces: { sprite: Sprite; texture: Texture }[] = []
 
   // NPC 是 xl-9bd.9，现在这一层是空的。**它照样要存在**：绘制顺序就是靠
   // 它与主角谁先 addChild 表达的，等有了 NPC 再补一个容器，等于把这一票的
@@ -99,7 +122,7 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     for (let frame = 0; frame < 32; frame++) ids.push(roleAssetId('walk', frame))
     for (let frame = 0; frame < 16; frame++) ids.push(roleAssetId('run', frame))
     const textures = await Promise.all(
-      ids.map((id) => Assets.load<Texture>(resolveAsset(id))),
+      ids.map((id) => Assets.load<Texture>(resolveAsset(id)).then(nearest)),
     )
     ids.forEach((id, i) => roleTextures.set(id, textures[i]!))
   }
@@ -110,8 +133,8 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
    * 三件事，都来自 `viewport.ts` 那两个纯函数，一件都不在这里现算：
    *
    * 1. `camera` 平移 `offsetX/offsetY` —— 人物就是这么跟着镜头走的；
-   * 2. 地图底图按 `mapPlacement` 摆（腹地帧退化成同样的平移，边缘帧多一个
-   *    ~0.79%/1.27% 的拉伸，照抄原版，见 `docs/viewport-edge-stretch.md`）；
+   * 2. 地图底图按 `mapTiles` 摆（腹地帧是一块，边缘帧是 81 块，合起来复刻原版
+   *    那个 ~0.79%/1.27% 的拉伸，见 `docs/viewport-edge-stretch.md`）；
    * 3. 主角与 NPC 层谁在上：`setChildIndex` 每帧摆一次。
    *
    * 绘制顺序**每帧都要重设**，不能只在变化时设：漏设的表现是"偶尔主角被 NPC
@@ -121,10 +144,34 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   function place(world: World): void {
     const viewport = computeViewport(world)
     camera.position.set(viewport.offsetX, viewport.offsetY)
-    if (mapSprite) {
-      const placement = mapPlacement(viewport)
-      mapSprite.position.set(placement.x, placement.y)
-      mapSprite.scale.set(placement.scaleX, placement.scaleY)
+    if (mapTexture) {
+      const tiles = mapTiles(viewport)
+      while (mapPieces.length < tiles.length) {
+        // `dynamic` 必须开：每帧都要挪这块碎片在源图上的位置，不开的话精灵
+        // 会一直用建的时候那一份 uv，表现为"地图卡在第一帧不动"。
+        const texture = new Texture({
+          source: mapTexture.source,
+          frame: new Rectangle(0, 0, 1, 1),
+          dynamic: true,
+        })
+        const sprite = new Sprite(texture)
+        mapLayer.addChild(sprite)
+        mapPieces.push({ sprite, texture })
+      }
+      mapPieces.forEach((piece, i) => {
+        const tile = tiles[i]
+        if (!tile) {
+          piece.sprite.visible = false
+          return
+        }
+        piece.texture.frame.x = tile.sourceX
+        piece.texture.frame.y = tile.sourceY
+        piece.texture.frame.width = tile.width
+        piece.texture.frame.height = tile.height
+        piece.texture.update()
+        piece.sprite.position.set(tile.destX, tile.destY)
+        piece.sprite.visible = true
+      })
     }
     if (computeDrawOrder(world) === 'npcs-first') {
       camera.setChildIndex(npcLayer, 0)
@@ -138,7 +185,9 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   return {
     async showScene(scene: SceneScript): Promise<void> {
       await loadRoleTextures()
-      const texture = await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName)))
+      const texture = nearest(
+        await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
+      )
 
       // 地图图片必须正好是 瓦片数 × 32。原版就是这么画的（`Map.drawMap` 的源
       // 矩形直接用世界像素），对不上就意味着碰撞网格和图对不齐 —— 那种错在
@@ -152,12 +201,10 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
         )
       }
 
-      if (mapSprite) {
-        // 只销毁精灵，纹理留给 Assets 的缓存 —— 场景来回切不必反复解码。
-        mapSprite.destroy({ texture: false })
-      }
-      mapSprite = new Sprite(texture)
-      mapLayer.addChild(mapSprite)
+      // 换地图只换碎片指向的源，精灵与 `Texture` 对象留着 —— Assets 的缓存
+      // 保住了解码结果，池子保住了精灵。
+      mapTexture = texture
+      for (const piece of mapPieces) piece.texture.source = texture.source
       // 第一帧还没来，先按这个场景的初始世界把镜头摆好。不摆的话换场景那一瞬
       // 会闪一下上一张地图的镜头位置（两张地图尺寸不同时尤其明显）。
       place(createWorld(scene))

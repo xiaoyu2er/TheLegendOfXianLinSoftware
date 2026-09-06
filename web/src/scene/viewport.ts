@@ -127,7 +127,7 @@ export function computeDrawOrder(world: World): DrawOrder {
 }
 
 /**
- * 地图底图这一帧该怎么摆。
+ * 地图底图这一帧该怎么摆：**一组 1:1 贴上去的碎片，不是一次缩放**。
  *
  * 原版 `Map.drawMap` 把源矩形
  * `(firstTileX*8, firstTileY*8) - (lastTileX*8-8, lastTileY*8-8)`
@@ -135,27 +135,88 @@ export function computeDrawOrder(world: World): DrawOrder {
  * 地图尺寸夹过之后会短一格（8 px），于是地图被横向拉伸约 0.79%、纵向约 1.27%，
  * 而主角与 NPC 是按 `offsetX/offsetY` 原样平移画上去的，不跟着拉。
  * 这就是原版在边缘处人物与地形对不齐的来源，实测见
- * `docs/viewport-edge-stretch.md`。这里**复刻**它：不复刻的话每一帧的地图都会
+ * `docs/viewport-edge-stretch.md`。这里复刻它 —— 不复刻的话每一帧的地图都会
  * 比原版矮一点窄一点，跨端逐帧比对（xl-9bd.8）永远收敛不了。
  *
- * 内部帧退化成恒等变换（`scaleX = scaleY = 1`，`x/y = offsetX/offsetY`），
- * 所以这不是给常见情况加负担。
+ * **为什么不直接给精灵一个 1.0079 的缩放**（xl-9bd.16）：那样每个目标像素取哪
+ * 一个源像素，就交给了 GPU 的 UV 插值与采样器去决定，而它的精度是拿不准的。
+ * 实测（dorm-walk 第 0 帧，最近邻过滤下）：横向 1024 列全对，纵向却有 10 行
+ * 整行取错了上面一个像素 —— 误差呈 `-5.24e-5 × y` 的相对形状，在 y 接近 640
+ * 时约 0.03 个像素，而这个映射相邻两点的最小间距只有 1/160 = 0.00625 个像素。
+ * 也就是说**误差和判定间距同量级**，加一个偏置只会把另一端顶过去，修不好。
+ *
+ * 于是换一种表述：这个映射是**分段整数平移**。目标像素 `i` 取源像素
+ * `floor((i + 0.5) * 源边长 / 目标边长)`（这条公式是实测的，见下），
+ * 该函数每一步要么加 1、要么原地不动，所以把"源下标 − 目标下标"相同的目标像素
+ * 归成一段，每一段就是一次 1:1、整数对齐的平移。1016→1024 分 9 段、
+ * 632→640 分 9 段，横竖相乘 81 块；没被夹住的帧退化成 1 块。每块按 1:1 贴，
+ * 目标像素中心落在源像素正中，离判定边界有 0.5 个像素的余量 —— 比上面那个
+ * 0.03 的误差大一个多数量级，于是**这件事不再依赖采样器的精度**。
+ *
+ * 采样公式本身是量出来的，不是推的：把一张 1024×640 的图按
+ * `drawImage(img, 0,0,1024,640, 0,0,1016,632, null)` 缩放后逐像素读回，
+ * 1024 列与 640 行**全部**等于 `floor((i + 0.5) * 源 / 目标)`；
+ * 按 `floor(i * 源 / 目标)` 截断则有 504 列、312 行对不上。
  */
-export interface MapPlacement {
-  readonly x: number
-  readonly y: number
-  readonly scaleX: number
-  readonly scaleY: number
+export interface MapTile {
+  /** 目标画布上的左上角，单位 1 px。 */
+  readonly destX: number
+  readonly destY: number
+  /** 源图上的左上角，单位 1 px（已经含了源矩形的原点）。 */
+  readonly sourceX: number
+  readonly sourceY: number
+  readonly width: number
+  readonly height: number
 }
 
-export function mapPlacement(viewport: SceneViewport): MapPlacement {
+/** 一段：目标 `[start, start + length)` 取源 `[start + offset, …)`。 */
+interface Run {
+  readonly start: number
+  readonly length: number
+  readonly offset: number
+}
+
+/**
+ * 把 `destSize` 个目标像素按"源下标 − 目标下标"切成段。
+ *
+ * 全程整数运算（`(2i+1) * src` 与 `2 * dest` 都远小于 2^53），不经过一次浮点，
+ * 所以段界是确定的，跟机器无关。
+ */
+function runs(sourceSize: number, destSize: number): Run[] {
+  const out: Run[] = []
+  let start = 0
+  let offset = 0
+  for (let i = 0; i < destSize; i++) {
+    const delta = Math.floor(((2 * i + 1) * sourceSize) / (2 * destSize)) - i
+    if (i === 0) {
+      offset = delta
+    } else if (delta !== offset) {
+      out.push({ start, length: i - start, offset })
+      start = i
+      offset = delta
+    }
+  }
+  out.push({ start, length: destSize - start, offset })
+  return out
+}
+
+export function mapTiles(viewport: SceneViewport): MapTile[] {
   const sourceX = viewport.firstTileX * MAP_UNIT
   const sourceY = viewport.firstTileY * MAP_UNIT
   const sourceWidth = viewport.lastTileX * MAP_UNIT - MAP_UNIT - sourceX
   const sourceHeight = viewport.lastTileY * MAP_UNIT - MAP_UNIT - sourceY
-  const scaleX = STAGE_WIDTH / sourceWidth
-  const scaleY = STAGE_HEIGHT / sourceHeight
-  // 写成减法而不是 `-sourceX * scaleX`：后者在 sourceX 为 0 时得到 -0，
-  // 而 `Object.is(-0, 0)` 为假，测试里 `toBe(0)` 会莫名其妙地红。
-  return { x: 0 - sourceX * scaleX, y: 0 - sourceY * scaleY, scaleX, scaleY }
+  const tiles: MapTile[] = []
+  for (const v of runs(sourceHeight, STAGE_HEIGHT)) {
+    for (const h of runs(sourceWidth, STAGE_WIDTH)) {
+      tiles.push({
+        destX: h.start,
+        destY: v.start,
+        sourceX: sourceX + h.start + h.offset,
+        sourceY: sourceY + v.start + v.offset,
+        width: h.length,
+        height: v.length,
+      })
+    }
+  }
+  return tiles
 }

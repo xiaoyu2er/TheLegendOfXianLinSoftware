@@ -7,7 +7,7 @@ import type { TraceTick } from '../state/trace'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import type { SceneScript } from '../data/types'
 import type { World } from '../state/types'
-import { computeDrawOrder, computeViewport, mapPlacement } from './viewport'
+import { computeDrawOrder, computeViewport, mapTiles } from './viewport'
 
 /**
  * 视口与绘制顺序的真值对齐。
@@ -150,24 +150,33 @@ describe('视口与绘制顺序对齐真值', () => {
   /**
    * 边缘拉伸的裁定（见 `docs/viewport-edge-stretch.md`）。**结论是：确实存在，
    * 而且不止在卷动地图的边缘**——凡是 `lastTileX/Y` 被地图尺寸夹住的帧，地图源
-   * 矩形就短 8 px，被拉伸着铺满 1024×640。这里复刻它，所以拉伸系数是可断言的。
+   * 矩形就短 8 px，被拉伸着铺满 1024×640。这里复刻它。
    *
-   * 数字全部现算，不写死：分母来自 `STAGE_WIDTH / STAGE_HEIGHT` 与场景自己的
-   * 尺寸。
+   * 复刻的形式是**分段 1:1 平移**而不是一次缩放（xl-9bd.16）：拉伸多少，看的
+   * 是碎片总数与它们盖住的源范围，而不是一个缩放系数。数字全部现算，不写死：
+   * 分母来自 `STAGE_WIDTH / STAGE_HEIGHT` 与场景自己的尺寸。
    */
-  it('夹住的帧地图被拉伸，没夹住的帧是恒等变换', () => {
+  it('夹住的帧地图被切成多块，没夹住的帧只有一块 1:1', () => {
     const stretched = new Set<string>()
     const identity = new Set<string>()
     for (const trace of traces) {
       for (const tick of trace.ticks) {
-        const placement = mapPlacement(tick.viewport)
-        if (placement.scaleX === 1 && placement.scaleY === 1) {
+        const tiles = mapTiles(tick.viewport)
+        // 无论几块，拼起来必须恰好盖满整块画布，一个像素不重不漏。
+        expect(tiles.reduce((n, t) => n + t.width * t.height, 0)).toBe(
+          STAGE_WIDTH * STAGE_HEIGHT,
+        )
+        if (tiles.length === 1) {
           // 没夹住：地图就是按 offset 平移，跟人物用的是同一套坐标。
-          identity.add(JSON.stringify(placement))
-          expect(placement.x).toBe(tick.viewport.offsetX)
-          expect(placement.y).toBe(tick.viewport.offsetY)
+          const only = tiles[0]!
+          identity.add(JSON.stringify(only))
+          expect(only.destX).toBe(0)
+          expect(only.destY).toBe(0)
+          // `0 - x` 而不是 `-x`：offset 为 0 时后者是 -0，`toBe(0)` 会红。
+          expect(only.sourceX).toBe(0 - tick.viewport.offsetX)
+          expect(only.sourceY).toBe(0 - tick.viewport.offsetY)
         } else {
-          stretched.add(JSON.stringify(placement))
+          stretched.add(JSON.stringify(tiles))
         }
       }
     }
@@ -176,7 +185,7 @@ describe('视口与绘制顺序对齐真值', () => {
     expect(stretched.size).toBeGreaterThan(0)
 
     // 32×20 的地图（一屏正好装得下）每一帧都被夹住：源矩形 1016×632。
-    const oneScreen = mapPlacement({
+    const oneScreen = mapTiles({
       offsetX: 0,
       offsetY: 0,
       firstTileX: 0,
@@ -184,15 +193,57 @@ describe('视口与绘制顺序对齐真值', () => {
       firstTileY: 0,
       lastTileY: (STAGE_HEIGHT / 32) * 4,
     })
-    expect(oneScreen).toEqual({
-      x: 0,
-      y: 0,
-      scaleX: STAGE_WIDTH / (STAGE_WIDTH - 8),
-      scaleY: STAGE_HEIGHT / (STAGE_HEIGHT - 8),
-    })
+    // 少 8 px 就要多复制 8 行/8 列，也就是横竖各切 9 段。
+    expect(oneScreen).toHaveLength(9 * 9)
+    // 碎片盖住的源范围正是那个 1016×632 的源矩形。
+    const right = Math.max(...oneScreen.map((t) => t.sourceX + t.width))
+    const bottom = Math.max(...oneScreen.map((t) => t.sourceY + t.height))
+    expect(right).toBe(STAGE_WIDTH - 8)
+    expect(bottom).toBe(STAGE_HEIGHT - 8)
     // 约 0.79% 与 1.27%——票里那个"约 0.8%"的推算，横向是对的。
-    expect(oneScreen.scaleX).toBeCloseTo(1.0079, 4)
-    expect(oneScreen.scaleY).toBeCloseTo(1.0127, 4)
+    expect(STAGE_WIDTH / right).toBeCloseTo(1.0079, 4)
+    expect(STAGE_HEIGHT / bottom).toBeCloseTo(1.0127, 4)
+  })
+
+  /**
+   * 采样公式照抄原版：目标像素 `i` 取源像素 `floor((i + 0.5) * 源 / 目标)`。
+   * 这条是量出来的（见 `mapTiles` 的注释），所以这里逐像素钉死它 —— 分段平移
+   * 只是它的另一种写法，写错一段的表现是"某一行整行取到了上面一行"，在画面上
+   * 完全看不出来。
+   */
+  it('碎片展开后逐像素等于原版的最近邻采样公式', () => {
+    const tiles = mapTiles({
+      offsetX: 0,
+      offsetY: 0,
+      firstTileX: 0,
+      lastTileX: (STAGE_WIDTH / 32) * 4,
+      firstTileY: 0,
+      lastTileY: (STAGE_HEIGHT / 32) * 4,
+    })
+    const sourceWidth = STAGE_WIDTH - 8
+    const sourceHeight = STAGE_HEIGHT - 8
+    // 逐像素展开，但只在**最后**断言一次：655360 次 `expect` 要跑几十秒。
+    const wrong: string[] = []
+    let checked = 0
+    for (const tile of tiles) {
+      for (let dy = 0; dy < tile.height; dy++) {
+        for (let dx = 0; dx < tile.width; dx++) {
+          const x = tile.destX + dx
+          const y = tile.destY + dy
+          const sx = Math.floor(((x + 0.5) * sourceWidth) / STAGE_WIDTH)
+          const sy = Math.floor(((y + 0.5) * sourceHeight) / STAGE_HEIGHT)
+          if (tile.sourceX + dx !== sx || tile.sourceY + dy !== sy) {
+            if (wrong.length < 5)
+              wrong.push(
+                `(${x},${y}) 取了 (${tile.sourceX + dx},${tile.sourceY + dy})，应为 (${sx},${sy})`,
+              )
+          }
+          checked++
+        }
+      }
+    }
+    expect(wrong).toEqual([])
+    expect(checked).toBe(STAGE_WIDTH * STAGE_HEIGHT)
   })
 
   /**
