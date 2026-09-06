@@ -1,6 +1,12 @@
 :root {
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* 游戏内文字层（对话框的名字与正文）的字体链。**必须与 `src/textFont.ts`
+     里的 `TEXT_FONT_STACK` 逐字一致**，`textFont.test.ts` 读这一行来断言。
+     原版写的 `文鼎粗钢笔行楷` 没有随游戏交付，两端各自退到本机默认字体；
+     为什么是这条链、为什么不打包一款字体，整段裁定在 `src/textFont.ts`。 */
+  --xl-text-font: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 * {
@@ -200,19 +206,19 @@ body {
   color: #000;
   line-height: 1;
   white-space: nowrap;
-  font-family: '文鼎粗钢笔行楷', 'STKaiti', 'KaiTi', 'Kaiti SC', serif;
+  font-family: var(--xl-text-font);
 }
 
 /* 正文：一个字一个格，格宽就是字号（原版的 `j * fontSize_dialogue`）。
-   字体在绝大多数机器上装不了，退化到楷体一路；对话框这一块因此永远对不到
-   逐像素，见 `src/compare/expected.ts`。 */
+   字体两端各自退回本机默认，对话框这一块因此永远对不到逐像素，
+   见 `src/compare/expected.ts` 与 `src/textFont.ts`。 */
 .dialogue-char {
   position: absolute;
   display: block;
   font-weight: bold;
   color: #00f;
   line-height: 1;
-  font-family: '文鼎粗钢笔行楷', 'STKaiti', 'KaiTi', 'Kaiti SC', serif;
+  font-family: var(--xl-text-font);
 }
 
 /* 【…】之间是红的，两个括号本身也是。 */
