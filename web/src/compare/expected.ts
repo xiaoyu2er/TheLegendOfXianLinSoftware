@@ -26,18 +26,24 @@ export interface Expectation {
 export const EXPECTED: Readonly<Record<string, Expectation>> = {
   'dorm-walk': {
     status: 'gap',
-    why: '地图拉伸（原版把 1016×632 的源区拉到 1024×640）+ 宿舍的 2 个 NPC',
-    issue: 'xl-9bd.16 / xl-9bd.9',
+    // 地图底图本身已经逐像素对齐（xl-9bd.16）：第 0 帧里原版仍是地图底图的
+    // 652306 个像素，Web 侧一个都没取错。剩下的偏离全部是原版画了、这边还没画
+    // 的东西 —— 全帧 0.33%，且只落在这三样所在的格子里。
+    why: '宿舍的 2 个 NPC + 宝箱 + 走到萧逸才跟前的对话框',
+    issue: 'xl-9bd.9 / xl-yg6.1 / xl-9bd.10',
   },
   'bigmap-walk': {
     status: 'gap',
-    why: '地图拉伸 + 镜头跟随 + 大地图的 13 个 NPC',
-    issue: 'xl-9bd.16 / xl-9bd.7 / xl-9bd.9',
+    // 大地图这条剩下的 37% 是**素材重编码**，不是渲染：大地图.jpg 烘成 q80 的
+    // 有损 WebP，把烘焙产物解回来按同一个采样公式取，与原版第 0 帧就已经差
+    // 37.22%，而两端实测差 37.09%——渲染没有再加进去任何东西。
+    why: '大地图.jpg → 有损 WebP 的重编码差异 + 大地图的 13 个 NPC',
+    issue: 'xl-9bd.14 / xl-9bd.9',
   },
   'dorm-intro': {
     status: 'gap',
-    why: '地图拉伸 + 旁白与主线对话框',
-    issue: 'xl-9bd.16 / xl-9bd.10 / xl-9bd.11',
+    why: '旁白与主线对话框',
+    issue: 'xl-9bd.10 / xl-9bd.11',
   },
 }
 
