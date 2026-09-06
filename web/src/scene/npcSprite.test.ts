@@ -5,8 +5,8 @@ import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import { KNOWN_DEFECTS } from '../assets/knownMissing'
 import { createNpcs } from '../state/npc'
-import { createWorld, step } from '../state/step'
-import { TRACE_NAMES, readTrace, sceneNameOf } from '../state/trace'
+import { step } from '../state/step'
+import { TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import { npcSprite } from './npcSprite'
 
 /**
@@ -54,9 +54,9 @@ describe('NPC 精灵', () => {
     let checked = 0
     for (const name of TRACE_NAMES) {
       const trace = readTrace(name)
-      let world = createWorld(getScene(sceneNameOf(trace)))
+      let world = replayWorld(trace, getScene)
       for (const tick of trace.ticks) {
-        world = step(world, tick.input, trace.script.tickMs)
+        world = step(world, tick.input, trace.script.tickMs, sceneSourceOf(getScene))
         const placed = world.npcs.map((npc) => {
           const { x, y } = npcSprite(npc)
           return { x, y }

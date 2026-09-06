@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
-import { createWorld, step } from './step'
+import { step } from './step'
 import { roleMoving, roleTileX, roleTileY } from './role'
-import { TRACE_NAMES, readTrace, sceneNameOf } from './trace'
+import { TRACE_NAMES, readTrace, replayWorld, sceneNameOf, sceneSourceOf } from './trace'
 import type { TraceTick } from './trace'
 import type { World } from './types'
 
@@ -35,10 +35,13 @@ describe('回放行为真值', () => {
   const replayable = TRACE_NAMES.filter((name) =>
     SCENE_NAMES.includes(sceneNameOf(readTrace(name))),
   )
+  /** 出口要换场景，`step()` 就得能同步取到下一个场景（见 `state/step.ts`）。 */
+  const scenes = sceneSourceOf(getScene)
 
-  it('xl-9bd.4 之后 96 个场景全部烘焙，三份 trace 因此全部可回放', () => {
-    // 分母是 TRACE_NAMES 本身：将来加了 trace 而场景没烘出来，这里会响。
-    expect(TRACE_NAMES).toHaveLength(3)
+  it('xl-9bd.4 之后 96 个场景全部烘焙，每一份 trace 因此都可回放', () => {
+    // 分母是 TRACE_NAMES 本身（它从 tools/traces/out/ 现数）：将来加了 trace
+    // 而场景没烘出来，这里会响；而"一份都没有"也会响，不会静静地全绿。
+    expect(TRACE_NAMES.length).toBeGreaterThan(0)
     expect(replayable).toEqual([...TRACE_NAMES])
     // dorm-intro 走的是 脚本1，它在 xl-9bd.4 之前不在烘焙名单里。
     expect(sceneNameOf(readTrace('dorm-intro'))).toBe('脚本1')
@@ -47,19 +50,18 @@ describe('回放行为真值', () => {
   for (const name of replayable) {
     it(`${name}：逐 tick 的主角坐标、朝向、走跑状态与真值一致`, () => {
       const trace = readTrace(name)
-      const scene = getScene(sceneNameOf(trace))
       expect(trace.script.tickMs).toBe(10)
       expect(trace.ticks).toHaveLength(trace.tickCount)
       expect(trace.tickCount).toBeGreaterThan(0)
 
-      let world = createWorld(scene, trace.script.isScript)
+      let world = replayWorld(trace, getScene)
       // 起点也是真值：原版第 0 tick 之前主角就在 (roleX, roleY)。
       expect(roleTileX(world.role)).toBe(trace.ticks[0]!.role.x)
       expect(roleTileY(world.role)).toBe(trace.ticks[0]!.role.y)
 
       for (const tick of trace.ticks) {
         expect(world.timeMs).toBe(tick.vt)
-        world = step(world, tick.input, trace.script.tickMs)
+        world = step(world, tick.input, trace.script.tickMs, scenes)
         // 带上 t：比对失败时要一眼看得出是第几个 tick 开始偏的。
         expect(observed(tick.t, world)).toEqual(expected(tick))
       }
@@ -67,36 +69,51 @@ describe('回放行为真值', () => {
 
     it(`${name}：逐 tick 的 NPC 坐标、方向、帧号与真值一致`, () => {
       const trace = readTrace(name)
-      const scene = getScene(sceneNameOf(trace))
-      let world = createWorld(scene, trace.script.isScript)
+      let world = replayWorld(trace, getScene)
       // NPC 的条数就是分母：原版建不出来的条目会被跳过，少建一个要在这里响，
       // 而不是表现为"那个 NPC 的比对压根没跑"。
       expect(world.npcs).toHaveLength(trace.ticks[0]!.npcs.length)
 
       for (const tick of trace.ticks) {
-        world = step(world, tick.input, trace.script.tickMs)
+        world = step(world, tick.input, trace.script.tickMs, scenes)
         expect(observedNpcs(tick.t, world)).toEqual(expectedNpcs(tick))
       }
     })
 
     it(`${name}：逐 tick 的对话框、逐字游标与头像与真值一致`, () => {
       const trace = readTrace(name)
-      const scene = getScene(sceneNameOf(trace))
-      let world = createWorld(scene, trace.script.isScript)
+      let world = replayWorld(trace, getScene)
 
       for (const tick of trace.ticks) {
-        world = step(world, tick.input, trace.script.tickMs)
+        world = step(world, tick.input, trace.script.tickMs, scenes)
         expect(observedDialogue(tick.t, world)).toEqual(expectedDialogue(tick))
+      }
+    })
+
+    it(`${name}：逐 tick 的场景、isScript 与背景音乐与真值一致`, () => {
+      const trace = readTrace(name)
+      let world = replayWorld(trace, getScene)
+      // 起点也是真值：第 0 tick 之前场景与背景音乐就已经是这些了。
+      expect(world.scene).toBe(trace.ticks[0]!.scene)
+      expect(world.audio.bgm).toBe(trace.ticks[0]!.audio.bgm)
+
+      for (const tick of trace.ticks) {
+        world = step(world, tick.input, trace.script.tickMs, scenes)
+        expect({
+          t: tick.t,
+          scene: world.scene,
+          isScript: world.isScript,
+          bgm: world.audio.bgm,
+        }).toEqual({ t: tick.t, scene: tick.scene, isScript: tick.isScript, bgm: tick.audio.bgm })
       }
     })
 
     it(`${name}：逐 tick 的旁白状态与真值一致`, () => {
       const trace = readTrace(name)
-      const scene = getScene(sceneNameOf(trace))
-      let world = createWorld(scene, trace.script.isScript)
+      let world = replayWorld(trace, getScene)
 
       for (const tick of trace.ticks) {
-        world = step(world, tick.input, trace.script.tickMs)
+        world = step(world, tick.input, trace.script.tickMs, scenes)
         expect(observedNarratage(tick.t, world)).toEqual(expectedNarratage(tick))
       }
     })
@@ -189,6 +206,12 @@ describe('回放行为真值', () => {
       const trace = readTrace(name)
       let prev = trace.ticks[0]!
       for (const tick of trace.ticks) {
+        // 换了场景，两份 NPC 名单就没有可比性了（条数都不同）——逐下标比会
+        // 读到 undefined。跨场景的那一 tick 跳过，其余照数。
+        if (tick.scene !== prev.scene) {
+          prev = tick
+          continue
+        }
         for (let i = 0; i < tick.npcs.length; i++) {
           const npc = tick.npcs[i]!
           const was = prev.npcs[i]!
@@ -213,6 +236,40 @@ describe('回放行为真值', () => {
     expect(stopped).toBeGreaterThan(0)
   })
 
+  /**
+   * 出口切换的覆盖（xl-9bd.12）。**分母从真值里数**，不写死"有一份剧本切了
+   * 三次场景"——并行的票随时会加剧本。
+   *
+   * 没有这一条，上面那个逐 tick 用例在"所有剧本都待在同一个场景里"时也是绿的：
+   * 一个把出口整个删掉的实现能通过它，而那正是这张票之前的状态。
+   */
+  it('真值里确实有人走出过门：场景、入口坐标、isScript 与背景音乐都跟着变了', () => {
+    let switches = 0
+    let bgmChanges = 0
+    let teleports = 0
+    const isScriptSeen = new Set<boolean>()
+    for (const name of replayable) {
+      const trace = readTrace(name)
+      let prev = trace.ticks[0]!
+      for (const tick of trace.ticks) {
+        if (tick.scene !== prev.scene) {
+          switches++
+          // 换场景必然把主角挪到入口格上——原地换场景说明入口坐标没生效。
+          if (tick.role.x !== prev.role.x || tick.role.y !== prev.role.y) teleports++
+          if (tick.audio.bgm !== prev.audio.bgm) bgmChanges++
+          isScriptSeen.add(tick.isScript)
+        }
+        prev = tick
+      }
+    }
+    expect(switches).toBeGreaterThan(0)
+    expect(teleports).toBe(switches)
+    expect(bgmChanges).toBe(switches)
+    // 出口的两条分支：进普通场景置假、走回剧情脚本置真。两条都要被走到过，
+    // 否则只实现其中一条也是绿的。
+    expect([...isScriptSeen].sort()).toEqual([false, true])
+  })
+
   it('主角至少有一次是被 NPC 挡住的，不只是被墙挡住', () => {
     let blockedByNpc = 0
     for (const name of replayable) {
@@ -220,6 +277,10 @@ describe('回放行为真值', () => {
       let prev = trace.ticks[0]!
       for (const tick of trace.ticks) {
         const r = tick.role
+        if (tick.scene !== prev.scene) {
+          prev = tick
+          continue
+        }
         if (r.moving && r.px === prev.role.px && r.py === prev.role.py) {
           const dx = r.dir === 'left' ? -1 : r.dir === 'right' ? 1 : 0
           const dy = r.dir === 'up' ? -1 : r.dir === 'down' ? 1 : 0

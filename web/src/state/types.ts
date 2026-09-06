@@ -9,6 +9,7 @@
  */
 
 import type { DialogueScript, DialogueState } from './dialogue'
+import type { ExitTable } from './exit'
 import type { NarratageState } from './narratage'
 import type { NpcState } from './npc'
 
@@ -144,4 +145,46 @@ export interface World {
    * 原版的字段初值是 `true`，这里同样默认 `true`（见 `createWorld`）。
    */
   readonly isScript: boolean
+  /**
+   * 当前脚本文件名（`ScenePanel.fileName`），如 `宿舍.txt`。**这是场景切换
+   * 唯一可断言的事实**：只看主角坐标的话，"走出门进了大地图"与"在原地被瞬移
+   * 到 (4,23)"分不开。trace 每一 tick 都记着它（xl-9bd.12）。
+   */
+  readonly scene: string
+  /** 本场景的出口表（`Exit` 段）。`null` = 这个场景没有出口。 */
+  readonly exit: ExitTable | null
+  /**
+   * 背景音乐（xl-9bd.12）。**它是一个声明值，不是"调用了 play()"**：
+   * `MusicPlayer.currentPlayingBGM` 在原版里也是先赋值、再去开音频设备，
+   * trace 记的就是这个字符串。播放器只是把它同步到实际输出的订阅者
+   * （见 `audio/bgmPlayer.ts`），所以"该放哪首"永远是可测的。
+   *
+   * `null` = 这个场景的 `Music` 段是空的（原版会拿 null 去拼路径，
+   * 抓异常打一行栈，什么都不放）。
+   */
+  readonly audio: AudioState
+  /**
+   * `ScenePanel.currentScript`：剧情进度的三元组 `[入口 "x/y", 场景, 脚本]`。
+   * **它不属于任何一个场景**——是 `ScenePanel` 的字段，初值写死在构造函数里
+   * （`7/7` / `宿舍.txt` / `脚本1.txt`），只有出口事件会动它。
+   */
+  readonly currentScript: readonly string[]
+  /**
+   * `ScenePanel.nextScript`：下一段剧情的三元组，来自脚本的 `NextScript` 段。
+   * **换场景时是粘的**：原版 `initiation` 写的是
+   * `if (reader.getNextScript() != null) nextScript = ...`，新场景没有这一段
+   * 就留着上一个场景的那份。照抄，不"顺手清掉"。
+   */
+  readonly nextScript: readonly string[] | null
+  /**
+   * `ExitEvent.dialogueOrder`：走出去之前记下的主线对话进度，从大地图走回
+   * 同一段剧情时用它还原。**每次 `initiation` 都跟着 `ExitEvent` 一起重建**，
+   * 所以它的初值恒为 0。
+   */
+  readonly savedOrder: number
+}
+
+/** 世界声明此刻该放的背景音乐。见 `World.audio`。 */
+export interface AudioState {
+  readonly bgm: string | null
 }

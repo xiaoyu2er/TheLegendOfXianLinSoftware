@@ -185,6 +185,12 @@ public final class ExportTrace {
             fireTimers();
             sp.step();
             sp.paint(sink);
+            // 场景可能刚在 step() 里被重新初始化。新对象图上的定时器要**在这一
+            // tick 的时钟上**接管：原版 NPC 的两个定时器是在构造函数里 start()
+            // 的，起算点就是构造那一刻。放到 clock.advance() 之后再装，它们会晚
+            // 一个 tick 到期 —— dorm-exit 里 13 个 NPC 集体晚 10 ms 起步，
+            // 而那正是"两端差一个 tick"最难查的形态。
+            installTimers();
 
             if (!first) body.append(",\n");
             first = false;
@@ -193,7 +199,6 @@ public final class ExportTrace {
 
             clock.advance(script.tickMs);
             ticks++;
-            installTimers();   // 场景可能在本 tick 里被重新初始化，新对象要接管
         }
 
         if (framesDir != null) writeFrameManifest(ticks);

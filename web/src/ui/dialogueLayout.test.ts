@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
-import { createWorld, step } from '../state/step'
-import { TRACE_NAMES, readTrace, sceneNameOf } from '../state/trace'
+import { step } from '../state/step'
+import { TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import type { DialogueState } from '../state/dialogue'
 import { BOX_HEIGHT, BOX_WIDTH, boxPatch, textCells } from './dialogueLayout'
 
@@ -19,10 +19,10 @@ import { BOX_HEIGHT, BOX_WIDTH, boxPatch, textCells } from './dialogueLayout'
  */
 function dialogueFrames(name: string): DialogueState[] {
   const trace = readTrace(name)
-  let world = createWorld(getScene(sceneNameOf(trace)), trace.script.isScript)
+  let world = replayWorld(trace, getScene)
   const frames: DialogueState[] = []
   for (const tick of trace.ticks) {
-    world = step(world, tick.input, trace.script.tickMs)
+    world = step(world, tick.input, trace.script.tickMs, sceneSourceOf(getScene))
     if (world.dialogue.speaking || world.dialogue.oral) frames.push(world.dialogue)
   }
   return frames

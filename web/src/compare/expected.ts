@@ -45,6 +45,17 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '大地图.jpg → 有损 WebP 的重编码差异',
     issue: 'xl-9bd.14',
   },
+  'dorm-exit': {
+    status: 'gap',
+    // 出口切换（xl-9bd.12）。这条剧本横跨三个场景，于是把另外两条各自的缺口
+    // 都继承了过来：大地图那一段是 大地图.jpg → 有损 WebP 的重编码差异
+    //（xl-9bd.14，bigmap-walk 那条量到第 0 帧就 37.22%），宿舍与 脚本1 那两段
+    // 是右下角还没画的金币 HUD（xl-yg6.1）与对话正文的字形（xl-9bd.17）。
+    // 切换本身是对的：场景、入口坐标、isScript 与背景音乐逐 tick 对齐真值
+    //（`state/traceReplay.test.ts`，1181 个 tick）。
+    why: '大地图的有损 WebP 重编码 + 金币 HUD + 对话正文的字形',
+    issue: 'xl-9bd.14 / xl-yg6.1 / xl-9bd.17',
+  },
   'dorm-intro': {
     status: 'gap',
     // 旁白（xl-9bd.11）与对话框（xl-9bd.10）都接上之后实测
