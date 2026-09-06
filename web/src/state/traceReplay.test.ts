@@ -5,7 +5,7 @@ import { createWorld, step } from './step'
 import type { SceneGates } from './step'
 import { roleMoving, roleTileX, roleTileY } from './role'
 import { TRACE_NAMES, readTrace, sceneNameOf } from './trace'
-import type { Trace, TraceTick } from './trace'
+import type { TraceTick } from './trace'
 import type { World } from './types'
 
 /**
@@ -21,11 +21,12 @@ import type { World } from './types'
  * 喂给状态层的只有两样东西，都来自真值：
  *
  * - `input`：trace 里那一 tick 实际喂给原版的按键事件，照着回放；
- * - `dialogue` / `narratage`：`ScenePanel.step()` 第 3 步那道门的两个条件。
- *   对话与旁白本身是 xl-9bd.10 / .11，这一层不实现它们，只从真值里读那道门。
+ * - `narratage.active`：`ScenePanel.step()` 那几道门里旁白那一半。旁白是
+ *   xl-9bd.11，这一层还不实现它。
  *
- * **NPC 不再从真值里喂**（xl-9bd.9 之前是喂的）。它们由 `state/npc.ts` 自己
- * 推进，然后跟真值逐 tick 比对 —— 喂进去再比对等于让真值给自己打分。
+ * **NPC 不再从真值里喂**（xl-9bd.9 之前是喂的），**对话也不再喂**
+ * （xl-9bd.10 之前那道门的 `isSpeaking` 是喂的）。两者都由状态层自己推进，
+ * 然后跟真值逐 tick 比对 —— 喂进去再比对等于让真值给自己打分。
  */
 describe('回放行为真值', () => {
   /**
@@ -52,14 +53,14 @@ describe('回放行为真值', () => {
       expect(trace.ticks).toHaveLength(trace.tickCount)
       expect(trace.tickCount).toBeGreaterThan(0)
 
-      let world = createWorld(scene)
+      let world = createWorld(scene, trace.script.isScript)
       // 起点也是真值：原版第 0 tick 之前主角就在 (roleX, roleY)。
       expect(roleTileX(world.role)).toBe(trace.ticks[0]!.role.x)
       expect(roleTileY(world.role)).toBe(trace.ticks[0]!.role.y)
 
       for (const tick of trace.ticks) {
         expect(world.timeMs).toBe(tick.vt)
-        world = step(world, tick.input, trace.script.tickMs, gatesBefore(trace, tick.t))
+        world = step(world, tick.input, trace.script.tickMs, gatesAt(tick))
         // 带上 t：比对失败时要一眼看得出是第几个 tick 开始偏的。
         expect(observed(tick.t, world)).toEqual(expected(tick))
       }
@@ -68,17 +69,66 @@ describe('回放行为真值', () => {
     it(`${name}：逐 tick 的 NPC 坐标、方向、帧号与真值一致`, () => {
       const trace = readTrace(name)
       const scene = getScene(sceneNameOf(trace))
-      let world = createWorld(scene)
+      let world = createWorld(scene, trace.script.isScript)
       // NPC 的条数就是分母：原版建不出来的条目会被跳过，少建一个要在这里响，
       // 而不是表现为"那个 NPC 的比对压根没跑"。
       expect(world.npcs).toHaveLength(trace.ticks[0]!.npcs.length)
 
       for (const tick of trace.ticks) {
-        world = step(world, tick.input, trace.script.tickMs, gatesBefore(trace, tick.t))
+        world = step(world, tick.input, trace.script.tickMs, gatesAt(tick))
         expect(observedNpcs(tick.t, world)).toEqual(expectedNpcs(tick))
       }
     })
+
+    it(`${name}：逐 tick 的对话框、逐字游标与头像与真值一致`, () => {
+      const trace = readTrace(name)
+      const scene = getScene(sceneNameOf(trace))
+      let world = createWorld(scene, trace.script.isScript)
+
+      for (const tick of trace.ticks) {
+        world = step(world, tick.input, trace.script.tickMs, gatesAt(tick))
+        expect(observedDialogue(tick.t, world)).toEqual(expectedDialogue(tick))
+      }
+    })
   }
+
+  /**
+   * 对话这条线在三份真值里到底被走到了多少。
+   *
+   * 上面那个逐 tick 用例是"相等"，它对一份**从头到尾没有对话**的真值同样会
+   * 全绿 —— 全 false 等于全 false。所以这里数一遍真值里实际发生过的事，
+   * 分母全部从真值现数，不写死数量（并行的票随时会加剧本）。
+   */
+  it('真值覆盖了两种来源、两种对话框样式、逐字打印、翻页与结束', () => {
+    const sources = new Set<string>()
+    const types = new Set<number>()
+    let printedChars = 0
+    let pageTurns = 0
+    let ended = 0
+    for (const name of replayable) {
+      const trace = readTrace(name)
+      let prev = trace.ticks[0]!
+      for (const tick of trace.ticks) {
+        const d = tick.dialogue
+        if (d.active) {
+          sources.add(d.source)
+          types.add(d.type)
+        }
+        if (d.cursor > prev.dialogue.cursor) printedChars++
+        if (d.pageOver && !prev.dialogue.pageOver) pageTurns++
+        if (!d.active && prev.dialogue.active) ended++
+        prev = tick
+      }
+    }
+    // 口头语与主线对话都出现过；头像式（0）与名字式（1）两种对话框都出现过。
+    expect([...sources].sort()).toEqual(['npc', 'script'])
+    expect([...types].sort()).toEqual([0, 1])
+    expect(printedChars).toBeGreaterThan(0)
+    // 一屏 4×20 打满、等玩家翻页：dorm-intro 里有一句长到要翻页。
+    expect(pageTurns).toBeGreaterThan(0)
+    // 对话真的收过框，不是"开了就一直开着到剧本结束"。
+    expect(ended).toBeGreaterThan(0)
+  })
 
   /**
    * 三份真值合起来，四种运动状态各覆盖到了什么。
@@ -170,28 +220,18 @@ describe('回放行为真值', () => {
 })
 
 /**
- * 第 `t` 个 tick 跑 `step()` 时，`isSpeaking` / `isNarratage` 是什么。
+ * 第 `t` 个 tick 跑 `step()` 时，`isNarratage` 是什么。
  *
- * 取**上一 tick 的快照**：导出器每 tick 的顺序是 `输入 → 定时器 → step() →
- * paint()`，快照写在 `paint()` 之后，所以第 t-1 行记的正是第 t 个 tick 开跑
- * 前的状态。第 0 个 tick 之前什么都没开始，两个都是 false。
+ * **取当前这一 tick 的快照**（xl-9bd.10 之前取的是上一 tick 的）。理由写在
+ * `state/step.ts` 的 `SceneGates` 上，一句话是：`isNarratage` 只被旁白自己的
+ * 定时器与 `ScenePanel.step()` 第 1 步改写，`paint()` 不碰它，所以写在
+ * `paint()` 之后的第 t 行快照正是第 2/3/5 步当时看到的值。
  *
- * 这不是精确值，精确值取不到：`paint()` 会推进对话与旁白，`step()` 自己的
- * 第 1、2 步也可能在第 3 步之前把这两个标志翻过来，两次翻转都落在两个快照
- * 之间。
- *
- * **而今天这三份真值分辨不出这道门。** 实测：把它改成读当前 tick 的快照、
- * 或者干脆整个拿掉（两个条件恒为 false），上面那两个逐 tick 用例照样全绿。
- * 原因是 `checkNPCStop` 在没有 NPC 贴身时做的是无条件 `start()`，而对已经在
- * 跑的定时器那是空操作 —— 三份剧本里主角贴身的那几段都不在对话或旁白期间。
- * 所以这里照抄源码的那道门是**未经真值验证**的：它按 `ScenePanel.step()` 写，
- * 不是按测出来的差别写。要验证它得有一份"先把 NPC 停住、再开始对话"的剧本，
- * 那要等 xl-9bd.10 / .11 把对话接进来。
+ * `isSpeaking` **不再从这里喂** —— 对话就在状态层里，喂进去再比对等于让真值
+ * 给自己打分。
  */
-function gatesBefore(trace: Trace, t: number): SceneGates {
-  const before = trace.ticks[t - 1]
-  if (!before) return { speaking: false, narratage: false }
-  return { speaking: before.dialogue.source === 'script', narratage: before.narratage.active }
+function gatesAt(tick: TraceTick): SceneGates {
+  return { narratage: tick.narratage.active }
 }
 
 function observedNpcs(t: number, world: World) {
@@ -221,6 +261,45 @@ function expectedNpcs(tick: TraceTick) {
       dir: n.dir,
       frame: n.frame,
     })),
+  }
+}
+
+function observedDialogue(t: number, world: World) {
+  const d = world.dialogue
+  return {
+    t,
+    active: d.speaking || d.oral,
+    source: d.oral ? 'npc' : d.speaking ? 'script' : 'none',
+    type: d.type,
+    head: d.headNo,
+    name: d.name,
+    sentence: d.sentence,
+    cursor: d.cursor,
+    row: d.row,
+    col: d.col,
+    printing: d.printing,
+    sentenceOver: d.sentenceOver,
+    pageOver: d.pageOver,
+  }
+}
+
+function expectedDialogue(tick: TraceTick) {
+  const { active, source, type, head, name, sentence, cursor, row, col } = tick.dialogue
+  const { printing, sentenceOver, pageOver } = tick.dialogue
+  return {
+    t: tick.t,
+    active,
+    source,
+    type,
+    head,
+    name,
+    sentence,
+    cursor,
+    row,
+    col,
+    printing,
+    sentenceOver,
+    pageOver,
   }
 }
 
