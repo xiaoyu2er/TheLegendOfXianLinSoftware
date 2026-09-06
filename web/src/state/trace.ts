@@ -1,6 +1,9 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { repoPath } from '../test/repoPath'
-import type { InputEvent, TilePos } from './types'
+import type { SceneScript } from '../data/types'
+import { initiate } from './step'
+import type { SceneSource } from './step'
+import type { InputEvent, TilePos, World } from './types'
 
 /**
  * `tools/traces/out/*.trace.json` 的形状——**只声明已经有人对齐的字段**。
@@ -12,6 +15,13 @@ export interface Trace {
   readonly format: string
   readonly script: {
     readonly name: string
+    /**
+     * 先加载一遍的脚本，可为 `null`。96 个场景里有 20 个没有 `Dialogue` 段，
+     * 依赖前一个场景残留的 `dialogueEvent` 对象才能跑（见 `docs/trace-format.md`）。
+     * **回放时必须照做**：`initiate` 把那份残留原样带过来，而出口的分支正是
+     * 靠它分开的（见 `state/step.ts` 的 `carryDialogue`）。
+     */
+    readonly warmup: string | null
     readonly scene: string
     readonly tickMs: number
     /**
@@ -91,6 +101,15 @@ export interface TraceTick {
     readonly row: number
     readonly bg: number
   }
+  /**
+   * 这一 tick 走的是哪个脚本（`ScenePanel.fileName`）与 `ScenePanel.isScript`
+   * （xl-9bd.12）。出口生效的那一 tick 两者一起变 —— 只比主角坐标的话，
+   * "切到了大地图"与"在原地被瞬移"分不开。
+   */
+  readonly scene: string
+  readonly isScript: boolean
+  /** `MusicPlayer.currentPlayingBGM`：**一个可断言的字符串**，不是"调用了 play()"。 */
+  readonly audio: { readonly bgm: string | null }
   /** `OtherEvent.calOffset()` 的六元组，见 `scene/viewport.ts`。 */
   readonly viewport: {
     readonly offsetX: number
@@ -109,8 +128,19 @@ export interface TraceTick {
   readonly drawOrder: 'npcs-first' | 'hero-first' | null
 }
 
-/** 已导出的三份 trace。名字就是 `tools/traces/scripts/*.json` 的 `name`。 */
-export const TRACE_NAMES = ['dorm-walk', 'bigmap-walk', 'dorm-intro'] as const
+/**
+ * 已导出的 trace，**从磁盘现数**（`tools/traces/out/*.trace.json`），
+ * 不抄一份名单。
+ *
+ * 抄名单的代价是真实的：并行的票随时会加剧本，而写死的名单加上写死的条数
+ * （`toHaveLength(3)` 那种）合并时必然冲突，还会让新剧本"加了却没人回放"——
+ * 这两件事看起来都跟"一切正常"一模一样。从目录数就都躲开了：少导出一份，
+ * 名单立刻短一截；多一份，回放用例立刻多一组。
+ */
+export const TRACE_NAMES: readonly string[] = readdirSync(repoPath('tools/traces/out'))
+  .filter((f) => f.endsWith('.trace.json'))
+  .map((f) => f.replace(/\.trace\.json$/, ''))
+  .sort()
 
 export function readTrace(name: string): Trace {
   const path = repoPath('tools/traces/out', `${name}.trace.json`)
@@ -123,5 +153,45 @@ export function readTrace(name: string): Trace {
 
 /** trace 里的场景文件名 `宿舍.txt` → 烘焙注册表里的场景名 `宿舍`。 */
 export function sceneNameOf(trace: Trace): string {
-  return trace.script.scene.replace(/\.txt$/, '')
+  return stemOf(trace.script.scene)
+}
+
+/**
+ * 照剧本头把世界建出来：**先 `warmup`，再进 `scene`**，最后按剧本的
+ * `isScript` 表态。
+ *
+ * 为什么非要照做 `warmup`：原版的 `initiation` 只在新场景**有** `Dialogue` 段
+ * 时才换掉 `DialogueEvent`，所以宿舍与大地图跑的是预热脚本留下的那一份，
+ * `dialogueEventOver` 是 `false` 而不是 `true`。而出口的三条分支正是靠这个
+ * 字段分开的（见 `state/step.ts` 的 `applyExit`）——不预热就会走错分支，
+ * 而画面上只表现为"走回宿舍时进的场景不对"。
+ *
+ * `getScene` 由调用方给：**这个模块不能 import `scenesEager`**，那会把
+ * 96 份场景 JSON 的 eager glob 带进来，而"谁在 import 它"是有测试盯着的
+ * （`data/sceneLoading.test.ts`）。
+ */
+export function replayWorld(trace: Trace, getScene: (name: string) => SceneScript): World {
+  const { warmup, scene, isScript } = trace.script
+  const warm = warmup === null ? null : initiate(null, getScene(stemOf(warmup)))
+  return { ...initiate(warm, getScene(stemOf(scene))), isScript }
+}
+
+/**
+ * 回放时 `step()` 用的场景来源：出口指的是脚本**文件名**（`大地图.txt`），
+ * 烘焙注册表用的是场景名（`大地图`），差的这一层扩展名在这里抹平。
+ */
+export function sceneSourceOf(getScene: (name: string) => SceneScript): SceneSource {
+  return (file) => getScene(stemOf(file))
+}
+
+/** trace 里某一 tick 所在场景的注册表名（`宿舍.txt` → `宿舍`）。出口切换之后
+ * 一份 trace 会横跨几个场景，**要取哪个场景的数据得逐 tick 问**，不能拿剧本头
+ * 那个了事（`scene/viewport.test.ts` 正是这么用的）。 */
+export function tickSceneName(tick: TraceTick): string {
+  return stemOf(tick.scene)
+}
+
+/** `宿舍.txt` → `宿舍`。 */
+function stemOf(file: string): string {
+  return file.replace(/\.txt$/, '')
 }

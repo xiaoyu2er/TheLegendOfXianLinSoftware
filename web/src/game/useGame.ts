@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { createBgmPlayer } from '../audio/bgmPlayer'
+import { exitsReady, loadedSceneSource, prepareExits, rememberScene } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { advance, createTicker } from '../state/loop'
@@ -34,11 +36,26 @@ import { toInputEvent } from './keyboard'
  * 一个从渲染层真正读到的字段算出来的签名（见 `dialogueSignature`）——
  * 按整个 `DialogueState` 比引用是没用的，`step()` 每 tick 都返回新对象。
  */
-export function useGame(renderer: SceneRenderer | null, sceneName: string): DialogueState | null {
+export interface GameView {
+  /** 对话框那一层的状态，`null` = 此刻没有对话。 */
+  readonly dialogue: DialogueState | null
+  /**
+   * 世界此刻在哪个场景（注册表名，如 `大地图`）。
+   *
+   * **场景归世界管，不归调用方管**（xl-9bd.12）：走到出口是世界自己换的场景，
+   * 画面只能跟着它走。调用方给的那个 `sceneName` 只决定从哪儿开局
+   * （开发用的场景选择器）。世界还没建好时是 `null`。
+   */
+  readonly scene: string | null
+}
+
+export function useGame(renderer: SceneRenderer | null, sceneName: string): GameView {
   const tickerRef = useRef<Ticker | null>(null)
   const queueRef = useRef<InputEvent[]>([])
   const [dialogue, setDialogue] = useState<DialogueState | null>(null)
+  const [scene, setScene] = useState<string | null>(null)
   const signatureRef = useRef<string | null>(null)
+  const sceneRef = useRef<string | null>(null)
 
   // 换场景 = 换一个世界。主角回到脚本里的出生格。
   //
@@ -50,10 +67,19 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): Dial
     tickerRef.current = null
     queueRef.current = []
     signatureRef.current = null
+    sceneRef.current = null
     setDialogue(null)
-    void loadScene(sceneName).then((scene) => {
+    setScene(null)
+    void loadScene(sceneName).then(async (loaded) => {
       if (disposed) return
-      tickerRef.current = createTicker(createWorld(scene))
+      rememberScene(sceneName, loaded)
+      const world = createWorld(loaded)
+      // 先把这个场景出口的目标取到手，走到门口才切得动（见 data/loadedScenes.ts）。
+      await prepareExits(world)
+      if (disposed) return
+      tickerRef.current = createTicker(world)
+      sceneRef.current = sceneName
+      setScene(sceneName)
     })
     return () => {
       disposed = true
@@ -81,6 +107,18 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): Dial
     }
   }, [])
 
+  // 背景音乐：世界声明该放哪首，播放器只负责让实际输出等于它
+  // （见 `audio/bgmPlayer.ts`）。它跟渲染器一样是个订阅者，不参与任何决定。
+  const bgmRef = useRef<ReturnType<typeof createBgmPlayer> | null>(null)
+  useEffect(() => {
+    const player = createBgmPlayer()
+    bgmRef.current = player
+    return () => {
+      bgmRef.current = null
+      player.destroy()
+    }
+  }, [])
+
   useEffect(() => {
     if (!renderer) return
     let last = performance.now()
@@ -88,12 +126,29 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): Dial
       const ticker = tickerRef.current
       if (!ticker) return
       const now = performance.now()
+      // 邻居还没取到手就先停一拍：出口切换是同步的，切不动只能是抛
+      // （见 `state/step.ts` 的 `SceneSource`）。这里停的是几十毫秒，
+      // 原版在 `initiation` 里读盘时停的也是这个。
+      if (!exitsReady(ticker.world)) {
+        void prepareExits(ticker.world)
+        last = now
+        return
+      }
       const elapsed = now - last
       last = now
       const input = queueRef.current
       queueRef.current = []
-      const next = advance(ticker, input, elapsed)
+      const next = advance(ticker, input, elapsed, loadedSceneSource)
       tickerRef.current = next
+      bgmRef.current?.sync(next.world.audio.bgm)
+      const entered = next.world.scene.replace(/\.txt$/, '')
+      if (entered !== sceneRef.current) {
+        // 走出门了。**这一帧不画**：渲染器手上还是上一个场景的地图与精灵，
+        // 硬画会撞上它那道"这一帧有 13 个 NPC，而渲染器建了 2 个精灵"的校验。
+        sceneRef.current = entered
+        setScene(entered)
+        return
+      }
       renderer.showWorld(next.world)
       const signature = dialogueSignature(next.world)
       if (signature !== signatureRef.current) {
@@ -105,7 +160,7 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): Dial
     return () => window.clearInterval(id)
   }, [renderer])
 
-  return dialogue
+  return { dialogue, scene }
 }
 
 /**

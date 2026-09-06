@@ -102,7 +102,7 @@ export interface NpcState extends TilePos {
  * 而后者没人看得出来。已知的那处坏数据挂在 `assets/knownMissing.ts` 的
  * `KNOWN_DEFECTS` 上，`npc.test.ts` 用它当分母。
  */
-export function createNpcs(scene: SceneScript): NpcState[] {
+export function createNpcs(scene: SceneScript, nowMs = 0): NpcState[] {
   const npcs: NpcState[] = []
   scene.npcList?.forEach((row, i) => {
     const where = `${scene.script} npcList[${i}]`
@@ -139,7 +139,7 @@ export function createNpcs(scene: SceneScript): NpcState[] {
           images: range(1, frames).map((n) => `${folder}/${n}.png`),
           name: folder,
           oral: at(5),
-          action: { running: true, dueMs: NPC_TIMER_MS },
+          action: { running: true, dueMs: nowMs + NPC_TIMER_MS },
         }),
       )
       return
@@ -160,7 +160,7 @@ export function createNpcs(scene: SceneScript): NpcState[] {
         images: range(0, frames - 1).map((n) => `${folder}/${n + dir}.png`),
         name: folder,
         oral: at(7),
-        walk: { running: true, dueMs: NPC_TIMER_MS },
+        walk: { running: true, dueMs: nowMs + NPC_TIMER_MS },
       }),
     )
   })
@@ -168,9 +168,13 @@ export function createNpcs(scene: SceneScript): NpcState[] {
 }
 
 /**
- * 场景初始化时两个定时器的到期时刻都是 `0 + 200`：原版在**构造函数里**
- * `start()`，而构造发生在第 0 个 tick 之前。导出器也是这么装的
- * （`ExportTrace.installTimers` 在 `initiation` 之后、第一个 tick 之前）。
+ * 场景初始化时两个定时器的到期时刻都是 `nowMs + 200`：原版在**构造函数里**
+ * `start()`，而 `start()` 是从**当时**的时钟起算的。开机时 `nowMs` 是 0
+ * （导出器也是这么装的：`ExportTrace.installTimers` 在 `initiation` 之后、
+ * 第一个 tick 之前）；而从出口走进来时不是 —— 那时虚拟时钟已经跑了几秒，
+ * 少加这一截，新场景的 NPC 会在落地的第一个 tick 里把欠下的几十次触发一次
+ * 补完，凭空往前走出十几格（实测 dorm-exit 的 t=485：小女孩甲 从 (45,46)
+ * 一步窜到 (39,46)）。
  */
 function make(fields: {
   type: number

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import { createWorld } from '../state/step'
-import { TRACE_NAMES, readTrace, sceneNameOf } from '../state/trace'
+import { TRACE_NAMES, readTrace, sceneNameOf, tickSceneName } from '../state/trace'
 import type { TraceTick } from '../state/trace'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import type { SceneScript } from '../data/types'
@@ -53,8 +53,10 @@ describe('视口与绘制顺序对齐真值', () => {
 
   for (const trace of traces) {
     it(`${trace.script.name}：逐 tick 的视口六元组与真值一致`, () => {
-      const scene = getScene(sceneNameOf(trace))
       for (const tick of trace.ticks) {
+        // 场景**逐 tick 取**：出口切换之后一份 trace 会横跨几个场景，
+        // 拿剧本头那个场景算整条，换场景之后的每一帧都会错（地图尺寸都不同）。
+        const scene = getScene(tickSceneName(tick))
         // 带上 t：错位从第几帧开始，要一眼看得见。
         expect({ t: tick.t, ...computeViewport(worldAt(scene, tick)) }).toEqual({
           t: tick.t,
@@ -64,8 +66,8 @@ describe('视口与绘制顺序对齐真值', () => {
     })
 
     it(`${trace.script.name}：逐 tick 的绘制顺序与真值一致`, () => {
-      const scene = getScene(sceneNameOf(trace))
       for (const tick of trace.ticks) {
+        const scene = getScene(tickSceneName(tick))
         // 旁白帧原版一个精灵都不画，没有绘制顺序可言，跳过——跳过多少条在
         // 下面的覆盖用例里有分母兜底。
         if (tick.drawOrder === null) continue

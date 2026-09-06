@@ -1,4 +1,5 @@
 import manifest from '../generated/assets.json'
+import deferredBgmIds from '../generated/deferredBgm.json'
 import missingIds from '../generated/missingAssets.json'
 import type { AssetId } from './ids'
 
@@ -53,6 +54,25 @@ const MISSING = new Set(missingIds as string[])
  */
 export function resolveAssetOrNull(id: AssetId): string | null {
   if (MISSING.has(id)) return null
+  return resolveAsset(id)
+}
+
+/**
+ * **这一票故意还没转码**的背景音乐（烘焙期写出来，见 `scripts/bake.ts`）。
+ * M1 之外的场景今天一个都走不到，96 个场景的 27 首曲子全部转码入库是 20 MB
+ * 以上的产物。
+ */
+const DEFERRED_BGM = new Set(deferredBgmIds as string[])
+
+/**
+ * 同 `resolveAsset`，但**名单上那些还没转码的背景音乐返回 `null`**。
+ *
+ * 为什么不能"查不到就静音"：那样"这一票暂时不管"与"烘焙漏了一首"长得一模
+ * 一样，而后者的表现只是某个场景没有音乐，没人看得出来。名单上的静音，
+ * 名单外的照旧抛 —— 跟 `resolveAssetOrNull` 是同一个套路。
+ */
+export function resolveBgmOrNull(id: AssetId): string | null {
+  if (DEFERRED_BGM.has(id)) return null
   return resolveAsset(id)
 }
 

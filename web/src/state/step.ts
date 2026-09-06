@@ -19,6 +19,7 @@ import {
   tickNarratageTimers,
   toNarratageDraft,
 } from './narratage'
+import { exitTableOf } from './exit'
 import { checkNpcStop, createNpcs, fromNpcDraft, tickNpcTimers, toNpcDraft } from './npc'
 import {
   ROLE_TIMER_MS,
@@ -33,6 +34,7 @@ import {
 import { fireDue } from './timer'
 import { isArrowKey } from './types'
 import type { CollisionMap, InputEvent, TilePos, World } from './types'
+import type { DialogueScript, DialogueState } from './dialogue'
 
 /**
  * 一个 tick 的虚拟毫秒。原版主循环是 `while(true){ step(); Clock.sleep(10); }`，
@@ -71,16 +73,81 @@ export function npcTilesOf(scene: SceneScript): TilePos[] {
  * 一份，挂在 `World` 上，不再往 `DialogueScript` 里抄一遍。
  */
 export function createWorld(scene: SceneScript, isScript = true): World {
+  return { ...initiate(null, scene), isScript }
+}
+
+/**
+ * `ScenePanel` 构造函数里写死的那三个字段：`currentScript = {"7/7", "宿舍.txt",
+ * "脚本1.txt"}`。**它是剧情的起点，不是任何一个场景的属性**——所以它在这里，
+ * 不在场景数据里。
+ */
+export const START_SCRIPT: readonly string[] = ['7/7', '宿舍.txt', '脚本1.txt']
+
+/**
+ * `ScenePanel.initiation(fileName)`：换一个场景。
+ *
+ * `prev` 为 `null` 就是"游戏刚开机"（`createWorld`）；否则是从 `prev` 那个
+ * 场景走过来的，于是有三样东西**跨场景活着**，一样都不能顺手清掉：
+ *
+ * 1. **`nextScript` 是粘的**。原版写的是 `if (reader.getNextScript() != null)`，
+ *    新场景没有 `NextScript` 段就留着上一个的。
+ * 2. **主线对话的进度也是粘的**。`initiation` 只在 `reader.getDialogueCode()
+ *    != null` 时才 `new DialogueEvent(...)`；新场景没有 `Dialogue` 段时那个
+ *    对象**原封不动地留着**，`dialogueEventOver` / `dialogueOrder` 一起留着。
+ *    宿舍与大地图都没有 `Dialogue` 段，所以在这两个场景之间来回走，剧情进度
+ *    是上一段剧情脚本留下的那份——这不是巧合，出口的分支正是靠它分开的。
+ *    重建的只有 `Dialogue`（正文缓冲、游标、弹出动画）与 `NPCEvent`（口头语）。
+ * 3. **世界时间**。换场景不重置虚拟时钟。
+ *
+ * `isScript` 在原版里不归 `initiation` 管：它是调用方在 `initiation` 前后
+ * 自己置的（`ExitEvent` 的三条分支各置各的）。所以这里原样带过来，
+ * 由调用方覆盖。
+ */
+export function initiate(prev: World | null, scene: SceneScript): World {
   const script = dialogueScriptOf(scene)
   return {
-    timeMs: 0,
+    timeMs: prev?.timeMs ?? 0,
+    scene: scene.script,
     collision: collisionOf(scene),
-    npcs: createNpcs(scene),
+    exit: exitTableOf(scene),
+    // NPC 的两个定时器在构造函数里就 start() 了，起算点是**此刻**，
+    // 不是 0 —— 从出口走进来时时钟已经跑了几秒（见 `createNpcs` 的注释）。
+    npcs: createNpcs(scene, prev?.timeMs ?? 0),
     role: createRole(scene.roleX, scene.roleY),
     script,
-    dialogue: createDialogue(script),
+    dialogue: carryDialogue(prev, script),
     narratage: createNarratage(scene),
-    isScript,
+    audio: { bgm: scene.sceneMusic },
+    isScript: prev?.isScript ?? true,
+    currentScript: prev?.currentScript ?? START_SCRIPT,
+    nextScript: scene.nextScript ?? prev?.nextScript ?? null,
+    // ExitEvent 跟着 initiation 一起重建，它记的那个进度也就跟着回到 0。
+    savedOrder: 0,
+  }
+}
+
+/**
+ * 换场景时对话状态的去留，照 `ScenePanel.initiation` 那两行分：
+ * `Dialogue` 与 `NPCEvent` 每次都新建，`DialogueEvent` 只在新场景**有**
+ * `Dialogue` 段时才新建。
+ *
+ * 于是新场景没有 `Dialogue` 段时，`DialogueEvent` 的六个字段整个从上一个
+ * 场景带过来。少带一个（尤其是 `eventOver`）就会让出口走错分支，而画面上
+ * 的表现只是"走回宿舍时进的场景不对"——查不出来的那种。
+ */
+function carryDialogue(prev: World | null, script: DialogueScript): DialogueState {
+  const fresh = createDialogue(script)
+  if (prev === null || script.code !== null) return fresh
+  const d = prev.dialogue
+  return {
+    ...fresh,
+    speaking: d.speaking,
+    groupOver: d.groupOver,
+    eventOver: d.eventOver,
+    groupOrder: d.groupOrder,
+    sentenceOrder: d.sentenceOrder,
+    fight: d.fight,
+    gameOver: d.gameOver,
   }
 }
 
@@ -112,14 +179,20 @@ export function createWorld(scene: SceneScript, isScript = true): World {
  *
  * `input` 是本 tick 收到的输入事件，按到达顺序（见 `applyInput`）。
  */
-export function step(world: World, input: readonly InputEvent[], dtMs: number): World {
+export function step(
+  world: World,
+  input: readonly InputEvent[],
+  dtMs: number,
+  scenes: SceneSource = missingSceneSource,
+): World {
   const now = world.timeMs
   const d = toDraft(world.role)
   // NPC 的格子坐标在主角的定时器跑完之前是冻住的：它们这一 tick 还没动。
   const tiles: readonly TilePos[] = world.npcs
-  const npcs = world.npcs.map(toNpcDraft)
-  const dlg = toDialogueDraft(world.dialogue)
-  const nar = toNarratageDraft(world.narratage)
+  let npcs = world.npcs.map(toNpcDraft)
+  let dlg = toDialogueDraft(world.dialogue)
+  let nar = toNarratageDraft(world.narratage)
+  let base = world
   const script = world.script
 
   for (const event of input) applyInput(world, d, dlg, event, now)
@@ -133,8 +206,8 @@ export function step(world: World, input: readonly InputEvent[], dtMs: number): 
   // ——— `ScenePanel.step()` ———
   // 主角的位置取**定时器跑完之后**的：原版就是这个次序。
   // 第 4 步（出口）、第 6 步（宝箱）、第 7 步（计步战斗）各是别的票。
-  const rx = roleTile(d.px)
-  const ry = roleTile(d.py)
+  let rx = roleTile(d.px)
+  let ry = roleTile(d.py)
   // 1. 检查旁白。它在第 2/3/5 步之前，所以**起旁白的那一 tick 就已经把后面
   //    三道门关上了**——真值第 0 tick 记的就是 active。
   checkNarratage(nar, world.isScript, now)
@@ -145,19 +218,161 @@ export function step(world: World, input: readonly InputEvent[], dtMs: number): 
   }
   // 3. 检查 NPC
   if (!dlg.speaking && !nar.active) checkNpcStop(npcs, rx, ry, now)
+  // 4. 检查出口（xl-9bd.12）。命中就**当场**换场景：原版的 `initiation` 是同步的，
+  //    第 5 步之后的每一件事都已经发生在新场景里了。所以这里换掉 `base` 与四份
+  //    草稿，下面第 5 步读的就是新世界 —— 不换的话，"走出门的那一 tick"会拿旧
+  //    场景的对话数据再判一次，而那一 tick 在真值里看得见。
+  const exited = checkExit(base, rx, ry, dlg, scenes)
+  if (exited !== null) {
+    base = exited
+    Object.assign(d, toDraft(base.role))
+    npcs = base.npcs.map(toNpcDraft)
+    dlg = toDialogueDraft(base.dialogue)
+    nar = toNarratageDraft(base.narratage)
+    // 第 5 步读的是**换过场景之后**的主角坐标：原版 `checkLocationDialogue`
+    // 现问 `scene.role.getX()`，而那时 role 已经是新场景里站在入口上的那一个。
+    rx = roleTile(d.px)
+    ry = roleTile(d.py)
+  }
   // 5. 检查位置对话
-  if (storyGateOpen(world, dlg, nar) && checkLocationDialogue(dlg, script, rx, ry, now)) {
+  if (storyGateOpen(base, dlg, nar) && checkLocationDialogue(dlg, base.script, rx, ry, now)) {
     d.canStop = true
   }
 
   return {
-    ...world,
+    ...base,
     timeMs: now + dtMs,
     role: fromDraft(d),
     npcs: npcs.map(fromNpcDraft),
     dialogue: fromDialogueDraft(dlg),
     narratage: fromNarratageDraft(nar),
   }
+}
+
+/**
+ * 换场景时"下一个场景的数据从哪来"。**同步**的，因为原版的
+ * `ScenePanel.initiation` 是同步的：出口命中的那一 tick，第 5 步之后的每一件
+ * 事都已经发生在新场景里了。异步取数据就得把这一 tick 掰成两半，而那一 tick
+ * 在真值里看得见。
+ *
+ * 于是调用方要负责**在走到门口之前**把这个场景所有出口的目标准备好
+ * （见 `game/useGame.ts` 的预取）。取不到就抛：静默不切场景的表现是"走到门口
+ * 什么也没发生"，跟"这一格不是出口"一模一样。
+ */
+export type SceneSource = (file: string) => SceneScript | undefined
+
+/** 没有传 `scenes` 时的占位：真踩到出口才抛，平时（96 个场景里 92 个有出口）不碍事。 */
+const missingSceneSource: SceneSource = () => undefined
+
+/**
+ * `ScenePanel.step()` 第 4 步 + `ExitEvent.checkExit()`（xl-9bd.12）。
+ *
+ * 返回换好的新世界，没踩到出口就是 `null`。
+ *
+ * **第一个命中的出口就返回**。原版是两层 `for` 全部跑完，命中之后还接着比
+ * 剩下的格子（用的是进函数时抓拍的那对坐标），所以理论上一 tick 能切两次场景。
+ * 实测 96 个场景里 92 个有 `Exit` 段，出口格**无一重复**（`exit.test.ts` 拿
+ * 烘焙产物现数一遍，重复了就红），所以第二次命中在今天的数据上不存在。
+ *
+ * 三条分支照抄原版，一个字不改：
+ *
+ * 1. 主线对话放完了、而且这个出口的目标就是 `nextScript` 指的那个场景
+ *    → 剧情往前走一段：进 `nextScript[2]`，主角站在 `currentScript[0]`。
+ * 2. 目标就是当前剧情所在的场景（也就是"走回去"）→ 重进
+ *    `currentScript[2]` 那段剧情脚本，`isScript` 重新为真，主线对话的进度
+ *    按走之前记下的 `savedOrder` 还原，**旁白被 `narratageOver` 压掉**
+ *    （不然一回门口就再听一遍开场白）。
+ * 3. 其余 → 进目标场景本身，`isScript` 置假。
+ *
+ * 分支 1/3 的落点是出口表里的 `entrance[i]`，分支 1 的落点是
+ * `currentScript[0]`（`"66/15"` 这种写法）。
+ */
+function checkExit(
+  world: World,
+  x: number,
+  y: number,
+  dlg: ReturnType<typeof toDialogueDraft>,
+  scenes: SceneSource,
+): World | null {
+  const table = world.exit
+  if (table === null || table.blockedByBattle) return null
+  for (let i = 0; i < table.exits.length; i++) {
+    for (const tile of table.exits[i]!) {
+      if (tile.x === x && tile.y === y) return applyExit(world, i, dlg, scenes)
+    }
+  }
+  return null
+}
+
+function applyExit(
+  world: World,
+  i: number,
+  dlg: ReturnType<typeof toDialogueDraft>,
+  scenes: SceneSource,
+): World {
+  const table = world.exit!
+  const target = table.nextScene[i]!
+  // 记下走之前的对话进度。**在下面那句可能改写 currentScript 之前**读，
+  // 原版就是这个次序。
+  const savedOrder =
+    target === world.currentScript[1] && !dlg.eventOver ? dlg.groupOrder : world.savedOrder
+  const currentScript = dlg.eventOver ? (world.nextScript ?? EMPTY_SCRIPT) : world.currentScript
+  const carry = { currentScript, savedOrder }
+
+  // 1. 剧情往前走一段。
+  if (dlg.eventOver && world.nextScript !== null && target === world.nextScript[1]) {
+    const next = { ...enter(world, world.nextScript[2], scenes, i), ...carry, isScript: true }
+    return atTile(next, parseEntrance(currentScript[0], world, i))
+  }
+  // 2. 走回当前这段剧情所在的场景。
+  if (target === currentScript[1]) {
+    const next = { ...enter(world, currentScript[2], scenes, i), ...carry, isScript: true }
+    return atTile(
+      {
+        ...next,
+        dialogue: { ...next.dialogue, groupOrder: savedOrder },
+        // `narratage.narratageOver = true`：这段旁白已经听过了。
+        narratage: { ...next.narratage, over: true },
+      },
+      table.entrance[i]!,
+    )
+  }
+  // 3. 就是走进目标场景本身。
+  const next = { ...enter(world, target, scenes, i), ...carry, isScript: false }
+  return atTile(next, table.entrance[i]!)
+}
+
+/** `currentScript` 被 `nextScript` 覆盖而 `nextScript` 从来没有过时的那份空三元组。 */
+const EMPTY_SCRIPT: readonly string[] = [];
+
+/** 取下一个场景的数据并 `initiation` 进去。取不到是硬失败，理由见 `SceneSource`。 */
+function enter(world: World, file: string | undefined, scenes: SceneSource, i: number): World {
+  const scene = file === undefined ? undefined : scenes(file)
+  if (scene === undefined) {
+    throw new Error(
+      `${world.scene} 的第 ${i} 个出口要进 ${String(file)}，但这个场景没准备好；` +
+        `调用方要先把本场景所有出口的目标取到（见 state/step.ts 的 SceneSource）。`,
+    )
+  }
+  return initiate(world, scene)
+}
+
+/** `role.setX(tile) / setY(tile)`：格子坐标乘 32。其余字段是刚建出来那个 Role 的初值。 */
+function atTile(world: World, tile: TilePos): World {
+  return { ...world, role: { ...world.role, px: tile.x * TILE, py: tile.y * TILE } }
+}
+
+/** `currentScript[0]` 是 `"66/15"` 这种写法（`ExitEvent` 里那两句 `split("/")`）。 */
+function parseEntrance(spec: string | undefined, world: World, i: number): TilePos {
+  const parts = (spec ?? '').split('/')
+  const x = Number(parts[0])
+  const y = Number(parts[1])
+  if (parts.length !== 2 || !Number.isInteger(x) || !Number.isInteger(y)) {
+    throw new Error(
+      `${world.scene} 的第 ${i} 个出口要按剧情推进，但 currentScript[0] 不是 "x/y"：${String(spec)}`,
+    )
+  }
+  return { x, y }
 }
 
 /**

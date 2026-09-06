@@ -20,6 +20,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
 import {
+  bgmAssetId,
   dialogueAssetId,
   headAssetId,
   mapAssetId,
@@ -74,16 +75,31 @@ const DIALOGUE_IMAGES = {
  */
 const NARRATAGE_BG_DIR = 'backImages/NarratageBackImages'
 
+/**
+ * M1 里程碑走到的三个场景（开场脚本 → 宿舍 → 大地图）。**这是一条范围声明，
+ * 不是一份"目前只有这几个"的清单**：它决定的只有"哪几首背景音乐现在转码入库"。
+ *
+ * 为什么要限范围：96 个场景一共引用 27 首曲子、48 MB 的 128 kbps MP3，
+ * 全部转码入库是 20 MB 以上的产物，而 M1 之外的场景今天一个都还走不到。
+ * 名单本身是可核的 —— 这三个就是 xl-9bd（M1）那张票写的那三个场景。
+ *
+ * **曲名不写在这里**：从这三个场景自己的 `Music` 段现读（见 `bakeBgm`）。
+ * 抄一份曲名清单出来，改了数据就对不上了。
+ */
+const M1_SCENES = ['脚本1', '宿舍', '大地图']
+
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
 const MANIFEST_OUT = resolve(WEB, 'src/generated/assets.json')
 const MISSING_OUT = resolve(WEB, 'src/generated/missingAssets.json')
+const DEFERRED_BGM_OUT = resolve(WEB, 'src/generated/deferredBgm.json')
 
 /** `NPCs/曾书书/9.png` 里 `NPCs/` 那一段。`sceneAssets.ts` 拼的就是这个前缀。 */
 const NPC_PREFIX = 'NPCs/'
 
 function main(): void {
   requireCwebp()
+  requireAfconvert()
 
   // 名单不手抄：script/ 下有什么就烘什么。抄一份名单出来，迟早会跟目录对不上。
   const names = readdirSync(SCRIPTS)
@@ -231,11 +247,96 @@ function main(): void {
     process.exit(1)
   }
 
+  bakeBgm(scenes, manifest)
+
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
     `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧）→ WebP 共 ${kb(bytes)}`,
   )
+}
+
+/**
+ * 背景音乐（xl-9bd.12）：把 M1 用到的那几首转成 AAC，其余的落成一份
+ * **故意没烘**的名单。
+ *
+ * 两份名单都是从场景数据里现读的：要烘的是 `M1_SCENES` 那三个场景各自的
+ * `Music` 段，没烘的是其余场景引用到、而这三个没引用的那些。所以曲名一处
+ * 都不用手抄，改了数据两份名单一起变。
+ *
+ * **为什么要留那份"没烘"的名单**：没有它，"这一票暂时不管"和"烘焙漏了一首"
+ * 在运行时长得一模一样（都是查不到），而后者的表现只是"这个场景没有音乐"，
+ * 没人看得出来。有了它，名单上的静音、名单外的照旧抛
+ * （见 `assets/resolve.ts` 的 `resolveBgmOrNull`）。
+ */
+function bakeBgm(scenes: readonly SceneScript[], manifest: Record<string, string>): void {
+  const musicOf = (names: readonly string[]) =>
+    new Set(
+      scenes
+        .filter((s) => names.includes(stem(s.script)))
+        .map((s) => s.sceneMusic)
+        .filter((m): m is string => m !== null),
+    )
+
+  const missingScenes = M1_SCENES.filter((name) => !scenes.some((s) => stem(s.script) === name))
+  if (missingScenes.length > 0) {
+    console.error(`M1_SCENES 里有 script/ 下不存在的场景：${missingScenes.join('、')}`)
+    process.exit(1)
+  }
+
+  const wanted = [...musicOf(M1_SCENES)].sort()
+  const all = musicOf(scenes.map((s) => stem(s.script)))
+  const deferred = [...all].filter((m) => !wanted.includes(m)).sort()
+
+  let bytes = 0
+  for (const name of wanted) {
+    const source = resolve(REPO, 'sources/BGM', name)
+    if (!existsSync(source)) {
+      // 到不了这里：checkSceneAssets 已经把每个场景的 sources/BGM/<曲名> 查过一遍。
+      console.error(`背景音乐 ${name} 不在 sources/BGM/ 下`)
+      process.exit(1)
+    }
+    const relative = `bgm/${stem(name)}.m4a`
+    manifest[bgmAssetId(name)] = relative
+    bytes += toAac(source, resolve(ASSETS_OUT, relative))
+  }
+  writeFileSync(
+    DEFERRED_BGM_OUT,
+    `${JSON.stringify(deferred.map((name) => bgmAssetId(name)).sort(), null, 2)}\n`,
+    'utf8',
+  )
+  console.log(
+    `背景音乐 ${wanted.length} 首 → bgm/*.m4a 共 ${kb(bytes)}` +
+      `（M1 之外的 ${deferred.length} 首暂不转码，落在 deferredBgm.json）`,
+  )
+}
+
+/**
+ * 转 AAC。源是 128 kbps 的 MP3（`afinfo` 实测，27 首都是），这里重编码到
+ * 96 kbps 的 AAC-LC 装进 `.m4a`：**AAC-in-MP4 是每一个主流浏览器都放得动的
+ * 格式**，而 MP3 的解码在移动端 Safari 上要走一次额外的解码路径。
+ *
+ * 用 `afconvert`（macOS 自带）而不是 ffmpeg：这台机器上没有 ffmpeg，而烘焙
+ * 器本来就已经要 `cwebp` 了 —— 产物入库，只有重新烘焙的人才需要这两个工具。
+ */
+function toAac(source: string, destination: string): number {
+  mkdirSync(dirname(destination), { recursive: true })
+  // -s 0 = CBR。默认的 VBR 策略会**忽略 -b**，转出来跟源一样大（实测
+  // 舒缓.mp3 2.06 MB → 2.04 MB），而且不报错。
+  execFileSync('afconvert', ['-f', 'm4af', '-d', 'aac', '-b', '96000', '-s', '0', source, '-o', destination])
+  return statSync(destination).size
+}
+
+function requireAfconvert(): void {
+  try {
+    execFileSync('afconvert', ['-h'], { stdio: 'ignore' })
+  } catch (e) {
+    // **只认 ENOENT**：`afconvert -h` 打完帮助之后退出码是 2（实测），
+    // 照 `requireCwebp` 那样"抓到异常就当没装"，装了也会报没装。
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return
+    console.error('需要 afconvert（macOS 自带）。产物已入库，只有重新烘焙时才需要它。')
+    process.exit(1)
+  }
 }
 
 /** 96 个场景引用到的地图源文件（仓库相对路径），按出现顺序去重。 */
