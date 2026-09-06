@@ -77,6 +77,25 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '大地图的有损 WebP 重编码 + 金币 HUD + 对话正文的字形',
     issue: 'xl-9bd.14 / xl-yg6.1 / xl-9bd.17',
   },
+  'milestone': {
+    status: 'gap',
+    // M1 的里程碑剧本（xl-9bd.13）：原版开场一条龙 —— 脚本1 的旁白与 23 句
+    // 主线对话、跟曾书书搭一次话、出宿舍门进大地图夜（脚本2）、那边的旁白与
+    // 27 句对话、进大活夜（背景音乐第一次切换）、再出来回到大地图夜（第二次
+    // 切换）。它把 dorm-intro、dorm-walk、dorm-exit、bigmap-walk 四条机制剧本
+    // 各自量到的缺口一条不落地继承过来，**没有添一笔新账**：
+    //
+    //   宿舍段（脚本1）    对话框那一块 + 右下角还没画的金币 HUD；
+    //   大地图夜段（脚本2）整屏 —— 大地图夜.jpg → q80 WebP 的重编码差异，
+    //                      与 bigmap-walk 在 大地图.jpg 上量到的是同一笔账；
+    //   大活夜段           大活.png → WebP 是无损的，剩下的又回到 HUD 那一块。
+    //
+    // 判据本身与像素无关的那一半在 `src/state/traceReplay.test.ts`（逐 tick 的
+    // 主角/NPC/对话/旁白/视口全部对齐）与 `milestone.test.ts`（这条剧本确实把
+    // 四个环节都走到了）里，两边都是绿的、都不许有例外。
+    why: '大地图夜的有损 WebP 重编码 + 金币 HUD + 对话正文的字形',
+    issue: 'xl-9bd.14 / xl-yg6.1 / xl-9bd.17',
+  },
   'dorm-intro': {
     status: 'gap',
     // 旁白（xl-9bd.11）与对话框（xl-9bd.10）都接上之后实测

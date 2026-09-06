@@ -246,6 +246,7 @@ describe('回放行为真值', () => {
   it('真值里确实有人走出过门：场景、入口坐标、isScript 与背景音乐都跟着变了', () => {
     let switches = 0
     let bgmChanges = 0
+    let bgmFollowedScene = 0
     let teleports = 0
     const isScriptSeen = new Set<boolean>()
     for (const name of replayable) {
@@ -257,6 +258,11 @@ describe('回放行为真值', () => {
           // 换场景必然把主角挪到入口格上——原地换场景说明入口坐标没生效。
           if (tick.role.x !== prev.role.x || tick.role.y !== prev.role.y) teleports++
           if (tick.audio.bgm !== prev.audio.bgm) bgmChanges++
+          // 判据是"换过去之后声明的就是新场景 Music 段里写的那首"，**不是
+          // "每换一次场景音乐就换一首"**：原版的数据里 脚本1 与 脚本2 写的
+          // 是同一首（欢乐的宿舍.mp3），milestone 那条剧本就走过这么一次
+          // 换了场景不换曲的门。按"必换"断言会把原版的行为判成 bug。
+          if (tick.audio.bgm === getScene(tick.scene.replace(/\.txt$/, '')).sceneMusic) bgmFollowedScene++
           isScriptSeen.add(tick.isScript)
         }
         prev = tick
@@ -264,7 +270,9 @@ describe('回放行为真值', () => {
     }
     expect(switches).toBeGreaterThan(0)
     expect(teleports).toBe(switches)
-    expect(bgmChanges).toBe(switches)
+    expect(bgmFollowedScene).toBe(switches)
+    // 而"曲子换过"至少要发生过一次，否则上面那条在一个从不换曲的实现下也是绿的。
+    expect(bgmChanges).toBeGreaterThan(0)
     // 出口的两条分支：进普通场景置假、走回剧情脚本置真。两条都要被走到过，
     // 否则只实现其中一条也是绿的。
     expect([...isScriptSeen].sort()).toEqual([false, true])

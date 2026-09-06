@@ -76,17 +76,39 @@ const DIALOGUE_IMAGES = {
 const NARRATAGE_BG_DIR = 'backImages/NarratageBackImages'
 
 /**
- * M1 里程碑走到的三个场景（开场脚本 → 宿舍 → 大地图）。**这是一条范围声明，
- * 不是一份"目前只有这几个"的清单**：它决定的只有"哪几首背景音乐现在转码入库"。
+ * 要转码哪几首背景音乐，范围**从行为真值里现读**：`tools/traces/out/` 下的
+ * 每一份 trace 走到过的每一个场景，它 `Music` 段那首就得烘。
  *
  * 为什么要限范围：96 个场景一共引用 27 首曲子、48 MB 的 128 kbps MP3，
- * 全部转码入库是 20 MB 以上的产物，而 M1 之外的场景今天一个都还走不到。
- * 名单本身是可核的 —— 这三个就是 xl-9bd（M1）那张票写的那三个场景。
+ * 全部转码入库是 20 MB 以上的产物，而剧本走不到的场景今天一首都用不上。
  *
- * **曲名不写在这里**：从这三个场景自己的 `Music` 段现读（见 `bakeBgm`）。
- * 抄一份曲名清单出来，改了数据就对不上了。
+ * 为什么范围不是手写的名单（这里原本写死的是 `['脚本1','宿舍','大地图']`）：
+ * 判据与烘焙必须同一个源头。`src/audio/bgmPlayer.test.ts` 的分母就是"真值里
+ * 声明过的每一首背景音乐"，剧本一加，那边立刻多一条断言；范围要是另抄一份，
+ * 加剧本的人就得记得同时改这里，忘了的表现是"那个场景是哑的"——没人看得出来。
+ * 现在两边数的是同一批 trace，忘不了。
+ *
+ * **场景名与曲名都不写在这里**：场景名从 trace 现扫，曲名从场景自己的
+ * `Music` 段现读（见 `bakeBgm`）。
  */
-const M1_SCENES = ['脚本1', '宿舍', '大地图']
+function tracedScenes(): string[] {
+  const dir = resolve(REPO, 'tools/traces/out')
+  const files = readdirSync(dir).filter((f) => f.endsWith('.trace.json'))
+  if (files.length === 0) {
+    // 一份 trace 都没有会让下面的集合是空的，而"没有要烘的曲子"与"全烘完了"
+    // 在产物上长得一模一样。
+    console.error(`${dir} 下一份 trace 都没有 —— 先跑 tools/export-trace.sh`)
+    process.exit(1)
+  }
+  const scenes = new Set<string>()
+  for (const f of files) {
+    const trace = JSON.parse(readFileSync(resolve(dir, f), 'utf8')) as {
+      ticks: readonly { scene: string }[]
+    }
+    for (const tick of trace.ticks) scenes.add(stem(tick.scene))
+  }
+  return [...scenes].sort()
+}
 
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
@@ -257,12 +279,12 @@ function main(): void {
 }
 
 /**
- * 背景音乐（xl-9bd.12）：把 M1 用到的那几首转成 AAC，其余的落成一份
+ * 背景音乐（xl-9bd.12）：把剧本走到过的那几首转成 AAC，其余的落成一份
  * **故意没烘**的名单。
  *
- * 两份名单都是从场景数据里现读的：要烘的是 `M1_SCENES` 那三个场景各自的
- * `Music` 段，没烘的是其余场景引用到、而这三个没引用的那些。所以曲名一处
- * 都不用手抄，改了数据两份名单一起变。
+ * 两份名单都是现算的：要烘的是 `tracedScenes()` 那些场景各自的 `Music` 段，
+ * 没烘的是其余场景引用到、而它们没引用的那些。所以场景名与曲名一处都不用
+ * 手抄，加一条剧本、改一次数据，两份名单一起变。
  *
  * **为什么要留那份"没烘"的名单**：没有它，"这一票暂时不管"和"烘焙漏了一首"
  * 在运行时长得一模一样（都是查不到），而后者的表现只是"这个场景没有音乐"，
@@ -278,13 +300,14 @@ function bakeBgm(scenes: readonly SceneScript[], manifest: Record<string, string
         .filter((m): m is string => m !== null),
     )
 
-  const missingScenes = M1_SCENES.filter((name) => !scenes.some((s) => stem(s.script) === name))
+  const traced = tracedScenes()
+  const missingScenes = traced.filter((name) => !scenes.some((s) => stem(s.script) === name))
   if (missingScenes.length > 0) {
-    console.error(`M1_SCENES 里有 script/ 下不存在的场景：${missingScenes.join('、')}`)
+    console.error(`真值里走到过 script/ 下不存在的场景：${missingScenes.join('、')}`)
     process.exit(1)
   }
 
-  const wanted = [...musicOf(M1_SCENES)].sort()
+  const wanted = [...musicOf(traced)].sort()
   const all = musicOf(scenes.map((s) => stem(s.script)))
   const deferred = [...all].filter((m) => !wanted.includes(m)).sort()
 
