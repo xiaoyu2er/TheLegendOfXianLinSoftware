@@ -69,7 +69,7 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): void
       queueRef.current = []
       const next = advance(ticker, input, elapsed)
       tickerRef.current = next
-      renderer.showRole(next.world.role)
+      renderer.showWorld(next.world)
     }
     const id = window.setInterval(pump, TICK_MS)
     return () => window.clearInterval(id)
