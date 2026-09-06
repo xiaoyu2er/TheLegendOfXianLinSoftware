@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import { bakeScript } from './bakeScript'
@@ -12,9 +12,15 @@ import { SCENE_NAMES, START_SCENE, getScene } from './scenes'
  * 这里会红。
  */
 describe('已烘焙的场景', () => {
-  it('注册表正好是 M1 需要的两个场景', () => {
-    // 分母：M1 = 宿舍 →（出口）→ 大地图。扩到 96 个是 xl-9bd.4 / xl-9bd.5。
-    expect([...SCENE_NAMES].sort()).toEqual(['大地图', '宿舍'])
+  it('注册表正好是 script/ 下的那 96 个场景', () => {
+    // 分母不是"注册表里有几个"，是 script/ 下有几个脚本 —— 拿一个数不出来的
+    // 分母做断言，等于没断言。
+    const scripts = readdirSync(repoPath('script'))
+      .filter((f) => f.endsWith('.txt'))
+      .map((f) => f.replace(/\.txt$/, ''))
+      .sort()
+    expect(scripts.length).toBe(96)
+    expect([...SCENE_NAMES].sort()).toEqual(scripts)
     expect(SCENE_NAMES).toContain(START_SCENE)
   })
 
@@ -23,7 +29,10 @@ describe('已烘焙的场景', () => {
     expect(getScene(name)).toEqual(fresh)
   })
 
-  it('取一个没烘焙过的场景会报出它有哪些', () => {
-    expect(() => getScene('食堂')).toThrowError(/没有烘焙过的场景 食堂/)
+  it('取一个没烘焙过的场景会报错，并说清楚烘了多少个', () => {
+    // 用一个 script/ 下不会有的名字：'食堂' 从 xl-9bd.4 起是真场景了。
+    expect(() => getScene('不存在的场景')).toThrowError(
+      /没有烘焙过的场景 不存在的场景；已烘焙 96 个/,
+    )
   })
 })

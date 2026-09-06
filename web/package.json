@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "bake": "vite-node scripts/bake.ts",
+    "check:assets": "vite-node scripts/checkAssets.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

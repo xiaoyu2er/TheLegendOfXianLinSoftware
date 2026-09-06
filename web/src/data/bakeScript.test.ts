@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import { bakeScript } from './bakeScript'
-import { SCENE_SCRIPT_FIELDS } from './types'
+import { BASE_SECTION_FIELDS, SCENE_SCRIPT_FIELDS, STORY_SECTION_FIELDS } from './types'
 
 /**
  * 黄金测试：烘焙结果与**原版解析器自己导出**的冻结真值逐字段相等。
@@ -11,10 +11,16 @@ import { SCENE_SCRIPT_FIELDS } from './types'
  * 是 `tools/export-truth.sh` 从 `tools.Reader` 导出来的
  * （`tools/src/devtools/ExportGroundTruth.java`），所以这不是自己出题自己判卷。
  *
- * M1 只烘焙宿舍与大地图两个场景；其余 94 个的真值也已冻结在
- * `tools/ground-truth/`，扩到全量是 xl-9bd.4 / xl-9bd.5。
+ * 分两层：M1 链路上那两个场景对**全部 26 个字段**，96 个脚本对**基础段的
+ * 13 个字段**（xl-9bd.4；剩下 13 个剧情段字段是 xl-9bd.5）。
  */
-const SCENES = ['宿舍', '大地图'] as const
+const M1_SCENES = ['宿舍', '大地图'] as const
+
+/** 96 个场景脚本。名单不手抄：script/ 下有什么就是什么。 */
+const ALL_SCENES = readdirSync(repoPath('script'))
+  .filter((f) => f.endsWith('.txt'))
+  .map((f) => f.replace(/\.txt$/, ''))
+  .sort()
 
 const readScript = (name: string) => readFileSync(repoPath(`script/${name}.txt`))
 const readTruth = (name: string) =>
@@ -23,7 +29,7 @@ const readTruth = (name: string) =>
   ) as Record<string, unknown>
 
 describe('bakeScript 对冻结真值', () => {
-  it.each(SCENES)('%s 的烘焙结果与真值逐字段相等', (name) => {
+  it.each(M1_SCENES)('%s 的烘焙结果与真值逐字段相等（26 个字段）', (name) => {
     const baked = bakeScript(readScript(name), `${name}.txt`)
     const truth = readTruth(name)
 
@@ -33,6 +39,33 @@ describe('bakeScript 对冻结真值', () => {
     expect(Object.keys(truth).sort()).toEqual([...SCENE_SCRIPT_FIELDS].sort())
 
     for (const field of SCENE_SCRIPT_FIELDS) {
+      expect(baked[field], `字段 ${field} 与真值不符`).toEqual(truth[field])
+    }
+  })
+
+  it('两张字段表加起来正好是那 26 个，且互不重叠', () => {
+    // 这条先跑：下面"96 个脚本的基础段全部相等"的可信度全靠它。
+    // 没有它，把一个对不上的字段挪进剧情段就能让那条测试变绿。
+    expect([...BASE_SECTION_FIELDS, ...STORY_SECTION_FIELDS].sort()).toEqual(
+      [...SCENE_SCRIPT_FIELDS].sort(),
+    )
+    expect(BASE_SECTION_FIELDS.length + STORY_SECTION_FIELDS.length).toBe(26)
+  })
+
+  it('script/ 下正好 96 个脚本，每个都有冻结真值', () => {
+    // 分母。少烘一个脚本、少一份真值，都要在这里而不是在别处发现。
+    expect(ALL_SCENES.length).toBe(96)
+    const truths = readdirSync(repoPath('tools/ground-truth'))
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => f.replace(/\.json$/, ''))
+      .sort()
+    expect(truths).toEqual(ALL_SCENES)
+  })
+
+  it.each(ALL_SCENES)('%s 的基础段与真值逐字段相等（13 个字段）', (name) => {
+    const baked = bakeScript(readScript(name), `${name}.txt`) as unknown as Record<string, unknown>
+    const truth = readTruth(name)
+    for (const field of BASE_SECTION_FIELDS) {
       expect(baked[field], `字段 ${field} 与真值不符`).toEqual(truth[field])
     }
   })
