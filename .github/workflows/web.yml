@@ -3,11 +3,16 @@ name: web
 on:
   push:
     branches: [master]
-    paths: ['web/**', '.github/workflows/web.yml']
+    # 黄金测试读的是仓库根上的这三处：脚本源数据、冻结真值，以及段类型名单的
+    # 出处 Reader.java。它们变了而这条流水线不跑，等于唯一那条客观判据在最该
+    # 响的时候是哑的。两处名单一样，是抄的：YAML 锚点更短，但 Actions 认不认
+    # 锚点这里没实测过，不在 CI 触发条件上冒这个险。
+    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java']
   pull_request:
-    paths: ['web/**', '.github/workflows/web.yml']
+    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java']
 
-# 只在 web/ 或本工作流自身变动时跑：Java 侧改动与这条流水线无关。
+# 只在 web/、黄金测试的输入、或本工作流自身变动时跑：Java 侧的其余改动
+# 与这条流水线无关。
 concurrency:
   group: web-${{ github.ref }}
   cancel-in-progress: true
