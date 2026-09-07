@@ -179,13 +179,13 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
       [
         'background-anim', // 只有技能才放，这一场全是普攻
         'dead-anim', // 我方没人倒下
-        'drug-menu', // 没实现，归 xl-rh9.9
-        'enemy-state', // 没实现（真值没记坐标），归 xl-rh9.9
+        'drug-menu', // 没实现，归 xl-rh9.11
+        'enemy-state', // 没实现（真值没记坐标），归 xl-rh9.11
         'game-over', // 没实现，归 xl-rh9.8；这一场也没输
         'hero-state', // 同 enemy-state
         'pet', // 结构性缺席：世界里根本没有这个字段
-        'reminder', // 没实现（真值只记了布尔），归 xl-rh9.9
-        'skill-menu', // 没实现，归 xl-rh9.9
+        'reminder', // 没实现（真值只记了布尔），归 xl-rh9.11
+        'skill-menu', // 没实现，归 xl-rh9.11
         'victory-anim', // 胜利动画与胜利结算同一拍开始，而那一拍收不进来
         'victory-reminder', // 没实现，归 xl-rh9.5；这一场只在末拍出现
       ].sort(),
@@ -307,7 +307,7 @@ describe('五条战斗真值合起来画到了哪几层', () => {
     'background-anim': '只有技能才放，五条真值全是普通攻击 —— 代码有，判据没有',
     'victory-anim': '与胜利结算同一拍开始，而那一拍先被 victory-reminder 拦下来抛（xl-rh9.5）',
     pet: '结构性缺席：世界里根本没有 pet 字段，只有陆雪琪的秘术召得出来',
-    'drug-menu': '点「物」才打开，五条真值一次都没点过 —— 这一层抛，归 xl-rh9.9 的后续',
+    'drug-menu': '点「物」才打开，五条真值一次都没点过 —— 这一层抛，归 xl-rh9.11',
     'skill-menu': '点「技」才打开，五条真值一次都没点过 —— 这一层抛，同 drug-menu',
     reminder: '真值只记了它画没画、没记是第几张，画不出来 —— 这一层抛',
     'hero-state': '战斗状态图标：真值没记坐标，状态也只由技能挂得上 —— 这一层抛',

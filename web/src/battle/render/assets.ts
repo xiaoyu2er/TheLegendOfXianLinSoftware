@@ -1,6 +1,7 @@
 import { battleAssetId } from '../../assets/battleAssets'
 import type { AssetId } from '../../assets/ids'
 import { normalizePath } from '../../assets/path'
+import type { BattleWorld } from '../types'
 import type { PartyKey } from '../units'
 
 /**
@@ -157,12 +158,7 @@ export function backgroundId(path: string): AssetId {
  * 名单是**从这一场的世界现推的**（出战名单、三个槽位、各自的招式），不写死
  * 一份清单：换一场仗就换一批图，而写死的清单在换场时不会响。
  */
-export function battleTextureIds(w: {
-  background: string
-  /** **出战名单**（`party`），不是会被清空的 `bp.heroes`。 */
-  party: readonly { roleCode: 1 | 2 | 3; spec: { key: PartyKey; frames: number; beAttackedFrames: number; victoryFrames: number; deadFrames: number; attack: { name: string; length: number } } }[]
-  slots: readonly ({ name: string; spec: { length: number; beAttackedFrames: number }; skill: { name: string; length: number } } | null)[]
-}): AssetId[] {
+export function battleTextureIds(w: Pick<BattleWorld, 'background' | 'party' | 'slots'>): AssetId[] {
   const ids = new Set<AssetId>()
   ids.add(backgroundId(w.background))
   ids.add(CLOUD_ID)

@@ -110,7 +110,7 @@ let shown: string | null = null
  * **自检抓住了它**，而整屏表态的上界（`maxRatio`）也抓住了它 —— 两道都响，
  * 正是 xl-l3o 立那条上界的理由。
  */
-function hostFor(kind: string): HTMLElement {
+function hostFor(kind: ImplementedDriver): HTMLElement {
   const root = document.getElementById('host')
   if (!root) throw new Error('取图页没有 #host')
   const id = `host-${kind}`
@@ -125,7 +125,7 @@ function hostFor(kind: string): HTMLElement {
 }
 
 /** 只显示这一套装配的画布，其余全藏起来。对话框那一层只有场景用得到。 */
-function activate(kind: string): void {
+function activate(kind: ImplementedDriver): void {
   const root = document.getElementById('host')
   if (!root) throw new Error('取图页没有 #host')
   for (const child of Array.from(root.children)) {

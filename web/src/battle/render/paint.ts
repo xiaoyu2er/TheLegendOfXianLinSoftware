@@ -1,5 +1,5 @@
 import type { BattleInput } from '../step'
-import type { BattleWorld, GameButton, Hero } from '../types'
+import type { BattleWorld, GameButton } from '../types'
 import type { PartyKey } from '../units'
 import type { CommandButtonKey } from './assets'
 import { hitsButton } from './hitBox'
@@ -127,16 +127,22 @@ export function applyPaintInput(w: BattleWorld, p: PaintState, input: BattleInpu
     ['defend', w.command.defend],
     ['thing', w.command.thing],
   ]
-  const set = (variant: ButtonVariant, miss: ButtonVariant) => {
-    for (const [key, b] of buttons) p.buttons[key] = hitsButton(b, input.x, input.y) ? variant : miss
+  // 一条输入 = 三个监听器**顺序**跑完（`step.ts` 的 `applyInput` 就是这么配的：
+  // 移入 + 按下，点按钮时再加一次松开）。三个都写同样这四颗按钮，所以**最后
+  // 一次写入说了算**，前面几次一个字节都留不下。原先照着三个监听器写了三遍
+  // 覆盖，前两遍是死代码 —— 这里直接写最后那一次是谁：
+  //
+  //   目标是 command:  移入(2) → 按下(3) → 松开(2)   最后是**松开**
+  //   目标是 enemy:    移入(2) → 按下(3)             最后是**按下**
+  //
+  // ⚠️ 「按下」那一档今天**观测不到**：点怪物的坐标离四颗按钮都很远，落到的
+  // 是"落空"那一支。照抄它是因为它是原版真的会走的一支，不是因为有判据盖得住
+  // —— 哪天有一条剧本在按钮上按下而不松开，它才第一次被看见。
+  const onHit: ButtonVariant = input.target.startsWith('command:') ? 2 : 3
+  for (const [key, b] of buttons) {
+    // 落空一律换回常态：三个 check 的 else 分支都是 `buttonImage=normalImage`。
+    p.buttons[key] = hitsButton(b, input.x, input.y) ? onHit : 1
   }
-  // mouseMoved → checkMoveIn：命中换「待点」，落空换回常态。
-  set(2, 1)
-  // mousePressed → checkPressed：命中换「按下」。
-  set(3, 1)
-  // mouseReleased → checkReleased：只有点按钮那一路会松手（点怪物不会），
-  // 与 `step.ts` 的 `applyInput` 配法一致。
-  if (input.target.startsWith('command:')) set(2, 1)
 }
 
 /**
@@ -206,7 +212,8 @@ function updateAngry(w: BattleWorld, p: PaintState): void {
   for (const h of w.party) {
     const a = p.angry.get(h.spec.key)
     if (!a) throw new Error(`${h.spec.key} 不在这份 PaintState 的怒气槽里`)
-    if (!isAngry(h)) continue
+    // `Hero.wheatherAngry()`：不在怒气状态里，四张图就停在当前这张。
+    if (!h.isAngry) continue
     if (a.code < ANGRY_FRAMES) {
       a.frame = a.code
       a.code++
@@ -218,7 +225,3 @@ function updateAngry(w: BattleWorld, p: PaintState): void {
   }
 }
 
-/** `Hero.wheatherAngry()`。 */
-function isAngry(h: Hero): boolean {
-  return h.isAngry
-}
