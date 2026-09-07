@@ -34,22 +34,22 @@ afterEach(() => {
 })
 
 describe('App', () => {
-  it('默认用平滑放大，点一下切到锐利，再点切回来', () => {
+  it('默认用锐利放大，点一下切到平滑，再点切回来', () => {
     render(<App />)
     // 缩放模式写在渲染器的宿主元素上：image-rendering 是可继承属性，
     // 里面那张 canvas（由 Pixi 建，jsdom 里建不出来）跟着走。
     const host = screen.getByTestId('stage-canvas-host')
 
-    expect(host.style.imageRendering).toBe('auto')
-    const button = screen.getByRole('button', { name: /放大/ })
-    expect(button.textContent).toContain('平滑')
-
-    fireEvent.click(button)
     expect(host.style.imageRendering).toBe('pixelated')
+    const button = screen.getByRole('button', { name: /放大/ })
     expect(button.textContent).toContain('锐利')
 
     fireEvent.click(button)
     expect(host.style.imageRendering).toBe('auto')
+    expect(button.textContent).toContain('平滑')
+
+    fireEvent.click(button)
+    expect(host.style.imageRendering).toBe('pixelated')
   })
 
   it('开发模式下能跳到另一个场景', () => {
