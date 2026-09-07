@@ -38,6 +38,13 @@ public interface TraceDriver {
     /**
      * 推进一步，并把这一步真的画出来。
      *
+     * **本步的绘制必须发生在本方法里面**，不能推迟到 {@link #snapshotImage()}。
+     * 这是一条约定，不只是现状：音效真值的取样点在 {@code step()} 返回之后
+     * （{@link MusicTap#afterStep()}，导出器那一处），而**原版的 paint 真的出声**
+     * （{@code EquipPanel.drawWarning()} 里两处 {@code readmusic("禁止.wav")}）。
+     * 哪支驱动器把 paint 挪到 snapshotImage() 里，它那一份真值的音效就整体错位
+     * 一步，而两遍导出照样逐字节一致 —— {@code --check} 看不见。见 xl-1vu.11。
+     *
      * @return true = 这一步产出了一条真值记录（导出器接着取快照）；
      *         false = 剧本已经跑完，本次调用没有产出任何东西。
      *         跑不完（超预算、走不到、按了空格没搭上话）一律是硬失败，

@@ -50,7 +50,7 @@ import tools.MusicLog;
  * <h2>三道自检，都是为了让「没记到」和「本来就没响」分得开</h2>
  *
  * 音效字段的天然失败形态是**空数组**，而空数组同时也是「这一步本来就不响」的正常
- * 取值 —— 失败长得和成功一模一样。所以这里不靠肉眼看真值，靠三道会硬失败的检查：
+ * 取值 —— 失败长得和成功一模一样。所以这里不靠肉眼看真值，靠四道会硬失败的检查：
  *
  * <ol>
  *   <li>{@link #arm} 当场打一发探针：{@code readmusic(PROBE)} 之后必须恰好
@@ -65,6 +65,11 @@ import tools.MusicLog;
  *   <li>{@link #json()} 在没 arm 过时硬失败。收拢成两行之后新的失败形态是
  *       「抄了 snapshotState 那行、忘了 start() 那行」—— 那样每一步都会安静地写
  *       {@code []}，又是一次失败长得像成功。这道检查把它变成退出码 2。</li>
+ *   <li>{@link #json()} 还要求**本步已经取过样**（{@link #afterStep()} 置的那个
+ *       标志）。取样顺序（step() 之后、snapshotState() 之前）此前只靠一句注释，
+ *       而把那两行对调，前三道自检全绿、{@code --check} 两遍照样逐字节一致，
+ *       只有整份真值整体错位一步 —— 正是「一个稳定的错误看起来和正确一模一样」。
+ *       这道检查把它变成退出码 2。</li>
  * </ol>
  *
  * 探针本身不会出声也不会碰文件：{@code CAN_PLAY_MUSIC == NO} 时 {@code playmusic}
@@ -94,6 +99,12 @@ final class MusicTap {
     /** 上一次 {@link #afterStep()} 取走的那一批，就是要写进本步真值的那个数组。 */
     private static String[] lastStep = new String[0];
 
+    /**
+     * 本步取过样了没有。{@link #afterStep()} 置上，{@link #json()} 要求它为真
+     * 并消费掉 —— 这是「取样顺序」这条契约唯一会响的地方，见第 4 道自检。
+     */
+    private static boolean sampled;
+
     private MusicTap() {}
 
     /**
@@ -117,28 +128,33 @@ final class MusicTap {
      *
      * 放弃的只是第 2 道检查，探针（第 1 道）照旧打：观察点死掉照样当场非零退出。
      * 而「可以不响」必须由驱动器**写出来**，不是默认值 —— 默认仍然是必须响过。
+     *
+     * **当下零调用者**：入库的两支（menu / shop）都必须响过。它是 xl-1vu.11 拿
+     * SceneDriver 真接一遍时量出来的需要（五份场景剧本一声都不出），接线撤了、
+     * 这条岔路留着 —— 撤是因为接上会改五份场景真值，与那张票「十份逐字节不变」
+     * 的判据直接冲突。
      */
     static void armAllowingSilence(String who) { arm(who, false); }
 
-    private static void arm(String who, boolean mustSound) {
-        if (MusicTap.who != null) {
-            ExportTrace.die("音效观察点被装了两次（先是 " + MusicTap.who + "，又是 " + who
+    private static void arm(String name, boolean mustSound) {
+        if (who != null) {
+            ExportTrace.die("音效观察点被装了两次（先是 " + who + "，又是 " + name
                     + "）—— 一次导出只跑一支驱动器一份剧本，装两次说明接线不对");
         }
         if (MusicPlayer.CAN_PLAY_MUSIC != MusicPlayer.NO) {
-            ExportTrace.die(who + "：装配音效观察点时 CAN_PLAY_MUSIC 不是 NO —— "
+            ExportTrace.die(name + "：装配音效观察点时 CAN_PLAY_MUSIC 不是 NO —— "
                     + "探针会真去开音频设备读一个不存在的文件。arm() 要在 closeMusic() 之后调");
         }
         MusicLog.setRecording(true);
         MusicReader.readmusic(PROBE);
         String[] got = MusicLog.drain();
         if (got.length != 1 || !PROBE.equals(got[0])) {
-            ExportTrace.die(who + "：音效观察点没接上 —— 探针 readmusic(" + PROBE + ") 之后"
+            ExportTrace.die(name + "：音效观察点没接上 —— 探针 readmusic(" + PROBE + ") 之后"
                     + " drain 回来的是 " + Json.plainArr(got) + "（应为恰好这一个名字）。"
                     + "多半是 tools.MusicLog.record 被挪进了 CAN_PLAY_MUSIC 判断里面，"
                     + "或者 MusicReader.readmusic 里那行调用没了");
         }
-        MusicTap.who = who;
+        who = name;
         MusicTap.mustSound = mustSound;
     }
 
@@ -154,8 +170,13 @@ final class MusicTap {
      * menu-equip 里 paint 打出来的那两声禁止整体错位一步。
      */
     static void afterStep() {
+        if (sampled) {
+            ExportTrace.die(who + "：上一步取的样没人要（afterStep() 连着调了两次，中间"
+                    + "没有 json()）—— 那一步的音效会被下一步的覆盖掉，安静地丢掉");
+        }
         lastStep = MusicLog.drain();
         total += lastStep.length;
+        sampled = true;
     }
 
     /** 本步的音效数组，直接拼进 snapshotState 的 JSON。 */
@@ -165,6 +186,13 @@ final class MusicTap {
                     + "那样每一步都会安静地写 []，和「这份剧本本来就不出声」长得一模一样。"
                     + "驱动器的 start() 末尾要加一行 MusicTap.arm(script.name)");
         }
+        if (!sampled) {
+            ExportTrace.die(who + "：本步还没取样就来要 music 字段了 —— ExportTrace 的导出"
+                    + "循环里 MusicTap.afterStep() 必须排在 driver.step() 之后、"
+                    + "driver.snapshotState() 之前。顺序反了写出来的是上一步的音效，"
+                    + "整份真值整体错位一步，而两遍导出照样逐字节一致（--check 看不见）");
+        }
+        sampled = false;
         return Json.plainArr(lastStep);
     }
 
@@ -175,6 +203,11 @@ final class MusicTap {
      * 正确答案，不是失败。
      */
     static void requireRecorded() {
+        if (sampled) {
+            ExportTrace.die(who + "：最后一步取的样没有人写进真值 —— afterStep() 与"
+                    + " snapshotState() 的顺序反了，或者导出循环在取样之后提前跳出了。"
+                    + "顺序反了的真值整体错位一步，而 --check 两遍照样逐字节一致");
+        }
         if (mustSound && total == 0) {
             ExportTrace.die(who + "：整份真值一个音效都没记到，而这支驱动器声明了"
                     + "「必须响过」（MusicTap.arm）。这不是'本来就不响'，是观察点或者"
