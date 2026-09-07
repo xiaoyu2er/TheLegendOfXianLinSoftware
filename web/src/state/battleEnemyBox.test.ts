@@ -26,6 +26,11 @@ import { readTrace, traceNamesOf } from './trace'
  *
  * 尺寸不写死：现从 `image/怪物/<名字>/1.png` 的 IHDR 里读 —— `EnemySlector`
  * 量的就是 `Images.get(0)`，也就是这张图。
+ *
+ * **空槽位是 `null`。** 原版的 Fight 数据一行可以只写一只怪（`脚本22` 的
+ * 罹年居士就是独自一只），真值里那两个槽位写的是 `null` —— 对象根本没建，
+ * 没有名字也没有框。所以下面每一条都先滤掉 `null` 再断言：分母仍然是「三个
+ * 槽位」，被断言的只是站着人的那些。
  */
 
 interface BattleEnemy {
@@ -36,7 +41,8 @@ interface BattleEnemy {
 }
 
 interface BattleTick {
-  readonly enemies: readonly BattleEnemy[]
+  /** 三项，一项一个槽位；空槽位是 `null`。 */
+  readonly enemies: readonly (BattleEnemy | null)[]
 }
 
 const BATTLE_TRACE_NAMES = traceNamesOf('battle')
@@ -47,12 +53,17 @@ function spriteSize(name: string): { width: number; height: number } {
   return { width: png.width, height: png.height }
 }
 
-function enemiesOf(traceName: string): readonly BattleEnemy[] {
+function enemiesOf(traceName: string): readonly (BattleEnemy | null)[] {
   const trace = readTrace(traceName)
   const ticks = trace.ticks as unknown as readonly BattleTick[]
   const first = ticks[0]
   if (!first) throw new Error(`${traceName} 一个 tick 都没有`)
   return first.enemies
+}
+
+/** 第 slot 槽（1/2/3）上站着的怪物；空槽位返回 null。 */
+function at(enemies: readonly (BattleEnemy | null)[], slot: number): BattleEnemy | null {
+  return enemies[slot - 1] ?? null
 }
 
 describe('战斗真值里的怪物选择框', () => {
@@ -62,8 +73,14 @@ describe('战斗真值里的怪物选择框', () => {
     expect(BATTLE_TRACE_NAMES.length).toBeGreaterThan(0)
     for (const name of BATTLE_TRACE_NAMES) {
       const enemies = enemiesOf(name)
-      expect(enemies.map((e) => e.slot), `${name} 的槽位号`).toEqual([1, 2, 3])
+      // 槽位数一律是 3（空槽位写 null），槽位号按位置对上。
+      expect(enemies.length, `${name} 的槽位数`).toBe(3)
+      expect(
+        enemies.map((e, i) => e?.slot ?? i + 1),
+        `${name} 的槽位号`,
+      ).toEqual([1, 2, 3])
       for (const e of enemies) {
+        if (!e) continue
         // 宽是三个槽位各量各的，没有 xl-1dv.8 那个错位，所以它必须严格相等。
         expect(e.box[2], `${name} 第 ${e.slot} 槽（${e.name}）的框宽`).toBe(spriteSize(e.name).width)
       }
@@ -73,8 +90,11 @@ describe('战斗真值里的怪物选择框', () => {
   it('前两个槽位的框高等于自己的图高，第三个槽位等于第一只怪的图高（xl-1dv.8）', () => {
     for (const name of BATTLE_TRACE_NAMES) {
       const enemies = enemiesOf(name)
-      const h1 = spriteSize(enemies[0]!.name).height
+      const em1 = at(enemies, 1)
+      if (!em1) throw new Error(`${name} 第 1 槽是空的 —— 原版的 height1 就无从谈起`)
+      const h1 = spriteSize(em1.name).height
       for (const e of enemies) {
+        if (!e) continue
         // 原版 EnemySlector.checkMoveIn / checkClick 判第三只怪时用的是 height1。
         const expected = e.slot === 3 ? h1 : spriteSize(e.name).height
         expect(e.box[3], `${name} 第 ${e.slot} 槽（${e.name}）的框高`).toBe(expected)
@@ -85,11 +105,10 @@ describe('战斗真值里的怪物选择框', () => {
   it('选择框在整场战斗里一动不动 —— 所以上面按第 0 tick 读是够的', () => {
     for (const name of BATTLE_TRACE_NAMES) {
       const ticks = readTrace(name).ticks as unknown as readonly BattleTick[]
-      const first = JSON.stringify(ticks[0]!.enemies.map((e) => e.box))
+      const boxes = (tick: BattleTick) => JSON.stringify(tick.enemies.map((e) => e?.box ?? null))
+      const first = boxes(ticks[0]!)
       for (let t = 1; t < ticks.length; t++) {
-        expect(JSON.stringify(ticks[t]!.enemies.map((e) => e.box)), `${name} 第 ${t} tick`).toBe(
-          first,
-        )
+        expect(boxes(ticks[t]!), `${name} 第 ${t} tick`).toBe(first)
       }
     }
   })
@@ -97,7 +116,12 @@ describe('战斗真值里的怪物选择框', () => {
   it('至少有一份真值里第三个槽位的框高与它自己的图高不相等 —— 否则 xl-1dv.8 又看不见了', () => {
     const observable = BATTLE_TRACE_NAMES.filter((name) => {
       const enemies = enemiesOf(name)
-      return spriteSize(enemies[0]!.name).height !== spriteSize(enemies[2]!.name).height
+      const em1 = at(enemies, 1)
+      const em3 = at(enemies, 3)
+      // 第 3 槽空着的那些场次（如 battle-defeat-scene，罹年居士独自一只）
+      // 观测不到这条缺陷 —— 它们不算进分子，也不该让这条判据报错。
+      if (!em1 || !em3) return false
+      return spriteSize(em1.name).height !== spriteSize(em3.name).height
     })
     expect(
       observable.length,
@@ -108,11 +132,13 @@ describe('战斗真值里的怪物选择框', () => {
 
     for (const name of observable) {
       const enemies = enemiesOf(name)
-      const h1 = spriteSize(enemies[0]!.name).height
-      const h3 = spriteSize(enemies[2]!.name).height
+      const em1 = at(enemies, 1)!
+      const em3 = at(enemies, 3)!
+      const h1 = spriteSize(em1.name).height
+      const h3 = spriteSize(em3.name).height
       // 差值是可核的：框高比真实图高多出来（或少掉）的正是 height1 - height3。
-      expect(enemies[2]!.box[3] - h3, `${name} 第 3 槽的框高偏差`).toBe(h1 - h3)
-      expect(enemies[2]!.box[3], `${name} 第 3 槽的框高`).not.toBe(h3)
+      expect(em3.box[3] - h3, `${name} 第 3 槽的框高偏差`).toBe(h1 - h3)
+      expect(em3.box[3], `${name} 第 3 槽的框高`).not.toBe(h3)
     }
   })
 })
