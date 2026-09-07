@@ -439,9 +439,10 @@ const VR_ROWS: readonly { readonly key: PartyKey; readonly of: (w: BattleWorld) 
 function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
   const v = w.victoryReminder
   if (!v.isDraw) return
+  const L = VICTORY_REMINDER_LAYOUT
 
   // 卷轴底：目标 (412,80)-(612,dy2)，源 (0,0)-(200,sy2)。
-  rectOp(push, 'victory-reminder', VICTORY_REMINDER.back, VICTORY_REMINDER_LAYOUT.dx1, VICTORY_REMINDER_LAYOUT.dy1, VICTORY_REMINDER_LAYOUT.dx2, v.dy2, VICTORY_REMINDER_LAYOUT.sx1, VICTORY_REMINDER_LAYOUT.sy1, VICTORY_REMINDER_LAYOUT.sx2, v.sy2)
+  rectOp(push, 'victory-reminder', VICTORY_REMINDER.back, L.dx1, L.dy1, L.dx2, v.dy2, L.sx1, L.sy1, L.sx2, v.sy2)
   // 物品框：八个坐标全在真值里，从中心对开。
   rectOp(
     push,
@@ -464,8 +465,8 @@ function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
         kind: 'image',
         layer: 'victory-reminder',
         id: victoryReminderFaceId(key, 1),
-        x: VICTORY_REMINDER_LAYOUT.firstX,
-        y: VICTORY_REMINDER_LAYOUT.firstY + VR_ROW_STRIDE * row,
+        x: L.firstX,
+        y: L.firstY + VR_ROW_STRIDE * row,
       })
     }
   }
@@ -478,8 +479,8 @@ function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
         kind: 'image',
         layer: 'victory-reminder',
         id: victoryReminderFaceId(key, 2),
-        x: VICTORY_REMINDER_LAYOUT.firstX,
-        y: VICTORY_REMINDER_LAYOUT.firstY + VR_ROW_STRIDE * row,
+        x: L.firstX,
+        y: L.firstY + VR_ROW_STRIDE * row,
       })
     }
   }
@@ -487,15 +488,15 @@ function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
   if (v.firstString) {
     for (const [row, { key, of }] of VR_ROWS.entries()) {
       if (of(w) === null) continue
-      const y = VICTORY_REMINDER_LAYOUT.firstStringY + VR_ROW_STRIDE * row
+      const y = L.firstStringY + VR_ROW_STRIDE * row
       // 上面一行是**这一场发了多少经验**（三个人同一个数，每人各拿全额），
       // 下面一行是这个人**还差多少**升级。两个数都在往下滚。
-      push({ kind: 'text', layer: 'victory-reminder', text: `${v.expToGet}`, x: VICTORY_REMINDER_LAYOUT.firstStringX, y })
+      push({ kind: 'text', layer: 'victory-reminder', text: `${v.expToGet}`, x: L.firstStringX, y })
       push({
         kind: 'text',
         layer: 'victory-reminder',
         text: `${showNum(v.showNums, SHOW_EXP_INDEX[key], key)}`,
-        x: VICTORY_REMINDER_LAYOUT.firstStringX,
+        x: L.firstStringX,
         y: y + VR_EXP_LINE_GAP,
       })
     }
@@ -511,8 +512,8 @@ function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
           kind: 'text',
           layer: 'victory-reminder',
           text: `${showNum(v.showNums, at + i, key)}`,
-          x: VICTORY_REMINDER_LAYOUT.secondStringX,
-          y: VICTORY_REMINDER_LAYOUT.secondStringY + i * VR_LINE_GAP + VR_ROW_STRIDE * row,
+          x: L.secondStringX,
+          y: L.secondStringY + i * VR_LINE_GAP + VR_ROW_STRIDE * row,
         })
       }
     }
@@ -526,24 +527,36 @@ function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
         kind: 'text',
         layer: 'victory-reminder',
         text: thing.split('/')[0]!,
-        x: VICTORY_REMINDER_LAYOUT.thirdStringX,
-        y: VICTORY_REMINDER_LAYOUT.thirdStringY + i * VR_LINE_GAP,
+        x: L.thirdStringX,
+        y: L.thirdStringY + i * VR_LINE_GAP,
       })
     }
     push({
       kind: 'text',
       layer: 'victory-reminder',
       text: `金钱 ${v.moneyToGet}`,
-      x: VICTORY_REMINDER_LAYOUT.thirdStringX,
-      y: VICTORY_REMINDER_LAYOUT.thirdStringY + v.things.length * VR_LINE_GAP,
+      x: L.thirdStringX,
+      y: L.thirdStringY + v.things.length * VR_LINE_GAP,
     })
   }
 
   if (v.levelUpIsDraw) {
-    push({ kind: 'image', layer: 'victory-reminder', id: VICTORY_REMINDER.levelUp, x: VICTORY_REMINDER_LAYOUT.levelUpX, y: VICTORY_REMINDER_LAYOUT.levelUpY })
+    push({
+      kind: 'image',
+      layer: 'victory-reminder',
+      id: VICTORY_REMINDER.levelUp,
+      x: L.levelUpX,
+      y: L.levelUpY,
+    })
   }
   if (v.getThingIsDraw) {
-    push({ kind: 'image', layer: 'victory-reminder', id: VICTORY_REMINDER.getThing, x: VICTORY_REMINDER_LAYOUT.thingX, y: VICTORY_REMINDER_LAYOUT.thingY })
+    push({
+      kind: 'image',
+      layer: 'victory-reminder',
+      id: VICTORY_REMINDER.getThing,
+      x: L.thingX,
+      y: L.thingY,
+    })
   }
 }
 
