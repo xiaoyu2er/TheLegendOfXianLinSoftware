@@ -159,7 +159,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
     {"t":0,"vt":0,"ip":0,
      "input":[{"e":"press","k":"right","ctrl":false}],
      "role":{"x":12,"y":8,"px":384,"py":256,"dir":"down","frame":0,
-             "running":false,"moving":true,"stepNum":0},
+             "runFrame":0,"running":false,"moving":true,"stepNum":0},
      "npcs":[{"x":9,"y":8,"px":288,"py":256,"type":1,"dir":9,"frame":0}],
      "dialogue":{"active":false,"source":"none","type":1,"head":0,"name":null,
                  "sentence":null,"cursor":0,"row":0,"col":0,
@@ -183,6 +183,8 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `role.x/y` | 格子坐标（`Role.getX()/getY()`，即像素除以 32）。 |
 | `role.px/py` | 像素坐标。格子坐标一格变一次，太粗，比对不出错位。 |
 | `role.dir` | `down` / `up` / `left` / `right`（原版是 0/8/16/24）。 |
+| `role.frame` | `Role.count`，行走图的帧号（`walkImages.get(direction + count)`）。 |
+| `role.runFrame` | `Role.count2`，**跑步图**的帧号（`runImages.get(direction / 2 + count2)`）。它没有 getter，导出器走反射读（xl-u39）。少了这一笔，"跑动中画的是哪一帧"在逐 tick 比对里完全看不见，只有像素流水线抓得到。 |
 | `role.running` | `Role.isRun()`。 |
 | `role.moving` | 走或跑的定时器是否在跑。 |
 | `npcs[].dir` | NPC 的方向仍用原版编码（1 左 / 5 右 / 9 下 / 13 上），这就是脚本数据里的写法。 |

@@ -474,6 +474,11 @@ public final class SceneDriver implements TraceDriver {
          .append(",\"py\":").append(r.getRealY())
          .append(",\"dir\":").append(Json.str(dirName(r.getDirection())))
          .append(",\"frame\":").append(r.getCount())
+         // count2 是跑步图的帧号（Role.drawHero 的 runImages.get(direction/2 + count2)）。
+         // 它没有 getter，所以走反射读——只加导出，不动游戏逻辑。少了这一笔，
+         // 「跑动中画的是哪一帧」在逐 tick 比对里完全看不见，只有像素流水线抓得到
+         // （xl-u39）。get() 找不到字段是抛异常，不是给 0。
+         .append(",\"runFrame\":").append(getInt(r, "count2"))
          .append(",\"running\":").append(r.isRun())
          .append(",\"moving\":").append(roleMoving())
          .append(",\"stepNum\":").append(r.stepNum)

@@ -67,6 +67,8 @@ export interface TraceTick {
     readonly py: number
     readonly dir: 'down' | 'up' | 'left' | 'right'
     readonly frame: number
+    /** `Role.count2`，跑步图的帧号（xl-u39）。走动时它不变，跑动时 0→3 循环。 */
+    readonly runFrame: number
     readonly running: boolean
     readonly moving: boolean
   }
