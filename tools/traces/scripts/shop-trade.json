@@ -1,0 +1,39 @@
+{
+  "driver": "shop",
+  "name": "shop-trade",
+  "description": "药店与装备自选超市各走一条完整的买卖：药店买 2 份金创药（10000→8000，背包 1→3）→ 神农药方要 10000 而只剩 8000，买入被拒（金钱与背包一个数都没动，只有店主那句话变了）→ 卖回 1 份金创药（8000→9000）→ 进装备超市买月苗刀（9000→6000）→ 切到鞋子那一栏卖掉开局带的皮靴（6000→8000）→ 切回武器栏，确认刚买的月苗刀还在背包里。加减按钮的两端也都走到了：减到 0 时那个守卫（purchaseNumber>0 才减）与加了三件再减一件。",
+  "setup": {
+    "party": ["zhang"],
+    "coins": 10000,
+    "seed": 1,
+    "drugs": [{ "name": "金创药", "count": 1 }],
+    "equipment": [{ "name": "皮靴", "count": 1 }]
+  },
+  "maxSteps": 200,
+  "steps": [
+    { "op": "open", "name": "drug" },
+    { "op": "hover", "index": 0 },
+    { "op": "minus", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "minus", "index": 0 },
+    { "op": "buy" },
+    { "op": "hover", "index": 4 },
+    { "op": "plus", "index": 4 },
+    { "op": "buy" },
+    { "op": "hover", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "sell" },
+    { "op": "open", "name": "equipment" },
+    { "op": "hover", "index": 6 },
+    { "op": "plus", "index": 6 },
+    { "op": "buy" },
+    { "op": "category", "name": "shoe" },
+    { "op": "hover", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "sell" },
+    { "op": "category", "name": "weapon" },
+    { "op": "hover", "index": 6 }
+  ]
+}
