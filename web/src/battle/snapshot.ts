@@ -104,7 +104,7 @@ export interface BattleSnapshot {
  */
 export function outcomeOf(w: BattleWorld): BattleSnapshot['outcome'] {
   if (w.gameOver.isDraw) return 'defeat'
-  if (w.victoryDrawn) return 'victory'
+  if (w.victoryReminder.isDraw) return 'victory'
   return 'undecided'
 }
 
@@ -195,7 +195,7 @@ export function snapshotBattle(w: BattleWorld): BattleSnapshot {
       selectable: w.selector.isSlectable,
       instruct: w.instruct.isDraw,
       reminder: w.reminder.isDraw,
-      victory: w.victoryDrawn,
+      victory: w.victoryReminder.isDraw,
       gameOver: w.gameOver.isDraw,
       startAnim: w.startAnimation.isDraw,
     },

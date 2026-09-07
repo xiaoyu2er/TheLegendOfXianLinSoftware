@@ -108,7 +108,7 @@ describe('怪物的 skillHurt 对回原版源码', () => {
       throw new Error('在 Enemy.java 里找不到 initial(...) 那一段 —— 解析器该改了')
     }
     const body = src.slice(from, to)
-    const out = new Map<string, { hurt: string; skillHurt: string }>()
+    const out = new Map<string, { hurt: string; skillHurt: string; thing: string }>()
     for (const m of body.matchAll(/case "([^"]+)":([\s\S]*?)break;/g)) {
       const name = m[1]!
       const block = m[2]!
@@ -117,7 +117,9 @@ describe('怪物的 skillHurt 对回原版源码', () => {
         if (!hit) throw new Error(`case "${name}" 里没解出 ${field} —— 解析器该改了`)
         return hit[1]!.trim()
       }
-      out.set(name, { hurt: pick('hurt'), skillHurt: pick('skillHurt') })
+      const thing = block.match(/thing="([^"]+)";/)
+      if (!thing) throw new Error(`case "${name}" 里没解出 thing —— 解析器该改了`)
+      out.set(name, { hurt: pick('hurt'), skillHurt: pick('skillHurt'), thing: thing[1]! })
     }
     return out
   })()
@@ -135,6 +137,26 @@ describe('怪物的 skillHurt 对回原版源码', () => {
       '原版有怪物的 skillHurt 与 hurt 不是同一个数了 —— 下面那条判据立刻失效，' +
         '这一列要么找一条真值判据，要么把它逐行对回源码。',
     ).toEqual([])
+  })
+
+  /**
+   * `thing` 与 `skillHurt` 处境相同：五份 driver=battle 的真值都停在结算之前
+   * （`battle-min` 的末步正是「胜利」第一次出现的那一刻），所以掉落物抄错了和
+   * 抄对了推出来的每一个状态字段都相同。xl-rh9.5 把结算实现出来之后，掉落物
+   * 决定的是**发进哪个包**（`/1` 药品、`/2` 装备）与**发什么名字**，而那两样
+   * 今天只有假的背包 / 装备包收得到（`web/src/fakes/`）。所以这一列也对回源码。
+   */
+  it('我们表里每一行的 thing 都与原版逐字相等', () => {
+    expect(Object.keys(ENEMIES).length).toBeGreaterThan(0)
+    for (const [name, spec] of Object.entries(ENEMIES)) {
+      const row = rows.get(name)
+      expect(row, `${name} 不在原版的 Enemy.initial() 里`).toBeDefined()
+      expect(spec.thing, `${name} 的 thing`).toBe(row!.thing)
+      // 写法必须是 `名字/类型`，类型只有 1（药品）与 2（装备）两种 ——
+      // `VictoryReminder.update()` 那个 switch 没有 default，第三种会被悄悄丢掉。
+      expect(spec.thing.split('/'), `${name} 的 thing 写法`).toHaveLength(2)
+      expect(['1', '2'], `${name} 的 thing 类型`).toContain(spec.thing.split('/')[1])
+    }
   })
 
   it('我们表里每一行的 skillHurt 都等于它的 hurt', () => {

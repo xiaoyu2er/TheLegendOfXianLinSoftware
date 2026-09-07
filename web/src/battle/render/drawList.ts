@@ -198,8 +198,12 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
     unimplemented('reminder', '提示图（真值只记了它画没画，没记是第几张）', 'xl-rh9.11')
   }
   // 22 胜利结算
-  if (w.victoryDrawn) {
-    unimplemented('victory-reminder', '胜利结算（经验 / 物品 / 钱 / 升级 / 回地图）', 'xl-rh9.5')
+  if (w.victoryReminder.isDraw) {
+    // 状态层那一整段（发经验 / 物品 / 钱 / 升级 / 回地图）已经做完了，归
+    // xl-rh9.5；**画**出来是另一回事：卷轴、两页人物图、四行属性数字、掉落物
+    // 清单，还要连 `image/战斗胜利/` 那批素材一起烘。那是像素这一类判据，
+    // 单开一张票（xl-rh9.13）。这里继续响亮失败 —— 画不出来就不许假装画了。
+    unimplemented('victory-reminder', '胜利结算画面（卷轴 / 两页人物 / 属性滚动 / 掉落物清单）', 'xl-rh9.13')
   }
   // 23 游标
   mouseOps(w, p, push)
