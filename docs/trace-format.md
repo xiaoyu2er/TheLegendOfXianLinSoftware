@@ -19,7 +19,7 @@
 | 驱动器 | 一步是什么 | 剧本 | 实现 |
 |---|---|---|---|
 | `scene` | 一个 tick | `dorm-walk` `bigmap-walk` `dorm-intro` `dorm-exit` `milestone` | `SceneDriver.java` |
-| `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `battle-min` `battle-em3-box` `battle-defeat-scene` `battle-defeat-start` | `BattleDriver.java` |
+| `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `battle-min` `battle-em3-box` `battle-defeat-scene` `battle-defeat-start` `battle-defeat-slot2` | `BattleDriver.java` |
 | `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
 | `shop` | 一次输入事件 | `shop-trade` | `ShopDriver.java` |
 
@@ -46,11 +46,12 @@ tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 和正确一模一样；能认出错误的是重导之后那个 `git diff`。挑判据时先问：这条检查
 失败的样子，和它通过的样子长得一样吗。
 
-实测（2026-09-07，macOS / openjdk 17，12 份剧本全部 `--check` 通过，重导之后
-`git status` 里除本次新增的两份之外没有任何改动）：
+实测（2026-09-07，macOS / openjdk 17，13 份剧本全部 `--check` 通过，重导之后
+`git status` 里除本次新增的那一份之外没有任何改动）：
 
 ```
 确定性 OK：battle-defeat-scene 两次导出逐字节一致（362264 字节）
+确定性 OK：battle-defeat-slot2 两次导出逐字节一致（144421 字节）
 确定性 OK：battle-defeat-start 两次导出逐字节一致（280257 字节）
 确定性 OK：battle-em3-box      两次导出逐字节一致（1296045 字节）
 确定性 OK：battle-min          两次导出逐字节一致（688276 字节）
@@ -64,8 +65,9 @@ tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 确定性 OK：shop-trade          两次导出逐字节一致（123712 字节）
 ```
 
-（上一版这里记的是 10 份，且十个字节数里有**八个**与入库产物对不上 ——
-只有两份战斗的数对得上。那份是更早一次导出留下的。这一份是 xl-rh9.3 当场量的。）
+（更早的一版这里记的是 10 份，且十个字节数里有**八个**与入库产物对不上 ——
+只有两份战斗的数对得上。那份是更早一次导出留下的。xl-rh9.3 当场重量过一次，
+xl-rh9.6 加进 `battle-defeat-slot2` 那一行时又整批重量了一次。）
 
 跨机器、跨 JDK 版本的一致性**未验证**。
 
@@ -365,7 +367,8 @@ if(bp.em1.name.equals("罹年居士")){        // 剧情必败战 → 回地图
 
 它**只看第一只**：那个名字排在第二或第三个位置时照样回标题。而
 `gameOver.isDraw` 置真只是全灭图**开始**对开的那一刻 —— 真正分岔的那一句在
-**72 步之后**。这个 72 是量出来的（两份真值 `261-189` 与 `177-105` 都是 72），
+**72 步之后**。这个 72 是量出来的（三份真值 `261-189`、`177-105` 与
+`100-28` 都是 72），
 算术也对得上，但要数清楚三处：
 
 1. `GameOver.update()` 每拍把全灭图对开 8px，`512/8 = 64` 拍之后 `lsx2==512`；
@@ -380,23 +383,38 @@ if(bp.em1.name.equals("罹年居士")){        // 剧情必败战 → 回地图
 
 所以 `outcome` 变成 `defeat` 就收工，导出的是一份**两条出口都还没走**的真值：
 它有头有尾、步数像模像样、退出码 0，而"分支写反了"与"分支写对了"在它里面
-长得一模一样。两份真值都靠 `awaitExit` 一路记到那一次切面板为止：
+长得一模一样。三份真值都靠 `awaitExit` 一路记到那一次切面板为止：
 
 | 剧本 | Fight 数据 | 步数 | 出口 | 末步 |
 |---|---|---|---|---|
 | `battle-defeat-scene` | `脚本22` 第 1 行（商塔顶层，`罹年居士/5`，另两槽空） | 262 | `scenePanel` | 张小凡与文敏 hp 回到 `hpMax/2` = 1680，陆雪琪仍是 0 |
 | `battle-defeat-start` | `脚本37` 第 1 行（比武场，`罹年居士分身` ×3） | 178 | `startPanel` | 两人 hp 仍是 0，三个槽位全部 `onField=false` |
+| `battle-defeat-slot2` | **合成**（比武场，`怪物1/5` + `罹年居士/6`） | 101 | `startPanel` | 同上：两人 hp 仍是 0，两个在场槽位 `onField=false` |
 
-**两份必须成对存在。** 只测一条时，"两条都走错边"和"分支写对了"是同一个样子。
-第二份还额外钉住那个比较是**逐字相等**：「罹年居士分身」以「罹年居士」开头，
+**前两份必须成对存在。** 只测一条时，"两条都走错边"和"分支写对了"是同一个
+样子。第二份还额外钉住那个比较是**逐字相等**：「罹年居士分身」以「罹年居士」开头，
 用 `startsWith` / `includes` 写的分支会把它也送回地图，而那个错在第一份里
 看不出来。
 
-⚠️ **这两份盖不住的那一种写错法**：把判断写成"三个槽位里**有没有**罹年居士"
-而不是"**第一只**是不是"。两份真值都验不到它 —— 第一份的罹年居士本来就在第
-1 槽，第二份根本没有罹年居士。原版的 Fight 数据里也没有一行把罹年居士排在
-第 2/3 槽，所以要盖住它就得写一份不取自原版数据的剧本。这笔账记在
-**xl-rh9.6**。
+**第三份堵的是"有没有"与"第一只"的区别**（xl-rh9.6）。前两份合起来仍盖不住
+一种写错法：把判断写成"三个槽位里**有没有**罹年居士"而不是"**第一只**是不
+是"。第一份的罹年居士本来就在第 1 槽，第二份根本没有罹年居士 —— 两种写法在
+那两份里结果完全相同。
+
+`battle-defeat-slot2` 把罹年居士挪到第 2 槽、第 1 槽放一只"怪物1"，于是两种
+写法分岔：原版只看 `em1`，走 `startPanel`；写成"有没有"的实现会走
+`scenePanel`，`awaitExit` 当场非零退出。
+
+**它这一行怪物不取自原版的 Fight 数据**，因为原版 96 份脚本里没有任何一行
+把罹年居士排在第 2/3 槽（它只出现一次：`脚本22` 第 1 行，独自一只）。剧本
+格式本来就允许三个槽位随便填，怪物名也都是原版 `Enemy.initial` 认得的；破
+"逐行取自原版数据"这个惯例是有意的，剧本的 `description` 里写明了。
+
+实测过它确实在验（xl-rh9.6）：把 `src/battle/GameOver.java` 那一句改成
+`em1 || em2 || em3` 三个槽位都比，重新导出三份打输真值 ——
+`battle-defeat-scene` 与 `battle-defeat-start` 退出码 0、`git diff` 一个字节
+都没有，`battle-defeat-slot2` 退出码 2 并打印"剧本要的出口是 startPanel，
+原版切到的是 scenePanel"。`src/` 已按字节还原。
 
 **观察点怎么装的。** `GameLauncher.switchTo` 走的是
 `switcher.show(c, "xxxPanel")`，而导出器里 `GameLauncher` 从没被构造过 ——
@@ -885,4 +903,5 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `battle-em3-box` | 战斗（`driver` = `battle`） | 让 xl-1dv.8（`EnemySlector` 判 em3 用了 `height1`）在真值里露头的那一场：`脚本20.txt` 第 3 行的 Fight 数据，em1 的图 188×220 而 em3 的图 124×172 |
 | `battle-defeat-scene` | 战斗（`driver` = `battle`） | 打输的第一条出口：`脚本22.txt` 第 1 行的剧情必败战（`罹年居士` 独自一只，hp/hurt/defense 全是 9999）。全灭之后一路记到切回 `scenePanel`，张小凡与文敏各回半血。第 2/3 槽是 `null` —— 原版的 Fight 数据一行可以只写一只怪 |
 | `battle-defeat-start` | 战斗（`driver` = `battle`） | 打输的第二条出口：`脚本37.txt` 第 1 行（`罹年居士分身` ×3，等级压到 1 让它必输）。全灭之后切回 `startPanel`，谁的血都不回。它钉住那个名字比较是**逐字相等**而不是包含 |
+| `battle-defeat-slot2` | 战斗（`driver` = `battle`） | **合成**的遭遇（不取自原版 Fight 数据）：第 1 槽 `怪物1`、第 2 槽 `罹年居士`。全灭之后照样切回 `startPanel` —— 它钉住那个判断只看 `em1`，而不是"三个槽位里有没有" |
 | `shop-trade` | 商店（`driver` = `shop`） | 药店与装备超市各走一条完整的买卖：买 2 份金创药 → 钱不够被拒（金钱与背包一个数都没动） → 卖回 1 份 → 装备超市买月苗刀 → 切到鞋子那栏卖掉皮靴 → 切回武器栏确认刚买的还在。加减按钮的两端也都走到了 |
