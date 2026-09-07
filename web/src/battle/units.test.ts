@@ -135,6 +135,10 @@ describe('怪物出厂表逐列对回原版源码', () => {
       hp: s.hp,
       exp: s.exp,
       money: s.money,
+      // `thing`（战利品）在 xl-rh9.10 那趟解出来了却没进这一行，理由是「今天
+      // 没有读者」。xl-rh9.5 把结算实现出来之后它有了读者：掉落物决定发进哪个
+      // 包（`/1` 药品、`/2` 装备）与发什么名字。两张票并行，合并时补上这一列。
+      thing: s.thing,
       skillNum: s.skillNum,
       beAttackedOffsetX: s.beAttackedOffsetX,
       beAttackedOffsetY: s.beAttackedOffsetY,
