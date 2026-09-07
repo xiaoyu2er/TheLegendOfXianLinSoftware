@@ -129,11 +129,27 @@ public final class ExportTrace {
         StringBuilder body = new StringBuilder();
         int steps = 0;
         while (driver.step()) {
+            // 音效真值的取样时机，四支驱动器共用这一处（xl-1vu.11）。
+            //
+            // 这里就是「paint 之后」：面板的 paint 发生在 step() 里面，而 step()
+            // 已经返回。原版的 paint 真的出声 —— EquipPanel.drawWarning() 里两处
+            // readmusic("禁止.wav")，menu-equip 的 t=6 / t=10 那两声就是它打的。
+            // 挪到 step() 之前，那两声会整体错位到下一步。
+            //
+            // 也必须在 snapshotState 之前：那一行 music 字段读的就是这里取走的那批。
+            // 与它相反的另一个时机（拒绝标志要在 paint **之前**抓，因为 drawWarning
+            // 出声的同一段就把标志清零了）留在驱动器自己手里 —— 只有它知道自己
+            // paint 的是哪个面板。两个时机相反，所以刻意不并成一处。
+            if (MusicTap.armed()) MusicTap.afterStep();
             if (steps > 0) body.append(",\n");
             body.append("    ").append(driver.snapshotState(steps));
             if (framesDir != null && steps % every == 0) dumpFrame(driver, steps);
             steps++;
         }
+
+        // 剧本正常跑完这一条出口上才验（跑爆 maxSteps 的驱动器直接非零退出，
+        // 走不到这里 —— 那是对的，maxSteps 那条失败更响，先报它）。
+        if (MusicTap.armed()) MusicTap.requireRecorded();
 
         if (framesDir != null) writeFrameManifest(steps);
 

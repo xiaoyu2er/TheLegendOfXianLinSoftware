@@ -534,7 +534,7 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 | `music` | 这一步触发的音效文件名，按调用先后排列（`["换list.wav"]`）。空数组 = 这一步原版不出声。见下面「音效」一节。 |
 | `mouse` | 四个子面板**各自**那个 `Mouse`（四条 run 线程各推各的，只有当前页画得出来）。每个记 `code`/`frame`/`x`/`y`。**`code` 与 `frame` 是两回事**：`code` 是"下一格拿哪张图"的计数器，`frame` 是这一帧真的画出来的那张的下标。`Mouse.update()` 先取图再自增，且 `code==8` 那一次只把 code 拨回 1、**不换图** —— 于是第 0 张只在开局出现一次、第 7 张连画两帧。只记 `code` 的话这两件事在真值里都看不见。|
 
-### 音效：`music` 字段（xl-1vu.8）
+### 音效：`music` 字段（xl-1vu.8 立的，xl-1vu.11 收的）
 
 菜单与商店真值各记一个 `music` 数组：**这一步请求播放了哪些音效文件**。它是
 M3 / M4 判断「该不该响、响哪一个」的唯一依据。
@@ -547,8 +547,20 @@ M3 / M4 判断「该不该响、响哪一个」的唯一依据。
 入口，也就是那个判断**之外**。src/ 侧是 `tools.MusicLog`（诊断类改动，默认
 关闭时 `record()` 第一行就 return），驱动器侧是 `devtools.MusicTap`。
 
+**接一支新驱动器要写的是两行**（xl-1vu.11 之前是六处逐字重复，menu 与 shop
+各抄一遍）：
+
+    1. start() 的最后一行： MusicTap.arm(script.name);
+                            （剧本可以全程不出声的用 armAllowingSilence）
+    2. snapshotState() 里：  b.append(",\"music\":").append(MusicTap.json());
+
+其余全在公共的那一处：`MusicTap` 是静态的（观察点 `tools.MusicLog` 本来就是
+全局的，一次导出一个 JVM、一支驱动器、跑完就 `System.exit`），逐步取走
+（`afterStep()`）与跑完的自检（`requireRecorded()`）由 `ExportTrace` 的
+导出循环调，驱动器一个字都不写。
+
 **这个字段的失败形态是空数组，而空数组同时是「本来就不响」的正常取值** ——
-失败长得和成功一模一样。所以有两道会硬失败的检查，都在 `MusicTap` 里：
+失败长得和成功一模一样。所以有三道会硬失败的检查，都在 `MusicTap` 里：
 
 1. **探针**（`arm()`）。打开记录之后当场 `readmusic("__musictap-probe__.wav")`，
    必须恰好 drain 回这一个名字。走的是游戏自己的入口，不是直接调
@@ -558,25 +570,54 @@ M3 / M4 判断「该不该响、响哪一个」的唯一依据。
    没接上 —— 探针 … drain 回来的是 `[]`」。
 2. **整份至少响过一次**（`requireRecorded()`）。分母固定，可数。**实测**：
    在 `arm()` 之后插一行 `MusicLog.setRecording(false)`（模拟记录被悄悄关掉），
-   退出码 2，报「整份真值一个音效都没记到」。
+   退出码 2，报「整份真值一个音效都没记到」。剧本确实可能全程不出声（见下面
+   场景那一段），那种要显式写 `armAllowingSilence()`，而不是把这道检查删掉。
+3. **写了字段却没 `arm()`**（`json()`，xl-1vu.11）。收拢成两行之后新的错法是
+   「抄了 `snapshotState` 那行、忘了 `start()` 那行」—— 那样每一步都会安静地
+   写 `[]`，又是一次失败长得像成功。**实测**：给 `SceneDriver` 只加第 2 行、
+   不加第 1 行重导 `dorm-walk`，退出码 2，报「有人在真值里写 music 字段，
+   却从来没调过 MusicTap.arm()」。
 
-第三种错法这两道都拦不住，靠的是重导之后 `git diff tools/traces/out`：把
-`music.drain()` 从 `paint()` 之后挪到 `dispatch()` 之前，导出退出码仍是 0、
-`--check` 两遍仍逐字节一致，但每一步的音效整体**错位一步**（`换list.wav`
-从按下那一步跑到松开那一步）。又一次「一个稳定的错误在 `--check` 眼里和正确
-一模一样」。
+还有一种错法这三道都拦不住，靠的是重导之后 `git diff tools/traces/out`：把
+取样点从 `step()` **之后**挪到 `step()` **之前**，导出退出码仍是 0、`--check`
+两遍仍逐字节一致，但每一步的音效整体**错位一步**（`换list.wav` 从按下那一步
+跑到松开那一步）。又一次「一个稳定的错误在 `--check` 眼里和正确一模一样」。
+**实测（2026-09-07，xl-1vu.11）**：在 `ExportTrace` 的导出循环里把
+`MusicTap.afterStep()` 挪到 `driver.step()` 之前重导，三份真值全变 ——
+menu-equip 28 步、menu-magic 4 步、shop-trade 32 步，每一声都晚一步落地
+（menu-equip 的 `换list.wav` 从 t=0 挪到 t=1，两声 `禁止.wav` 从 t=6/t=10
+挪到 t=7/t=11）。`--check` 那一关照样报三份「确定性 OK」。
 
 **取样点必须在 `paint()` 之后，因为原版的 paint 真的出声。**
 `EquipPanel.drawWarning()` 里有两处 `readmusic("禁止.wav")` —— 就在把
 `isEquiped` / `canBeEquiped` 清零的那同一段里。实测（2026-09-06）：menu-equip
 30 步记到的 14 次音效中 **2 次是 paint 打出来的**（t=6 与 t=10 那两声禁止），
-shop-trade 40 步则是 0 次。把 `drain()` 挪到 `dispatch()` 之前，这两声会整体错位
-到下一步。**注意它与拒绝标志正好相反**：`warnEquipped` / `warnCannotUse` 必须在
+shop-trade 40 步则是 0 次。（xl-1vu.11 复量了一遍：menu-equip 30 步里派发期间
+12 次、paint 期间 2 次 —— t=6 与 t=10，合计 14 次，与 .8 的读数一致。）
+
+xl-1vu.11 之后这个时机由**导出器**保证而不是每支驱动器各写一遍：
+`MusicTap.afterStep()` 在 `driver.step()` **返回之后**、`snapshotState()`
+之前调，而 paint 发生在 `step()` 里面，所以「paint 之后」自动成立，且比原来更宽
+—— `step()` 里任何位置出的声都算进本步。
+
+**注意它与拒绝标志正好相反**：`warnEquipped` / `warnCannotUse` 必须在
 paint **之前**抓（同一个 `drawWarning()` 会把它们清零），音效必须在 paint
-**之后**取。同一个方法，两个相反的取样时机。
+**之后**取。同一个方法，两个相反的取样时机 —— 所以刻意没有并成一处：拒绝标志
+留在 `MenuDriver.step()` 里（只有它知道自己 paint 的是哪个面板、要抓哪几个
+字段），音效收到导出器那一处。
 
 `music` 只在 `menu` / `shop` 两支上打开。场景与战斗不 `arm()`，`MusicLog`
-一直是关的，那 7 份真值一个字节都没变（实测）。BGM 不走这条路：
+一直是关的，那 8 份真值一个字节都没变（实测）。
+
+**场景要接的话，0 次是正确答案。** xl-1vu.11 拿 `SceneDriver` 真接了一遍做演示
+（两行，接完又撤掉 —— 接上会给五份场景真值每一步加一个 `music` 字段，那是改真值，
+不是这张纯重构票的事）：五份场景剧本 dorm-intro（4123 步）/ dorm-walk（538）/
+dorm-exit（1181）/ bigmap-walk（842）/ milestone（9158）**一声都不出** —— 走路、
+切场景、对话推进全都不走 `readmusic`。所以场景那一支要写的是
+`armAllowingSilence()`：头一次用 `arm()` 接，五份全部退出码 2 报「一个音效都没
+记到」，那是正确长得像失败。
+
+BGM 不走这条路：
 `MusicPlayer.play` 里 `currentPlayingBGM = name` 本来就在任何开关判断之外。
 
 `MusicTap.arm()` 里那道 `CAN_PLAY_MUSIC != NO` 的 if **当下打不响**：
