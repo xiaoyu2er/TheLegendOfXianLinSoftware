@@ -104,6 +104,16 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
     issue: 'xl-1vu.7',
   },
+  'battle-em3-box': {
+    status: 'unassembled',
+    // 与 battle-min 同一个原因：取图页还没有战斗装配（xl-1vu.7）。这一条多出来
+    // 的意义不在像素上，而在**状态字段**上 —— 它是 xl-1dv.8（EnemySlector 判
+    // em3 用了 height1）在真值里唯一观测得到的那一场，判据在
+    // `src/state/battleEnemyBox.test.ts`。battle-min 的三只怪图都是 172 高，
+    // 那一场里写对与写错导出来的数完全相同。
+    why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
+    issue: 'xl-1vu.7',
+  },
   'dorm-walk': {
     status: 'gap',
     // 地图底图已逐像素对齐（xl-9bd.16），NPC 已实现并逐 tick 对齐（xl-9bd.9），
