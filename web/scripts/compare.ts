@@ -9,6 +9,7 @@ import { decodePng, encodePng } from '../src/compare/png'
 import { judgeRegions, partitionedDiff } from '../src/compare/regions'
 import type { PartitionedFrame, RegionVerdict } from '../src/compare/regions'
 import { repoPath } from '../src/test/repoPath'
+import { judgeWhole } from '../src/compare/verdict'
 import { launch } from './cdp'
 import type { Browser } from './cdp'
 
@@ -198,7 +199,6 @@ function compareOne(
   const results = diffSide(root, m, 'web', tolerance)
   const sequence = summarize(results, threshold)
   const expectation = expectationOf(m.script)
-  const diverged = sequence.firstDivergent !== null
 
   // 分区表态的剧本走另一套判据（`src/compare/regions.ts`）：整屏的 ratio 与
   // threshold 仍然算出来给报告看，但**判通不通过的是分区那一套** —— 硬比区
@@ -216,20 +216,12 @@ function compareOne(
     regions = judgeRegions(frames, expectation.gaps)
   }
 
-  const ok = regions
-    ? regions.ok
-    : expectation.status === 'match'
-      ? !diverged
-      : diverged
-  const verdict = regions
-    ? regions.verdict
-    : expectation.status === 'match'
-      ? diverged
-        ? `回归：第 ${sequence.firstDivergent} 帧起偏离`
-        : '一致'
-      : diverged
-        ? `已知缺口（${expectation.why}），第 ${sequence.firstDivergent} 帧起偏离`
-        : `缺口没了 —— ${expectation.why}，把 expected.ts 里这条改成 match`
+  // 判据本身在 `src/compare/`：整屏表态走 `verdict.ts`，分区表态走 `regions.ts`。
+  // 这里只负责挑一边、把结论抄进报告 —— 判据留在 src/ 下才跟得上 CI 里的
+  // vitest（这条流水线要 Java 与 Chrome，进不了 CI）。
+  const whole = regions ? null : judgeWhole(sequence, expectation)
+  const ok = regions ? regions.ok : whole!.ok
+  const verdict = regions ? regions.verdict : whole!.verdict
 
   // 差异图只出两张：第一个偏离帧（"从哪儿开始不对"）和最差帧（"最坏长什么样"）。
   // 每帧都出会得到几百张没人看的图。

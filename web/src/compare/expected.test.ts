@@ -23,6 +23,39 @@ describe('跨端比对的期望表', () => {
     }
   })
 
+  it('每条 gap 都带幅度上界 —— 整屏表态写 maxRatio，分区表态每个区写 maxPixels', () => {
+    // xl-l3o：上界之前，gap 的通过条件只有一句"有偏离帧"，整屏全黑也算数。
+    // 分母从表里现数，不写死条数。
+    for (const [name, e] of Object.entries(EXPECTED)) {
+      if (e.status !== 'gap') continue
+      if (e.gaps) {
+        // 分区表态的上界逐区挂着；整屏那个数对它没有意义，别两头都写。
+        expect(e.maxRatio, `${name} 是分区表态，不该再写整屏的 maxRatio`).toBeUndefined()
+        for (const g of e.gaps) {
+          expect(g.maxPixels, `${name}/${g.name} 没写上界`).toBeGreaterThan(0)
+        }
+      } else {
+        expect(e.maxRatio, `${name} 的 gap 没写幅度上界`).toBeGreaterThan(0)
+        // 上界 ≥ 1 等于没有上界：占比最多就是 1（整屏全差）。
+        expect(e.maxRatio, `${name} 的上界 ≥ 100%，等于没有上界`).toBeLessThan(1)
+      }
+    }
+  })
+
+  it('缺口区的上界必须够得着 —— 上界比这块区的面积还大就永远超不了', () => {
+    // "破不了的检查"和"没有检查"是同一件事，而两者都安安静静地通过。
+    // 分母从矩形自己算，不写死。
+    for (const [name, e] of Object.entries(EXPECTED)) {
+      if (!e.gaps) continue
+      for (const g of e.gaps) {
+        const area = (g.rect.x1 - g.rect.x0 + 1) * (g.rect.y1 - g.rect.y0 + 1)
+        expect(g.maxPixels, `${name}/${g.name} 的上界够不着：区里一共才 ${area} 个像素`).toBeLessThan(
+          area,
+        )
+      }
+    }
+  })
+
   it('没表过态的剧本是硬失败，不是默认放行', () => {
     expect(() => expectationOf('还没有的剧本')).toThrow(/没有在/)
   })
