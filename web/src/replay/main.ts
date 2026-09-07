@@ -7,6 +7,18 @@ import { loadScene } from '../data/scenes'
 import { DialogueBox } from '../ui/DialogueBox'
 import '../index.css'
 import { createSceneRenderer } from '../scene/sceneRenderer'
+import { battleTextureIds, enemyWalkId } from '../battle/render/assets'
+import { createBattleRenderer } from '../battle/render/battleRenderer'
+import type { BattleRenderer } from '../battle/render/battleRenderer'
+import { battleDrawList } from '../battle/render/drawList'
+import type { DrawOp } from '../battle/render/drawList'
+import { advancePaintState, applyPaintInput, createPaintState } from '../battle/render/paint'
+import type { PaintState } from '../battle/render/paint'
+import { replayBattle } from '../battle/replay'
+import { stepBattle } from '../battle/step'
+import type { BattleTrace } from '../battle/trace'
+import type { BattleWorld } from '../battle/types'
+import { resolveAsset } from '../assets/resolve'
 import { pickAssembly } from './drivers'
 import type { ImplementedDriver } from './implemented'
 import type { SceneRenderer } from '../scene/sceneRenderer'
@@ -81,6 +93,48 @@ let next = 0
 /** 渲染器手上是哪个场景。世界换了场景，这里要跟着换图。 */
 let shown: string | null = null
 
+/**
+ * **每套装配一个自己的宿主 div，同一时刻只显示一个。**
+ *
+ * 为什么需要这一层：两套装配各自建一个 Pixi `Application`，各自往宿主里塞一张
+ * canvas。它们都挂在 `#host` 下面，而 `replay.html` 的 CSS 给 `#host canvas`
+ * 定死了 1024×640 且 `display:block` —— 于是两张画布**上下摞着**，第二张被推
+ * 出视口，截图截到的永远是第一张。
+ *
+ * 这不是推测，是实测出来的回归：注册战斗装配之后跑一整轮
+ * （`tools/compare-frames.sh --self-check`，剧本按字典序，battle-* 排在最前），
+ * 五条场景剧本的最差帧从 0.74%–37% 一齐跳到 **99.5%–99.99%**，而
+ * `--self-check` 同时报「把主角画偏 8 像素之后，最先变的是 #0，不是注入点」。
+ * 那两句话合起来说的是同一件事：截到的根本不是场景那张画布。
+ *
+ * **自检抓住了它**，而整屏表态的上界（`maxRatio`）也抓住了它 —— 两道都响，
+ * 正是 xl-l3o 立那条上界的理由。
+ */
+function hostFor(kind: ImplementedDriver): HTMLElement {
+  const root = document.getElementById('host')
+  if (!root) throw new Error('取图页没有 #host')
+  const id = `host-${kind}`
+  const found = document.getElementById(id)
+  if (found) return found
+  const el = document.createElement('div')
+  el.id = id
+  el.style.width = '1024px'
+  el.style.height = '640px'
+  root.appendChild(el)
+  return el
+}
+
+/** 只显示这一套装配的画布，其余全藏起来。对话框那一层只有场景用得到。 */
+function activate(kind: ImplementedDriver): void {
+  const root = document.getElementById('host')
+  if (!root) throw new Error('取图页没有 #host')
+  for (const child of Array.from(root.children)) {
+    ;(child as HTMLElement).style.display = child.id === `host-${kind}` ? 'block' : 'none'
+  }
+  const overlayHost = document.getElementById('overlay')
+  if (overlayHost) overlayHost.style.display = kind === 'scene' ? 'block' : 'none'
+}
+
 /** 取一个场景，并放进同步查得到的那张表里（出口切换要同步取，见 data/loadedScenes.ts）。 */
 async function take(name: string) {
   const scene = await loadScene(name)
@@ -95,11 +149,8 @@ const sceneAssembly: Assembly = {
     const parsed = JSON.parse(traceJson) as ReplayTrace
     const sceneName = stem(parsed.script.scene)
     const scene = await take(sceneName)
-    if (!renderer) {
-      const host = document.getElementById('host')
-      if (!host) throw new Error('取图页没有 #host')
-      renderer = await createSceneRenderer(host)
-    }
+    renderer ??= await createSceneRenderer(hostFor('scene'))
+    activate('scene')
     if (!overlay) {
       const host = document.getElementById('overlay')
       if (!host) throw new Error('取图页没有 #overlay')
@@ -147,6 +198,118 @@ const sceneAssembly: Assembly = {
   },
 }
 
+/* ===================== 战斗（xl-rh9.9） ===================== */
+
+let battleRenderer: BattleRenderer | null = null
+let battleTrace: BattleTrace | null = null
+let battleWorld: BattleWorld | null = null
+let battlePaint: PaintState | null = null
+let battleNext = 0
+
+/**
+ * 怪物出场图（`Images.get(0)`）的像素尺寸 —— `EnemySlector` 量的就是它。
+ *
+ * **从真的图片里量，不从真值里读**：从真值里读框、再拿它去比框，是一条恒真
+ * 的检查。这里走的是与状态层测试同一条路，只是那边读 PNG 的 IHDR，这边读
+ * 浏览器解出来的纹理（烘出来的 WebP 是无损的，尺寸一致）。
+ */
+async function enemySpriteSizes(names: readonly string[]): Promise<Map<string, { width: number; height: number }>> {
+  const out = new Map<string, { width: number; height: number }>()
+  await Promise.all(
+    names.map(async (name) => {
+      const image = new Image()
+      image.src = resolveAsset(enemyWalkId(name, 0))
+      await image.decode()
+      out.set(name, { width: image.naturalWidth, height: image.naturalHeight })
+    }),
+  )
+  return out
+}
+
+/**
+ * **故意改坏一处渲染**（`--self-check` 的注入点），战斗版。
+ *
+ * 与场景那一侧同一个意思：世界状态一个字节都不动，只把画出来的那一帧挪偏
+ * `heroDx` 像素。**挪的是第 1 层「背景图」，不是主角那一层。**
+ *
+ * 为什么不挪主角 —— 实测出来的（2026-09-07，`tools/compare-frames.sh
+ * --self-check`）：挪主角那一层时，`battle-min` / `battle-em3-box` /
+ * `battle-defeat-scene` 三条正常响，而 `battle-defeat-start` 与
+ * `battle-defeat-slot2` 两条报
+ *
+ *     失败  battle-defeat-slot2  5 帧 · 注入点 #50 · 首个变化帧 无（改坏了却没响）
+ *
+ * 追下去不是判据失灵，是**这两场里主角那一层根本没画**：打输的剧本里三个人
+ * 都倒下了（`Hero.isDraw=false`，第 7 层整层不画，画的是第 8 层死亡动画），
+ * 而末帧还被全灭图整个盖住。挪一层没画出来的东西，当然一个像素都不会变。
+ *
+ * 背景图是唯一**每一帧都在、且不会因为战况而消失**的一层，所以注入点挪它。
+ * 自检要断言的两件事（注入点之前逐帧不变、第一个变化帧正好是注入点）不受
+ * 影响 —— 变的只是"改坏的是哪一层"。
+ */
+function breakBattleOps(ops: DrawOp[], t: number): DrawOp[] {
+  const b = window.__xlBreak
+  if (!b || t < b.fromTick) return ops
+  return ops.map((op) =>
+    op.layer === 'background' && op.kind === 'image' ? { ...op, x: op.x + b.heroDx } : op,
+  )
+}
+
+const battleAssembly: Assembly = {
+  async load(traceJson: string) {
+    const parsed = JSON.parse(traceJson) as BattleTrace
+    battleRenderer ??= await createBattleRenderer(hostFor('battle'))
+    activate('battle')
+
+    // 先量怪物的图，才建得出世界（`EnemySlector` 的九个字段要它）。
+    const names = parsed.script.enemies
+      .filter((e): e is string => e !== null)
+      .map((e) => e.slice(0, e.lastIndexOf('/')))
+    const sizes = await enemySpriteSizes(names)
+    const world = replayBattle(parsed, (name) => {
+      const size = sizes.get(name)
+      // 查不到就抛：静默给一个默认尺寸会让点击范围整个错位，而画面看着正常。
+      if (!size) throw new Error(`没量到怪物「${name}」的出场图尺寸`)
+      return size
+    })
+
+    await battleRenderer.load(battleTextureIds(world))
+    battleWorld = world
+    battlePaint = createPaintState(world)
+    battleTrace = parsed
+    battleNext = 0
+    battleRenderer.draw(battleDrawList(world, battlePaint))
+    // `scene` 这一栏对战斗来说是"打的哪一场"，报背景图，方便对着日志看。
+    return { scene: parsed.script.background, tickCount: parsed.tickCount }
+  },
+
+  async seek(t: number) {
+    const trace = battleTrace
+    const world = battleWorld
+    const paint = battlePaint
+    const renderer = battleRenderer
+    if (!trace || !world || !paint || !renderer) throw new Error('还没 load 就 seek')
+    if (t < battleNext - 1) {
+      throw new Error(`取图只能往前：当前在第 ${battleNext - 1} 拍，要去第 ${t} 拍`)
+    }
+    if (t >= trace.ticks.length) {
+      throw new Error(`第 ${t} 拍超出了这份 trace 的 ${trace.ticks.length} 拍`)
+    }
+    for (; battleNext <= t; battleNext++) {
+      const tick = trace.ticks[battleNext]!
+      // **按钮贴图要在 stepBattle 之前推**：原版那三个鼠标监听器跑在循环体
+      // 之前，读的是这一拍开头的 `command.isDraw`（见 render/paint.ts）。
+      for (const input of tick.input) applyPaintInput(world, paint, input)
+      stepBattle(world, tick.input)
+      advancePaintState(world, paint)
+    }
+    renderer.draw(breakBattleOps(battleDrawList(world, paint), t))
+    await twoFrames()
+    // 战斗的虚拟时间就是拍号乘 tickMs（ADR-0003：固定步长，不跟画面刷新走）。
+    return { t, timeMs: t * trace.script.tickMs, x: world.currentX, y: world.currentY }
+  },
+}
+
 /**
  * 判别名 → 装配。**名单只有这一份**，`pickAssembly` 报"本页实现了哪些"时
  * 数的就是它 —— 另抄一张名单，加了驱动器却忘了改名单的那天，报出来的话是错的。
@@ -155,7 +318,10 @@ const sceneAssembly: Assembly = {
  * **少一个键或多一个键都是编译错**。比对器跑在 Node 上，装不进这个模块
  * （要 Pixi 与 DOM），它读的是那个数组；两边靠类型钉在一起，不靠人记得同时改。
  */
-const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = { scene: sceneAssembly }
+const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = {
+  scene: sceneAssembly,
+  battle: battleAssembly,
+}
 
 /** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */
 let current: Assembly | null = null
