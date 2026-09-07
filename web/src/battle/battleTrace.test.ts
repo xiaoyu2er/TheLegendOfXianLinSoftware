@@ -243,6 +243,29 @@ describe('战斗状态层对齐行为真值', () => {
     })
 
     /**
+     * 回地图那条出口只摘 `em1`，回标题那条把三个槽位都摘掉 —— 而**这个差别
+     * 在今天这批真值里观测不到**：唯一走回地图那条的 `battle-defeat-scene`
+     * 只有一只怪，第 2 / 3 槽本来就是 `null`，多摘两下什么都不变。
+     * 实测（xl-rh9.8 篡改验证 T6）：给 `exitToScene` 加上 `em2=null; em3=null`，
+     * 逐字段比对全绿。
+     *
+     * 所以把这件事登记成一条判据：哪天走回地图那条的真值里第 2 / 3 槽站了人，
+     * 这一条会红，那时候上面的逐字段比对就自己盖得住它了，这条登记该撤掉。
+     */
+    it('回地图那条出口摘不摘 em2/em3，今天还观测不到 —— 登记在案', () => {
+      const sceneExits = exits.filter((e) => e.panel === 'scenePanel')
+      expect(sceneExits.length, '没有一份真值走回地图那条出口').toBeGreaterThan(0)
+      for (const { name } of sceneExits) {
+        const trace = readBattleTrace(name)
+        expect(
+          [enemyAt(trace, 2), enemyAt(trace, 3)],
+          `${name} 走的是回地图那条出口，而它第 2/3 槽站了人 —— ` +
+            '「只摘 em1」与「三个都摘」现在分得开了，把这条登记换成正面比对。',
+        ).toEqual([null, null])
+      }
+    })
+
+    /**
      * 下面三条验的是**这批真值本身还分得开那三种写错法**，不是实现。
      * 真值一改（换一场、删一场），这几条会先红 —— 而"判据失效了"与
      * "实现写对了"在只比状态的测试里长得一模一样。

@@ -2,12 +2,12 @@
  * 战斗单位的**出厂数据**：三个我方角色的属性公式，以及怪物那张表。
  *
  * 全部照抄 `src/battle/` 下的原版：我方在 `ZhangXiaoFan/YuJie/LuXueQi` 的
- * 构造函数与 `refreshValue()` 里，怪物在 `Enemy.initial()` 那个 26 路 switch 里。
+ * 构造函数与 `refreshValue()` 里，怪物在 `Enemy.initial()` 那个按名字分的 switch 里（**25** 个 case，解源码数出来的）。
  *
- * ## 怪物表为什么不是 26 行
+ * ## 怪物表为什么不是 25 行
  *
  * 这张表**按名字查，查不到就抛**。入库的只有**跑得到行为真值**的那几只 ——
- * 抄一行没有判据的数据，抄错了和抄对了长得一样。原版那个 switch 有 26 个
+ * 抄一行没有判据的数据，抄错了和抄对了长得一样。原版那个 switch 有 25 个
  * case，这里今天是 7 行：`battle-min` 的两只（怪物1 / 怪物2）、
  * `battle-em3-box` 的三只（武林高手2 / 商塔弟子 / 商塔护法）、
  * 两场打输的两只（罹年居士 / 罹年居士分身）。**这个数字不写进任何断言** ——
@@ -222,7 +222,7 @@ export interface EnemySpec {
   /**
    * `Enemy.initial` 里那一行 `this.speed=…`。
    *
-   * 26 行里 25 行是常量，**罹年居士那一行不是** —— 原版写的是
+   * 25 行里 24 行是常量，**罹年居士那一行不是** —— 原版写的是
    * `ZhangXiaoFan.speed+6`，读的是张小凡那个 `public static int speed`，也就是
    * 「比张小凡快 6」。抄成常量的话它跟等级一起漂：`battle-defeat-scene` 的
    * 张小凡是 20 级（agile 48 → speed 24），真值记的正是 30。
@@ -230,10 +230,16 @@ export interface EnemySpec {
   speed: number | ((zhangSpeed: number) => number)
   hurt: number
   /**
-   * `this.skillHurt=…`。26 行里 24 行写的是 `skillHurt=hurt`，另外两行
+   * `this.skillHurt=…`。25 行里 23 行写的是 `skillHurt=hurt`，另外两行
    * （罹年居士 9999 / 罹年居士分身 600）写的是字面量而值恰好等于 `hurt` ——
-   * 也就是说这张表里它**从来没有**与 `hurt` 分开过。仍然分成两个字段，
-   * 因为「恰好相等」与「就是同一个数」在原版里不是同一件事。
+   * 也就是说这张表里它**从来没有**与 `hurt` 分开过（这句是解源码数出来的，
+   * 见 `units.test.ts`）。仍然分成两个字段，因为「恰好相等」与「就是同一个
+   * 数」在原版里不是同一件事。
+   *
+   * ⚠️ **这一列今天没有真值判据**：整个状态层还没有人读 `skillHurt`
+   * （怪物出技能那条伤害路归 xl-rh9.9），所以五份真值里抄错了和抄对了推出来
+   * 的数完全相同 —— 实测把罹年居士分身的 600 改成 590，逐字段比对全绿。
+   * 守着它的是 `units.test.ts` 里那条「解源码数遍所有 case，一行都没分开过」。
    */
   skillHurt: number
   defense: number
@@ -263,7 +269,12 @@ export interface EnemySpec {
   }
 }
 
-const ENEMIES: Readonly<Record<string, EnemySpec>> = {
+/**
+ * 怪物出厂表。**导出**是给 `units.test.ts` 用的：那条对回原版源码的判据拿
+ * 这张表当分母（表里有几行就核几行），而不是拿源码当分母 —— 源码有 25 个
+ * case，这里只抄了跑得到真值的那几只。
+ */
+export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
   怪物1: {
     length: 4,
     beAttackedFrames: 6,
@@ -494,8 +505,10 @@ export function enemySpec(name: string): EnemySpec {
  * 为什么这里不像怪物表那样「只抄有真值盖得住的那几行」：这十二行有一条
  * **分母固定的判据** —— `units.test.ts` 现从 `src/battle/BattlePanel.java`
  * （GBK）里把那个 switch 解出来逐行对。怪物表没有这种东西可对（那些数字散在
- * 一个 26 路 switch 的字段赋值里，解它的那个解析器本身就会成为新的错处），
- * 所以它只抄跑得到真值的那几只。
+ * 一个 25 路 switch 的字段赋值里，解它的那个解析器本身就会成为新的错处），
+ * 所以它只抄跑得到真值的那几只。**唯一的例外是 `skillHurt`**：那一列没有
+ * 任何真值读得到，于是 `units.test.ts` 用一个只认两个字段赋值的窄解析器把它
+ * 对回源码 —— 窄到解不出来就当场抛，而不是解出 0 行然后恒真地通过。
  */
 export const BGM_BY_BACKGROUND: Readonly<Record<string, string>> = {
   'image/背景图/伏魔山树林.png': 'B6.mp3',
