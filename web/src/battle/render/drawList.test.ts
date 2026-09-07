@@ -5,7 +5,7 @@ import { repoPath } from '../../test/repoPath'
 import { replayBattle } from '../replay'
 import { snapshotBattle } from '../snapshot'
 import { stepBattle } from '../step'
-import { readBattleTrace } from '../trace'
+import { BATTLE_TRACE_NAMES, readBattleTrace } from '../trace'
 import type { BattleWorld } from '../types'
 import { BATTLE_LAYERS, battleDrawList, hurtDigits } from './drawList'
 import type { DrawOp, LayerName } from './drawList'
@@ -266,6 +266,109 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
     // `Instruct.start()` 的 case 3：陆雪琪 (800,330) 加 (45,−20)。
     // 三支 switch 各写各的偏移，挑错一支的表现是指示图指着旁边那个人。
     expect(instruct.kind === 'image' ? [instruct.x, instruct.y] : null).toEqual([845, 310])
+  })
+})
+
+describe('五条战斗真值合起来画到了哪几层', () => {
+  /**
+   * **哪几层真的被像素比对盖住了**，逐层登记。
+   *
+   * 为什么值得单写一条：`battleDrawList` 把 25 层都写出来了，可"写出来了"与
+   * "有判据"是两回事 —— 一层从来没被任何一条剧本触发过，它写对了和写错了
+   * 长得一模一样。这里把五条真值合起来跑一遍，数出**实际画到**的那几层，
+   * 再与下面这张手写的登记对撞。
+   *
+   * 分母（有哪几份战斗真值）从磁盘现扫，登记由人签 —— 两者对撞才有分辨力
+   * （`docs/agents/dispatch.md` 纪律 3 那条已记录的误用讲的就是这个）。
+   */
+
+  /** 五条真值合起来**真的画到**的层，逐个签在这里。 */
+  const COVERED: readonly LayerName[] = [
+    'angry-bar',
+    'background',
+    'command',
+    'dead-anim',
+    'enemy',
+    'enemy-be-attacked',
+    'game-over',
+    'hero',
+    'hero-be-attacked',
+    'hurt-value',
+    'instruct',
+    'mouse',
+    'progress-bar',
+    'skill-anim',
+    'start-anim',
+    'state-blank',
+  ]
+
+  /** 一次都没画到的层，各自写明为什么。**没有第三种。** */
+  const UNCOVERED: Readonly<Record<string, string>> = {
+    'background-anim': '只有技能才放，五条真值全是普通攻击 —— 代码有，判据没有',
+    'victory-anim': '与胜利结算同一拍开始，而那一拍先被 victory-reminder 拦下来抛（xl-rh9.5）',
+    pet: '结构性缺席：世界里根本没有 pet 字段，只有陆雪琪的秘术召得出来',
+    'drug-menu': '点「物」才打开，五条真值一次都没点过 —— 这一层抛，归 xl-rh9.9 的后续',
+    'skill-menu': '点「技」才打开，五条真值一次都没点过 —— 这一层抛，同 drug-menu',
+    reminder: '真值只记了它画没画、没记是第几张，画不出来 —— 这一层抛',
+    'hero-state': '战斗状态图标：真值没记坐标，状态也只由技能挂得上 —— 这一层抛',
+    'enemy-state': '同 hero-state，怪物身上那一层',
+    'victory-reminder': '胜利结算整段归 xl-rh9.5 —— 这一层抛',
+  }
+
+  /** 把五条真值各跑一遍，收下每一条画到的层。抛了就停在那一拍（那也是结论）。 */
+  const covered = (() => {
+    const seen = new Set<LayerName>()
+    for (const name of BATTLE_TRACE_NAMES) {
+      const trace = readBattleTrace(name)
+      const world = replayBattle(trace, spriteSize)
+      const paint = createPaintState(world)
+      for (const tick of trace.ticks) {
+        for (const input of tick.input) applyPaintInput(world, paint, input)
+        stepBattle(world, tick.input)
+        advancePaintState(world, paint)
+        let ops
+        try {
+          ops = battleDrawList(world, paint)
+        } catch {
+          // 撞上一层还没实现的 —— 那一条剧本到此为止，这是预期内的。
+          break
+        }
+        for (const op of ops) seen.add(op.layer)
+      }
+    }
+    return seen
+  })()
+
+  it('分母是磁盘上的战斗真值份数，不是抄来的名单', () => {
+    expect(BATTLE_TRACE_NAMES.length).toBeGreaterThan(0)
+    // 25 层每一层要么在 COVERED 里、要么在 UNCOVERED 里，没有第三种。
+    const unaccounted = BATTLE_LAYERS.filter((l) => !COVERED.includes(l) && !(l in UNCOVERED))
+    expect(unaccounted, '新加的层要么签进 COVERED、要么写明为什么盖不到').toEqual([])
+    // 两张表不许有交集 —— 同时写进两边时，下面两条都过得去。
+    expect(COVERED.filter((l) => l in UNCOVERED)).toEqual([])
+    // UNCOVERED 里的键必须真的是层名，不是打错的字。
+    expect(
+      Object.keys(UNCOVERED).filter((k) => !(BATTLE_LAYERS as readonly string[]).includes(k)),
+    ).toEqual([])
+  })
+
+  it('登记与实际跑出来的逐层相等 —— 两个方向', () => {
+    // 正方向：签了"画到了"的，真的画到了。
+    const missing = COVERED.filter((l) => !covered.has(l))
+    expect(missing, '登记说画到了，实际一次都没画到').toEqual([])
+    // 反方向：签了"盖不到"的，真的一次都没画到。哪天某一层被触发了
+    // （比如有人加了一条用技能的剧本），这一条就红 —— 那时候它该从
+    // UNCOVERED 挪进 COVERED，而不是继续挂在"没判据"里。
+    const surprises = Object.keys(UNCOVERED).filter((l) => covered.has(l as LayerName))
+    expect(surprises, '登记说盖不到，实际画到了 —— 把它挪进 COVERED').toEqual([])
+  })
+
+  it('盖到的层占多数，且每一条没盖到的都写了理由', () => {
+    // 这两条防的是"登记表被清空/被塞满"这种让上面两条空转的改法。
+    expect(COVERED.length).toBeGreaterThan(BATTLE_LAYERS.length / 2)
+    for (const [layer, why] of Object.entries(UNCOVERED)) {
+      expect(why.length, `${layer} 没写为什么盖不到`).toBeGreaterThan(10)
+    }
   })
 })
 
