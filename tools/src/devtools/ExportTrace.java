@@ -69,9 +69,11 @@ public final class ExportTrace {
         // 这不影响真值：没有任何一个真值字段观察音效状态。实测过——把两个开关
         // 关掉重导，当时的 7 份真值与入库的**逐字节一致 7/7**。
         //
-        // 与 xl-1vu.8 的关系：那张票讲的是「菜单真值记不到音效文件名」，因为
+        // 与 xl-1vu.8 的关系：那张票讲的是「菜单/商店真值记不到音效文件名」，因为
         // playmusic 里 filename=name 的赋值落在 CAN_PLAY_MUSIC 判断**里面**。
-        // 这里关死开关不是挡了它——那条路本来就走不通，.8 要的是换一个观察点。
+        // 关死开关不是挡了它——那条路本来就走不通，.8 换的是观察点：
+        // MusicReader.readmusic 的入口（tools.MusicLog / devtools.MusicTap）。
+        // 所以下面这两行照旧关死，而 menu / shop 真值里的 music 字段照样是满的。
         media.MusicPlayer.CAN_PLAY_MUSIC = media.MusicPlayer.NO;
         media.MusicPlayer.CAN_PLAY_BGM = media.MusicPlayer.NO;
 

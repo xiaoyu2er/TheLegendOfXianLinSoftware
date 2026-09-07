@@ -67,10 +67,10 @@ import tools.Clock;
  *      不记这几个字段所以不受影响，但 {@code snapshotImage()} 交出去的位图会。
  *      start() 因此在建完面板之后**等这一次赋值落地**（{@link #awaitFirstFrame}）
  *      再往下走 —— 不等的话，帧比对会时而对时而错，而单看 trace.json 完全正常。
- *   d. 音效。{@code MusicReader.closeMusic()} 之后 {@code playmusic} 是空操作。
- *      代价与菜单一样：**商店真值里没有音效**（原版把文件名记在
- *      {@code MusicPlayer.filename} 上，那行赋值在 {@code CAN_PLAY_MUSIC} 判断
- *      里面，关掉就观察不到）。见 bd xl-1vu.8。
+ *   d. 音效。{@code MusicReader.closeMusic()} 之后 {@code playmusic} 是空操作，
+ *      文件名照样记得到：观察点不是 {@code MusicPlayer.filename}（那行赋值在
+ *      {@code CAN_PLAY_MUSIC} 判断里面），而是 {@code MusicReader.readmusic}
+ *      的入口。见 {@link MusicTap}（xl-1vu.8）。
  *
  * 绘制：每一步之后真的调一次 {@code paint()}，画进离屏图。商店的 paint 没有像
  * 菜单 {@code drawWarning()} 那样的清零副作用，但位图是交付物，而且尺寸校验
@@ -105,6 +105,12 @@ public final class ShopDriver implements TraceDriver {
     /** 本步派发出去的输入事件（写成数组是与场景/菜单真值同形）。 */
     private final List<String> pending = new ArrayList<>();
 
+    /** 音效观察点。静音导出下照样记得到文件名，见 {@link MusicTap}（xl-1vu.8）。 */
+    private final MusicTap music;
+
+    /** 本步触发的音效文件名，按调用先后排列。空数组 = 这一步原版不出声。 */
+    private String[] musicThisStep = new String[0];
+
     private int ip;                 // 当前指令
     private int at;                 // 产出这一步的那条指令（ip 在本步末尾就前进了）
     private int sub;                // 指令内的第几个事件（0=按下 1=松开）
@@ -113,7 +119,7 @@ public final class ShopDriver implements TraceDriver {
     private int steps;
     private boolean started;
 
-    ShopDriver(ShopScript script) { this.script = script; }
+    ShopDriver(ShopScript script) { this.script = script; this.music = new MusicTap(script.name); }
 
     private void fail(String msg) {
         String where = ip < script.steps.size()
@@ -134,7 +140,7 @@ public final class ShopDriver implements TraceDriver {
     @Override
     public boolean step() {
         if (!started) { start(); started = true; }
-        if (ip >= script.steps.size()) return false;
+        if (ip >= script.steps.size()) { music.requireRecorded(); return false; }
         if (steps >= script.maxSteps) {
             fail("超过剧本的 maxSteps=" + script.maxSteps + "，剧本没有跑完");
         }
@@ -145,6 +151,9 @@ public final class ShopDriver implements TraceDriver {
         boolean done = dispatch(in);
 
         panel().paint(sink);
+
+        // 在 paint 之后取，口径与菜单一致：这一步"之后"记下的所有音效。
+        musicThisStep = music.drain();
 
         if (done) { ip++; sub = 0; } else { sub++; }
         steps++;
@@ -340,6 +349,10 @@ public final class ShopDriver implements TraceDriver {
         for (ShopScript.Item it : script.setup.equipment) addEquipment(it);
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
+
+        // 最后一步：打开音效记录并当场自检。放在铺开局状态之后，是为了让
+        // addDrug/addEquipment 万一出声也不会算到第 0 步头上。
+        music.arm();
     }
 
     /**
@@ -640,6 +653,7 @@ public final class ShopDriver implements TraceDriver {
         b.append("{\"t\":").append(index);
         b.append(",\"ip\":").append(at);
         b.append(",\"input\":[").append(String.join(",", pending)).append("]");
+        b.append(",\"music\":").append(Json.plainArr(musicThisStep));
         b.append(",\"shop\":").append(Json.str(active));
         b.append(",\"category\":").append(Json.str(category()));
         b.append(",\"coins\":").append(Money.getCoins());
