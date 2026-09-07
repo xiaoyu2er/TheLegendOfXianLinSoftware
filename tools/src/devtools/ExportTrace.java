@@ -171,9 +171,18 @@ public final class ExportTrace {
                 scriptJson = s.toJson();
                 return new MenuDriver(s);
             }
+            case "shop": {
+                ShopScript s = ShopScript.load(scriptFile);
+                scriptName = s.name;
+                // 商店与菜单一样不是 tick 驱动的：一步是一次输入事件，没有时长。
+                scriptScene = "shop";
+                scriptTickMs = 0;
+                scriptJson = s.toJson();
+                return new ShopDriver(s);
+            }
             default:
                 die(scriptFile.getPath() + " 的 driver 是 \"" + want
-                        + "\"，导出器只认 scene / battle / menu");
+                        + "\"，导出器只认 scene / battle / menu / shop");
                 return null;
         }
     }

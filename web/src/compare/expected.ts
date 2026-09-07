@@ -318,6 +318,18 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '旁白与对话正文的字形（原版字体未交付）+ 右下角的金币 HUD',
     issue: 'xl-9bd.17 / xl-yg6.1 / xl-9bd.18',
   },
+  'shop-trade': {
+    status: 'unassembled',
+    // 商店真值（xl-1vu.6，driver = shop）。与 menu-equip 同一个处境：Web 侧
+    // 整个商店系统还没做（M4 / xl-knp），取图页拿判别名去装配会直接抛
+    // UnknownDriverError（`src/replay/drivers.ts`），整条流水线在这条剧本上
+    // 非零退出 —— 而不是静静地比出"零帧差异"。
+    //
+    // 所以这里既不写 maxRatio 也不写 gaps：一帧都还没比过，写任何数都是编的。
+    // 商店在 web 侧画出来之后，这一条要么改成 match，要么带上真量出来的表态。
+    why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
+    issue: 'xl-knp.1 / xl-1vu.7',
+  },
   'menu-equip': {
     status: 'unassembled',
     // 第一条**不是场景**的剧本（xl-1vu.5，driver = menu）。Web 侧整个菜单系统
