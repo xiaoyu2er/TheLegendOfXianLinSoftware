@@ -76,8 +76,15 @@ tools/bd-spawn.sh xl-9bd.1 xl-9bd.2      # 真开两个
 
 ## 已知的原版问题（由这些工具发现）
 
-- `paint()` 有副作用：战斗状态机被渲染驱动。不调 `paint()` 时
-  `command.isDraw` 恒为 false（实测 0/120 vs 59/120）。
+- ~~`paint()` 有副作用：战斗状态机被渲染驱动。不调 `paint()` 时
+  `command.isDraw` 恒为 false（实测 0/120 vs 59/120）。~~
+  **这条是错的，2026-09-06 实测推翻**（openjdk 17）：战斗面板的 `paint()`
+  对状态机没有副作用，同一场战斗 paint / 不 paint 各跑一遍，426 步 × 24 个
+  可断言字段零行差异。那组 0/120 vs 59/120 量的是采样频率不是因果——`run()`
+  线程当时自由奔跑，`paint()` 只是让取样循环变慢。留着划掉是因为这条被引用过，
+  删掉下一个人会重新得出它。见 `docs/trace-format.md` 与
+  `tools/src/devtools/BattleDriver.java` 的类注释（xl-p1j）。
+  *（场景侧的 `ScenePanel.paint()` 另说，它真的有副作用，见同一份文档。）*
 - 20 个场景依赖前序场景残留的 `dialogueEvent` 对象才能渲染；直接
   `initiation()` 跳进去会 NPE。取景器用 `剧情1.txt` 预热规避。
 - `BattlePanel.initial()` 只 `add` 不 `clear` `heroes`/`enemies`，

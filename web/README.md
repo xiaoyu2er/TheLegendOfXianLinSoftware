@@ -98,9 +98,14 @@ step(world: World, input: InputEvent[], dtMs: number): World
 ```
 
 不读时钟、不碰 DOM、不认识 Pixi（`src/state/step.test.ts` 里有一条测试逐个文件
-查 import，分母是 `src/state/` 下的每一个文件）。原版的状态推进挂在绘制上
-——`ScenePanel.paint()` 有副作用，不画就不推进——照抄到浏览器里就是"切后台
-游戏冻住、切回来补跑几百帧"。
+查 import，分母是 `src/state/` 下的每一个文件）。理由是浏览器自己的：拿逐帧回调
+当时钟，切后台游戏就冻住、切回来补跑几百帧。
+
+原版**场景**面板的一部分状态确实挂在绘制上——`ScenePanel.paint()` 调
+`calOffset()` 算视口，`drawDialogue()` 遇到 `@` / `$` 会写 `dialogueFight` /
+`gameOver`。⚠️ 战斗**不是**：「战斗状态机被渲染驱动」是一条被实测推翻的旧结论
+（2026-09-06，426 步 × 24 字段零行差异），别拿它当解耦的理由，见
+`docs/trace-format.md`。
 
 驱动在 `src/game/useGame.ts`，用 `setInterval` 而**不是** `requestAnimationFrame`：
 rAF 在标签页不可见时完全不触发，而 `setInterval` 只是被节流到 ~1 秒一次，

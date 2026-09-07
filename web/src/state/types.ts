@@ -2,10 +2,15 @@
  * 状态层的类型。**这一层不认识渲染**：没有 canvas、没有 Pixi、没有 DOM，
  * 只有一个纯函数 `step(world, input, dtMs) -> World`。
  *
- * 为什么非要这样：原版的状态推进挂在绘制上（`ScenePanel.paint()` 有副作用，
- * 不画就不推进），照抄到浏览器里就是"标签页切后台 → 逐帧回调停摆 → 游戏冻住
- * → 切回来补跑几百帧"。把时间与输入做成入参，推进就跟"谁在画、画不画得动"
- * 彻底无关了（见 `loop.ts`）。
+ * 为什么非要这样：浏览器里把逐帧回调当时钟用，标签页一切后台回调就停摆，
+ * 游戏冻住、切回来补跑几百帧。把时间与输入做成入参，推进就跟"谁在画、画不画
+ * 得动"彻底无关了（见 `loop.ts`）。
+ *
+ * 原版**场景**面板确有一部分状态挂在绘制上：`ScenePanel.paint()` 调
+ * `calOffset()` 算视口，`Dialogue.drawDialogue()` 遇到对话正文里的 `@` / `$`
+ * 会写 `dialogueFight` / `gameOver`。⚠️ 但**不要把这条推广到战斗**——
+ * "战斗状态机被渲染驱动"是一条曾经写在迁移计划里、2026-09-06 被实测推翻的
+ * 结论（426 步 × 24 字段零行差异），见 `docs/trace-format.md`。
  */
 
 import type { DialogueScript, DialogueState } from './dialogue'
