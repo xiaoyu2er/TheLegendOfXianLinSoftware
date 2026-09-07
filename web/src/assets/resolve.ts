@@ -24,9 +24,14 @@ const PREFIX = '../generated/assets/'
 export function resolveAsset(id: AssetId): string {
   const relative = (manifest as Record<string, string>)[id]
   if (relative === undefined) {
+    // 报同前缀的那几条，不是整张表：战斗素材进来之后表里有两千多条，全喷出来
+    // 的报错没人读得完，而读不完的报错等于没有报错。
+    const prefix = id.slice(0, id.indexOf(':') + 1)
+    const siblings = Object.keys(manifest).filter((k) => k.startsWith(prefix))
     throw new Error(
-      `映射表里没有资产 ${id}；已有 ${Object.keys(manifest).join(', ')}。` +
-        `新场景要先跑 pnpm bake。`,
+      `映射表里没有资产 ${id}；同前缀的有 ${siblings.length} 条` +
+        `（如 ${siblings.slice(0, 5).join('、') || '一条都没有'}），全表 ${Object.keys(manifest).length} 条。` +
+        `新场景与新素材要先跑 pnpm bake；技能动画与背景动画不在这张表里，走 resolveDeferredBattleAsset。`,
     )
   }
   const url = FILES[PREFIX + relative]

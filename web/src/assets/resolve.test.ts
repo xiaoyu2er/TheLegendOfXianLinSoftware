@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
@@ -8,11 +9,26 @@ import { BG_COUNT } from '../state/narratage'
 import { bgmAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from './ids'
 import { knownAssetIds, resolveAsset, resolveAssetOrNull, resolveBgmOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
+import { IMAGE_ROOT, isDeferredBattleAsset } from './battleAssets'
 import { repoPath } from '../test/repoPath'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
 function headFilesInRepo(): number {
   return readdirSync(repoPath('heads')).filter((f) => /^heads \(\d+\)\.png$/.test(f)).length
+}
+
+/**
+ * `image/` 下**不走按需加载**的文件有几个。战斗常用素材那一类的分母，
+ * 从素材源头数：目录里有什么就该烘什么，切出去的正是 `DEFERRED_TOP_DIRS`。
+ */
+function bundledBattleFilesInRepo(): number {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+    )
+  const root = repoPath(IMAGE_ROOT)
+  return walk(root).filter((f) => !isDeferredBattleAsset(relative(root, f).split(sep).join('/')))
+    .length
 }
 
 describe('资产逻辑 ID', () => {
@@ -93,6 +109,10 @@ describe('资产逻辑 ID', () => {
     // 旁白背景的分母来自 `state/narratage.ts` 的 BG_COUNT，也就是原版
     // `Narratage` 构造函数里那个 2..53 的循环，不在这里另抄一个数字。
     expect(ids.filter((id) => id.startsWith('narratage:bg:'))).toHaveLength(BG_COUNT)
+    // 战斗常用素材（xl-rh9.2）。分母从 `image/` 现扫，减去按需加载的那两个
+    // 目录 —— 那 1770 帧不在这张表里，走 `resolveDeferredBattleAsset`。
+    // 边界与两边的双向判据见 `battleAssets.test.ts`。
+    expect(ids.filter((id) => id.startsWith('battle:'))).toHaveLength(bundledBattleFilesInRepo())
     const known = [
       'map:',
       'role:walk:',
@@ -104,6 +124,8 @@ describe('资产逻辑 ID', () => {
       // 背景音乐（xl-9bd.12）。烘的只有 M1 用到的那几首，其余的落在
       // `deferredBgm.json` 上，不在映射表里 —— 见 `assets/resolve.ts`。
       'bgm:',
+      // 战斗常用素材（xl-rh9.2）。
+      'battle:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })

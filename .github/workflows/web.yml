@@ -16,11 +16,11 @@ on:
     # 住它」。`tools/traces/out/**` 也在里面：走到过哪些场景决定烘哪几首 BGM。
     paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java',
             'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
-            'dialogue/**', 'tools/traces/out/**']
+            'dialogue/**', 'tools/traces/out/**', 'image/**']
   pull_request:
     paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java',
             'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
-            'dialogue/**', 'tools/traces/out/**']
+            'dialogue/**', 'tools/traces/out/**', 'image/**']
 
 # 只在 web/、黄金测试的输入、或本工作流自身变动时跑：Java 侧的其余改动
 # 与这条流水线无关。
