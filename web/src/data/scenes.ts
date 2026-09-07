@@ -35,10 +35,13 @@ const LOADERS: Record<string, () => Promise<SceneScript>> = Object.fromEntries(
 )
 
 /**
- * 游戏的起点。原版 `ScenePanel` 的构造函数里
- * `currentScript[1] = "宿舍.txt"` —— 打开就是宿舍。
+ * 游戏的起点。原版新游戏走 `src/start/StartPanel.java:343` 的
+ * `GameLauncher.scenePanel.initiation("脚本1.txt")` —— 点「新游戏」进的是脚本1。
+ *
+ * 不是 `ScenePanel` 构造函数里的 `currentScript[1] = "宿舍.txt"`：
+ * 那是剧情三元组的第二格（下一个场景），不是进场的那个文件。
  */
-export const START_SCENE = '宿舍'
+export const START_SCENE = '脚本1'
 
 /** 已烘焙的场景名，字典序。名单是静态的，不用等任何一份 JSON 到位。 */
 export const SCENE_NAMES: readonly string[] = Object.keys(LOADERS).sort()
