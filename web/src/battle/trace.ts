@@ -8,8 +8,13 @@ import type { BattleSnapshot } from './snapshot'
  *
  * 形状是 `BattleSnapshot` **加上**几个不属于状态的列（`t` / `vt` / `ip` /
  * `input`）—— 也就是说：真值里除了那四列，每一列都要有人对上，少对一列就是
- * 少了一条判据。类型上写成 `extends` 就把这件事钉住了：真值里多出一个状态
- * 字段而 `BattleSnapshot` 没跟上，`readBattleTrace` 这里编译就红。
+ * 少了一条判据。
+ *
+ * ⚠️ 这个 `extends` **不是判据**：读取器拿到的是 `JSON.parse` 的结果，一路
+ * `as unknown as` 断言过来的，TypeScript 在这里什么都没核。真正把「真值多出
+ * 一个字段而这边没跟上」钉住的是 `battleTrace.test.ts` 里那句逐步的
+ * `toEqual` —— 期望值多一个键、或者嵌套里多一个键，深比对就红。写 `extends`
+ * 只是让两边的字段名摆在一起好读。
  */
 export interface BattleTraceTick extends BattleSnapshot {
   readonly t: number
