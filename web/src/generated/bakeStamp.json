@@ -3123,7 +3123,7 @@
     "tools/traces/out/battle-defeat-slot2.trace.json": "3c176a78d0aee522edc34a74024f43ae0930ea9b688d892fd47c0ab41c4f247f",
     "tools/traces/out/battle-defeat-start.trace.json": "75e7dda2da1869cc53e6988794ab8f803661b67868c63f98a830689d8b1d2b41",
     "tools/traces/out/battle-em3-box.trace.json": "27f89bc5c50a6510db5d33d931a260daeecb596d9e2767e5bccc9bcd41cf4a3b",
-    "tools/traces/out/battle-menus.trace.json": "a6f2ff381b4ef024a17fde41950cd70ed24d8515f43d5330bb0cc45dd8541b3c",
+    "tools/traces/out/battle-menus.trace.json": "d37cbfff014e140a27dc146e3b2f98b2c501aa6b97e6f0231bff01fd61352fad",
     "tools/traces/out/battle-min.trace.json": "aea31b7f51b7a0b4b3743b3edbdd62d566fa337fbeb20758d4d359b1106d82bd",
     "tools/traces/out/bigmap-walk.trace.json": "1a76b012ad5e238d48500ab9da28664c5930d85ea1daadcad3607aec44f6a8f7",
     "tools/traces/out/dorm-exit.trace.json": "a04203235625aa6f1af6746eb4791b7e4fdecc60fc7cd6d2ffef6a748f208787",
