@@ -224,9 +224,16 @@ git branch -d <slug>                     # 分支要单独删，它不管
     cmd > /tmp/out.log 2>&1; echo "EXIT=$?"; tail -5 /tmp/out.log
 
 **2. 篡改要挑对层。** `tools/export-trace.sh --check` 只证明「这一次跑出来的
-东西可复现」——一个**稳定的**错误在它眼里和正确一模一样。能认出错误的是重导
-之后 `git diff tools/traces/out` 为不为空。挑判据时先问：这条检查失败的样子，
-和它通过的样子长得一样吗。
+东西可复现」。三个 agent 各自独立撞到过它的边界，三种它一律看不见的东西：
+
+- **一个稳定的错误**（状态字段一直算错）——在它眼里和正确一模一样；
+  能认出来的是重导之后 `git diff tools/traces/out` 为不为空。
+- **真值不记录的字段里的不确定性**——它只 `cmp` trace.json，那些字段不在里面；
+  只有 `--frames` 出图才会时对时错。
+- **剧本注释与真值不一致**（注释说动画在往前走，导出来全是 null）——两者都不看
+  注释；只有把真值打开逐行读才发现。
+
+挑判据时先问：这条检查失败的样子，和它通过的样子长得一样吗。
 
 **3. `tools/compare-frames.sh` 会重跑 Java 导出。** 手改 `tools/traces/compare/
 <剧本>/java/trace.json` 再跑它，改动会被覆盖；而 `--skip-capture` 又跳过浏览器，
