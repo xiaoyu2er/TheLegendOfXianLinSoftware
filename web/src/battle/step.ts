@@ -904,6 +904,12 @@ function setBattleState(
  * 点名：一条没有真值的加成公式，抄错了和抄对了推出来的战斗过程都"很正常"。
  */
 function heroApplyState(h: Hero): void {
+  // 原版那个 switch **没有 case 0**，所以「没挂上任何状态」时它什么都不做。
+  // 掷不中的时候原版照样会调这个方法（`set()` 之后那句 `checkState()` 是
+  // 无条件的），读到的是**上一个**状态的 type —— 也就是说加成会被重复挂一次。
+  // 那是原版的行为，照抄（ADR-0001）；今天两条路的成功率都是 100，掷不中
+  // 这件事观测不到。
+  if (h.battleState.type === 0) return
   if (h.battleState.type === 1) {
     h.agile += 2
     h.speed = Math.trunc(h.agile / 2)
@@ -936,6 +942,8 @@ function excuteHeroState(h: Hero): void {
 
 /** `Enemy.checkState()`。只有 type 8 移植了（张小凡技能2 挂的体力下降）。 */
 function enemyApplyState(e: Enemy): void {
+  // 同 `heroApplyState`：原版那个 switch 没有 case 0。
+  if (e.battleState.type === 0) return
   if (e.battleState.type === 8) {
     e.defense -= 40
     return
@@ -1191,14 +1199,16 @@ function heroCalDamage(w: BattleWorld, h: Hero): void {
   if (d.enemyState) {
     for (const e of targets) {
       setBattleState(w, e.battleState, d.enemyState, e.roleCode, e.x, e.y, () => returnEnemyState(e))
-      if (e.battleState.isUsable) enemyApplyState(e)
+      // 原版 `e.checkState()` 是**无条件**的（掷不中也调），所以这里也不加
+      // `isUsable` 的门 —— 加了门就是替原版补了一个它没有的判断。
+      enemyApplyState(e)
     }
   }
   if (d.selfState) {
     setBattleState(w, h.battleState, d.selfState, h.roleCode, h.showX, h.showY, () =>
       returnHeroState(h),
     )
-    if (h.battleState.isUsable) heroApplyState(h)
+    heroApplyState(h)
   }
 }
 
