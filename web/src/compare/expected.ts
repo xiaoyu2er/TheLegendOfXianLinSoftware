@@ -51,9 +51,23 @@ export interface Expectation {
    * 这个取值是 xl-1vu.4 与 xl-1vu.5 合流时定的：两张票各自都写了
    * `status: 'gap'` 且刻意不写上界（理由都对——没量过），而 xl-l3o 同时立了
    * 「每条 gap 都必须有上界」。三者都对，说明缺的是一个状态，不是一个数。
+   *
+   * - `unpainted` —— **驱动器装得出，可这条剧本会走进一层还没实现的绘制**，
+   *   `battleDrawList` 当场抛（xl-rh9.11）。同样一帧都没比过，所以同样不许带
+   *   任何量出来的数。
+   *
+   *   为什么它不能并进 `unassembled`：那一个说的是「整个面板还没做」，由
+   *   `replay/implemented.ts` 那份**驱动器**名单裁决，而这一个是同一个面板里
+   *   某几层还没画。两者归的票不是一张，而且 `unassembled.ts` 的双向对撞是
+   *   拿驱动器名单撞的 —— 把 `battle` 从那份名单里摘掉，五条已经在比的战斗
+   *   剧本会一起哑掉。
+   *
+   *   它也不是一个逃生舱：`drawList.test.ts` 里那条「unpainted 的剧本必须真的
+   *   抛，而且抛的那句话点的正是它挂的那张票」会把它撞回来。哪天那几层画出来
+   *   了，那条判据先红。
    */
-  readonly status: 'match' | 'gap' | 'unassembled'
-  /** `gap` 与 `unassembled` 必须说清楚差在哪／为什么比不了、归哪张票。`match` 不写。 */
+  readonly status: 'match' | 'gap' | 'unassembled' | 'unpainted'
+  /** `gap` / `unassembled` / `unpainted` 必须说清楚差在哪／为什么比不了、归哪张票。`match` 不写。 */
   readonly why?: string
   readonly issue?: string
   /**
@@ -152,6 +166,24 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
         issue: 'xl-9bd.17',
       },
     ],
+  },
+  'battle-menus': {
+    status: 'unpainted',
+    // 点得下去的「技」与「物」那一条（xl-rh9.11，461 步）。状态层已经逐字段
+    // 对齐（`battle/battleTrace.test.ts`），可它一开菜单，`drawList.ts` 第 6 层
+    // 与第 13 层就当场抛 —— 药品菜单、技能菜单、提示图、两层战斗状态图标，
+    // 五层今天一层都画不出来。
+    //
+    // 所以这里既不写 maxRatio 也不写 gaps：**一帧都没比过**，写任何数都是编的。
+    // 它与 menu-equip / shop-trade 那种「整个面板还没做」不是一回事 —— 战斗
+    // 面板早就装得出来了，五条战斗剧本正在比。
+    //
+    // 这条真值的用处正在于此：xl-rh9.12 要画的那四层，判据全在它里面
+    // （提示图的文件号 20/7/2、两个 state 的 type/x/y、两个菜单的按钮贴图与
+    // 六种药的存货）。四层画出来之后，这一条要么变 match、要么带上真量出来的
+    // 分区表态。
+    why: 'web 侧还画不出药品菜单 / 技能菜单 / 提示图 / 战斗状态图标，drawList 当场抛',
+    issue: 'xl-rh9.12',
   },
   'battle-em3-box': {
     status: 'gap',

@@ -1,0 +1,108 @@
+{
+  "name": "battle-menus",
+  "description": "点得下去的「技」与「物」（xl-rh9.11）。与 battle-min 同一场遭遇（剧情1.txt 的三人对三怪），换一颗种子。**我方的回合序是 3→2→1**（速度 13/10/9，陆雪琪先跑满；中间夹着怪物的回合，实测 t=31 陆、63 怪1、87 文、240 怪3、266 张），所以先接住文敏那一回合：点「物」翻药品菜单——新开档六种药的存货都是 0，点金创药走的是 Reminder.show(19) 那一路，提示图与药品菜单一并进真值；返回之后点「技」用技能2 追星破月（pattern 3），它 100% 给文敏自己挂上「敏捷提升」。再打到张小凡那一回合，同样用技能2 浪里寻花（pattern 3），它 100% 给挨打的那只怪挂上「体力下降」——敌我两侧的战斗状态由这一条剧本一起盖住。打的是第 2/3 槽那两只怪物2（hp 300）：第 1 槽的怪物1 只有 250 血，轮到我方用技能之前就被普攻打死了。",
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "party": [
+    "zhang",
+    "yu",
+    "lu"
+  ],
+  "level": {
+    "zhang": 5,
+    "yu": 5,
+    "lu": 5
+  },
+  "enemies": [
+    "怪物1/5",
+    "怪物2/6",
+    "怪物2/7"
+  ],
+  "seed": 20260908,
+  "tickMs": 100,
+  "maxTicks": 4000,
+  "steps": [
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 400,
+      "budget": 500
+    },
+    {
+      "op": "command",
+      "button": "thing",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 30
+    },
+    {
+      "op": "drugMenu",
+      "button": "drug1",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 40
+    },
+    {
+      "op": "drugMenu",
+      "button": "return",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 10
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 30
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill2",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 1,
+      "max": 800,
+      "budget": 900
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 30
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill2",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoAttack",
+      "until": "victory",
+      "max": 2000
+    }
+  ]
+}

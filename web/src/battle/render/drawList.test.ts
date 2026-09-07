@@ -5,6 +5,7 @@ import { repoPath } from '../../test/repoPath'
 import { replayBattle } from '../replay'
 import { snapshotBattle } from '../snapshot'
 import { stepBattle } from '../step'
+import { expectationOf } from '../../compare/expected'
 import { BATTLE_TRACE_NAMES, readBattleTrace } from '../trace'
 import type { BattleWorld } from '../types'
 import { BATTLE_LAYERS, battleDrawList, hurtDigits } from './drawList'
@@ -175,6 +176,8 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
     )
     // 反方向：碰不到的那 11 层是**有名有姓**的，不是"剩下的"。其中 6 层今天
     // 画不出来（各自归哪张票见 drawList.ts），5 层是这一场里确实没发生。
+    // 这一条只跑 battle-min；「所有战斗真值合起来盖到了哪几层」在下面那个
+    // describe 里，两者的分母不同。
     const unseen = BATTLE_LAYERS.filter((l) => !seen.has(l))
     expect(unseen.sort()).toEqual(
       [
@@ -272,7 +275,7 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
   })
 })
 
-describe('五条战斗真值合起来画到了哪几层', () => {
+describe('全部战斗真值合起来画到了哪几层', () => {
   /**
    * **哪几层真的被像素比对盖住了**，逐层登记。
    *
@@ -285,7 +288,7 @@ describe('五条战斗真值合起来画到了哪几层', () => {
    * （`docs/agents/dispatch.md` 纪律 3 那条已记录的误用讲的就是这个）。
    */
 
-  /** 五条真值合起来**真的画到**的层，逐个签在这里。 */
+  /** 全部战斗真值合起来**真的画到**的层，逐个签在这里。 */
   const COVERED: readonly LayerName[] = [
     'angry-bar',
     'background',
@@ -307,18 +310,22 @@ describe('五条战斗真值合起来画到了哪几层', () => {
 
   /** 一次都没画到的层，各自写明为什么。**没有第三种。** */
   const UNCOVERED: Readonly<Record<string, string>> = {
-    'background-anim': '只有技能才放，五条真值全是普通攻击 —— 代码有，判据没有',
+    'background-anim':
+      '只有技能才放。battle-menus 用了两次技能，可它在开菜单那一拍就先撞上 ' +
+      'drug-menu 抛了 —— 这一层仍然只有代码、没有判据。归 xl-rh9.12',
     'victory-anim': '与胜利结算同一拍开始，而那一拍先被 victory-reminder 拦下来抛（xl-rh9.13）',
     pet: '结构性缺席：世界里根本没有 pet 字段，只有陆雪琪的秘术召得出来',
-    'drug-menu': '点「物」才打开，五条真值一次都没点过 —— 这一层抛，归 xl-rh9.11',
-    'skill-menu': '点「技」才打开，五条真值一次都没点过 —— 这一层抛，同 drug-menu',
-    reminder: '真值只记了它画没画、没记是第几张，画不出来 —— 这一层抛',
-    'hero-state': '战斗状态图标：真值没记坐标，状态也只由技能挂得上 —— 这一层抛',
+    'drug-menu':
+      '点「物」才打开。battle-menus 点过了，可这一层还没画 —— 撞上就抛，' +
+      '那条剧本因此在 expected.ts 里表着 unpainted。归 xl-rh9.12',
+    'skill-menu': '点「技」才打开，同 drug-menu —— 这一层抛，归 xl-rh9.12',
+    reminder: '真值已经记了是第几张与目标矩形（xl-rh9.11），可这一层还没画 —— 抛，归 xl-rh9.12',
+    'hero-state': '战斗状态图标：真值已经记了 type 与坐标，这一层还没画 —— 抛，归 xl-rh9.12',
     'enemy-state': '同 hero-state，怪物身上那一层',
     'victory-reminder': '胜利结算画面归 xl-rh9.13 —— 这一层抛（状态层已由 xl-rh9.5 做完）',
   }
 
-  /** 把五条真值各跑一遍，收下每一条画到的层。抛了就停在那一拍（那也是结论）。 */
+  /** 每一条真值各跑一遍，收下它画到的层。抛了就停在那一拍（那也是结论）。 */
   const covered = (() => {
     const seen = new Set<LayerName>()
     for (const name of BATTLE_TRACE_NAMES) {
@@ -391,4 +398,112 @@ describe('伤害数字的位数', () => {
     expect(() => hurtDigits(-1)).toThrow(/非负整数/)
     expect(() => hurtDigits(1.5)).toThrow(/非负整数/)
   })
+})
+
+describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () => {
+  /**
+   * `expected.ts` 的 `unpainted` 说的是：驱动器装得出，可**这条剧本**会走进一层
+   * 还没实现的绘制，于是跨端比对在它身上一帧都比不成。
+   *
+   * 一个不带任何要求的状态就是一个逃生舱 —— 谁想绕开上界，把 `status` 改成它
+   * 就行了。所以这里把那句话真的跑一遍：**回放到某一拍，`battleDrawList` 必须
+   * 当场抛，而且抛的那句话点的正是表里挂的那张票。**
+   *
+   * 两个方向都撞：
+   *
+   * - 表说 `unpainted` 而它一路画到底 → 红（那几层已经画出来了，表过期了）；
+   * - 表没说 `unpainted` 而它中途就抛 → 红（这条剧本其实比不了，账是编的）。
+   *
+   * **末拍不算**：`battle-min` / `battle-em3-box` 打赢的那一拍会被
+   * `victory-reminder` 拦下来抛（归 xl-rh9.5），而那一拍在 `--every 25` 的采样
+   * 点之外，比对照常跑得完。所以判的是「有没有在末拍**之前**抛」。
+   */
+  interface Attempt {
+    name: string
+    /** 第一次抛在第几拍（0 基，按真值的步序）；一路画到底是 null。 */
+    firstThrow: number | null
+    /**
+     * **末拍之前**抛出来的每一句不同的话。
+     *
+     * ⚠️ **收的是全部，不是第一句。** 原先只收第一次抛。实测（xl-rh9.11 的
+     * 篡改 T11）：把 `drawList.ts` 里技能菜单那一层挂的票号改成另一张，整套
+     * 判据**是绿的** —— 因为 `battle-menus` 先在第 88 拍撞上药品菜单，那一句
+     * 先抛，后面几层的票号一次都没被读到。「只覆盖到第一层」与「几层都覆盖
+     * 到了」长得一模一样。抛过之后照样往下跑：`battleDrawList` 是纯函数，
+     * 抛不改世界。
+     *
+     * 末拍单独排除：打赢的那一拍撞的是胜利结算（归 xl-rh9.5），与这条表态挂的
+     * 票不是一张，而那一拍在 `--every 25` 的采样点之外、比对照常跑得完。
+     */
+    messages: string[]
+    ticks: number
+  }
+
+  const attempts: Attempt[] = BATTLE_TRACE_NAMES.map((name) => {
+    const trace = readBattleTrace(name)
+    const world = replayBattle(trace, spriteSize)
+    const paint = createPaintState(world)
+    const messages = new Set<string>()
+    let firstThrow: number | null = null
+    let i = 0
+    for (const tick of trace.ticks) {
+      for (const input of tick.input) applyPaintInput(world, paint, input)
+      stepBattle(world, tick.input)
+      advancePaintState(world, paint)
+      try {
+        battleDrawList(world, paint)
+      } catch (e) {
+        if (firstThrow === null) firstThrow = i
+        if (i < trace.ticks.length - 1) messages.add(e instanceof Error ? e.message : String(e))
+      }
+      i++
+    }
+    return { name, firstThrow, messages: [...messages], ticks: trace.ticks.length }
+  })
+
+  it('分母是磁盘上的战斗真值份数', () => {
+    expect(attempts.length).toBe(BATTLE_TRACE_NAMES.length)
+    expect(attempts.length).toBeGreaterThan(0)
+  })
+
+  it('至少有一条剧本表着 unpainted —— 否则下面两条是空转的', () => {
+    const unpainted = attempts.filter((a) => expectationOf(a.name).status === 'unpainted')
+    expect(
+      unpainted.length,
+      '一条 unpainted 的战斗剧本都没有了？那几层画出来之后，把这一整个 describe 删掉',
+    ).toBeGreaterThan(0)
+  })
+
+  for (const a of attempts) {
+    const e = expectationOf(a.name)
+    if (e.status === 'unpainted') {
+      it(`${a.name}：表说画不出来，那就必须在末拍之前真的抛，并点名 ${e.issue}`, () => {
+        expect(
+          a.firstThrow,
+          `${a.name} 一路画到底了 —— 那几层已经画出来了，把 expected.ts 里这条从 ` +
+            'unpainted 换成 match 或者真量出来的 gap',
+        ).not.toBeNull()
+        expect(a.firstThrow!, `${a.name} 只在末拍抛（那是胜利结算，不是这条表态的理由）`).toBeLessThan(
+          a.ticks - 1,
+        )
+        // 点名：末拍之前抛出来的**每一句**都必须有表上挂的票号，否则
+        // 「画不出来」与「画错了炸了」在报告里长得一样。
+        const unnamed = a.messages.filter((m) => !m.includes(e.issue!))
+        expect(unnamed, `${a.name} 抛了这几句，可它们没点名 ${e.issue}`).toEqual([])
+        // 分母：这一条剧本到底撞上了几层。只撞上一层时上面那句话就只覆盖得到
+        // 一层 —— 而 battle-menus 在末拍之前撞的是三层（药品菜单 @88、
+        // 技能菜单 @168、我方状态图标 @198）。
+        expect(a.messages.length, `${a.name} 只撞上了一层？`).toBeGreaterThan(1)
+      })
+    } else {
+      it(`${a.name}：表没说画不出来，那它就不许在末拍之前抛`, () => {
+        if (a.firstThrow === null) return
+        expect(
+          a.firstThrow,
+          `${a.name} 在第 ${a.firstThrow} 拍就抛了（${a.messages[0]}）—— 这条剧本其实比不了，` +
+            'expected.ts 里那笔账是编的',
+        ).toBe(a.ticks - 1)
+      })
+    }
+  }
 })

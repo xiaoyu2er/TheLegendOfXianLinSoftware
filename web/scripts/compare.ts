@@ -84,7 +84,10 @@ async function main(): Promise<void> {
   // `checkStanding` 是双向的：表说比得了而页面装不出、页面装得出而表还写着
   // unassembled，两种都当场抛。见 `src/compare/unassembled.ts`。
   const standings = manifests.map((m) => checkStanding(m.script, m.driver))
-  const blocked = standings.filter((s) => !s.implemented)
+  // 分流看的是 `comparable`，不是 `implemented`：驱动器装得出、而这条剧本会
+  // 走进一层还没画的绘制（`unpainted`）时，撞上去的表现是取图页当场抛、整轮
+  // 中断 —— 正是 xl-1vu.7 收掉的那个形状。
+  const blocked = standings.filter((s) => !s.comparable)
   const comparable = manifests.filter((m) => !blocked.some((s) => s.script === m.script))
 
   if (!skipCapture && comparable.length > 0) await capture(root, comparable, 'web', null)

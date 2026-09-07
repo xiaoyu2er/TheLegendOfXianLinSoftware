@@ -57,6 +57,7 @@ const IMPLEMENTED: readonly string[] = [
   'battle-defeat-scene',
   'battle-defeat-start',
   'battle-defeat-slot2',
+  'battle-menus',
 ]
 
 /**
@@ -234,6 +235,132 @@ describe('战斗状态层对齐行为真值', () => {
         expect(box[2], `${name} 第 3 槽的框宽`).toBe(spriteSize(em3.name).width)
       })
     }
+  })
+
+  describe('战斗状态（xl-rh9.11）', () => {
+    /** 真值里**真的挂上过**战斗状态的那几场 —— 从真值现算，不写名单。 */
+    const withState = IMPLEMENTED.filter((name) =>
+      traceOf(name).ticks.some(
+        (t) =>
+          t.heroes.some((h) => h.state.usable) ||
+          t.enemies.some((e) => e !== null && e.state.usable),
+      ),
+    )
+
+    it('至少有一份真值挂上过战斗状态 —— 否则那两层的坐标与 type 又没人核了', () => {
+      expect(
+        withState.length,
+        '没有一份战斗真值挂上过战斗状态 —— `setBattleState` / `heroApplyState` / ' +
+          '`enemyApplyState` 写对了和写错了推出来的东西完全相同。',
+      ).toBeGreaterThan(0)
+    })
+
+    it('敌我两侧各有一份真值挂上过 —— 只盖一侧时另一侧的坐标来源写反了看不出来', () => {
+      // 我方的坐标是 `showX/showY`，怪物的是 `x/y`，两者取值不同（文敏挂在
+      // (800,150) 而她的 x/y 是 (750,150)）。只盖住一侧的话，把两边都写成
+      // `x/y` 推出来的结果在那一侧完全正确。
+      const heroSide = withState.filter((n) =>
+        traceOf(n).ticks.some((t) => t.heroes.some((h) => h.state.usable)),
+      )
+      const enemySide = withState.filter((n) =>
+        traceOf(n).ticks.some((t) => t.enemies.some((e) => e !== null && e.state.usable)),
+      )
+      expect(heroSide.length, '没有一份真值给我方挂上过战斗状态').toBeGreaterThan(0)
+      expect(enemySide.length, '没有一份真值给怪物挂上过战斗状态').toBeGreaterThan(0)
+    })
+
+    /** 某个还活着的我方单位，`state.usable` 从 true 变回 false 的那些拍。 */
+    function clearedTicks(name: string): number[] {
+      const ticks = traceOf(name).ticks
+      const out: number[] = []
+      for (let i = 1; i < ticks.length; i++) {
+        const prev = ticks[i - 1]!
+        if (
+          ticks[i]!.heroes.some((h, k) => prev.heroes[k]!.state.usable && !h.state.usable && !h.dead)
+        ) {
+          out.push(i)
+        }
+      }
+      return out
+    }
+
+    it('退回那一段（returnFromState）真的被调用过 —— 只盖住"挂上"时它写反了看不出来', () => {
+      // 挂上（`checkState`）与退回（`returnFromState`）是严格互逆的两段。
+      // 只盖住"挂上"的话，把退回那一段整个写错（甚至写成再加一次）推出来的
+      // 过程一模一样 —— 因为它一次都没被调用。
+      // `battle-menus` 里文敏的敏捷提升被退回时 speed 从 11 掉回 10，逐字段
+      // 比对盖得住那一拍。
+      const cleared = withState.filter((name) => clearedTicks(name).length > 0)
+      expect(
+        cleared.length,
+        '没有一份真值里的战斗状态被退回过 —— returnFromState 一次都没被调用，' +
+          '写反了和写对了推出来的东西完全相同。',
+      ).toBeGreaterThan(0)
+    })
+
+    /**
+     * ⚠️ **第二处登记在案的观测不到**（xl-rh9.11 篡改验证 T18）。
+     *
+     * 状态被退回有**两条路**，而今天只有一条走得到：
+     *
+     * 1. **打赢那一刻**统一清（`Check.checkEnemyDead` 里那个
+     *    `for(Hero hero:bp.heroes){ if(isUsable){ returnFromState(); clear(); } }`）；
+     * 2. **回合数走完**（`BattleState.check()` 里 `roundNum<=0` 那一支）。
+     *
+     * `battle-menus` 走的是第 1 条：文敏那个 2 回合的敏捷提升在打赢那一拍
+     * （t=460）被清掉，speed 11→10。第 2 条一次都没走到 —— 实测把
+     * `checkStateCommon` 里 `returnFrom()` 后面那句 `clearState(s)` **整个删掉**，
+     * 逐字段比对全绿。
+     *
+     * 判别法写在这里：第 2 条走到的样子是「状态被清掉那一拍，胜负还没分」。
+     * 哪天有真值满足它，这一条就红，那时候上面的逐字段比对自己盖得住第 2 条，
+     * 这条登记该撤掉。
+     */
+    it('回合数走完那一条清除路径，今天还观测不到 —— 登记在案', () => {
+      const midBattle: string[] = []
+      for (const name of withState) {
+        const ticks = traceOf(name).ticks
+        for (const i of clearedTicks(name)) {
+          if (ticks[i]!.outcome === 'undecided') midBattle.push(`${name}@${ticks[i]!.t}`)
+        }
+      }
+      expect(
+        midBattle,
+        '有真值在胜负未分时清掉了战斗状态 —— `BattleState.check()` 里 roundNum 用完' +
+          '那一支现在走得到了，把这条登记换成正面比对。',
+      ).toEqual([])
+    })
+
+    /**
+     * ⚠️ **一处登记在案的观测不到**（xl-rh9.11 篡改验证 T7）。
+     *
+     * 怪物那一侧的 type 8 是「体力下降」，加成是 `defense -= 40`。而
+     * `battle-menus` 里挂上它的那一击**同时把那只怪打死了**（300 → −26，
+     * 状态在伤害算完之后才挂），此后它再没挨过打 —— 那 40 点防御一次都没有
+     * 进过伤害公式。实测：把 `e.defense -= 40` 改成 `-= 0`，逐字段比对全绿。
+     *
+     * 所以把它登记成一条判据：哪天有一条真值里被挂状态的怪**活了下来**并且
+     * 又挨了一次打，这一条就红 —— 那时候上面的逐字段比对自己就盖得住它，
+     * 这条登记该撤掉换成正面比对。
+     */
+    it('怪物身上那个加成的数值，今天还观测不到 —— 登记在案', () => {
+      const survivors: string[] = []
+      for (const name of withState) {
+        const ticks = traceOf(name).ticks
+        for (let slot = 0; slot < 3; slot++) {
+          const statedAt = ticks.findIndex((t) => t.enemies[slot]?.state.usable === true)
+          if (statedAt < 0) continue
+          const hpThen = ticks[statedAt]!.enemies[slot]!.hp
+          const hpEnd = ticks[ticks.length - 1]!.enemies[slot]!.hp
+          if (hpEnd < hpThen) survivors.push(`${name}#${slot + 1}`)
+        }
+      }
+      expect(
+        survivors,
+        '有怪物在被挂上战斗状态之后又挨了打 —— 那个加成（type 8 的 defense −40）' +
+          '现在进得了伤害公式了，把这条登记换成正面比对。',
+      ).toEqual([])
+    })
   })
 
   describe('打输的两条出口：GameOver.update() 只比第一只怪的名字', () => {

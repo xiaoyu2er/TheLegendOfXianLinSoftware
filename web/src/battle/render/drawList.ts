@@ -52,13 +52,14 @@ import type { BattleWorld, Enemy, Hero } from '../types'
  * ## 还没实现的层：抛，不静默
  *
  * 25 层里有 5 层今天画不出来（药品菜单 / 技能菜单 / 提示图 / 战斗状态图标 /
- * 胜利结算），因为它们要么归别的票、要么状态层根本没有那几个字段（提示图
- * 只记了"画没画"、状态图标只记了"生没生效"，都画不出是哪一张、在哪儿）。
+ * 胜利结算），因为它们归别的票 —— 四层（药品菜单 / 技能菜单 / 提示图 /
+ * 战斗状态图标）的真值 xl-rh9.11 已经补齐，把它们画出来是 xl-rh9.12。
  * 小精灵是第六种情况：世界里**根本没有那个字段**，结构性缺席。
  * 这些层的处置**不是"什么都不画"** —— 那样"没实现"和"这一帧本来就没有它"
  * 长得一模一样。处置是：那一层**真的要画**的时候当场抛，并点名归哪张票。
- * 四份战斗真值今天一次都触发不到它们（判据见 `drawList.test.ts` 的
- * 「这一场碰不到的层」那几条）。
+ * 触发得到它们的剧本（`battle-menus`）在 `expected.ts` 里表着
+ * `unpainted`，判据见 `drawList.test.ts` 的「这一场碰不到的层」与
+ * 「表态 unpainted 的剧本，真的画不出来」两组。
  */
 
 export interface Rect {
@@ -156,7 +157,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 5 控制台
   commandOps(w, p, push)
   // 6 药品菜单
-  if (w.drugMenuDrawn) unimplemented('drug-menu', '药品菜单（点「物」才打开）', 'xl-rh9.11')
+  if (w.drugMenu.isDraw) unimplemented('drug-menu', '药品菜单（点「物」才打开）', 'xl-rh9.12')
 
   // 7 我方走图 / 8 死亡动画 / 9 胜利动画 —— 原版是**三个独立的循环**，
   //   不是一个循环里画三样：所有人的走图先画完，才轮到所有人的死亡动画。
@@ -168,13 +169,13 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   for (const e of w.enemies) enemyOps(w, e, push)
   // 11 小精灵
   // `BattleWorld` 里根本没有这个字段 —— 原版 `initial()` 把 `pet` 置 null，
-  // 只有陆雪琪的秘术召得出来，而秘术归 xl-rh9.11 的后续（五份真值一次都没召过）。
+  // 只有陆雪琪的秘术召得出来，而秘术归 xl-rh9.14（六份真值一次都没召过）。
   // 没有字段可读就没有"画错"的可能，所以这一层今天是结构性缺席，不是静默跳过。
 
   // 12 行动条
   progressBarOps(w, push)
   // 13 技能菜单
-  if (w.skillMenuDrawn) unimplemented('skill-menu', '技能菜单（点「技」才打开）', 'xl-rh9.11')
+  if (w.skillMenu.isDraw) unimplemented('skill-menu', '技能菜单（点「技」才打开）', 'xl-rh9.12')
 
   // 14 / 15 被击动画：怪物先、我方后
   for (const e of w.enemies) beAttackedOps(e, push)
@@ -192,10 +193,9 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   instructOps(w, push)
   // 21 提示图
   if (w.reminder.isDraw) {
-    // 提示只由「怒气不够却点了防」与技能那几路打出来（`Reminder.show(21)`），
-    // 而 `show()` 传的那个下标不在真值里 —— 状态层记的只有 `ui.reminder`
-    // 这个布尔。画不出是哪一张，所以这里抛。
-    unimplemented('reminder', '提示图（真值只记了它画没画，没记是第几张）', 'xl-rh9.11')
+    // xl-rh9.11 已经把「是第几张」（`reminder.image`，**文件号**）与那个会
+    // 张开的目标矩形补进了真值 —— 画得出来了，但画它是 xl-rh9.12 的活。
+    unimplemented('reminder', '提示图（真值已经记了是第几张与目标矩形）', 'xl-rh9.12')
   }
   // 22 胜利结算
   if (w.victoryReminder.isDraw) {
@@ -226,11 +226,9 @@ function unimplemented(layer: LayerName, what: string, issue: string): never {
 
 function stateIconGuard(isUsable: boolean, layer: LayerName, who: string): void {
   if (!isUsable) return
-  unimplemented(
-    layer,
-    `${who}身上的战斗状态图标（真值没记它的坐标，状态也只由技能挂得上）`,
-    'xl-rh9.11',
-  )
+  // xl-rh9.11 把 `type` / `x` / `y` 补进了真值（`battle-menus` 里敌我各挂过
+  // 一次），所以这一层现在画得出来 —— 画它是 xl-rh9.12 的活。
+  unimplemented(layer, `${who}身上的战斗状态图标（真值已经记了 type 与坐标）`, 'xl-rh9.12')
 }
 
 // ===== 各层 =====

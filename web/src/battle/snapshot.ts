@@ -1,4 +1,4 @@
-import type { BattleWorld, Enemy, Hero } from './types'
+import type { BattleWorld, Enemy, Hero, MenuButton } from './types'
 
 /**
  * 把世界快照成**行为真值那一行的形状**（`docs/trace-format.md` §trace 的每一步
@@ -14,6 +14,52 @@ export interface StateSnapshot {
   rounds: number
   usable: boolean
   role: number
+  /** 状态图标画在哪（xl-rh9.11）。`clear()` 不清它们 —— 留着上一次的值。 */
+  x: number
+  y: number
+}
+
+/** 提示图这一层（xl-rh9.11）。画没画在 `ui.reminder` 里，这里是别的。 */
+export interface ReminderSnapshot {
+  /** **文件号**（`image/提示图/<image>.png`），与 `show(i)` 的入参差一。 */
+  image: number | null
+  code: number
+  stopped: boolean
+  dx1: number
+  dy1: number
+  dx2: number
+  dy2: number
+}
+
+export interface SkillMenuSnapshot {
+  group: 'zhang' | 'yu' | 'lu'
+  /** 每颗按钮现在贴的是三张里的哪一张。 */
+  buttons: number[]
+  return: number | null
+  returnY: number | null
+  introDrawn: boolean
+  introImage: string | null
+  introY: number
+}
+
+export interface DrugMenuSnapshot {
+  buttons: number[]
+  /** 六种药各自还剩几个（菜单上画出来的那六个数）。 */
+  stock: number[]
+  introDrawn: boolean
+  introDrug: number | null
+  introY: number
+  introText: string | null
+}
+
+/**
+ * 两个菜单。**只在真的画出来那几拍才有内容**，其余是 `null` —— 与导出器
+ * `BattleDriver.menusJson()` 一致：五份老真值里它们一次都没打开过，逐拍写满
+ * 等于给每一份真值凭空加上两千行恒定值。
+ */
+export interface MenusSnapshot {
+  skill: SkillMenuSnapshot | null
+  drug: DrugMenuSnapshot | null
 }
 
 export interface HeroSnapshot {
@@ -95,6 +141,8 @@ export interface BattleSnapshot {
     bgFrame: number
     bgDrawn: boolean
   }
+  reminder: ReminderSnapshot
+  menus: MenusSnapshot
   audio: { bgm: string | null }
 }
 
@@ -108,8 +156,46 @@ export function outcomeOf(w: BattleWorld): BattleSnapshot['outcome'] {
   return 'undecided'
 }
 
-function stateOf(s: { type: number; roundNum: number; isUsable: boolean; roleCode: number }) {
-  return { type: s.type, rounds: s.roundNum, usable: s.isUsable, role: s.roleCode }
+function stateOf(s: {
+  type: number
+  roundNum: number
+  isUsable: boolean
+  roleCode: number
+  x: number
+  y: number
+}): StateSnapshot {
+  return { type: s.type, rounds: s.roundNum, usable: s.isUsable, role: s.roleCode, x: s.x, y: s.y }
+}
+
+const variants = (buttons: readonly MenuButton[]): number[] => buttons.map((b) => b.variant)
+
+function menusOf(w: BattleWorld): MenusSnapshot {
+  const sm = w.skillMenu
+  const dm = w.drugMenu
+  return {
+    skill: sm.isDraw
+      ? {
+          group: sm.group,
+          buttons: variants(sm.groups[sm.group]),
+          return: sm.returnButton?.variant ?? null,
+          returnY: sm.returnButton?.y ?? null,
+          introDrawn: sm.isDrawIntro,
+          introImage: sm.introImage,
+          introY: sm.introY,
+        }
+      : null,
+    drug: dm.isDraw
+      ? {
+          buttons: variants(dm.buttons),
+          // `drugStock` 建的时候分母就是 `DRUGS`（`world.ts`），这里抄一份就行。
+          stock: [...w.drugStock],
+          introDrawn: dm.isDrawIntro,
+          introDrug: dm.introDrug,
+          introY: dm.introY,
+          introText: dm.introText,
+        }
+      : null,
+  }
 }
 
 function heroOf(h: Hero): HeroSnapshot {
@@ -190,8 +276,8 @@ export function snapshotBattle(w: BattleWorld): BattleSnapshot {
     })),
     ui: {
       command: w.command.isDraw,
-      skillMenu: w.skillMenuDrawn,
-      drugMenu: w.drugMenuDrawn,
+      skillMenu: w.skillMenu.isDraw,
+      drugMenu: w.drugMenu.isDraw,
       selectable: w.selector.isSlectable,
       instruct: w.instruct.isDraw,
       reminder: w.reminder.isDraw,
@@ -209,6 +295,16 @@ export function snapshotBattle(w: BattleWorld): BattleSnapshot {
       bgFrame: w.backgroundAnimation.code,
       bgDrawn: w.backgroundAnimation.isDraw,
     },
+    reminder: {
+      image: w.reminder.image,
+      code: w.reminder.code,
+      stopped: w.reminder.isStop,
+      dx1: w.reminder.dx1,
+      dy1: w.reminder.dy1,
+      dx2: w.reminder.dx2,
+      dy2: w.reminder.dy2,
+    },
+    menus: menusOf(w),
     audio: { bgm: w.bgm },
   }
 }

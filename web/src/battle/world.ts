@@ -2,14 +2,25 @@ import { JavaRandom } from '../game/javaRandom'
 import { victoryInformation } from './victory'
 import { ENEMY_SLOT_POS, HEROES, battleBgm, derive, enemySpec, expToLevelUp } from './units'
 import type { PartyKey } from './units'
+import { DRUGS } from './drugs'
+import {
+  MENU_BUTTON_H,
+  MENU_BUTTON_W,
+  MENU_BUTTON_X,
+  menuButtonY,
+} from './menuLayout'
+import { SKILL_NUMBER } from './skills'
 import type {
   BattleState,
   BattleWorld,
   BeAttackedAnim,
+  DrugMenu,
   Enemy,
   FrameAnim,
   GameButton,
   Hero,
+  MenuButton,
+  SkillMenu,
 } from './types'
 
 /**
@@ -35,7 +46,63 @@ export interface BattleConfig {
 }
 
 function state(): BattleState {
-  return { type: 0, roundNum: 0, isUsable: false, isCheck: false, successRate: 0, roleCode: 0 }
+  return {
+    type: 0,
+    roundNum: 0,
+    isUsable: false,
+    isCheck: false,
+    successRate: 0,
+    roleCode: 0,
+    x: 0,
+    y: 0,
+  }
+}
+
+/** 第 `index` 颗菜单按钮（几何见 `menuLayout.ts`）。 */
+function menuButton(index: number): MenuButton {
+  return {
+    x: MENU_BUTTON_X,
+    y: menuButtonY(index),
+    width: MENU_BUTTON_W,
+    height: MENU_BUTTON_H,
+    isclicked: false,
+    // `GameButton` 的构造函数：`buttonImage=normalImage`。
+    variant: 1,
+  }
+}
+
+/**
+ * `SkillMenu` 的构造函数。三组按钮**只给出战的人建**（`if(bp.zxf!=null)`），
+ * 缺席的那一组是空列表 —— 而最后一句 `skillButtons=zhangButtons` 是无条件的，
+ * 所以张小凡没出战时它一开始指着一个空列表。照抄。
+ */
+function makeSkillMenu(present: Readonly<Record<'zhang' | 'yu' | 'lu', boolean>>): SkillMenu {
+  const group = (key: 'zhang' | 'yu' | 'lu'): MenuButton[] =>
+    present[key] ? Array.from({ length: SKILL_NUMBER[key] }, (_, i) => menuButton(i)) : []
+  return {
+    isDraw: false,
+    group: 'zhang',
+    groups: { zhang: group('zhang'), yu: group('yu'), lu: group('lu') },
+    // `checkRound()` 才 new 得出来 —— 点「技」之前它是 null。
+    returnButton: null,
+    isDrawIntro: false,
+    introImage: null,
+    introY: 0,
+  }
+}
+
+/** `DrugMenu` 的构造函数：六种药 + 一颗返回，共七颗。 */
+function makeDrugMenu(): DrugMenu {
+  return {
+    isDraw: false,
+    buttons: Array.from({ length: DRUGS.length + 1 }, (_, i) => menuButton(i)),
+    isDrawIntro: false,
+    introDrug: null,
+    // 原版 `introX=220` 是常量（画的时候用），`introY` 的初值是字段初值 0。
+    introY: 0,
+    introText: null,
+    currentHero: 0,
+  }
 }
 
 function anim(length: number): FrameAnim {
@@ -241,6 +308,8 @@ export function createBattle(config: BattleConfig): BattleWorld {
     instruct: { code: 0, isDraw: false, isStop: true, x: 0, y: 0 },
     // `new Reminder(this, 500, 120)`，八个坐标都从这两个中心出发。
     reminder: {
+      // `currentImage` 的字段初值是 null —— 一次 `show()` 都没有过。
+      image: null,
       code: 0,
       isDraw: false,
       isStop: true,
@@ -291,8 +360,10 @@ export function createBattle(config: BattleConfig): BattleWorld {
     startAnimation: { leftX: 0, rightX: 0, isDraw: true, isStop: false },
     hurtValues: [],
     launchCode: 0,
-    skillMenuDrawn: false,
-    drugMenuDrawn: false,
+    skillMenu: makeSkillMenu({ zhang: zxf !== null, yu: yj !== null, lu: lxq !== null }),
+    drugMenu: makeDrugMenu(),
+    // `ShopReader.readDrug()` 不给 `numberGOT` 赋值，数据文件里也没有那一列。
+    drugStock: DRUGS.map(() => 0),
     // `new VictoryReminder(this)` —— 构造函数里就把 getInformation() 跑完了。
     victoryReminder: victoryInformation({ zhang: zxf, yu: yj, lu: lxq }, enemies),
     // `GameOver` 构造函数里那四个会动的坐标（另外十二个只被 paint 读）。
