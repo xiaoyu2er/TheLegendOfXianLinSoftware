@@ -64,8 +64,9 @@ describe('结算画面的 12 张素材', () => {
       ...literals,
       ...Array.from({ length: loopBound }, (_, i) => `${VICTORY_DIR}/${i + 1}.png`),
     ]
-    const fromCode = VICTORY_REMINDER_IDS.map((id) => id.replace(/^battle:/, VICTORY_DIR.slice(0, 0) + ''))
-    expect(fromCode).toEqual(fromSource.map((p) => p.replace(/^image\//, '')))
+    // 逻辑 ID 是 `battle:<相对 image/ 的路径>`（见 assets/battleAssets.ts）。
+    const fromCode = VICTORY_REMINDER_IDS.map((id) => id.replace(/^battle:/, ''))
+    expect(fromCode).toEqual(fromSource.map((path) => path.replace(/^image\//, '')))
   })
 
   it('目录里 13 个文件，被读到的 12 个 —— 多出来的那个正是 0.png', () => {
