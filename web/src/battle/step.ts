@@ -1,4 +1,5 @@
 import { expToLevelUp, refreshValue } from './units'
+import type { SkillSpec } from './units'
 import type {
   BattleState,
   BattleWorld,
@@ -185,10 +186,18 @@ function updateDeadAnimation(h: Hero): void {
   if (a.code === a.length) a.code = 0
 }
 
+/**
+ * 行动条的终点：`ProgressBar.updateProgress` 里那个 400，**同一个数出现在
+ * 两处判断上**（"七个都还没跑满" 与 "谁跑满了"）。抽成常量是因为篡改验证
+ * 量出来它们必须一起改：只改我方那一支、而并行守卫还是 400，`battle-min`
+ * 在张小凡那一格上照样对得上（他的行动条一步跨 9 像素，落不到 400..419 之间）。
+ */
+const ACTION_BAR_GOAL = 400
+
 function updateProgress(w: BattleWorld): void {
   const p = w.progressBar
   if (p.isStop || !p.isDraw) return
-  const behind = (v: number) => v - p.barX < 400
+  const behind = (v: number) => v - p.barX < ACTION_BAR_GOAL
   if (
     behind(p.zhangX) &&
     behind(p.yuX) &&
@@ -218,14 +227,14 @@ function updateProgress(w: BattleWorld): void {
     skillToUse(w, e)
     if (w.currentBeAttacked !== 4) heroToAttack(w)
   }
-  if (p.zhangX - p.barX >= 400) startHeroRound(1)
-  else if (p.yuX - p.barX >= 400) startHeroRound(2)
-  else if (p.luX - p.barX >= 400) startHeroRound(3)
-  else if (p.petX - p.barX >= 400) {
+  if (p.zhangX - p.barX >= ACTION_BAR_GOAL) startHeroRound(1)
+  else if (p.yuX - p.barX >= ACTION_BAR_GOAL) startHeroRound(2)
+  else if (p.luX - p.barX >= ACTION_BAR_GOAL) startHeroRound(3)
+  else if (p.petX - p.barX >= ACTION_BAR_GOAL) {
     throw new Error('小精灵的回合还没实现（陆雪琪的秘术才召得出它）—— 归 xl-rh9.9')
-  } else if (w.em1 && p.enemy1X - p.barX >= 400) startEnemyRound(5, w.em1)
-  else if (w.em2 && p.enemy2X - p.barX >= 400) startEnemyRound(6, w.em2)
-  else if (w.em3 && p.enemy3X - p.barX >= 400) startEnemyRound(7, w.em3)
+  } else if (w.em1 && p.enemy1X - p.barX >= ACTION_BAR_GOAL) startEnemyRound(5, w.em1)
+  else if (w.em2 && p.enemy2X - p.barX >= ACTION_BAR_GOAL) startEnemyRound(6, w.em2)
+  else if (w.em3 && p.enemy3X - p.barX >= ACTION_BAR_GOAL) startEnemyRound(7, w.em3)
 }
 
 /** `EnemyAI.skillToUse`：掷一次，2 号招式是群攻，目标直接定成"我方全体"。 */
@@ -450,18 +459,17 @@ function checkState(w: BattleWorld, s: BattleState): void {
       // excuteState 只对中毒（type 9）有动作，而中毒只由技能挂上。
       if (s.type === 9) throw new Error('中毒状态的每回合结算还没实现（只有技能挂得上）—— 归 xl-rh9.9')
     } else {
-      returnFromState(w, s)
+      returnFromState(s)
       clearState(s)
     }
   }
   if (w.currentRound !== s.roleCode) s.isCheck = true
 }
 
-function returnFromState(w: BattleWorld, s: BattleState): void {
+function returnFromState(s: BattleState): void {
   if (s.type !== 0) {
     throw new Error(`战斗状态 ${s.type} 的恢复还没实现（状态只由技能挂得上）—— 归 xl-rh9.9`)
   }
-  void w
 }
 
 function clearState(s: BattleState): void {
@@ -568,23 +576,7 @@ function checkEnemyTurn(w: BattleWorld, e: Enemy, slot: 1 | 2 | 3): void {
 }
 
 /** `SkillAnimation.set(...)`：**不重置 `code`**，照抄原版。 */
-function setSkillAnimation(
-  w: BattleWorld,
-  spec: {
-    name: string
-    length: number
-    x: number
-    y: number
-    beAttackedCode: number
-    beAttackedTimes: number
-    runCode: number
-    attackCode: number
-    withdrawCode: number
-    offsetTo1: number
-    offsetTo2: number
-    offsetTo3: number
-  },
-): void {
+function setSkillAnimation(w: BattleWorld, spec: SkillSpec): void {
   const a = w.skillAnimation
   Object.assign(a, spec)
   a.initialX = spec.x
@@ -670,7 +662,7 @@ function checkEnemyDead(w: BattleWorld): void {
   for (const h of w.heroes) h.exp += w.expToGet
   for (const h of w.heroes) {
     if (h.battleState.isUsable) {
-      returnFromState(w, h.battleState)
+      returnFromState(h.battleState)
       clearState(h.battleState)
     }
   }
@@ -694,7 +686,7 @@ function checkHeroDead(w: BattleWorld): void {
     if (h.hp > 0) continue
     h.isDead = true
     if (h.battleState.isUsable) {
-      returnFromState(w, h.battleState)
+      returnFromState(h.battleState)
       clearState(h.battleState)
     }
     // DeadAnimation.start()

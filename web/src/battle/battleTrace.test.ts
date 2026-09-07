@@ -63,6 +63,12 @@ describe('战斗状态层对齐行为真值', () => {
     for (const name of IMPLEMENTED) {
       expect(BATTLE_TRACE_NAMES, `已对齐的 ${name} 不在真值目录里`).toContain(name)
     }
+    // 两张表**不许有交集**：同一份剧本同时写进两边时，上面那三条全都过得去
+    // —— 「已经对齐了」与「还欠着」就又长得一样了。
+    expect(
+      IMPLEMENTED.filter((name) => name in PENDING),
+      '同一份真值同时登记在 IMPLEMENTED 与 PENDING 里',
+    ).toEqual([])
   })
 
   for (const name of IMPLEMENTED) {
@@ -82,7 +88,7 @@ describe('战斗状态层对齐行为真值', () => {
       }
     })
 
-    it(`${name}：末步三个槽位的血都是负的 —— xl-1dv.9 在这一场里看得见`, () => {
+    it(`${name}：末步至少有一格是负血 —— xl-1dv.9 在这一场里看得见`, () => {
       const trace = readBattleTrace(name)
       const world = replayBattle(trace, spriteSize)
       for (const tick of trace.ticks) stepBattle(world, tick.input)

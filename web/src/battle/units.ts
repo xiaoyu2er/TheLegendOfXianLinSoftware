@@ -87,11 +87,7 @@ export interface HeroSpec {
    *  原版加的是当前值（可能被战斗状态改过），不是按等级重算。 */
   levelUpDelta: Attributes
   /** 普通攻击那一发 `skillAnimation.set(...)`，坐标是写死的常量。 */
-  attack: Omit<SkillSpec, 'offsetTo1' | 'offsetTo2' | 'offsetTo3'> & {
-    offsetTo1: number
-    offsetTo2: number
-    offsetTo3: number
-  }
+  attack: SkillSpec
 }
 
 export const HEROES: Readonly<Record<PartyKey, HeroSpec>> = {

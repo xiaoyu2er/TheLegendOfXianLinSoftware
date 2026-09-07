@@ -131,7 +131,8 @@ function heroOf(h: Hero): HeroSnapshot {
 
 /**
  * 第三个槽位的框高取的是**第一只怪**图片的高（`height1`）—— xl-1dv.8，
- * 这里不"顺手改成 height3"。判据在 `battleEnemyBox.test.ts`。
+ * 这里不"顺手改成 height3"。判据在 `state/battleEnemyBox.test.ts`（它验的是**真值**忠不忠于原版）
+ * 与 `battle/battleTrace.test.ts`（它验的是**这一层**推出来的框）。
  */
 function boxOf(w: BattleWorld, slot: number): [number, number, number, number] {
   const s = w.selector
