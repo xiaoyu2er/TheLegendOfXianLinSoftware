@@ -37,8 +37,9 @@ import { hitsButton } from './hitBox'
  * 正是要自己维护的东西 —— 反推它自己是循环论证。
  */
 
-/** 血条 / 灵力条的满宽（原版写死的 140），高 8。 */
-export const BAR_FULL_WIDTH = 140
+/** 血条 / 灵力条的满宽（原版写死的 140）。只有这里的 `barWidth` 用得到。 */
+const BAR_FULL_WIDTH = 140
+/** 条子的高。`drawList.ts` 画目标矩形时要它。 */
 export const BAR_HEIGHT = 8
 
 /** 怒气槽那四张图。 */

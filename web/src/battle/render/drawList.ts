@@ -151,7 +151,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   //   里按出战名单建好之后就再没动过，而 `bp.heroes` 在打输出口的末尾被清空
   //   （`GameOver.update()` 那句 `heroes.clear()`）。拿 heroes 画的话，全灭
   //   之后底下三个怒气槽会整排消失，而原版还画着。
-  for (const h of w.party) angryBarOps(w, p, h, push)
+  for (const h of w.party) angryBarOps(p, h, push)
   // 5 控制台
   commandOps(w, p, push)
   // 6 药品菜单
@@ -176,7 +176,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   if (w.skillMenuDrawn) unimplemented('skill-menu', '技能菜单（点「技」才打开）', 'xl-rh9.9')
 
   // 14 / 15 被击动画：怪物先、我方后
-  for (const e of w.enemies) beAttackedOps(w, e, push)
+  for (const e of w.enemies) beAttackedOps(e, push)
   for (const h of w.heroes) heroBeAttackedOps(h, push)
   // 16 技能动画
   skillAnimOps(w, push)
@@ -285,8 +285,7 @@ function bandOp(push: (op: DrawOp) => void, id: AssetId, x: number, y: number, w
  * 80 高 —— 原版就是这么写的，怒气满时源矩形会伸到图外面去。照抄，见
  * `battleRenderer` 里对越界源矩形的裁法）。
  */
-function angryBarOps(w: BattleWorld, p: PaintState, h: Hero, push: (op: DrawOp) => void): void {
-  void w
+function angryBarOps(p: PaintState, h: Hero, push: (op: DrawOp) => void): void {
   const k = SLOT[h.roleCode]
   const backX = ANGRY_X + PANEL_STRIDE * k
   const backY = ANGRY_Y
@@ -401,8 +400,7 @@ function progressBarOps(w: BattleWorld, push: (op: DrawOp) => void): void {
   enemyHead(w.em3, p.enemy3X)
 }
 
-function beAttackedOps(w: BattleWorld, e: Enemy, push: (op: DrawOp) => void): void {
-  void w
+function beAttackedOps(e: Enemy, push: (op: DrawOp) => void): void {
   const a = e.beAttackedAnimation
   if (!a.isDraw) return
   push({

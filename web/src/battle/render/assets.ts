@@ -14,8 +14,9 @@ import type { PartyKey } from '../units'
  * 一条路由渲染器按 `isDeferredBattleAsset` 判（见 `battleRenderer.ts`）。
  */
 
-/** `image/` 下的一条相对路径 → 逻辑 ID。 */
-export function battleId(relative: string): AssetId {
+/** `image/` 下的一条相对路径 → 逻辑 ID。**只在本文件里用** —— 别处要 ID 就调
+ * 下面那些各自有名字的函数，那样拼错一个字会在这里被一次改掉，不会散在各处。 */
+function battleId(relative: string): AssetId {
   return battleAssetId(`image/${relative}`)
 }
 
@@ -61,7 +62,6 @@ export const HP_BAR_ID = battleId('状态栏/生命值.png')
 export const MP_BAR_ID = battleId('状态栏/灵力.png')
 export const ANGRY_BACK_ID = battleId('怒气槽/底.png')
 export const PROGRESS_BAR_ID = battleId('进度条/进度条.png')
-export const PET_HEAD_ID = battleId('小精灵/头像.png')
 export const CLOUD_ID = battleId('其他/云雾.png')
 export const GAME_OVER_LEFT_ID = battleId('全灭图/全灭图1.png')
 export const GAME_OVER_RIGHT_ID = battleId('全灭图/全灭图2.png')
@@ -79,11 +79,6 @@ export function instructId(frame: number): AssetId {
 /** 游标图八张（0 基）。 */
 export function mouseId(frame: number): AssetId {
   return battleId(`鼠标图/${frame + 1}.png`)
-}
-
-/** 提示图二十二张。原版 `Reminder.show(i)` 传的是 **0 基下标**。 */
-export function reminderId(index: number): AssetId {
-  return battleId(`提示图/${index + 1}.png`)
 }
 
 /** 四个指令按钮，`variant` 是 1 常态 / 2 待点 / 3 按下。 */
@@ -175,7 +170,6 @@ export function battleTextureIds(w: {
   ids.add(MP_BAR_ID)
   ids.add(ANGRY_BACK_ID)
   ids.add(PROGRESS_BAR_ID)
-  ids.add(PET_HEAD_ID)
   ids.add(GAME_OVER_LEFT_ID)
   ids.add(GAME_OVER_RIGHT_ID)
   for (let i = 0; i < 4; i++) ids.add(angryId(i))
