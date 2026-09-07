@@ -7,7 +7,10 @@
  * 产物全部入库（`src/generated/`）：
  *   - CI 与 `pnpm build` 因此不需要 Java、不需要 cwebp、不需要仓库外的原始素材；
  *   - 产物的任何 diff 都是信号，跟 `tools/ground-truth/` 是同一套规矩。
- * 产物是否陈旧由 `src/data/scenes.test.ts` 现场重烘一遍来判定。
+ * 产物是否陈旧分两层判定：场景 JSON 由 `src/data/scenes.test.ts` 现场重烘一遍
+ * 比对；资源那一层（WebP / m4a / 映射表）重烘不了（CI 上没有 cwebp 与
+ * afconvert），改由**烘焙时写指纹、跑测试时重算比对**——见文件末尾的
+ * `writeStamp` 与 `src/assets/bakeStamp.ts`（xl-23y）。
  *
  * **烘之前先校验，校验不过一个字节都不落盘**（`src/assets/checkAssets.ts`）：
  * 数据引用到的每一条资源路径都要 stat 得到，缺一条就非零退出。原版的图片
@@ -16,9 +19,10 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative as relativePath, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
+import { bakerSources, hashFiles } from '../src/assets/bakeStamp'
 import {
   bgmAssetId,
   dialogueAssetId,
@@ -102,7 +106,9 @@ function tracedScenes(): string[] {
   }
   const scenes = new Set<string>()
   for (const f of files) {
-    const trace = JSON.parse(readFileSync(resolve(dir, f), 'utf8')) as {
+    // 真值也是烘焙器的输入：它决定烘哪几首 BGM。不记进指纹的话，改了一条
+    // 剧本却不重烘，产物少一首曲子而判据照绿 —— 表现只是"那个场景是哑的"。
+    const trace = JSON.parse(readFileSync(useInput(resolve(dir, f)), 'utf8')) as {
       driver: string
       ticks: readonly { scene: string }[]
     }
@@ -127,9 +133,26 @@ const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
 const MANIFEST_OUT = resolve(WEB, 'src/generated/assets.json')
 const MISSING_OUT = resolve(WEB, 'src/generated/missingAssets.json')
 const DEFERRED_BGM_OUT = resolve(WEB, 'src/generated/deferredBgm.json')
+const STAMP_OUT = resolve(WEB, 'src/generated/bakeStamp.json')
 
 /** `NPCs/曾书书/9.png` 里 `NPCs/` 那一段。`sceneAssets.ts` 拼的就是这个前缀。 */
 const NPC_PREFIX = 'NPCs/'
+
+/**
+ * 这一趟烘焙读过的每一个源文件（绝对路径）。烘完写进 `bakeStamp.json`，
+ * `src/assets/bakeStamp.test.ts` 拿它判定「入库的产物是不是这批输入烘出来的」。
+ *
+ * **名单是记录出来的，不是抄出来的**：凡是走 `toWebp` / `toAac` / 下面那个
+ * 读脚本的循环的文件都会自己落进来。抄一份名单在别处，加一类素材就得记得
+ * 同时改它，忘了的表现是判据悄悄少验一块 —— 而少验和验过了长得一样。
+ */
+const consumed = new Set<string>()
+
+/** 记一个输入，并把它原样还回去，这样调用处不必多写一行。 */
+function useInput(absolute: string): string {
+  consumed.add(absolute)
+  return absolute
+}
 
 function main(): void {
   requireCwebp()
@@ -141,7 +164,7 @@ function main(): void {
     .map((f) => f.replace(/\.txt$/, ''))
     .sort()
   const scenes = names.map((name) =>
-    bakeScript(readFileSync(resolve(SCRIPTS, `${name}.txt`)), `${name}.txt`),
+    bakeScript(readFileSync(useInput(resolve(SCRIPTS, `${name}.txt`))), `${name}.txt`),
   )
   console.log(`烘焙 ${scenes.length} 个场景`)
 
@@ -293,6 +316,28 @@ function main(): void {
   console.log(
     `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧）→ WebP 共 ${kb(bytes)}`,
   )
+
+  writeStamp()
+}
+
+
+/**
+ * 写烘焙指纹（xl-23y）。放在 `main` 的最后：**先有产物、后有指纹**，中途
+ * 失败退出就不会留下一张说「这批产物是新的」的纸条。
+ *
+ * 记两样：烘焙器自己的源码闭包（爬 import，不是抄名单），以及这一趟读过的
+ * 每一个源文件。判定与用法见 `src/assets/bakeStamp.ts` 的头注。
+ */
+function writeStamp(): void {
+  const baker = hashFiles(REPO, bakerSources(REPO))
+  const inputs = hashFiles(
+    REPO,
+    [...consumed].map((absolute) => relativePath(REPO, absolute).split('\\').join('/')),
+  )
+  writeFileSync(STAMP_OUT, `${JSON.stringify({ baker, inputs }, null, 2)}\n`, 'utf8')
+  console.log(
+    `烘焙指纹 → bakeStamp.json（烘焙器源码 ${Object.keys(baker).length} 个文件 + 输入 ${Object.keys(inputs).length} 个文件）`,
+  )
 }
 
 /**
@@ -360,6 +405,7 @@ function bakeBgm(scenes: readonly SceneScript[], manifest: Record<string, string
  * 器本来就已经要 `cwebp` 了 —— 产物入库，只有重新烘焙的人才需要这两个工具。
  */
 function toAac(source: string, destination: string): number {
+  useInput(source)
   mkdirSync(dirname(destination), { recursive: true })
   // -s 0 = CBR。默认的 VBR 策略会**忽略 -b**，转出来跟源一样大（实测
   // 舒缓.mp3 2.06 MB → 2.04 MB），而且不报错。
@@ -451,6 +497,7 @@ function format(value: unknown, indent: string): string {
  *   「双份 + 按缩放选」与「渐进加载」两种方案反而会让仓库更大。
  */
 function toWebp(source: string, destination: string, crop?: SourceRect): number {
+  useInput(source)
   mkdirSync(dirname(destination), { recursive: true })
   const lossless = source.toLowerCase().endsWith('.png')
   const flags = lossless ? ['-lossless'] : ['-q', '80']
