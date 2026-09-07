@@ -35,6 +35,10 @@
 - `web/src/compare/expected.ts`（每张票都要动自己那条剧本的表态）
 - `web/scripts/bake.ts`（每张票都可能往里加自己的烘焙）
 - `web/src/scene/sceneRenderer.ts`（每张票都可能加自己的绘制层）
+- `tools/src/devtools/ExportTrace.java` 里**选驱动器那一处**：现在写死
+  `new SceneDriver(script)`，每张接新面板的票都要在这里加自己那一支。加，
+  不要顺手把它重构成注册表——两张票同时重构同一处，git 合得干净、`tools/build.sh`
+  才报错。真要改成注册表，单开一张票、串行做。
 
 在这三个文件里，改你自己那一段，别顺手整理别人的段落——重排会让一行的冲突变成
 整块的冲突。
