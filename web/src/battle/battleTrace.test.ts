@@ -40,6 +40,7 @@ const PENDING: Readonly<Record<string, string>> = {
   'battle-em3-box': 'xl-rh9.8（em3 命中框那一场）',
   'battle-defeat-scene': 'xl-rh9.8（打输回地图那条出口）',
   'battle-defeat-start': 'xl-rh9.8（打输回标题那条出口）',
+  'battle-defeat-slot2': 'xl-rh9.8（罹年居士在第 2 槽，照样回标题）',
 }
 
 /** 怪物出场图（`Images.get(0)`）的像素尺寸。 */
