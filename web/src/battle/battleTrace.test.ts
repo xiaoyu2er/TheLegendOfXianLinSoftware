@@ -406,6 +406,65 @@ describe('战斗状态层对齐行为真值', () => {
       expect(returned).toEqual([1, 2, 3, 4, 11, 12])
     })
 
+    /**
+     * ⚠️ **登记在案（xl-rh9.14 篡改 T9）**：麻痹（type 10）的加成是
+     * `hurt = 0` / `skillHurt = 0`，而 `skillHurt` 在怪物这一侧**根本没有读者**
+     * （`Enemy.calDamage` 两种招式读的都是 `hurt`）。也就是说这一支唯一看得见
+     * 的后果是「中了麻痹的怪打出 0 伤害」—— 而它得先轮到自己出手。
+     *
+     * 实测：把 `e.hurt = 0` 那一句删掉，逐字段比对全绿。原因是
+     * `battle-lu-skills` 里两段麻痹（第 3 槽 t=298..362 与 t=598..1084）**期间
+     * 那只怪一次都没轮到过**——蒙面怪人速度 9，而场上两个我方合起来 44。
+     *
+     * 判别法写在这里：哪天有一条真值让中麻痹的怪出了手，这一条就红，那时候
+     * 上面的逐字段比对自己盖得住它，这条登记该撤掉。
+     */
+    it('麻痹期间那只怪一次都没出手 —— type 10 的 hurt=0 今天观测不到，登记在案', () => {
+      const acted: string[] = []
+      for (const name of IMPLEMENTED) {
+        const ticks = traceOf(name).ticks
+        for (const t of ticks) {
+          for (const e of t.enemies) {
+            if (!e || !e.state.usable || e.state.type !== 10) continue
+            if (t.round === e.state.role) acted.push(`${name}@${t.t}#${e.slot}`)
+          }
+        }
+      }
+      expect(
+        acted,
+        '有中了麻痹的怪轮到自己出手了 —— `enemyApplyState` 里 type 10 的 hurt=0 ' +
+          '现在进得了伤害公式了，把这条登记换成正面比对。',
+      ).toEqual([])
+    })
+
+    /**
+     * ⚠️ **登记在案（xl-rh9.14 篡改 T21）**：张小凡的秘术是给**每个活着的我方**
+     * 挂金钟罩，而唯一走到它的 `battle-mishu-zhang` 是**一个人出战**的 ——
+     * 把那个 for 换成"只给自己挂"，逐字段比对全绿。
+     *
+     * 一个人出战不是随便挑的：怒气要攒到 `hpMax*0.8` 才满，而人在 `hpMax` 就
+     * 倒了 —— 伤害分给两个人就得挨两倍的打，攒满之前先死一个。哪天有一条多人
+     * 队伍的秘术真值，这一条会红。
+     */
+    it('金钟罩那个「全体」今天观测不到 —— 走到秘术的只有单人队伍，登记在案', () => {
+      const multi: string[] = []
+      for (const name of IMPLEMENTED) {
+        const ticks = traceOf(name).ticks
+        for (const t of ticks) {
+          const shielded = t.heroes.filter((h) => h.state.usable && h.state.type === 11)
+          if (shielded.length > 0 && t.heroes.filter((h) => !h.dead).length > 1) {
+            multi.push(`${name}@${t.t}`)
+            break
+          }
+        }
+      }
+      expect(
+        multi,
+        '有多人队伍挂上了金钟罩 —— 张小凡秘术里那个「给每个活着的我方挂」现在' +
+          '与「只给自己挂」分得开了，把这条登记换成正面比对。',
+      ).toEqual([])
+    })
+
     it('怪物那六种 type 都挂上过；type 8 的退回今天还观测不到 —— 登记在案', () => {
       const { applied, returned } = typesSeen((t) =>
         t.enemies.map((e) => (e && e.state.usable ? e.state.type : null)),
