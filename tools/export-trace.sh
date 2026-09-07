@@ -36,7 +36,7 @@ run() {  # run <剧本名> <输出路径>
   # 非零退出并说明原因，不会静默导出一份每次都不同的真值。
   "$JAVA_HOME/bin/java" -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
     --add-opens java.base/java.lang=ALL-UNNAMED \
-    -Djava.awt.headless=false -cp "$CP" \
+    -Dapple.awt.UIElement=true -Djava.awt.headless=false -cp "$CP" \
     devtools.ExportTrace "$SCRIPTS/$1.json" "$2"
 }
 

@@ -53,7 +53,7 @@ for n in "${names[@]}"; do
   # 「导得出来的剧本」在这两条路上会不一样。
   "$JAVA_HOME/bin/java" -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
     --add-opens java.base/java.lang=ALL-UNNAMED \
-    -Djava.awt.headless=false -cp "$CP" \
+    -Dapple.awt.UIElement=true -Djava.awt.headless=false -cp "$CP" \
     devtools.ExportTrace "$SCRIPTS/$n.json" "$OUT/$n/java/trace.json" \
     --frames "$OUT/$n/java" --every "$every" | sed 's/^/  /'
 
