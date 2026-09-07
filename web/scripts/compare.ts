@@ -145,6 +145,7 @@ async function capture(
  */
 function slimTrace(json: string): string {
   const trace = JSON.parse(json) as {
+    driver: string
     script: { name: string; scene: string; tickMs: number; isScript: boolean }
     tickCount: number
     ticks: {
@@ -153,6 +154,9 @@ function slimTrace(json: string): string {
     }[]
   }
   return JSON.stringify({
+    // 驱动器判别名要透传（xl-1vu.2）：取图页照它挑装配，收不到就没法挑，
+    // 而"挑不出来"是硬失败 —— 这里悄悄丢掉它，表现是每条剧本都装不起来。
+    driver: trace.driver,
     script: trace.script,
     tickCount: trace.tickCount,
     // 状态字段**一个都不传**：NPC 的坐标（xl-9bd.9）、对话的逐字游标

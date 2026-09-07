@@ -1,5 +1,6 @@
 {
   "format": "xianlin-trace/1",
+  "driver": "scene",
   "script": {"name":"dorm-exit","description":"出口切换：宿舍走到门口 (14,19) 切到大地图（进 (4,23)），再从大地图的 (4,22) 走回宿舍 —— 回的是剧情脚本 脚本1（currentScript[2]），isScript 重新为真、旁白被压掉。覆盖出口坐标、入口坐标、背景音乐三次切换与两条不同的出口分支。","warmup":"脚本1.txt","scene":"宿舍.txt","isScript":false,"tickMs":10,"maxTicks":40000,"steps":[{"op":"walkTo","x":13,"y":11},{"op":"exitTo","x":14,"y":19},{"op":"waitIdle"},{"op":"walkTo","x":10,"y":23},{"op":"walkTo","x":4,"y":23},{"op":"exitTo","x":4,"y":22},{"op":"wait","ticks":300}]},
   "tickCount": 1181,
   "ticks": [

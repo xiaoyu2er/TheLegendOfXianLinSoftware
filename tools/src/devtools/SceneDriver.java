@@ -77,6 +77,16 @@ public final class SceneDriver implements TraceDriver {
         ExportTrace.die(script.name + " · " + where + " · tick " + (clock.now() / script.tickMs) + "：" + msg);
     }
 
+    /**
+     * 判别名。场景真值的 `driver` 字段就是这个字符串，回放端照它装配。
+     *
+     * 常量而不是从剧本里读：一份 trace 是哪个驱动器导出来的，是导出这件事本身
+     * 的属性。让剧本说了算的话，剧本写错就会导出一份自称是别的面板、内容却是
+     * 场景的真值 —— 那种错在回放端表现为"装配对不上"，而不是"导出失败"。
+     */
+    @Override
+    public String kind() { return "scene"; }
+
     // ================= 推进一步 =================
 
     @Override

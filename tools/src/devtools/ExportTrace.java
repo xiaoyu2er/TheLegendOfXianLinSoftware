@@ -94,6 +94,7 @@ public final class ExportTrace {
 
     private String run() throws Exception {
         TraceDriver driver = new SceneDriver(script);
+        String kind = requireKind(driver);
         prepareFramesDir();
 
         StringBuilder body = new StringBuilder();
@@ -110,11 +111,30 @@ public final class ExportTrace {
         StringBuilder b = new StringBuilder();
         b.append("{\n");
         b.append("  \"format\": \"xianlin-trace/1\",\n");
+        b.append("  \"driver\": ").append(Json.str(kind)).append(",\n");
         b.append("  \"script\": ").append(script.toJson()).append(",\n");
         b.append("  \"tickCount\": ").append(steps).append(",\n");
         b.append("  \"ticks\": [\n").append(body).append("\n  ]\n");
         b.append("}\n");
         return b.toString();
+    }
+
+    /**
+     * 驱动器的判别名，校验过再往真值头里写。
+     *
+     * 为什么要校验：这个字段是回放端"装配哪一套"的唯一依据。一个空串或者一个
+     * 带空格、带大写的名字，写进 JSON 照样是合法 JSON，导出成功、退出码 0，
+     * 而回放端要到几步之后才在别的地方失败 —— 又是一次"失败长得像成功"。
+     * 这里只校形状，不校名单：名单维护在实现方，导出器不替它记。
+     */
+    private static String requireKind(TraceDriver driver) {
+        String kind = driver.kind();
+        if (kind == null || !kind.matches("[a-z][a-z0-9-]*")) {
+            die(driver.getClass().getSimpleName() + ".kind() 返回了 "
+                    + (kind == null ? "null" : "\"" + kind + "\"")
+                    + "，判别名必须匹配 [a-z][a-z0-9-]*");
+        }
+        return kind;
     }
 
     // ================= 帧导出 =================
