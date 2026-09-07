@@ -431,13 +431,12 @@ public final class BattleDriver implements TraceDriver {
             fail("等的是第 " + in.round + " 号的回合，可这一场已经打成了 " + outcome());
         }
         if (commandDrawn() && getInt(bp, "currentRound") == in.round
-                && (!needAngry || angryOf(in.round))) {
+                && (!needAngry || heroOfRound(in.round).wheatherAngry())) {
             return true;
         }
         if (left <= 0) {
             fail("跑满 " + in.max + " 步，控制台一次都没出现在第 " + in.round + " 号的回合上"
-                    + (needAngry ? "（且怒气攒满，当前 " + angryValueOf(in.round) + "/"
-                            + angryGoalOf(in.round) + "）" : "")
+                    + (needAngry ? "（且怒气攒满，当前 " + angryProgress(in.round) + "）" : "")
                     + "（当前回合 " + getInt(bp, "currentRound") + "）");
         }
         left--;
@@ -652,10 +651,14 @@ public final class BattleDriver implements TraceDriver {
         return null;
     }
 
-    private boolean angryOf(int round)      { return heroOfRound(round).wheatherAngry(); }
-    private int angryValueOf(int round)     { return heroOfRound(round).getAngryValue(); }
-    /** {@code Enemy.calDamage} 里那句 {@code angryValue>=(int)(hpMax*0.8)}。 */
-    private int angryGoalOf(int round)      { return (int) (heroOfRound(round).getHpMax() * 0.8); }
+    /**
+     * 怒气攒满没有，以及攒到哪儿了（报错时要说清楚）。
+     * 阈值就是 {@code Enemy.calDamage} 里那句 {@code angryValue>=(int)(hpMax*0.8)}。
+     */
+    private String angryProgress(int round) {
+        Hero h = heroOfRound(round);
+        return h.getAngryValue() + "/" + (int) (h.getHpMax() * 0.8);
+    }
 
     private boolean selectable()   { return getBool(get(bp, "enemySlector"), "isSlectable"); }
 

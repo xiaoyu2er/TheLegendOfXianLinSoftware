@@ -19,7 +19,7 @@
 | 驱动器 | 一步是什么 | 剧本 | 实现 |
 |---|---|---|---|
 | `scene` | 一个 tick | `dorm-walk` `bigmap-walk` `dorm-intro` `dorm-exit` `milestone` | `SceneDriver.java` |
-| `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `battle-min` `battle-em3-box` `battle-defeat-scene` `battle-defeat-start` `battle-defeat-slot2` | `BattleDriver.java` |
+| `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `tools/traces/scripts/battle-*.json`（这一列原先是写死的五个名字，xl-rh9.11 加了一份、xl-rh9.14 又加了六份都没跟上 —— 名单在磁盘上，别再抄一份） | `BattleDriver.java` |
 | `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
 | `shop` | 一次输入事件 | `shop-trade` | `ShopDriver.java` |
 

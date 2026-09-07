@@ -355,25 +355,9 @@ public final class TraceScript {
         b.append(",\"description\":").append(Json.str(description));
         b.append(",\"background\":").append(Json.str(background));
         b.append(",\"party\":").append(Json.arrStr(party));
-        b.append(",\"level\":{");
-        boolean first = true;
-        for (Map.Entry<String, Integer> e : levels.entrySet()) {
-            if (!first) b.append(',');
-            first = false;
-            b.append(Json.str(e.getKey())).append(':').append(e.getValue());
-        }
-        b.append("}");
+        appendIntMap(b, "level", levels);
         // 整个不写时**一个字都不回显** —— 老真值因此逐字节不变。
-        if (!skillNumbers.isEmpty()) {
-            b.append(",\"skillNumber\":{");
-            boolean f2 = true;
-            for (Map.Entry<String, Integer> e : skillNumbers.entrySet()) {
-                if (!f2) b.append(',');
-                f2 = false;
-                b.append(Json.str(e.getKey())).append(':').append(e.getValue());
-            }
-            b.append('}');
-        }
+        if (!skillNumbers.isEmpty()) appendIntMap(b, "skillNumber", skillNumbers);
         b.append(",\"enemies\":").append(Json.arrStr(enemies));
         b.append(",\"seed\":").append(seed);
         b.append(",\"tickMs\":").append(tickMs);
@@ -397,6 +381,18 @@ public final class TraceScript {
             b.append('}');
         }
         return b.append("]}").toString();
+    }
+
+    /** 回显一张 `{"key": 数}` 的表（`level` 与 `skillNumber` 两处形状相同）。 */
+    private static void appendIntMap(StringBuilder b, String key, Map<String, Integer> m) {
+        b.append(',').append(Json.str(key)).append(":{");
+        boolean first = true;
+        for (Map.Entry<String, Integer> e : m.entrySet()) {
+            if (!first) b.append(',');
+            first = false;
+            b.append(Json.str(e.getKey())).append(':').append(e.getValue());
+        }
+        b.append('}');
     }
 
     private String sceneJson() {
