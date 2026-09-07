@@ -238,9 +238,12 @@ coin-hud、speech-name、speech-text、hero-run 一帧都不差了"。上界与�
 与 Chrome，所以它进 CI，而整条流水线不进。
 
 名单为什么不能抄两份：`web/src/replay/main.ts` 的装配表声明成
-`Record<ImplementedDriver, Assembly>`，**少一个键或多一个键都是编译错**；跑起来
-之后页面还把 `Object.keys(ASSEMBLIES)` 挂在 `window.__xlDrivers` 上，比对器进门
-核一次（`assertPageAgrees`）。核不上是硬失败，不许降级成"那就信本地这份"。
+`Record<ImplementedDriver, Assembly>`，**少一个键或多一个键都是编译错** ——
+这道是常开的，`pnpm typecheck` 每次都过。跑起来之后页面还把
+`Object.keys(ASSEMBLIES)` 挂在 `window.__xlDrivers` 上，比对器进门核一次
+（`assertPageAgrees`），核不上是硬失败，不许降级成"那就信本地这份"；不过**这第二道
+只在这一轮真的要取图时才跑** —— 一轮里全是装配不出来的剧本时压根不开浏览器
+（`tools/compare-frames.sh menu-equip` 就是这种），那一轮守着的只有类型那道。
 
 **为什么要提前分流而不是撞上去。** 从前是撞上去的：取图页对未实现的驱动器抛，
 异常转成 Node 侧的 Error，整轮**中断**。于是默认全跑时 —— 按字典序第一条正好是
@@ -249,21 +252,33 @@ coin-hud、speech-name、speech-text、hero-run 一帧都不差了"。上界与�
 
 实测（2026-09-06，`tools/compare-frames.sh --self-check`，9 条剧本，退出码 **1**）：
 
+（逐字照抄，只删掉五条剧本各自的第二行判词与取图进度行；其余一字未改）
+
 ```
 跨端逐帧比对：5 条剧本 × 各自的帧数 = 636 帧（阈值 0.0200% 的像素，单通道容差 8）
-  …（五条场景剧本逐条印出，全部符合预期）…
+
+  通过  bigmap-walk    34 帧 · 首个偏离帧 #0 · 偏离 34/34 · 最差 #475 37.1101% @ (0,0)-(1023,639)
+  通过  dorm-exit      48 帧 · 首个偏离帧 #0 · 偏离 48/48 · 最差 #875 34.0767% @ (0,0)-(1023,639)
+  通过  dorm-intro    165 帧 · 首个偏离帧 #25 · 偏离 155/165 · 最差 #800 2.8482% @ (22,43)-(1018,599)
+  通过  dorm-walk      22 帧 · 首个偏离帧 #0 · 偏离 22/22 · 最差 #500 0.7401% @ (273,3)-(993,630)
+  通过  milestone     367 帧 · 首个偏离帧 #25 · 偏离 357/367 · 最差 #8825 29.1754% @ (0,0)-(1023,639)
+
 5/5 条剧本符合预期。
 
 web 侧还装配不出来的剧本 4 条 —— 这一趟它们一帧都没比过：
-  装不出  battle-em3-box  driver=battle  web 侧还没有战斗面板… · 归 xl-82c
-  装不出  battle-min      driver=battle  web 侧还没有战斗面板… · 归 xl-82c
-  装不出  menu-equip      driver=menu    Web 侧还没有菜单系统… · 归 xl-6lo
-  装不出  shop-trade      driver=shop    Web 侧还没有商店系统… · 归 xl-knp.1
-  取图页现在实现了：scene。
+  装不出  battle-em3-box  driver=battle  web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败 · 归 xl-82c
+  装不出  battle-min      driver=battle  web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败 · 归 xl-82c
+  装不出  menu-equip      driver=menu    Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来 · 归 xl-6lo
+  装不出  shop-trade      driver=shop    Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来 · 归 xl-knp.1
+  取图页现在实现了：scene。等上面那几张票把 web 侧的面板建起来，再回 src/compare/expected.ts 把表态换掉。
   （非零退出。一条没被装配的剧本比出来是"零帧差异"，跟"两端完全一致"长得一模一样。）
 
 流水线自检：故意改坏一处渲染
-  通过  bigmap-walk / dorm-exit / dorm-intro / dorm-walk / milestone —— 五条的首个变化帧都正好是注入点
+  通过  bigmap-walk  34 帧 · 注入点 #425 · 首个变化帧 #425 · 变了 17/34 帧
+  通过  dorm-exit    48 帧 · 注入点 #600 · 首个变化帧 #600 · 变了 24/48 帧
+  通过  dorm-intro   165 帧 · 注入点 #2050 · 首个变化帧 #2050 · 变了 83/165 帧
+  通过  dorm-walk    22 帧 · 注入点 #275 · 首个变化帧 #275 · 变了 11/22 帧
+  通过  milestone    367 帧 · 注入点 #4575 · 首个变化帧 #4575 · 变了 174/367 帧
 ```
 
 也就是说：**能比的照常比、照常自检，比不了的逐条点名并把退出码染红。**
@@ -273,7 +288,7 @@ web 侧还装配不出来的剧本 4 条 —— 这一趟它们一帧都没比�
 | 伪造的假象 | 怎么造 | 结果 |
 |---|---|---|
 | 「菜单已经实现了」 | 往 `IMPLEMENTED_DRIVERS` 里加 `'menu'` | `pnpm typecheck` 报 **TS2741**（装配表少了 `menu` 这个键）；`unassembled.test.ts` 同时红两条，报「menu-equip 的表态还写着 unassembled，可取图页已经装得出 driver=menu 了」 |
-| 「这份真值是场景导出的」 | 把 `tools/traces/compare/menu-equip/java/frames.json` 的判别字段改成 `"scene"` | 退出码 **2**，同一句话 |
+| 「这份真值是场景导出的」 | 把 `tools/traces/compare/menu-equip/java/frames.json` 的判别字段改成 `"scene"` | 退出码 **2**，`menu-equip 的表态还写着 unassembled…可取图页已经装得出 driver=scene 了` |
 | 同上，改的是 trace 那一头 | 把 `…/java/trace.json` 的判别字段改成 `"battle"` | 退出码 **2**，`帧清单说 driver=scene，旁边那份 trace.json 说 driver=battle` |
 | 「面板做好了」 | 把 `expected.ts` 里 menu-equip 的表态改成 `match` 或 `gap` | 抛，`装配不出 driver=menu` |
 

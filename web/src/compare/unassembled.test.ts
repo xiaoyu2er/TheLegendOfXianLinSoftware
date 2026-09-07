@@ -32,9 +32,10 @@ describe('四种驱动器的处境表', () => {
 
   it('四种驱动器都有真值，且其中恰有 web 侧还装不出来的那几种', () => {
     const drivers = [...new Set(TRACE_NAMES.map((n) => readTrace(n).driver))].sort()
-    // 名单从真值现数，不写死"应该有四种"：这张票收的口是"齐了"，而将来加第五
-    // 种驱动器时这条不该因为一个过期的数字而红。
-    expect(drivers).toEqual(['battle', 'menu', 'scene', 'shop'])
+    // 这四支各自**必须有真值**（xl-1vu 收的就是这个口），少一支就红；但用
+    // arrayContaining 而不是 toEqual —— 将来加第五支驱动器时这条不该因为一个
+    // 过期的名单而红，那是"写死了目前只有 X"的老毛病。
+    expect(drivers).toEqual(expect.arrayContaining(['battle', 'menu', 'scene', 'shop']))
     // 至少一种装得出来（否则整条流水线一帧都比不了，`--self-check` 也没得跑），
     // 至少一种装不出来（否则下面那几条判据是空转的）。
     expect(drivers.filter(isImplementedDriver).length).toBeGreaterThan(0)

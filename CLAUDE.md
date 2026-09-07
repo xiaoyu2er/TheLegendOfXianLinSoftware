@@ -145,7 +145,11 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   own `driver` field to `scene` (5 scripts, a step = one tick), `battle`
   (2 scripts, a step = one `BattlePanel.run()` loop body + one `paint()`),
   `menu` and `shop` (1 script each, a step = one input event). An unrecognised
-  name is a hard failure, never a guess. Do not hand-write expected values for
+  name is a hard failure, never a guess — but a **missing** `driver` field
+  defaults to `scene`, the exporter's one and only leniency (the five scene
+  scripts predate the field; giving them one would change the script echo and
+  force a re-export). A new script that omits it gets `scene` silently, so
+  write it. Do not hand-write expected values for
   the state or viewport layers; read them out of a trace. Overview table,
   per-driver formats and pitfalls: `docs/trace-format.md`.
 - **Cross-end frame comparison is only wired up for `scene`.**

@@ -8,10 +8,17 @@
  * 比**的场景剧本一帧都比不成，`--self-check` 也跟着不跑。实测过：默认全跑时
  * 第一条按字典序是 `battle-em3-box`，整条流水线在那里就停了。
  *
- * 名单只有这一份。`main.ts` 的装配表用 `Record<ImplementedDriver, Assembly>`
- * 声明，**少一个键或多一个键都是编译错**；跑起来之后取图页还把
- * `Object.keys(ASSEMBLIES)` 挂在 `window.__xlDrivers` 上，比对器进门核一次
- * （`scripts/compare.ts` 的 `assertPageAgrees`）。两道都过不去才叫一致 ——
+ * 名单只有这一份，两道守着它：
+ *
+ * - **常开的那道是类型**。`main.ts` 的装配表用
+ *   `Record<ImplementedDriver, Assembly>` 声明，**少一个键或多一个键都是编译错**，
+ *   `pnpm typecheck` 每次都过一遍。
+ * - **另一道是运行时**：取图页把 `Object.keys(ASSEMBLIES)` 挂在
+ *   `window.__xlDrivers` 上，比对器开了浏览器就核一次（`scripts/compare.ts`
+ *   的 `assertPageAgrees`）。它**只在这一轮真的要取图时才跑** —— 一轮里全是
+ *   装配不出来的剧本时压根不开浏览器（`tools/compare-frames.sh menu-equip`
+ *   就是这种），那一轮里守着的只有上面那道类型。
+ *
  * 一份"抄在两个地方的名单"迟早分家，而分家的表现是比对器安安静静地跳过一条
  * 剧本，那正是这条流水线最不能有的东西。
  *
