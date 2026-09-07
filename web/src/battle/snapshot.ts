@@ -1,4 +1,3 @@
-import { DRUGS } from './drugs'
 import type { BattleWorld, Enemy, Hero, MenuButton } from './types'
 
 /**
@@ -188,8 +187,8 @@ function menusOf(w: BattleWorld): MenusSnapshot {
     drug: dm.isDraw
       ? {
           buttons: variants(dm.buttons),
-          // 分母是 `DRUGS`，与导出器读的 `DrugPack.drugList` 同一批六种药。
-          stock: DRUGS.map((_, i) => w.drugStock[i]!),
+          // `drugStock` 建的时候分母就是 `DRUGS`（`world.ts`），这里抄一份就行。
+          stock: [...w.drugStock],
           introDrawn: dm.isDrawIntro,
           introDrug: dm.introDrug,
           introY: dm.introY,

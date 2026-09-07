@@ -38,7 +38,6 @@ export interface SkillMenuEntry {
 
 /** 一次 `attackSkill(baseHurt, offsetHurt, mpUse)`。 */
 export interface AttackSkillDamage {
-  readonly kind: 'attack'
   readonly baseHurt: number
   readonly offsetHurt: number
   readonly mpUse: number
@@ -52,7 +51,15 @@ export interface AttackSkillDamage {
 }
 
 export interface SkillEntry {
-  /** `LaunchAttack` 里那一支的 `skillAttack(mpUse, ...)`。 */
+  /**
+   * `LaunchAttack.skillAttack(mpUse, …)` 的第一个入参 —— **够不够**用它判。
+   *
+   * 与 `AttackSkillDamage.mpUse`（真正**扣**的那个）今天恒相等，而原版把它们
+   * 写在两个方法的两个入参上（`skillAttack` 判够不够、`attackSkill` 扣）。
+   * 合成一个字段就是替原版决定了「这两处必然相等」—— 而陆雪琪的技能2 判的是
+   * `(int)(LuXueQi.mpMax*0.6)`、扣的是同一个算式，哪天两处有一处改了，
+   * 合成一个的版本推出来的灵力仍然"很正常"。`skills.test.ts` 有一条正面比它们。
+   */
   readonly mpUse: number
   /** `bp.reminder.show(reminderCode)` —— 传的是**下标**，图是 `<下标+1>.png`。 */
   readonly reminderCode: number
@@ -154,9 +161,6 @@ function anim(
   }
 }
 
-/** 还没移植的那几条：表写全，`damage` 留 null，走到就抛。 */
-const NOT_PORTED = null
-
 /**
  * pattern → 那一招的全部参数。键是 `currentPattern`（2..6），与
  * `SKILL_MENU` 里的 `pattern` 同一个数。
@@ -172,7 +176,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 1,
       background: { name: '横剑摆渡', length: 38 },
       animation: anim('张小凡技能1', 37, 150, 90, 8, 3, 10, 32, 37, 0, 180, -120),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
     3: {
       mpUse: 120,
@@ -182,7 +187,6 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       animation: anim('张小凡技能2', 31, 150, 90, 8, 2, 10, 26, 31, 0, 180, -120),
       // `attackSkill(200,60,120)` + 每个挨打的怪 100% 进「体力下降」（type 8）。
       damage: {
-        kind: 'attack',
         baseHurt: 200,
         offsetHurt: 60,
         mpUse: 120,
@@ -196,7 +200,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 3,
       background: { name: '银鹰掠地', length: 50 },
       animation: anim('张小凡技能3', 31, 150, 90, 8, 2, 7, 28, 31, 0, 180, -120),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
     5: {
       mpUse: 160,
@@ -204,7 +209,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 4,
       background: { name: '龙翔九天', length: 47 },
       animation: anim('张小凡技能4', 44, 150, 90, 8, 4, 10, 39, 44, 0, 180, -120),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
     6: {
       mpUse: 200,
@@ -212,7 +218,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 5,
       background: { name: '神剑傲州', length: 51 },
       animation: anim('张小凡技能5', 42, 150, 90, 8, 4, 10, 37, 42, 0, 180, -120),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
   },
   yu: {
@@ -222,7 +229,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 1,
       background: { name: '伏虎冲天', length: 74 },
       animation: anim('文敏技能1', 28, 120, -80, 8, 6, 9, 22, 28, -150, 0, -260),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
     3: {
       mpUse: 120,
@@ -232,7 +240,6 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       animation: anim('文敏技能2', 32, 120, -80, 8, 3, 10, 26, 32, -150, 0, -260),
       // `attackSkill(250,15,120)` + 自身 100% 进「敏捷提升」（type 1）。
       damage: {
-        kind: 'attack',
         baseHurt: 250,
         offsetHurt: 15,
         mpUse: 120,
@@ -246,7 +253,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 3,
       background: { name: '苍龙盖天', length: 51 },
       animation: anim('文敏技能3', 28, 120, -80, 8, 4, 9, 23, 28, -150, 0, -260),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
     5: {
       mpUse: 120,
@@ -254,7 +262,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 4,
       background: { name: '妙手回春', length: 23 },
       animation: anim('文敏技能4', 16, 120, -80, 0, 0, 0, 0, 0, 0, 0, 0),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
     6: {
       mpUse: 200,
@@ -262,7 +271,8 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
       skillCode: 5,
       background: { name: '蝶影神灵', length: 41 },
       animation: anim('文敏技能5', 41, 120, -80, 8, 4, 9, 36, 41, -150, 0, -260),
-      damage: NOT_PORTED,
+      // 还没移植（归 xl-rh9.14）：表写全，`damage` 留 null，走到就抛。
+      damage: null,
     },
   },
   // 陆雪琪那五条一条都没移植（她的技能菜单在 battle-menus 里没被点过）。

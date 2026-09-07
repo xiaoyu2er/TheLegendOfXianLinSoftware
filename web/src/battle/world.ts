@@ -2,6 +2,12 @@ import { JavaRandom } from '../game/javaRandom'
 import { ENEMY_SLOT_POS, HEROES, battleBgm, derive, enemySpec, expToLevelUp } from './units'
 import type { PartyKey } from './units'
 import { DRUGS } from './drugs'
+import {
+  MENU_BUTTON_H,
+  MENU_BUTTON_W,
+  MENU_BUTTON_X,
+  menuButtonY,
+} from './menuLayout'
 import { SKILL_NUMBER } from './skills'
 import type {
   BattleState,
@@ -51,18 +57,11 @@ function state(): BattleState {
   }
 }
 
-// ===== 两个菜单的按钮几何，全部照抄原版的构造函数 =====
-/** `new GameButton(395, 226+i*10, 215, 28, …)`，而 `i` 每次跳 3 —— 步距就是 30。 */
-const MENU_BUTTON_X = 395
-const MENU_BUTTON_TOP = 226
-const MENU_BUTTON_STRIDE = 30
-const MENU_BUTTON_W = 215
-const MENU_BUTTON_H = 28
-
+/** 第 `index` 颗菜单按钮（几何见 `menuLayout.ts`）。 */
 function menuButton(index: number): MenuButton {
   return {
     x: MENU_BUTTON_X,
-    y: MENU_BUTTON_TOP + MENU_BUTTON_STRIDE * index,
+    y: menuButtonY(index),
     width: MENU_BUTTON_W,
     height: MENU_BUTTON_H,
     isclicked: false,

@@ -2,6 +2,14 @@ import { expToLevelUp, refreshValue } from './units'
 import type { PartyKey, SkillSpec } from './units'
 import { DRUGS, drugIntroText } from './drugs'
 import { SKILLS, SKILL_INTRO_DIR, SKILL_MENU } from './skills'
+import type { SkillEntry } from './skills'
+import {
+  MENU_BUTTON_H,
+  MENU_BUTTON_W,
+  MENU_BUTTON_X,
+  inIntroRow,
+  menuButtonY,
+} from './menuLayout'
 import type {
   BattleState,
   BattleWorld,
@@ -248,19 +256,15 @@ function skillMenuCheckRound(w: BattleWorld): void {
   }
   const m = w.skillMenu
   m.group = key
+  // 返回按钮排在最后一颗技能按钮的下一格（`226 + 按钮数×30`）。
   m.returnButton = {
-    x: 395,
-    y: 226 + m.groups[key].length * 30,
-    width: 215,
-    height: 28,
+    x: MENU_BUTTON_X,
+    y: menuButtonY(m.groups[key].length),
+    width: MENU_BUTTON_W,
+    height: MENU_BUTTON_H,
     isclicked: false,
     variant: 1,
   }
-}
-
-/** 菜单里那一列介绍区的命中判定：`x>395 && x<610 && y>226+i*30 && y<226+(i+1)*30`。 */
-function inIntroRow(x: number, y: number, i: number): boolean {
-  return x > 395 && x < 610 && y > 226 + i * 30 && y < 226 + (i + 1) * 30
 }
 
 /**
@@ -283,7 +287,7 @@ function skillMenuMoveIn(w: BattleWorld, x: number, y: number): void {
   for (let i = 0; i < buttons.length; i++) {
     if (!inIntroRow(x, y, i)) continue
     m.introImage = `${SKILL_INTRO_DIR[key]}/${i + 1}`
-    m.introY = 226 + i * 30
+    m.introY = menuButtonY(i)
     m.isDrawIntro = true
   }
 }
@@ -329,7 +333,7 @@ function drugMenuMoveIn(w: BattleWorld, x: number, y: number): void {
     if (!inIntroRow(x, y, i)) continue
     m.introDrug = i
     m.introText = drugIntroText(DRUGS[i]!)
-    m.introY = 226 + i * 30
+    m.introY = menuButtonY(i)
     m.isDrawIntro = true
   }
 }
@@ -337,16 +341,16 @@ function drugMenuMoveIn(w: BattleWorld, x: number, y: number): void {
 /**
  * `DrugMenu.checkReleased()`。
  *
- * **六种药的 type 是硬写在原版那六个 `if` 里的**（1 回血 / 2 回蓝），不是从
- * 数据文件里推的 —— 顺序是 1,2,1,2,1,2，正好与 drug.txt 里加血/加蓝交替一致。
- * 照抄那六个数，不按 `addHp>0` 现推：推出来的今天一样，而它们是两件事。
+ * 原版那六个 `if` 各自还带一个 **type**（1 回血 / 2 回蓝，顺序 1,2,1,2,1,2），
+ * 那个数**只被「真的用药」那一路读**（决定加 hp 还是加 mp），而那一路今天
+ * 一次都走不到（存货恒为 0）。所以这里不把它抄进来：一张抄了却没人读的表
+ * 抄错一位和抄对了长得一模一样，而它下面那个 `throw` 已经把这件事归给
+ * xl-rh9.14 了。
  */
-const DRUG_TYPE: readonly number[] = [1, 2, 1, 2, 1, 2]
-
 function drugMenuReleased(w: BattleWorld, x: number, y: number): void {
   const m = w.drugMenu
   for (let i = 0; i < DRUGS.length; i++) {
-    if (m.buttons[i]!.isclicked) checkDrugNumber(w, i, DRUG_TYPE[i]!)
+    if (m.buttons[i]!.isclicked) checkDrugNumber(w, i)
   }
   // 返回是第七颗。
   if (m.buttons[DRUGS.length]!.isclicked) {
@@ -364,13 +368,13 @@ function drugMenuReleased(w: BattleWorld, x: number, y: number): void {
  * `battle-menus` 点下去走的是 else 那一支。用得起药那一路要连
  * `progressGo()` 与回血/回蓝一起做，而它一次都没有真值 —— 抛并点名。
  */
-function checkDrugNumber(w: BattleWorld, index: number, type: number): void {
-  void type
+function checkDrugNumber(w: BattleWorld, index: number): void {
   if (w.drugStock[index]! > 0) {
     throw new Error(
       `药品菜单上第 ${index + 1} 种药还剩 ${w.drugStock[index]} 个 —— 真的用药那一路` +
-        '（回血 / 回蓝 / 伤害数字 / progressGo）还没实现，五份战斗真值里存货全是 0，' +
-        '一次都没走到。归 xl-rh9.14。',
+        '还没实现：回血还是回蓝（原版那六个 if 各带一个 type，顺序 1,2,1,2,1,2）、' +
+        '伤害数字、扣存货、progressGo，一样都没有。战斗真值里存货全是 0，' +
+        '这一路一次都没走到。归 xl-rh9.14。',
     )
   }
   showReminder(w, 19)
@@ -839,12 +843,16 @@ function exitToStart(w: BattleWorld): void {
  * `isCheck` 保证只结算一次，回合一换回来才置真。
  */
 function checkHeroState(w: BattleWorld, h: Hero): void {
-  checkStateCommon(w, h.battleState, () => excuteHeroState(h), () => returnHeroState(h))
+  checkStateCommon(w, h.battleState, () => excuteState(h.battleState, '我方'), () =>
+    returnHeroState(h),
+  )
 }
 
 /** `BattleState.check()`，怪物那一份。 */
 function checkEnemyState(w: BattleWorld, e: Enemy): void {
-  checkStateCommon(w, e.battleState, () => excuteEnemyState(e), () => returnEnemyState(e))
+  checkStateCommon(w, e.battleState, () => excuteState(e.battleState, '怪物'), () =>
+    returnEnemyState(e),
+  )
 }
 
 function checkStateCommon(
@@ -933,10 +941,17 @@ function returnHeroState(h: Hero): void {
   )
 }
 
-/** `<主角>.excuteState()`：只有中毒（type 9）有动作，其余什么都不做。 */
-function excuteHeroState(h: Hero): void {
-  if (h.battleState.type === 9) {
-    throw new Error('我方中毒（type 9）的每回合结算还没实现 —— 归 xl-rh9.14')
+/**
+ * `<主角>.excuteState()` 与 `Enemy.excuteState()`。
+ *
+ * 两边的 switch 只有 case 9（中毒）有动作，其余什么都不做 —— 而中毒只由
+ * 文敏技能1 与陆雪琪的两条技能挂得上，一条都没移植。合成一个函数是因为
+ * 「这一支还没实现」这件事两边一模一样；等 case 9 真的做出来时它会自然分家
+ * （我方扣的是 `hp*0.05` 画在 showX/showY，怪物扣的也是 5% 但画在 x/y）。
+ */
+function excuteState(s: BattleState, who: string): void {
+  if (s.type === 9) {
+    throw new Error(`${who}中毒（type 9）的每回合结算还没实现 —— 归 xl-rh9.14`)
   }
 }
 
@@ -969,12 +984,7 @@ function returnEnemyState(e: Enemy): void {
   )
 }
 
-/** `Enemy.excuteState()`：同我方，只有中毒有动作。 */
-function excuteEnemyState(e: Enemy): void {
-  if (e.battleState.type === 9) {
-    throw new Error('怪物中毒（type 9）的每回合结算还没实现 —— 归 xl-rh9.14')
-  }
-}
+
 
 /**
  * `BattleState.clear()`。**`x` / `y` 不在里面** —— 原版那六行只清了六个字段，
@@ -1126,7 +1136,7 @@ function skillAttack(w: BattleWorld, h: Hero): void {
 }
 
 /** `<主角>.skill(i)`：人物收起来，背景动画与技能动画一起开。 */
-function heroSkill(w: BattleWorld, h: Hero, entry: (typeof SKILLS)['zhang'][number]): void {
+function heroSkill(w: BattleWorld, h: Hero, entry: SkillEntry): void {
   h.isDraw = false
   const b = w.backgroundAnimation
   // `BackgroundAnimation.set` 只写 name 与 length，**不重置 code** —— 与
