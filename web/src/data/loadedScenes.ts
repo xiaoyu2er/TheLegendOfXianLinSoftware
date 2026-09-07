@@ -27,8 +27,11 @@ export const loadedSceneSource: SceneSource = (file) => LOADED.get(stem(file))
  * 那两支，**目标场景名压根不在出口表里**。少预取它们的表现是：走出宿舍的门
  * 时 `step()` 抛"这个场景没准备好"，而在 xl-9bd.13 之前一直没人撞上，因为
  * 已有的剧本里那个目标恰好是预热脚本、早就在手上了（dorm-exit 走回的 脚本1）。
+ *
+ * **导出是给测试用的**（`loadedScenes.test.ts`）：这三条分支少一条，`pnpm test`
+ * 曾经 521 条全绿，只有不在 CI 里的跨端比对流水线抓得到（xl-9br）。
  */
-function exitTargets(world: World): string[] {
+export function exitTargets(world: World): string[] {
   const targets = [...(world.exit?.nextScene ?? [])]
   for (const spec of [world.currentScript, world.nextScript]) {
     const file = spec?.[2]
