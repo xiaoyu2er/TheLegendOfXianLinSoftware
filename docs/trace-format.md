@@ -20,7 +20,7 @@
 |---|---|---|---|
 | `scene` | 一个 tick | `dorm-walk` `bigmap-walk` `dorm-intro` `dorm-exit` `milestone` | `SceneDriver.java` |
 | `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `battle-min` `battle-em3-box` | `BattleDriver.java` |
-| `menu` | 一次输入事件 | `menu-equip` | `MenuDriver.java` |
+| `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
 | `shop` | 一次输入事件 | `shop-trade` | `ShopDriver.java` |
 
 **导出命令只有一条，四支通用**（选哪一支由剧本自报的 `driver` 字段定，
@@ -46,7 +46,7 @@ tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 和正确一模一样；能认出错误的是重导之后那个 `git diff`。挑判据时先问：这条检查
 失败的样子，和它通过的样子长得一样吗。
 
-实测（2026-09-06，macOS / openjdk 17，9 份剧本全部 `--check` 通过，
+实测（2026-09-07，macOS / openjdk 17，10 份剧本全部 `--check` 通过，
 `git status` 干净）：
 
 ```
@@ -56,7 +56,8 @@ tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 确定性 OK：dorm-exit      两次导出逐字节一致（1161429 字节）
 确定性 OK：dorm-intro     两次导出逐字节一致（3591275 字节）
 确定性 OK：dorm-walk      两次导出逐字节一致（394779 字节）
-确定性 OK：menu-equip     两次导出逐字节一致（42314 字节）
+确定性 OK：menu-equip     两次导出逐字节一致（48104 字节）
+确定性 OK：menu-magic     两次导出逐字节一致（70527 字节）
 确定性 OK：milestone      两次导出逐字节一致（8101705 字节）
 确定性 OK：shop-trade     两次导出逐字节一致（123082 字节）
 ```
@@ -497,6 +498,8 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 | `select` | `index` | 一次 `mouseMoved` | 把鼠标移到当前列表第 index 行（从 0 起） |
 | `use` | — | 按下 + 松开 | 点"使用" |
 | `abandon` | — | 按下 + 松开 | 点"弃用" |
+| `skill` | `n` = 1..5 | 按下 + 松开 | 点奇术页当前角色的第 n 个技能按钮 |
+| `tick` | `n`（缺省 1） | n 步，一步一次 | 显式推 n 次 `FatherPanel.run()` 的循环体（见下面「tick」） |
 
 **坐标一律不写在剧本里。** 驱动器从原版按钮对象自己的 `x/y/width/height` 反算
 落点（命中判据抄自 `GameButton.isPressedButton`，含原版那个 `-15/-6` 的偏移），
@@ -515,7 +518,7 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 
 每一步记：`panel`（当前子面板）、`hero`（卷轴选中谁，天书页没有卷轴故为 `null`）、
 `heroes[]`（三个人的等级 / 体力 / 敏捷 / 武力 / 精气 / hp / hpMax / mp / mpMax /
-防御 / 技能防御 / 技能数）、`equip`、`drug`、`magic`、`func`。
+防御 / 技能防御 / 技能数）、`equip`、`drug`、`magic`、`func`、`mouse`。
 
 | 字段 | 来源 / 陷阱 |
 |---|---|
@@ -525,6 +528,7 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 | `equip.diff` | 装备页中间那四个升降数字。取的是四个 `ShowValue` 对象自己的 `value`/`type`，**不是 `EquipPanel` 上那四个 `showPP/showAngile/...` 字段**：`showValueDifference()` 的 else 分支（身上那一格是空的）把绝对值直接传进 `ShowValue.show()`，一个字段都不写，于是字段里留着上一次的陈值。`signal != 1` 时记 `null` —— 那一整段（算差值 + 画四个箭头）都在 `if(signal==1)` 里面。 |
 | `magic.animation` | 开局**不是** `null`：`addMagicAnimation()` 用同一个临时字段建了 20 个动画，循环结束时它停在最后一个（文敏第 5 技能）上，于是刚进奇术页就画着那一条说明。照记不改。 |
 | `func.drawn` | 天书页当前画得出来的按钮，按字段名排序。 |
+| `mouse` | 四个子面板**各自**那个 `Mouse`（四条 run 线程各推各的，只有当前页画得出来）。每个记 `code`/`frame`/`x`/`y`。**`code` 与 `frame` 是两回事**：`code` 是"下一格拿哪张图"的计数器，`frame` 是这一帧真的画出来的那张的下标。`Mouse.update()` 先取图再自增，且 `code==8` 那一次只把 code 拨回 1、**不换图** —— 于是第 0 张只在开局出现一次、第 7 张连画两帧。只记 `code` 的话这两件事在真值里都看不见。|
 
 **菜单真值里没有音效。** 原版把音效文件名记在 `MusicPlayer.filename` 上，而那行
 赋值在 `if (CAN_PLAY_MUSIC == YES)` 的**里面**；导出必须
@@ -545,8 +549,45 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 实测（2026-09-06）：把 `Clock.setFactor(SLOW)` 注释掉，`tools/export-trace.sh
 --check menu-equip` 立刻报"两次导出不一致"。
 
-代价是这份真值**记不到那条 100ms 循环推的东西**：鼠标图标的循环帧固定在第 0 帧，
-奇术页的技能动画固定在 `code=1`。菜单里没有别的东西靠它。
+### tick：把冻住的那条循环手动推起来（xl-1vu.9）
+
+冻结换来确定性，代价是那条 100ms 循环推的两样东西在真值里不动：鼠标图标的循环帧
+停在第 0 帧、奇术页的技能动画停在 `code=1`。`menu-equip` 至今就是这个样子
+（它整条剧本的 `mouse` 都是全 0）—— 那份真值本身没错，菜单里**可断言的状态变化**
+确实全由事件同步引起；缺的是 M3 真要把技能动画画出来时**没有逐帧真值可比**。
+
+`tick` 指令补的就是这一块：**一步 = 一次循环体**，由驱动器显式调，不靠真实线程。
+循环体是 `update(); mouse.update(); repaint();`，而一次 tick 推的是**四个子面板
+各一次** —— 原版那四条线程不管哪一页在显示都在跑。四者互不相干（只有
+`MagicPanel.update()` 有实质动作，各自的 `Mouse` 只读自己面板的 `currentX/Y`），
+所以推进顺序不影响结果，固定成 `MenuPanel` 建面板的顺序只是为了可复现。
+`repaint()` 那一半照旧由每步末尾那次 `paint()` 顶替，且只画当前页 —— 与原版一致：
+CardLayout 盖住的面板 `repaint()` 不会真画。
+
+**每 tick 都核对推进真的发生了**，两条：
+
+- 鼠标帧按 `Mouse.update()` 的规则走一格（`code<8` 时换成 images[旧 code] 且 code
+  加一；`code==8` 时 code 回到 1 且不换图）；
+- 奇术页有动画在放时 `code` 加一，走到 `code+1==length` 时 `code` 被拨回 1 且
+  `currentAnimation` 被置空。
+
+这两条不是装饰。一次 tick 如果没落到该落的对象上，真值里只是多出几行一模一样的
+状态 —— 和"这一段本来就没有变化"长得完全一样。实测（2026-09-07）：把
+`mouseOf(p).update()` 注释掉，`menu-magic` 当场非零退出并说
+"thingPanel 的鼠标帧没有按 Mouse.update() 推进：code 0 → 0（应为 1）"；把
+`p.update()` 注释掉，报"奇术页动画的 code 没有推进：1 → 1（应为 2）"。**而把这两条核对
+一并注释掉之后，`--check` 照样报"两次导出逐字节一致"** —— 稳定的错误在它眼里
+和正确一模一样，认出来的是重导之后那个 `git diff`。
+
+`menu-magic` 是唯一一条推它的剧本：先在物品页空推 2 拍，看开局就挂在 `MagicPanel`
+上的那条文敏第 5 技能动画照样往前走（`code` 1→3）；进奇术页时那一次**按下**把
+`currentAnimation` 清成 `null`（`checkAllButtonPressed` 的第一件事，不是 bug，
+是原版）；再点张小凡第 1 个技能，推满 36 拍走完那条 37 帧的动画。43 拍正好覆盖
+鼠标帧的一整轮绕回。
+
+加 `mouse` 字段让 `menu-equip` 的真值也变了：**diff 只有这一个新增字段，全程恒为
+0**（脚本回显、`tickCount`、其余每个字段逐字节不变）—— 那正是这张票要让人看见的
+事实。
 
 ## 商店剧本与商店真值（`driver` = `shop`）
 
@@ -628,6 +669,7 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `dorm-intro` | `脚本1.txt` | 6 句旁白逐字播完（46 个背景帧）、接一整段 23 句主线对话，头像式与名字式两种对话框、翻页 |
 | `dorm-exit` | `宿舍.txt` → `大地图.txt` → `脚本1.txt` | 出口切换的两条分支：走到 `宿舍` 门口进 `大地图`（`isScript` 置假），再从 `大地图` 走回来 —— 回的是 `currentScript[2]`（`脚本1`）而不是 `宿舍`，`isScript` 重新为真、旁白被 `narratageOver` 压掉、主线对话的进度按 `dialogueOrder` 还原。三次背景音乐切换、两个入口坐标 |
 | `milestone` | `脚本1.txt` → `脚本2` → `大活夜` → `大地图夜` | M1 里程碑：开场从头走一遍 —— 旁白 + 23 句主线对话 + 跟曾书书搭话，出门进大地图夜，那边的旁白与 27 句对话也走完，进大活夜再出来。覆盖出口切换的三条分支与两次背景音乐切换 |
+| `menu-magic` | 菜单（`driver` = `menu`） | 奇术页与那条 100ms 循环的逐帧真值（`tick` 指令）：开局挂着的文敏第 5 技能动画在物品页上照样推进（`code` 1→3）→ 进奇术页那一次按下把它清成 `null` → 张小凡第 1 个技能的 37 帧走完（末帧 `code` 拨回 1、动画撤下）→ 鼠标图标 43 拍走完一整轮绕回（第 0 张只出现一次、第 7 张连画两帧） |
 | `menu-equip` | 菜单（`driver` = `menu`） | 四个子面板各自进入与退出；装备页一整条换装：拒绝（已装备）→ 弃用（敏捷 11→10、武力 12→10、精气 11→10）→ 拒绝（藏璎环是陆雪琪专属）→ 换回武器 → 穿上铁甲（体力 10→15、血上限 700→1050、防御 50→75）→ 物品页喝药（生命 700→1000，金创药 2→1） |
 | `battle-min` | 战斗（`driver` = `battle`） | `剧情1.txt` 的那场固定遭遇（三人对三怪），从开场动画打到分出胜负。第一回合的两步写成显式指令，之后 `autoAttack` 打完 |
 | `battle-em3-box` | 战斗（`driver` = `battle`） | 让 xl-1dv.8（`EnemySlector` 判 em3 用了 `height1`）在真值里露头的那一场：`脚本20.txt` 第 3 行的 Fight 数据，em1 的图 188×220 而 em3 的图 124×172 |

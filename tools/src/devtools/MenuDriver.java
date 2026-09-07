@@ -17,6 +17,7 @@ import media.MusicPlayer;
 import media.MusicReader;
 import menu.FatherPanel;
 import menu.MenuPanel;
+import menu.Mouse;
 import scene.SaveAndLoad;
 import shop.Drug;
 import shop.DrugPack;
@@ -60,6 +61,24 @@ import tools.Clock;
  * 拒绝标志的读取时机是这里唯一有讲究的地方：{@code isEquiped} / {@code canBeEquiped}
  * 由事件置位、由紧接着那次 paint 清零，所以必须**在 paint 之前**抓下来。放到
  * paint 之后读，永远是 0 —— 一份"没有任何拒绝发生过"的真值，而它看上去完全正常。
+ *
+ * <h2>tick：把冻住的那条 100ms 循环手动推起来（xl-1vu.9）</h2>
+ *
+ * 冻结换来了确定性，代价是那条循环推的两样东西在真值里不动：鼠标图标的循环帧、
+ * 奇术页的技能动画。剧本里的 {@code tick} 指令补上这一块 —— **一步 = 一次循环体**，
+ * 由这里显式调，而不是靠真实线程。
+ *
+ * 循环体是 {@code update(); mouse.update(); repaint();}，而 tick 推的是**四个子面板
+ * 各一次**：原版四条线程一直在跑，不管哪一页正显示着。四者互不相干（只有
+ * {@code MagicPanel.update()} 有实质动作，各自的 {@code Mouse} 只读自己面板的
+ * currentX/Y），所以推进顺序不影响结果 —— 这里按 {@code MenuPanel} 建面板的顺序，
+ * 固定下来只是为了可复现。{@code repaint()} 那一半照旧由 {@link #step()} 末尾那次
+ * {@code paint()} 顶替，而且只画当前页 —— 与原版一致：CardLayout 盖住的面板
+ * {@code repaint()} 不会真画。
+ *
+ * 每 tick 都核对鼠标帧真的往前走了一格。这条不是装饰：一次 tick 如果没落到
+ * {@code Mouse.update()} 上（推错了对象、取错了面板），真值里只是多几行一模一样的
+ * 状态 —— 和"这一段本来就没变化"长得完全一样。
  */
 public final class MenuDriver implements TraceDriver {
 
@@ -144,6 +163,10 @@ public final class MenuDriver implements TraceDriver {
             case "slot":    return click("slot:" + in.target, slotButton(in.target));
             case "use":     return click("use", useButton());
             case "abandon": return click("abandon", field(equipPanel(), "abandon_button"));
+            case "skill":   return click("skill:" + in.n, skillButton(in.n));
+            case "tick":
+                tick();
+                return sub == in.n - 1;
             default:
                 fail("不认识的指令 " + in.op);
                 return true;
@@ -258,6 +281,118 @@ public final class MenuDriver implements TraceDriver {
     private String geometry(Object button) {
         return getInt(button, "x") + "," + getInt(button, "y") + " "
                 + getInt(button, "width") + "×" + getInt(button, "height");
+    }
+
+    // ================= tick =================
+
+    /**
+     * 推一次 {@code FatherPanel.run()} 的循环体，四个子面板各一次。
+     *
+     * 推完核对每个面板的鼠标帧真的按 {@code Mouse.update()} 的规则走了一格：
+     * {@code code<8} 时 currentImage 变成 images[旧 code]、code 加一；{@code code==8}
+     * 时 code 回到 1、图不换（原版就是这么写的，第 0 帧因此只在开局出现一次）。
+     * 顺带核对奇术页的动画：有动画在放且没到末帧时，code 必须加一。
+     */
+    private void tick() {
+        List<FatherPanel> ps = panels();
+        int[] beforeCode = new int[ps.size()];
+        Object[] beforeImage = new Object[ps.size()];
+        for (int i = 0; i < ps.size(); i++) {
+            Mouse m = mouseOf(ps.get(i));
+            beforeCode[i] = getInt(m, "code");
+            beforeImage[i] = field(m, "currentImage");
+        }
+        Object anim = field(magicPanel(), "currentAnimation");
+        int animBefore = anim == null ? -1 : getInt(anim, "code");
+        int animLength = anim == null ? -1 : getInt(anim, "length");
+
+        for (FatherPanel p : ps) {
+            p.update();
+            mouseOf(p).update();
+        }
+
+        for (int i = 0; i < ps.size(); i++) {
+            checkMouseAdvanced(ps.get(i), beforeCode[i], beforeImage[i]);
+        }
+        checkAnimationAdvanced(anim, animBefore, animLength);
+        pending.add("{\"e\":\"tick\"}");
+    }
+
+    private void checkMouseAdvanced(FatherPanel p, int before, Object beforeImage) {
+        Mouse m = mouseOf(p);
+        int after = getInt(m, "code");
+        Object image = field(m, "currentImage");
+        if (before < 8) {
+            if (after != before + 1 || image != mouseFrames(m).get(before)) {
+                fail(p.getName() + " 的鼠标帧没有按 Mouse.update() 推进：code " + before
+                        + " → " + after + "（应为 " + (before + 1) + "），图是第 "
+                        + mouseFrames(m).indexOf(image) + " 张（应为第 " + before + " 张）"
+                        + " —— 这一 tick 没落到 Mouse.update() 上");
+            }
+        } else if (after != 1 || image != beforeImage) {
+            fail(p.getName() + " 的鼠标帧在 code==8 时应该回到 1 且不换图，实际 code=" + after
+                    + "、图" + (image == beforeImage ? "没换" : "换了"));
+        }
+    }
+
+    /**
+     * 奇术页的技能动画。{@code MagicPanel.update()} 先让动画 code 加一，再在
+     * {@code code==length} 时把 code 拨回 1 并把 currentAnimation 置空 —— 所以
+     * 一整条动画是 length-1 次 tick。
+     */
+    private void checkAnimationAdvanced(Object anim, int before, int length) {
+        if (anim == null) return;                     // tick 之前本来就没有动画在放
+        Object now = field(magicPanel(), "currentAnimation");
+        if (before + 1 == length) {
+            // 末帧：原版把 code 拨回 1 并撤下动画。
+            if (now != null) {
+                fail("奇术页动画走到末帧 " + length + " 之后 currentAnimation 应该被置空，实际还在");
+            }
+            if (getInt(anim, "code") != 1) {
+                fail("奇术页动画撤下时 code 应该被拨回 1，实际是 " + getInt(anim, "code"));
+            }
+            return;
+        }
+        int after = getInt(anim, "code");
+        if (after != before + 1) {
+            fail("奇术页动画的 code 没有推进：" + before + " → " + after
+                    + "（应为 " + (before + 1) + "）");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Image> mouseFrames(Mouse m) {
+        return (List<Image>) field(m, "images");
+    }
+
+    private Mouse mouseOf(FatherPanel p) { return (Mouse) field(p, "mouse"); }
+
+    /** 四个子面板，顺序同 {@code MenuPanel} 的构造。 */
+    private List<FatherPanel> panels() {
+        return Arrays.asList((FatherPanel) drugPanel(), (FatherPanel) magicPanel(),
+                (FatherPanel) funcPanel(), (FatherPanel) equipPanel());
+    }
+
+    /**
+     * 奇术页当前角色的第 n 个技能按钮。按钮列表按 {@code scoll.whichHero} 选，
+     * 与 {@code MagicPanel.checkAllButtonPressed} 同一个判据。
+     */
+    @SuppressWarnings("unchecked")
+    private Object skillButton(int n) {
+        if (!panelName().equals("magicPanel")) {
+            fail("skill 只能用在奇术页，当前是 " + panelName());
+        }
+        int who = getInt(field(current(), "scoll"), "whichHero");
+        String list;
+        switch (who) {
+            case 1: list = "buttonList1"; break;
+            case 2: list = "buttonList2"; break;
+            case 4: list = "buttonList4"; break;
+            default: fail("奇术页当前角色是 " + who + "，原版没给它技能按钮"); return null;
+        }
+        List<Object> bs = (List<Object>) field(magicPanel(), list);
+        if (n > bs.size()) fail("第 " + n + " 个技能按钮不存在，" + list + " 只有 " + bs.size() + " 个");
+        return bs.get(n - 1);
     }
 
     // ================= 起手 =================
@@ -462,7 +597,34 @@ public final class MenuDriver implements TraceDriver {
         b.append(",\"drug\":").append(drugJson());
         b.append(",\"magic\":").append(magicJson());
         b.append(",\"func\":").append(funcJson());
+        b.append(",\"mouse\":").append(mouseJson());
         return b.append("}").toString();
+    }
+
+    /**
+     * 四个子面板各自那个 {@code Mouse}（xl-1vu.9）。四条 run 线程一直在跑，所以
+     * 四个鼠标各推各的，只有当前页那一个画得出来。
+     *
+     * 同时记 {@code code} 与 {@code frame}：{@code code} 是"下一格拿哪张图"的计数器，
+     * {@code frame} 是**这一帧真的画出来的那张**在 images 里的下标。两者只在开局
+     * 和绕回时不一致 —— {@code Mouse.update()} 先取图再自增，且 {@code code==8}
+     * 那一次只把 code 拨回 1、图不换。只记 code 的话，"第 8 张画了两帧"这个原版
+     * 行为在真值里看不见。
+     */
+    private String mouseJson() {
+        StringBuilder b = new StringBuilder("{");
+        List<FatherPanel> ps = panels();
+        for (int i = 0; i < ps.size(); i++) {
+            FatherPanel p = ps.get(i);
+            Mouse m = mouseOf(p);
+            if (i > 0) b.append(',');
+            b.append(Json.str(p.getName())).append(":{\"code\":").append(getInt(m, "code"))
+             .append(",\"frame\":").append(mouseFrames(m).indexOf(field(m, "currentImage")))
+             .append(",\"x\":").append(getInt(m, "x"))
+             .append(",\"y\":").append(getInt(m, "y"))
+             .append('}');
+        }
+        return b.append('}').toString();
     }
 
     /** 当前页选中的是哪个角色。天书页没有卷轴，记 null 而不是编一个。 */

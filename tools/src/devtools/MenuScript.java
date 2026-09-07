@@ -24,6 +24,14 @@ import java.util.Map;
  *   select  {index}  把鼠标移到当前列表的第 index 行（从 0 起）。一次 mouseMoved。
  *   use              点"使用"。按下 + 松开。
  *   abandon          点"弃用"。按下 + 松开。
+ *   skill   {n}      点奇术页当前角色的第 n 个技能按钮（1..5）。按下 + 松开。
+ *   tick    {n}      显式推进 n 次 {@code FatherPanel.run()} 的循环体，一步一次。
+ *
+ * tick 是 xl-1vu.9 补上的。菜单的时间驱动是四条 {@code while(true){ Clock.sleep(100);
+ * update(); mouse.update(); repaint(); }} 线程，而导出为了确定性把它们冻住了
+ * （{@link MenuDriver} 的 SLOW）。冻住之后鼠标图标的循环帧与奇术页技能动画在真值里
+ * 是不动的 —— tick 让剧本自己把那个循环体推起来，一步 = 一次，于是这两样东西的
+ * 逐帧推进也进了真值。
  *
  * **坐标一律不写在剧本里。** 驱动器从原版按钮对象自己的 x/y/width/height 反算
  * 落点，并在按下之后核对那个按钮真的 isclicked —— 写死坐标的话，原版哪天挪了
@@ -70,13 +78,16 @@ public final class MenuScript {
         public final int index;
         /** hero 的角色编号；别的指令是 0。 */
         public final int hero;
-        Instruction(String op, String target, int index, int hero) {
-            this.op = op; this.target = target; this.index = index; this.hero = hero;
+        /** tick 的次数 / skill 的技能编号；别的指令是 0。 */
+        public final int n;
+        Instruction(String op, String target, int index, int hero, int n) {
+            this.op = op; this.target = target; this.index = index;
+            this.hero = hero; this.n = n;
         }
     }
 
     private static final List<String> OPS =
-            Arrays.asList("tab", "hero", "slot", "select", "use", "abandon");
+            Arrays.asList("tab", "hero", "slot", "select", "use", "abandon", "skill", "tick");
     private static final List<String> TABS = Arrays.asList("thing", "equip", "magic", "func");
     private static final List<String> SLOTS =
             Arrays.asList("weapon", "armor", "helmet", "shoe", "glove", "decoration");
@@ -106,7 +117,7 @@ public final class MenuScript {
                 throw new IllegalArgumentException("不认识的指令 " + op + "，可用的是 " + OPS);
             }
             String target = null;
-            int index = -1, hero = 0;
+            int index = -1, hero = 0, n = 0;
             switch (op) {
                 case "tab":
                     target = JsonIn.str(s, "name");
@@ -130,10 +141,22 @@ public final class MenuScript {
                         throw new IllegalArgumentException("hero 的 n 只能是 1/2/4（3 号宋大仁原版没做进菜单），实际 " + hero);
                     }
                     break;
+                case "skill":
+                    n = JsonIn.i(s, "n");
+                    if (n < 1 || n > 5) {
+                        throw new IllegalArgumentException("skill 的 n 只能是 1..5（每个角色五个技能位），实际 " + n);
+                    }
+                    break;
+                case "tick":
+                    // 缺省 1 是为了让 {"op":"tick"} 读起来就是"推一次"。0 或负数没有意义，
+                    // 而且展开成零步之后剧本会安安静静地少跑一段 —— 硬失败。
+                    n = JsonIn.iOr(s, "n", 1);
+                    if (n < 1) throw new IllegalArgumentException("tick 的 n 必须为正，实际 " + n);
+                    break;
                 default:
                     break;
             }
-            steps.add(new Instruction(op, target, index, hero));
+            steps.add(new Instruction(op, target, index, hero, n));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
@@ -193,6 +216,7 @@ public final class MenuScript {
             if (s.target != null) b.append(",\"name\":").append(Json.str(s.target));
             if (s.op.equals("select")) b.append(",\"index\":").append(s.index);
             if (s.op.equals("hero")) b.append(",\"n\":").append(s.hero);
+            if (s.op.equals("skill") || s.op.equals("tick")) b.append(",\"n\":").append(s.n);
             b.append('}');
         }
         return b.append("]}").toString();
