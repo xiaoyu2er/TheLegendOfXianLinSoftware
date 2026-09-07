@@ -57,6 +57,7 @@ const IMPLEMENTED: readonly string[] = [
   'battle-defeat-scene',
   'battle-defeat-start',
   'battle-defeat-slot2',
+  'battle-menus',
 ]
 
 /**

@@ -11,7 +11,14 @@ import type { JavaRandom } from '../game/javaRandom'
  * 要复刻的东西。
  */
 
-/** `BattleState`。四个字段就是真值里 `state` 那个对象。 */
+/**
+ * `BattleState`。真值里 `state` 那个对象就是它去掉 `isCheck` / `successRate`
+ * 的样子（那两个不在真值里：`isCheck` 只在同一拍内做防重入，`successRate`
+ * 原版的 `set()` 从来不写它，恒为 0）。
+ *
+ * `x` / `y` 是 xl-rh9.11 补进真值的：状态图标就画在这两个数上
+ * （`BattleState.drawState`），而它们只由 `set(...)` 写一次、此后不动。
+ */
 export interface BattleState {
   type: number
   roundNum: number
@@ -19,6 +26,8 @@ export interface BattleState {
   isCheck: boolean
   successRate: number
   roleCode: number
+  x: number
+  y: number
 }
 
 /** `BeAttackedAnimation` / `DeadAnimation` / `VictoryAnimation` 共用的帧计数器。 */
@@ -180,6 +189,64 @@ export interface Command {
   thing: GameButton
 }
 
+/**
+ * 技能菜单 / 药品菜单上的一颗按钮。
+ *
+ * 与 `GameButton` 只差一个 `variant`（`GameButton.buttonImage` 现在贴的是
+ * 常态 / 待点 / 按下三张里的哪一张）。**为什么不合并成一个类型**：控制台那
+ * 四颗的 `variant` 不在行为真值里，所以它存在渲染那一层的 `PaintState` 里
+ * （见 `render/paint.ts` 顶上那段）；菜单这几颗的 `variant` xl-rh9.11 补进了
+ * 真值，于是它必须由状态层推出来、并逐字段对上。同一个字段两处维护，迟早
+ * 分家，而分家的表现是一颗按钮的高亮对不上 —— 逐帧比对之外看不出来。
+ */
+export interface MenuButton {
+  x: number
+  y: number
+  width: number
+  height: number
+  isclicked: boolean
+  /** 1 常态 / 2 待点 / 3 按下。 */
+  variant: 1 | 2 | 3
+}
+
+/**
+ * `SkillMenu`（xl-rh9.11）。按钮**三组各建各的**（原版 `zhangButtons` /
+ * `wenButtons` / `luButtons`），`buttons` 指向当前回合那一组 —— 与原版
+ * `skillButtons` 是同一种别名关系。
+ */
+export interface SkillMenu {
+  isDraw: boolean
+  /** `skillButtons` 现在指着谁那一组。构造完就指着张小凡那组（原版最后一句）。 */
+  group: 'zhang' | 'yu' | 'lu'
+  /** 三组按钮，只有出战的人才有（原版 `if(bp.zxf!=null)`）。 */
+  groups: Readonly<Record<'zhang' | 'yu' | 'lu', MenuButton[]>>
+  /**
+   * 返回按钮。**`checkRound()` 现 new 一颗**，所以点「技」之前它是 null ——
+   * 而 `drawSkillMenu` 无条件画它，也就是说菜单画出来时它一定已经有了。
+   */
+  returnButton: MenuButton | null
+  isDrawIntro: boolean
+  /** `"张小凡/2"` 这种形状，直接对应 `image/技能说明/<谁>/<n>.png`。 */
+  introImage: string | null
+  introY: number
+}
+
+/** `DrugMenu`（xl-rh9.11）。七颗按钮：六种药 + 返回。 */
+export interface DrugMenu {
+  isDraw: boolean
+  buttons: MenuButton[]
+  isDrawIntro: boolean
+  /** 介绍的是第几种药（0 基，与 `drugs.ts` 的 `DRUGS` 同序）。 */
+  introDrug: number | null
+  introY: number
+  introText: string | null
+  /**
+   * `checkHero()` 定下来的「这一回合是谁在用药」，1/2/3；还没定是 0。
+   * 不在真值里（原版是个对象引用），但 `checkDrugNumber` 要它。
+   */
+  currentHero: number
+}
+
 export interface Instruct {
   code: number
   isDraw: boolean
@@ -190,6 +257,15 @@ export interface Instruct {
 }
 
 export interface Reminder {
+  /**
+   * 画的是**第几张图**（文件号，`image/提示图/<image>.png`），没显示过是 null。
+   *
+   * ⚠️ **与 `show(i)` 的入参差一。** `Reminder.loadImage()` 把 `1.png`..`22.png`
+   * 依次装进 `images`，而 `show(i)` 取的是 `images.get(i)` —— 所以
+   * `show(19)`（药品存货不足）画的是 **20.png**。真值里记的就是这个文件号，
+   * 那个 +1 只在 `showReminder()` 里做一次。
+   */
+  image: number | null
   code: number
   isDraw: boolean
   isStop: boolean
@@ -289,8 +365,17 @@ export interface BattleWorld {
   /** `LaunchAttack.code`：怪物出手前那 5 拍前摇，整个发动器共用一个计数器。 */
   launchCode: number
 
-  skillMenuDrawn: boolean
-  drugMenuDrawn: boolean
+  skillMenu: SkillMenu
+  drugMenu: DrugMenu
+  /**
+   * 六种药各自还剩几个（`DrugPack.drugList.get(i).getNumberGOT()`）。
+   *
+   * 原版是个 **static** 列表，跨战斗、跨面板共用；这一层把它挂在世界上，因为
+   * 一份真值就是一场战斗。新开档一个都没有（`ShopReader` 不给 `numberGOT`
+   * 赋值，数据文件里也没有那一列），所以它全是 0 —— 而"全是 0"正是
+   * `battle-menus` 那条剧本点下去走提示图的前提。
+   */
+  drugStock: number[]
   victoryDrawn: boolean
   victoryStopped: boolean
   gameOver: GameOverAnim

@@ -28,8 +28,17 @@ export interface DriverStanding {
   readonly script: string
   /** 真值头里的判别名（`TraceDriver.kind()` 写的那个）。 */
   readonly driver: string
-  /** 取图页装得出来吗。 */
+  /** 取图页装得出这个**驱动器**吗。 */
   readonly implemented: boolean
+  /**
+   * 这一轮到底比不比得成。
+   *
+   * 与 `implemented` 分成两个字段，是因为「比不成」有**两种**（xl-rh9.11）：
+   * 驱动器整个装不出来（`unassembled`），或者驱动器装得出、可这条剧本会走进
+   * 一层还没实现的绘制（`unpainted` —— `battleDrawList` 当场抛）。两种在报告
+   * 里都得响亮地点名，但归的票不是一张，指的东西也不是一件。
+   */
+  readonly comparable: boolean
   readonly expectation: Expectation
 }
 
@@ -54,6 +63,13 @@ export function checkStanding(script: string, driver: string): DriverStanding {
   const implemented = isImplementedDriver(driver)
   const pageHas = `取图页实现了：${[...IMPLEMENTED_DRIVERS].sort().join('、')}`
 
+  if (!implemented && expectation.status === 'unpainted') {
+    throw new Error(
+      `${script} 的表态是 unpainted（驱动器装得出、只是有一层还没画），但取图页` +
+        `根本装配不出 driver=${driver}（${pageHas}）。这两件事分得开：` +
+        `装不出驱动器写 unassembled。`,
+    )
+  }
   if (!implemented && expectation.status !== 'unassembled') {
     throw new Error(
       `${script} 的表态是 ${expectation.status}，但取图页装配不出 driver=${driver}（${pageHas}）。` +
@@ -68,7 +84,13 @@ export function checkStanding(script: string, driver: string): DriverStanding {
         `留着这条表态的话，这条剧本会永远挂在「比不了」上，没人回来量它。`,
     )
   }
-  return { script, driver, implemented, expectation }
+  return {
+    script,
+    driver,
+    implemented,
+    comparable: implemented && expectation.status !== 'unpainted',
+    expectation,
+  }
 }
 
 /** 报给人看的一行：是哪条剧本、哪个驱动器、为什么比不了、归哪张票。 */

@@ -42,6 +42,22 @@ describe('跨端比对的期望表', () => {
     }
   })
 
+  it('unpainted 的表态不许带任何量出来的数，且必须挂着接它的那张票', () => {
+    // 与 unassembled 同一条理由（一帧都没比过），只是「比不了」的原因不同：
+    // 驱动器装得出，可这条剧本会走进一层还没实现的绘制。分母从表里现数。
+    const unpainted = Object.entries(EXPECTED).filter(([, e]) => e.status === 'unpainted')
+    expect(
+      unpainted.length,
+      '一条 unpainted 都没有了？那几层画出来之后把这条判据删掉',
+    ).toBeGreaterThan(0)
+    for (const [name, e] of unpainted) {
+      expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
+      expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()
+      expect(e.why, `${name} 要说清楚为什么画不出来`).toBeTruthy()
+      expect(e.issue, `${name} 要挂上接它的那张票`).toMatch(/^xl-/)
+    }
+  })
+
   it('unassembled 的表态不许带任何量出来的数 —— 一帧都没比过，写了就是编的', () => {
     // xl-1vu.4 与 xl-1vu.5 合流时定的状态（见 expected.ts 的 status 注释）。
     // 它是个「还没得比」，不是「比过了但差着」。加这条判据是因为一个不带任何
