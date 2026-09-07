@@ -121,29 +121,29 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     status: 'unassembled',
     // 打输的两条出口之一（xl-rh9.3）：剧情必败战，全灭之后原版切回 scenePanel，
     // 张小凡与文敏各回半血。与另外两条战斗剧本同一个处境 —— 取图页还没有战斗
-    // 装配（M2 / xl-rh9.4），所以既不写 maxRatio 也不写 gaps：一帧都还没比过，
+    // 装配（M2 / xl-rh9.9），所以既不写 maxRatio 也不写 gaps：一帧都还没比过，
     // 写任何上界都是编的。
     //
     // 它对 M2 的意义不在像素上，而在**最后一步**上：`GameOver.update()` 只比
     // 第一只怪的名字，两条出口全靠这一个字符串分岔。它与 battle-defeat-start
     // 必须成对存在 —— 只测一条时，「两条都走错边」和「分支写对了」长得一模一样。
     //
-    // `issue` 写的是 xl-rh9.4（xl-rh9 这个 SPEC 重拆 M2 之后，真正在 web 侧
-    // 接战斗装配的那一张），上面两条写的 xl-82c 是同一件事的 epic 号 ——
-    // 报告里因此会看到一个驱动器报两个票号，指的是同一个缺口。
+    // `issue` 写的是 xl-rh9.9（在 web 侧注册战斗装配、把这几条表态从「装不出」
+    // 换掉的那一张），上面两条写的 xl-82c 是同一件事的 epic 号 —— 报告里因此
+    // 会看到一个驱动器报两个票号，指的是同一个缺口。
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
-    issue: 'xl-rh9.4',
+    issue: 'xl-rh9.9',
   },
   'battle-defeat-start': {
     status: 'unassembled',
     // 打输的另一条出口（xl-rh9.3）：普通全灭，切回 startPanel，谁的血都不回。
-    // 装配不出来的理由同上（M2 / xl-rh9.4）。
+    // 装配不出来的理由同上（M2 / xl-rh9.9）。
     //
     // 这一条额外钉住那个字符串比较是**逐字相等**：这一场的三只怪叫「罹年居士
     // 分身」，以「罹年居士」开头 —— 用 startsWith / includes 写的分支会把它也
     // 送回地图，而那个错在 battle-defeat-scene 里是看不出来的。
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
-    issue: 'xl-rh9.4',
+    issue: 'xl-rh9.9',
   },
   'battle-defeat-slot2': {
     status: 'unassembled',
@@ -154,7 +154,8 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     //
     // 装配不出来的理由与上面几条相同（web 侧还没有战斗面板）。`issue` 写
     // xl-rh9.9：那是注册战斗装配、把这几条表态从「装不出」换掉的那一张。
-    // 上面两条打输剧本写的 xl-rh9.4 已经拆成 .7/.8/.9，主干合并时一并改。
+    // （上面两条打输剧本原本写的是 xl-rh9.4，那张已拆成 .7/.8/.9，主干在合并
+    // xl-rh9.6 时一并改成了 .9。）
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
     issue: 'xl-rh9.9',
   },
