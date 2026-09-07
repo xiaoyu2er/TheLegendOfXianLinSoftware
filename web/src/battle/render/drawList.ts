@@ -439,23 +439,24 @@ const VR_ROWS: readonly { readonly key: PartyKey; readonly of: (w: BattleWorld) 
 function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
   const v = w.victoryReminder
   if (!v.isDraw) return
+  // 逐字段对回原版构造函数的那张表（判据在 victoryReminder.test.ts）。
   const L = VICTORY_REMINDER_LAYOUT
 
   // 卷轴底：目标 (412,80)-(612,dy2)，源 (0,0)-(200,sy2)。
-  rectOp(push, 'victory-reminder', VICTORY_REMINDER.back, L.dx1, L.dy1, L.dx2, v.dy2, L.sx1, L.sy1, L.sx2, v.sy2)
+  cornersOp(
+    push,
+    'victory-reminder',
+    VICTORY_REMINDER.back,
+    { x1: L.dx1, y1: L.dy1, x2: L.dx2, y2: v.dy2 },
+    { x1: L.sx1, y1: L.sy1, x2: L.sx2, y2: v.sy2 },
+  )
   // 物品框：八个坐标全在真值里，从中心对开。
-  rectOp(
+  cornersOp(
     push,
     'victory-reminder',
     VICTORY_REMINDER.thingBack,
-    v.thingDx1,
-    v.thingDy1,
-    v.thingDx2,
-    v.thingDy2,
-    v.thingSx1,
-    v.thingSy1,
-    v.thingSx2,
-    v.thingSy2,
+    { x1: v.thingDx1, y1: v.thingDy1, x2: v.thingDx2, y2: v.thingDy2 },
+    { x1: v.thingSx1, y1: v.thingSy1, x2: v.thingSx2, y2: v.thingSy2 },
   )
 
   if (v.firstIsDraw) {
@@ -574,30 +575,38 @@ function showNum(showNums: readonly (number | null)[], at: number, key: PartyKey
 }
 
 /**
+ * 一个**用对角两点给出的**矩形 —— 原版 `drawImage` 那个八参版就是这么写的。
+ *
+ * 不摊成八个裸 number 参数：那八个数在调用点全是 `number`，传串了一对
+ * （比如把源矩形的 y 传进目标矩形）编译期一声不出，而画出来只是"这张图
+ * 位置有点怪"。分成两个具名对象之后，传串要先写错字段名。
+ */
+interface Corners {
+  readonly x1: number
+  readonly y1: number
+  readonly x2: number
+  readonly y2: number
+}
+
+/**
  * 原版 `drawImage(img, dx1,dy1,dx2,dy2, sx1,sy1,sx2,sy2, …)` 那一支：**两个
  * 矩形都按对角两点给**。空的源矩形（宽或高 ≤ 0）什么都不画，与 Java2D 一致。
  */
-function rectOp(
+function cornersOp(
   push: (op: DrawOp) => void,
   layer: LayerName,
   id: AssetId,
-  dx1: number,
-  dy1: number,
-  dx2: number,
-  dy2: number,
-  sx1: number,
-  sy1: number,
-  sx2: number,
-  sy2: number,
+  dest: Corners,
+  src: Corners,
 ): void {
-  if (sx2 - sx1 <= 0 || sy2 - sy1 <= 0) return
-  if (dx2 - dx1 <= 0 || dy2 - dy1 <= 0) return
+  if (src.x2 - src.x1 <= 0 || src.y2 - src.y1 <= 0) return
+  if (dest.x2 - dest.x1 <= 0 || dest.y2 - dest.y1 <= 0) return
   push({
     kind: 'rect',
     layer,
     id,
-    dest: { x: dx1, y: dy1, width: dx2 - dx1, height: dy2 - dy1 },
-    src: { x: sx1, y: sy1, width: sx2 - sx1, height: sy2 - sy1 },
+    dest: { x: dest.x1, y: dest.y1, width: dest.x2 - dest.x1, height: dest.y2 - dest.y1 },
+    src: { x: src.x1, y: src.y1, width: src.x2 - src.x1, height: src.y2 - src.y1 },
   })
 }
 

@@ -320,7 +320,14 @@ describe('battle-victory：结算画面逐拍画出来', () => {
     const f = drawn.find((x) => x.v.thirdString)
     expect(f, '掉落物清单一次都没画').toBeDefined()
     const v = f!.v
-    const texts = f!.ops.filter((o) => o.kind === 'text').slice(-(v.things.length + 1))
+    // 按落笔的横坐标挑这一栏，**不要用 slice(-N) 取末 N 条** —— 那样多画了
+    // 一行会被 slice 悄悄切掉，而"多画一行"正是要抓的东西之一。
+    const texts = f!.ops.filter(
+      (o) => o.kind === 'text' && o.x === VICTORY_REMINDER_LAYOUT.thirdStringX,
+    )
+    expect(texts.length, '掉落物那一栏的行数不是"每只怪一行 + 金钱一行"').toBe(
+      v.things.length + 1,
+    )
     expect(texts.map((o) => (o.kind === 'text' ? o.text : null))).toEqual([
       // 斜杠后面那位是类型（1 药 / 2 装备），不画。
       ...v.things.map((t) => t.split('/')[0]),

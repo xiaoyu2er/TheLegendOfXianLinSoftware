@@ -126,8 +126,14 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
   })()
 
   it('每一拍都画得出来，没有一拍是空的', () => {
-    // 分母是真值自己的步数，不是抄来的数。
-    expect(frames.length).toBe(readBattleTrace('battle-min').ticks.length)
+    // ⚠️ **这里不要写 `frames.length === trace.ticks.length`** —— 上面那个
+    // 构造循环里既没有 continue 也没有 break，那句话是恒真的（分母从被守的
+    // 东西自己推出来，dispatch.md 纪律 3 记的那种误用）。
+    //
+    // 这一条真正在验的是「一拍都不许抛」：`battleDrawList` 抛的话上面那个
+    // IIFE 当场炸，整个 describe 收集失败 —— 失败的样子和通过完全不一样。
+    // 「结算那一层只在末拍出现」由下面单独一条正面数出来。
+    expect(frames.length, '一帧都没收到 —— 真值空了？').toBeGreaterThan(0)
     for (const f of frames) {
       expect(f.ops.length, `第 ${f.t} 拍一条绘制指令都没有`).toBeGreaterThan(0)
       // 背景永远是第一条 —— 它没被画的话整屏是黑的，而黑屏在差异图里看着
@@ -205,7 +211,6 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
     const last = withVr[0]!
     expect(last.t).toBe(frames[frames.length - 1]!.t)
     expect(snapshotBattle(last.world).ui.victory).toBe(true)
-    // 卷轴刚拉开一格（`sy2` 20），物品框还是零面积 —— 所以只有一条。
     // 卷轴刚拉开一格（`sy2` 20），物品框刚对开一格（`thing_sx1` 60→56，
     // 源矩形 8×10）—— 两个矩形各一条，都还是 1:1。
     const ops = last.ops.filter((op) => op.layer === 'victory-reminder')
