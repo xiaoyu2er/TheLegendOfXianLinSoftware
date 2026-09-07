@@ -38,6 +38,13 @@ import java.util.Map;
  *   target  {enemy}           点某个怪物（1/2/3）。选不了、或者那个槽位已经空了 —— 硬失败。
  *   autoAttack {until, max}   一直「能点击就点击、能选敌就选第一个活着的」，
  *                             直到分出胜负；到 max 还没分出来 —— 硬失败。
+ *   skillMenu {button}        点技能菜单上的一颗按钮（skill1..skill5 / return）。
+ *                             菜单没打开 —— 等；等到超预算是硬失败。
+ *   drugMenu  {button}        点药品菜单上的一颗按钮（drug1..drug6 / return）。同上。
+ *   autoUntilRound {round,max} 像 autoAttack 那样自动打，直到**控制台出现在指定
+ *                             回合上**为止。写剧本的人事先不知道谁先跑满行动条
+ *                             （那由种子与速度决定），而"点谁的技能菜单"必须是
+ *                             确定的——写死回合序等于赌一次。
  *   awaitExit {panel, max}    等原版自己把面板切走，并断言切到了哪一块。
  *                             切到别的一块、或者到 max 还没切 —— 硬失败。
  *                             形状照抄场景那边的 exitTo：「到了而没换」与「到了」
@@ -89,11 +96,14 @@ public final class TraceScript {
         public final int enemy;
         /** 战斗：`awaitExit` 断言原版切到了哪块面板（CardLayout 的卡片名）。 */
         public final String panel;
+        /** 战斗：`autoUntilRound` 要停在谁的回合上（1 张 / 2 文 / 3 陆）。 */
+        public final int round;
         Instruction(String op, int x, int y, int ticks, int times, int max, int budget,
-                    String button, String until, int enemy, String panel) {
+                    String button, String until, int enemy, String panel, int round) {
             this.op = op; this.x = x; this.y = y;
             this.ticks = ticks; this.times = times; this.max = max; this.budget = budget;
             this.button = button; this.until = until; this.enemy = enemy; this.panel = panel;
+            this.round = round;
         }
     }
 
@@ -102,7 +112,8 @@ public final class TraceScript {
             "waitNarratage");
 
     private static final List<String> BATTLE_OPS = Arrays.asList(
-            "command", "target", "autoAttack", "awaitExit", "wait");
+            "command", "target", "autoAttack", "awaitExit", "wait",
+            "skillMenu", "drugMenu", "autoUntilRound");
 
     /**
      * {@code awaitExit} 认的面板名：{@code GameLauncher.setLayout()} 往
@@ -120,6 +131,16 @@ public final class TraceScript {
     private static final List<String> DRIVERS = Arrays.asList("scene", "battle");
     private static final List<String> BUTTONS = Arrays.asList("attack", "skill", "defend", "thing");
     private static final List<String> UNTIL = Arrays.asList("victory", "defeat", "decided");
+    /**
+     * 技能菜单上那几颗按钮。上限 5 是 `ZhangXiaoFan.skillNumber` 等三个静态字段
+     * 的最大值（升到 10 级才拿得满），**不是**"现在有几颗"——这一场有几颗由
+     * 导出器当场按 `skillButtons.size()` 判，点不存在的那一颗是硬失败。
+     */
+    private static final List<String> SKILL_BUTTONS = Arrays.asList(
+            "skill1", "skill2", "skill3", "skill4", "skill5", "return");
+    /** 药品菜单：六种药固定来自 `sources/Shop/drug.txt`，加一颗返回。 */
+    private static final List<String> DRUG_BUTTONS = Arrays.asList(
+            "drug1", "drug2", "drug3", "drug4", "drug5", "drug6", "return");
     private static final List<String> PARTY = Arrays.asList("zhang", "yu", "lu");
 
     /** 原版战斗主循环的周期：`BattlePanel.run()` 里那一句 `Clock.sleep(100)`。 */
@@ -219,7 +240,7 @@ public final class TraceScript {
             if (!ops.contains(op)) {
                 throw new IllegalArgumentException("driver " + driver + " 不认识的指令 " + op + "，可用的是 " + ops);
             }
-            int x = 0, y = 0, ticks = 0, times = 0, max = 0, enemy = 0;
+            int x = 0, y = 0, ticks = 0, times = 0, max = 0, enemy = 0, round = 0;
             String button = null, until = null, panel = null;
             if (!battle && isMove(op)) { x = JsonIn.i(s, "x"); y = JsonIn.i(s, "y"); }
             if (op.equals("wait"))       ticks = JsonIn.i(s, "ticks");
@@ -234,6 +255,20 @@ public final class TraceScript {
             if (op.equals("target")) {
                 enemy = JsonIn.i(s, "enemy");
                 if (enemy < 1 || enemy > 3) throw new IllegalArgumentException("target 的 enemy 只能是 1/2/3，实际 " + enemy);
+            }
+            if (op.equals("skillMenu") || op.equals("drugMenu")) {
+                button = JsonIn.str(s, "button");
+                List<String> allowed = op.equals("skillMenu") ? SKILL_BUTTONS : DRUG_BUTTONS;
+                if (!allowed.contains(button)) {
+                    throw new IllegalArgumentException(op + " 不认识的按钮 " + button + "，可用的是 " + allowed);
+                }
+            }
+            if (op.equals("autoUntilRound")) {
+                round = JsonIn.i(s, "round");
+                if (round < 1 || round > 3) {
+                    throw new IllegalArgumentException("autoUntilRound 的 round 只能是 1/2/3（我方三个人），实际 " + round);
+                }
+                max = JsonIn.iOr(s, "max", 2000);
             }
             if (op.equals("autoAttack")) {
                 until = JsonIn.strOr(s, "until", "decided");
@@ -253,7 +288,7 @@ public final class TraceScript {
                 max = JsonIn.iOr(s, "max", 300);
             }
             steps.add(new Instruction(op, x, y, ticks, times, max,
-                    JsonIn.iOr(s, "budget", 2000), button, until, enemy, panel));
+                    JsonIn.iOr(s, "budget", 2000), button, until, enemy, panel, round));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
@@ -296,6 +331,12 @@ public final class TraceScript {
             if (i > 0) b.append(',');
             b.append("{\"op\":").append(Json.str(s.op));
             if (s.op.equals("command"))    b.append(",\"button\":").append(Json.str(s.button));
+            if (s.op.equals("skillMenu") || s.op.equals("drugMenu")) {
+                b.append(",\"button\":").append(Json.str(s.button));
+            }
+            if (s.op.equals("autoUntilRound")) {
+                b.append(",\"round\":").append(s.round).append(",\"max\":").append(s.max);
+            }
             if (s.op.equals("target"))     b.append(",\"enemy\":").append(s.enemy);
             if (s.op.equals("autoAttack")) b.append(",\"until\":").append(Json.str(s.until)).append(",\"max\":").append(s.max);
             if (s.op.equals("awaitExit"))  b.append(",\"panel\":").append(Json.str(s.panel)).append(",\"max\":").append(s.max);

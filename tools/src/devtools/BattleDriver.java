@@ -319,7 +319,8 @@ public final class BattleDriver implements TraceDriver {
                 entered = true;
                 spent = 0;
                 left = in.op.equals("wait") ? in.ticks
-                        : in.op.equals("autoAttack") || in.op.equals("awaitExit") ? in.max : 0;
+                        : in.op.equals("autoAttack") || in.op.equals("awaitExit")
+                                || in.op.equals("autoUntilRound") ? in.max : 0;
             }
             if (exec(in)) { ip++; entered = false; continue; }
             if (++spent > in.budget) {
@@ -347,8 +348,18 @@ public final class BattleDriver implements TraceDriver {
                 if (!selectable()) return false;
                 clickEnemy(in.enemy);
                 return true;
+            case "skillMenu":
+                if (!getBool(get(bp, "skillMenu"), "isDraw")) return false;
+                clickMenuButton("skillMenu", in.button);
+                return true;
+            case "drugMenu":
+                if (!getBool(get(bp, "drugMenu"), "isDraw")) return false;
+                clickMenuButton("drugMenu", in.button);
+                return true;
             case "autoAttack":
                 return autoAttack(in);
+            case "autoUntilRound":
+                return autoUntilRound(in);
             case "awaitExit":
                 return awaitExit(in);
             default:
@@ -374,6 +385,36 @@ public final class BattleDriver implements TraceDriver {
         }
         if (left <= 0) {
             fail("跑满 " + in.max + " 步仍未分出胜负（我方 hp " + heroHps() + "，怪物 hp " + enemyHps() + "）");
+        }
+        left--;
+        if (commandDrawn()) {
+            clickButton("attack");
+        } else if (selectable()) {
+            int slot = firstStandingEnemy();
+            if (slot == 0) fail("怪物选择器开着，却一个还站着的怪物都没有");
+            clickEnemy(slot);
+        }
+        return false;
+    }
+
+    /**
+     * 像 {@link #autoAttack} 那样自动打，直到**控制台出现在指定回合上**为止。
+     *
+     * 为什么需要它：谁先跑满行动条由速度与种子决定，写剧本的人事先不知道。
+     * 而"点技能菜单上的第二颗"这件事是**认人**的 —— 张小凡的第二颗是浪里寻花、
+     * 文敏的第二颗是追星破月，两条路数完全不同。把回合序写死等于赌一次，
+     * 而赌错了导出的是一份"点了另一个人的技能"的真值：它有头有尾、退出码 0。
+     *
+     * 到了那个回合就**停手**（这一拍不点任何东西），下一条指令接着点。
+     */
+    private boolean autoUntilRound(TraceScript.Instruction in) {
+        if (!outcome().equals("undecided")) {
+            fail("等的是第 " + in.round + " 号的回合，可这一场已经打成了 " + outcome());
+        }
+        if (commandDrawn() && getInt(bp, "currentRound") == in.round) return true;
+        if (left <= 0) {
+            fail("跑满 " + in.max + " 步，控制台一次都没出现在第 " + in.round + " 号的回合上"
+                    + "（当前回合 " + getInt(bp, "currentRound") + "）");
         }
         left--;
         if (commandDrawn()) {
@@ -478,6 +519,57 @@ public final class BattleDriver implements TraceDriver {
             case "thing":  return "thing";
             default: throw new IllegalStateException(button);
         }
+    }
+
+    /**
+     * 点技能菜单 / 药品菜单上的一颗按钮。
+     *
+     * 与 {@link #clickButton} 同一套：坐标从原版自己那个 {@code GameButton} 上
+     * 算出来（{@code x-15+width/2}, {@code y-6+height/2}，也就是**命中框**的中心，
+     * 见 {@code tools/GameButton}），事件交给原版注册的监听器，不抄它的判断。
+     *
+     * 按钮取不到时**硬失败**：技能菜单那几颗的数量由
+     * {@code ZhangXiaoFan.skillNumber} 等三个静态字段定（默认 2/3/2），
+     * 点一颗不存在的按钮如果只是"什么都没发生"，导出的就是一份"点过了、
+     * 一切正常、可就是什么都没选中"的真值。
+     */
+    private void clickMenuButton(String menu, String name) {
+        Object m = get(bp, menu);
+        Object btn;
+        if (menu.equals("skillMenu")) {
+            List<?> list = (List<?>) get(m, "skillButtons");
+            if (name.equals("return")) {
+                btn = get(m, "returnButton");
+                if (btn == null) {
+                    fail("技能菜单的返回按钮还是 null —— 它由 SkillMenu.checkRound() 现建，"
+                            + "而 checkRound 只在点「技」时调一次");
+                    return;
+                }
+            } else {
+                int i = Integer.parseInt(name.substring("skill".length())) - 1;
+                if (i >= list.size()) {
+                    fail("技能菜单这一场只有 " + list.size() + " 颗技能按钮（当前回合 "
+                            + getInt(bp, "currentRound") + "），剧本点的是第 " + (i + 1) + " 颗");
+                    return;
+                }
+                btn = list.get(i);
+            }
+        } else {
+            List<?> list = (List<?>) get(m, "drugButtons");
+            int i = name.equals("return") ? list.size() - 1
+                    : Integer.parseInt(name.substring("drug".length())) - 1;
+            if (i >= list.size()) {
+                fail("药品菜单只有 " + list.size() + " 颗按钮，剧本点的是第 " + (i + 1) + " 颗");
+                return;
+            }
+            btn = list.get(i);
+        }
+        int x = getInt(btn, "x") - 15 + getInt(btn, "width") / 2;
+        int y = getInt(btn, "y") - 6 + getInt(btn, "height") / 2;
+        moved(x, y);
+        pressed(x, y);
+        released(x, y);
+        pending.add(input("click", x, y, menu + ":" + name));
     }
 
     private void clickEnemy(int slot) {
@@ -679,8 +771,161 @@ public final class BattleDriver implements TraceDriver {
          .append(",\"bgDrawn\":").append(getBool(back, "isDraw"))
          .append("}");
 
+        b.append(",\"reminder\":").append(reminderJson());
+        b.append(",\"menus\":").append(menusJson());
+
         b.append(",\"audio\":{\"bgm\":").append(Json.str(bgm())).append("}");
         return b.append("}").toString();
+    }
+
+    /**
+     * 提示图这一层（xl-rh9.11）。{@code ui.reminder} 记的是它画没画，这里记的是
+     * **画的是哪一张、画在哪个矩形上**。
+     *
+     * <p><b>图号差一。</b>{@code Reminder.loadImage()} 把 {@code 1.png}..{@code 22.png}
+     * 依次装进 {@code images}，而 {@code show(i)} 取的是 {@code images.get(i)} ——
+     * 所以 {@code show(19)} 画的是 <b>20.png</b>。这里记的是**文件号**
+     * （下标 + 1），因为渲染那一侧要的就是文件名；记下标的话那个 +1 会在
+     * 另一个仓库里被重新推导一次，而推错了画出来仍然是一张看着像提示的图。
+     *
+     * <p>源矩形 {@code (0,0)-(128,24)} 是构造函数里的常量，不记（同 GameOver
+     * 那十二个只被 paint 读的常量）。{@code centreX/centreY} 同理。
+     */
+    private String reminderJson() {
+        Object r = get(bp, "reminder");
+        Object cur = get(r, "currentImage");
+        int file = 0;
+        if (cur != null) {
+            List<?> images = (List<?>) get(r, "images");
+            int idx = -1;
+            for (int i = 0; i < images.size(); i++) if (images.get(i) == cur) { idx = i; break; }
+            if (idx < 0) fail("Reminder.currentImage 不在它自己的 images 里 —— 图号推不出来");
+            file = idx + 1;
+        }
+        return "{\"image\":" + (cur == null ? "null" : String.valueOf(file))
+                + ",\"code\":" + getInt(r, "code")
+                + ",\"stopped\":" + getBool(r, "isStop")
+                + ",\"dx1\":" + getInt(r, "dx1")
+                + ",\"dy1\":" + getInt(r, "dy1")
+                + ",\"dx2\":" + getInt(r, "dx2")
+                + ",\"dy2\":" + getInt(r, "dy2") + "}";
+    }
+
+    /**
+     * 技能菜单与药品菜单（xl-rh9.11）。**只在它真的画出来的那几拍才记内容**，
+     * 其余时候是 {@code null}：两个菜单加起来有二十来个字段，而五份老真值里
+     * 它们一次都没打开过，逐拍写满等于给每一份真值凭空加上两千行恒定值。
+     *
+     * <p>{@code isDraw} 不在这里 —— {@code ui.skillMenu} / {@code ui.drugMenu}
+     * 已经是它了，同一件事记两遍迟早对不上。
+     */
+    private String menusJson() {
+        Object sm = get(bp, "skillMenu");
+        Object dm = get(bp, "drugMenu");
+        return "{\"skill\":" + (getBool(sm, "isDraw") ? skillMenuJson(sm) : "null")
+                + ",\"drug\":" + (getBool(dm, "isDraw") ? drugMenuJson(dm) : "null") + "}";
+    }
+
+    /** 技能菜单那几颗按钮的贴图、返回按钮、介绍图。 */
+    private String skillMenuJson(Object sm) {
+        List<?> buttons = (List<?>) get(sm, "skillButtons");
+        StringBuilder b = new StringBuilder("{\"group\":").append(Json.str(skillGroup(sm)));
+        b.append(",\"buttons\":[");
+        for (int i = 0; i < buttons.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append(variant(buttons.get(i)));
+        }
+        b.append(']');
+        Object ret = get(sm, "returnButton");
+        // 返回按钮由 checkRound() 现 new 出来，所以它的 y 每一场都要现记：
+        // 它落在 226 + 按钮数×30 上，而按钮数是 skillNumber 那个静态字段。
+        b.append(",\"return\":").append(ret == null ? "null" : String.valueOf(variant(ret)));
+        b.append(",\"returnY\":").append(ret == null ? "null" : String.valueOf(getInt(ret, "y")));
+        b.append(",\"introDrawn\":").append(getBool(sm, "isDrawIntro"));
+        b.append(",\"introImage\":").append(Json.str(skillIntro(sm)));
+        b.append(",\"introY\":").append(getInt(sm, "introY"));
+        return b.append('}').toString();
+    }
+
+    /** 当前挂着的是谁的那一组按钮（{@code skillButtons} 指向三个列表之一）。 */
+    private String skillGroup(Object sm) {
+        Object cur = get(sm, "skillButtons");
+        if (cur == get(sm, "zhangButtons")) return "zhang";
+        if (cur == get(sm, "wenButtons")) return "yu";
+        if (cur == get(sm, "luButtons")) return "lu";
+        fail("SkillMenu.skillButtons 不是那三个列表中的任何一个");
+        return null;
+    }
+
+    /**
+     * 介绍图记成 {@code "张小凡/2"} 这种形状，直接对应
+     * {@code image/技能说明/&lt;谁&gt;/&lt;n&gt;.png}。三个列表都翻一遍：
+     * {@code introduceImage} 在回合切换之后不会跟着换（原版没清它）。
+     */
+    private String skillIntro(Object sm) {
+        Object img = get(sm, "introduceImage");
+        if (img == null) return null;
+        String[] fields = { "zhangIntros", "wenIntros", "luIntros" };
+        String[] who = { "张小凡", "文敏", "陆雪琪" };
+        for (int k = 0; k < fields.length; k++) {
+            List<?> list = (List<?>) get(sm, fields[k]);
+            for (int i = 0; i < list.size(); i++) {
+                if (list.get(i) == img) return who[k] + "/" + (i + 1);
+            }
+        }
+        fail("SkillMenu.introduceImage 不在那三份介绍图列表里 —— 认不出是哪一张");
+        return null;
+    }
+
+    /** 药品菜单：七颗按钮的贴图、六种药的存货、介绍图与介绍文字。 */
+    private String drugMenuJson(Object dm) {
+        List<?> buttons = (List<?>) get(dm, "drugButtons");
+        StringBuilder b = new StringBuilder("{\"buttons\":[");
+        for (int i = 0; i < buttons.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append(variant(buttons.get(i)));
+        }
+        b.append(']');
+        // 菜单上那六个数字就是它们（`drawString(getNumberGOT()+"" , 575, 246+i*30)`）。
+        // 新开档一个都没有，于是恒为 0 —— 而"恒为 0"正是点下去走提示那一路的前提。
+        b.append(",\"stock\":[");
+        for (int i = 0; i < shop.DrugPack.drugList.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append(shop.DrugPack.drugList.get(i).getNumberGOT());
+        }
+        b.append(']');
+        b.append(",\"introDrawn\":").append(getBool(dm, "isDrawIntro"));
+        b.append(",\"introDrug\":").append(drugIntro(dm));
+        b.append(",\"introY\":").append(getInt(dm, "introY"));
+        b.append(",\"introText\":").append(Json.str((String) get(dm, "introString")));
+        return b.append('}').toString();
+    }
+
+    /** 介绍图是第几种药（0 基，与 {@code DrugPack.drugList} 同序）。 */
+    private String drugIntro(Object dm) {
+        Object img = get(dm, "introduceImage");
+        if (img == null) return "null";
+        for (int i = 0; i < shop.DrugPack.drugList.size(); i++) {
+            if (shop.DrugPack.drugList.get(i).getPicture() == img) return String.valueOf(i);
+        }
+        fail("DrugMenu.introduceImage 不是 DrugPack 里任何一种药的图");
+        return "null";
+    }
+
+    /**
+     * 一颗 {@code GameButton} 现在贴的是三张里的哪一张：1 常态 / 2 待点 / 3 按下。
+     *
+     * 按**引用身份**认，不按内容：三张图各读各的文件，同一张 {@code Image}
+     * 只会等于它自己。认不出来是硬失败 —— 悄悄记个 0 的话，"贴图算错了"
+     * 与"这一帧本来就是常态"在真值里长得一样。
+     */
+    private int variant(Object btn) {
+        Object cur = get(btn, "buttonImage");
+        if (cur == get(btn, "normalImage")) return 1;
+        if (cur == get(btn, "waitclickImage")) return 2;
+        if (cur == get(btn, "pressedImage")) return 3;
+        fail("GameButton.buttonImage 不是它自己那三张里的任何一张");
+        return 0;
     }
 
     /** 我方的速度是三个类各自的静态字段，接口里没有 getter。 */
@@ -693,11 +938,22 @@ public final class BattleDriver implements TraceDriver {
         }
     }
 
+    /**
+     * 一个 {@code BattleState}。**{@code x}/{@code y} 是 xl-rh9.11 补的**：
+     * 状态图标就画在这两个数上（{@code BattleState.drawState}），而它们只由
+     * {@code set(...)} 写一次、此后不动。没有它们时那两层画不出来，而
+     * "没实现"与"这一帧本来就没有它"在逐帧比对里长得一模一样。
+     *
+     * {@code successRate} 不在里面：{@code set()} 从来不写它（只读入参），
+     * 于是它恒为字段初值 0 —— 记一列恒 0 的数不是判据。
+     */
     private static String stateJson(Object st) {
         return "{\"type\":" + getInt(st, "type")
                 + ",\"rounds\":" + getInt(st, "roundNum")
                 + ",\"usable\":" + getBool(st, "isUsable")
-                + ",\"role\":" + getInt(st, "roleCode") + "}";
+                + ",\"role\":" + getInt(st, "roleCode")
+                + ",\"x\":" + getInt(st, "x")
+                + ",\"y\":" + getInt(st, "y") + "}";
     }
 
     /**
