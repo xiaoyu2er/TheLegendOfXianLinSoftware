@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
-import { BGM_BY_BACKGROUND, battleBgm, derive, expToLevelUp, refreshValue } from './units'
+import { BGM_BY_BACKGROUND, ENEMIES, battleBgm, derive, expToLevelUp, refreshValue } from './units'
 
 /**
  * 出厂数据里那些**没有行为真值盖得住**的部分，各自找一条分母固定的判据。
@@ -85,5 +85,64 @@ describe('属性公式', () => {
   it('expToLevelUp 的 1..10 级与 openjdk 17 逐级相等', () => {
     const fromJvm = [700, 979, 1371, 1920, 2689, 3764, 5270, 7378, 10330, 14462]
     expect(fromJvm.map((_, i) => expToLevelUp(i + 1))).toEqual(fromJvm)
+  })
+})
+
+/**
+ * `skillHurt` 是怪物表里**唯一一列没有真值读得到的数**：状态层还没有实现怪物
+ * 出技能那条伤害路（xl-rh9.9），所以五份 driver=battle 的真值里，它抄错了和
+ * 抄对了推出来的每一个字段都相同 —— 实测把罹年居士分身的 600 改成 590，
+ * `battleTrace.test.ts` 全绿（xl-rh9.8 的篡改验证 T16）。
+ *
+ * 于是把它对回原版源码。解析器**只认两个字段赋值**，窄到解不出来就抛：
+ * 下面第一条用例的分母是"源码里有几个 case"，编码错了或写法变了都会是 0，
+ * 而 0 行的逐行对比是一条恒真的检查。
+ */
+describe('怪物的 skillHurt 对回原版源码', () => {
+  /** `Enemy.initial()` 里按名字分的那个 switch，每个 case 的 hurt / skillHurt。 */
+  const rows = (() => {
+    const src = javaSource('src/battle/Enemy.java')
+    const from = src.indexOf('public void initial(String name,int roleCode){')
+    const to = src.indexOf('//载入图片')
+    if (from < 0 || to < 0 || to <= from) {
+      throw new Error('在 Enemy.java 里找不到 initial(...) 那一段 —— 解析器该改了')
+    }
+    const body = src.slice(from, to)
+    const out = new Map<string, { hurt: string; skillHurt: string }>()
+    for (const m of body.matchAll(/case "([^"]+)":([\s\S]*?)break;/g)) {
+      const name = m[1]!
+      const block = m[2]!
+      const pick = (field: string): string => {
+        const hit = block.match(new RegExp('this\\.' + field + '=([^;]+);'))
+        if (!hit) throw new Error(`case "${name}" 里没解出 ${field} —— 解析器该改了`)
+        return hit[1]!.trim()
+      }
+      out.set(name, { hurt: pick('hurt'), skillHurt: pick('skillHurt') })
+    }
+    return out
+  })()
+
+  it('从源码里真的解出了那些 case —— 解析器空转要响', () => {
+    expect(rows.size).toBeGreaterThan(0)
+    // 这个数是解出来的，不是抄的；它随原版源码走，而原版源码在迁移期间不动。
+    expect(rows.size, '`Enemy.initial()` 的 case 数变了 —— 原版源码不该动').toBe(25)
+  })
+
+  it('原版每一行的 skillHurt 都不与 hurt 分开 —— 所以这一列没有独立信息', () => {
+    const split = [...rows].filter(([, v]) => v.skillHurt !== 'hurt' && v.skillHurt !== v.hurt)
+    expect(
+      split.map(([name]) => name),
+      '原版有怪物的 skillHurt 与 hurt 不是同一个数了 —— 下面那条判据立刻失效，' +
+        '这一列要么找一条真值判据，要么把它逐行对回源码。',
+    ).toEqual([])
+  })
+
+  it('我们表里每一行的 skillHurt 都等于它的 hurt', () => {
+    // 分母是**我们抄了几行**（源码 25 行里今天只抄了跑得到真值的那几只）。
+    expect(Object.keys(ENEMIES).length).toBeGreaterThan(0)
+    for (const [name, spec] of Object.entries(ENEMIES)) {
+      expect(rows.has(name), `${name} 不在原版的 Enemy.initial() 里`).toBe(true)
+      expect(spec.skillHurt, `${name} 的 skillHurt`).toBe(spec.hurt)
+    }
   })
 })

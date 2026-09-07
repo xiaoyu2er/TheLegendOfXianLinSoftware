@@ -83,12 +83,18 @@ function makeHero(key: PartyKey, level: number): Hero {
 
 /**
  * 建一只怪。`Enemy.loadAnimation` 里那三个偏移量是**用我方的 showY 现算**的，
- * 所以怪物必须在我方之后建 —— 原版靠静态字段实现的这个先后，这里靠传参。
+ * 罹年居士那一行的速度还要读 `ZhangXiaoFan.speed` —— 所以怪物必须在我方之后
+ * 建。原版靠静态字段实现的这个先后，这里靠传参。
+ *
+ * `zhangSpeed` 传的是**函数**而不是数：张小凡缺席时原版读到的是上一场留下的
+ * 静态字段，这一层没有那个东西，于是只在真的要用到时才抛（今天只有罹年居士
+ * 那一行会用到）。传数就得在每一场都先编一个值出来，而编出来的值和真的一样。
  */
 function makeEnemy(
   spec_: string,
   slotIndex: number,
   heroShowY: Readonly<Record<PartyKey, number>>,
+  zhangSpeed: () => number,
   sprite: BattleConfig['sprite'],
 ): Enemy {
   const slash = spec_.lastIndexOf('/')
@@ -103,6 +109,7 @@ function makeEnemy(
   const spec = enemySpec(name)
   const { x, y } = ENEMY_SLOT_POS[roleCode]
   const size = sprite(name)
+  const speed = typeof spec.speed === 'function' ? spec.speed(zhangSpeed()) : spec.speed
   return {
     name,
     roleCode,
@@ -115,13 +122,13 @@ function makeEnemy(
     isDraw: true,
     isStop: false,
     isDead: false,
-    speed: spec.speed,
+    speed,
     hp: spec.hp,
     hurt: spec.hurt,
-    skillHurt: spec.hurt,
+    skillHurt: spec.skillHurt,
     defense: spec.defense,
     hurtMax: spec.hurt,
-    skillHurtMax: spec.hurt,
+    skillHurtMax: spec.skillHurt,
     defenseMax: spec.defense,
     battleState: state(),
     beAttackedAnimation: beAttacked(spec.beAttackedFrames),
@@ -171,8 +178,20 @@ export function createBattle(config: BattleConfig): BattleWorld {
     lu: lxq?.showY ?? HEROES.lu.showY(HEROES.lu.x, HEROES.lu.y),
   }
 
+  // 只有罹年居士那一行读得到它，所以张小凡缺席时不是当场抛，而是**用到才抛**。
+  const zhangSpeed = () => {
+    if (zxf === null) {
+      throw new Error(
+        '这一场的怪物速度要读张小凡的 speed（原版 `ZhangXiaoFan.speed+6`，' +
+          '读的是静态字段），可剧本里张小凡没有出战 —— 原版这时读到的是上一场' +
+          '留下的值，这一层没有那个东西，不猜。',
+      )
+    }
+    return zxf.speed
+  }
+
   const slots = config.enemies.map((spec, i) =>
-    spec === null ? null : makeEnemy(spec, i, showY, config.sprite),
+    spec === null ? null : makeEnemy(spec, i, showY, zhangSpeed, config.sprite),
   )
   const [em1, em2, em3] = slots
   // 加入顺序照抄 `BattlePanel.initial`：em2 先进去（解决遮掩），然后 em1、em3。
@@ -181,6 +200,7 @@ export function createBattle(config: BattleConfig): BattleWorld {
   const barX = 300
   return {
     tick: 0,
+    exitPanel: null,
     random: new JavaRandom(config.seed),
     background: config.background,
     bgm: battleBgm(config.background),
@@ -188,6 +208,8 @@ export function createBattle(config: BattleConfig): BattleWorld {
     currentPattern: 0,
     currentBeAttacked: 0,
     heroes,
+    // 同一批对象的另一份引用：`heroes` 会被打输出口清空，`party` 不会。
+    party: [...heroes],
     zxf,
     yj,
     lxq,
@@ -272,10 +294,9 @@ export function createBattle(config: BattleConfig): BattleWorld {
     drugMenuDrawn: false,
     victoryDrawn: false,
     victoryStopped: true,
-    gameOverDrawn: false,
-    gameOverStopped: true,
+    // `GameOver` 构造函数里那四个会动的坐标（另外十二个只被 paint 读）。
+    gameOver: { isDraw: false, isStop: true, code: 0, ldx2: 0, lsx2: 0, rdx1: 1024, rsx1: 512 },
     victoryUpdates: 0,
-    gameOverUpdates: 0,
     // `VictoryReminder.getInformation()` 在 `initial()` 里就把它算死了。
     expToGet: enemies.reduce((sum, e) => sum + e.spec.exp, 0),
     currentX: 0,
