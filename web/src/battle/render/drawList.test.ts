@@ -108,9 +108,8 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
   /**
    * 回放一遍，每一拍收一次清单。**输入照真值喂，状态一个字段都不喂。**
    *
-   * 末拍（t=403，胜利第一次出现）**故意不收** —— 那一拍 `battleDrawList`
-   * 会抛，归 xl-rh9.13（**画**那一层；状态层归 xl-rh9.5，已做完）。
-   * 它由下面单独一条用例正面钉住，不是被跳过。
+   * 末拍（t=403）是胜利第一次出现的那一刻。它原先**收不进来** —— 第 22 层
+   * 当场抛，归 xl-rh9.13；那张票把它画出来之后，404 拍一拍不落。
    */
   const frames = (() => {
     const trace = readBattleTrace('battle-min')
@@ -121,16 +120,14 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
       for (const input of tick.input) applyPaintInput(world, paint, input)
       stepBattle(world, tick.input)
       advancePaintState(world, paint)
-      if (snapshotBattle(world).ui.victory) break
       out.push({ t: tick.t, ops: battleDrawList(world, paint), world })
     }
     return out
   })()
 
   it('每一拍都画得出来，没有一拍是空的', () => {
-    // 404 拍减掉末拍那一次胜利。这个数是**数出来的**：真值里 ui.victory 只有
-    // t=403 一拍为真。
-    expect(frames.length).toBe(403)
+    // 分母是真值自己的步数，不是抄来的数。
+    expect(frames.length).toBe(readBattleTrace('battle-min').ticks.length)
     for (const f of frames) {
       expect(f.ops.length, `第 ${f.t} 拍一条绘制指令都没有`).toBeGreaterThan(0)
       // 背景永远是第一条 —— 它没被画的话整屏是黑的，而黑屏在差异图里看着
@@ -172,10 +169,15 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
         'skill-anim',
         'start-anim',
         'state-blank',
+        // 末拍（t=403）胜利第一次出现，这两层同时起来：胜利动画三个人各一张，
+        // 结算画面的卷轴与物品框各拉开一格。xl-rh9.13 之前它们是"碰不到"的
+        // —— 那一拍当场抛。
+        'victory-anim',
+        'victory-reminder',
       ].sort(),
     )
-    // 反方向：碰不到的那 11 层是**有名有姓**的，不是"剩下的"。其中 6 层今天
-    // 画不出来（各自归哪张票见 drawList.ts），5 层是这一场里确实没发生。
+    // 反方向：碰不到的那 9 层是**有名有姓**的，不是"剩下的"。其中 5 层今天
+    // 画不出来（各自归哪张票见 drawList.ts），4 层是这一场里确实没发生。
     // 这一条只跑 battle-min；「所有战斗真值合起来盖到了哪几层」在下面那个
     // describe 里，两者的分母不同。
     const unseen = BATTLE_LAYERS.filter((l) => !seen.has(l))
@@ -190,36 +192,30 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
         'pet', // 结构性缺席：世界里根本没有这个字段
         'reminder', // 没实现（真值只记了布尔），归 xl-rh9.11
         'skill-menu', // 没实现，归 xl-rh9.11
-        'victory-anim', // 胜利动画与胜利结算同一拍开始，而那一拍收不进来
-        'victory-reminder', // 画不出来，归 xl-rh9.13；这一场只在末拍出现
       ].sort(),
     )
   })
 
-  it('胜利那一拍真的会抛，并点名 xl-rh9.13', () => {
-    // 上一条说 victory-reminder "碰不到"，靠的是 404 拍里只有末拍胜利、而
-    // 那一拍的清单是在胜利**之前**生成的吗？不是 —— 末拍的清单就是在
-    // 胜利之后生成的。所以这里把它单独钉住：那一拍确实抛了，是被
-    // `battleDrawList` 拦下来的，不是"这一场没走到"。
-    const trace = readBattleTrace('battle-min')
-    const world = replayBattle(trace, spriteSize)
-    const paint = createPaintState(world)
-    let threw: string | null = null
-    for (const tick of trace.ticks) {
-      for (const input of tick.input) applyPaintInput(world, paint, input)
-      stepBattle(world, tick.input)
-      advancePaintState(world, paint)
-      if (!snapshotBattle(world).ui.victory) continue
-      try {
-        battleDrawList(world, paint)
-      } catch (e) {
-        threw = e instanceof Error ? e.message : String(e)
-      }
-      break
-    }
-    // xl-rh9.5 把**状态层**那一整段做完了（发经验 / 物品 / 钱 / 升级 / 回地图），
-    // **画**出来是另一回事，归 xl-rh9.13。这一层还没有，所以照旧要抛。
-    expect(threw, '胜利那一拍没有抛 —— 那说明结算那一层被静默跳过了').toMatch(/xl-rh9\.13/)
+  it('胜利那一拍画的是结算的第一笔，而且只有那一拍', () => {
+    // 这一条与上面那张"碰得到 / 碰不到"的表是配套的：表说 victory-reminder
+    // 只在末拍出现，靠的不是"那一拍没生成清单"（末拍的清单就是在胜利之后
+    // 生成的），而是这里正面数出来的。
+    const withVr = frames.filter((f) => f.ops.some((op) => op.layer === 'victory-reminder'))
+    expect(withVr.length, '结算那一层不是恰好只在末拍出现').toBe(1)
+    const last = withVr[0]!
+    expect(last.t).toBe(frames[frames.length - 1]!.t)
+    expect(snapshotBattle(last.world).ui.victory).toBe(true)
+    // 卷轴刚拉开一格（`sy2` 20），物品框还是零面积 —— 所以只有一条。
+    // 卷轴刚拉开一格（`sy2` 20），物品框刚对开一格（`thing_sx1` 60→56，
+    // 源矩形 8×10）—— 两个矩形各一条，都还是 1:1。
+    const ops = last.ops.filter((op) => op.layer === 'victory-reminder')
+    expect(ops.length).toBe(2)
+    expect(
+      ops.map((op) => (op.kind === 'rect' ? [op.dest.width, op.dest.height, op.src.width, op.src.height] : null)),
+    ).toEqual([
+      [200, 20, 200, 20],
+      [8, 10, 8, 10],
+    ])
   })
 
   it('画出来的东西都落在画布上，没有跑飞的坐标', () => {
@@ -306,6 +302,8 @@ describe('全部战斗真值合起来画到了哪几层', () => {
     'skill-anim',
     'start-anim',
     'state-blank',
+    'victory-anim',
+    'victory-reminder',
   ]
 
   /** 一次都没画到的层，各自写明为什么。**没有第三种。** */
@@ -313,7 +311,6 @@ describe('全部战斗真值合起来画到了哪几层', () => {
     'background-anim':
       '只有技能才放。battle-menus 用了两次技能，可它在开菜单那一拍就先撞上 ' +
       'drug-menu 抛了 —— 这一层仍然只有代码、没有判据。归 xl-rh9.12',
-    'victory-anim': '与胜利结算同一拍开始，而那一拍先被 victory-reminder 拦下来抛（xl-rh9.13）',
     pet: '结构性缺席：世界里根本没有 pet 字段，只有陆雪琪的秘术召得出来',
     'drug-menu':
       '点「物」才打开。battle-menus 点过了，可这一层还没画 —— 撞上就抛，' +
@@ -322,7 +319,6 @@ describe('全部战斗真值合起来画到了哪几层', () => {
     reminder: '真值已经记了是第几张与目标矩形（xl-rh9.11），可这一层还没画 —— 抛，归 xl-rh9.12',
     'hero-state': '战斗状态图标：真值已经记了 type 与坐标，这一层还没画 —— 抛，归 xl-rh9.12',
     'enemy-state': '同 hero-state，怪物身上那一层',
-    'victory-reminder': '胜利结算画面归 xl-rh9.13 —— 这一层抛（状态层已由 xl-rh9.5 做完）',
   }
 
   /** 每一条真值各跑一遍，收下它画到的层。抛了就停在那一拍（那也是结论）。 */

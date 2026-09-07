@@ -58,6 +58,7 @@ const IMPLEMENTED: readonly string[] = [
   'battle-defeat-start',
   'battle-defeat-slot2',
   'battle-menus',
+  'battle-victory',
 ]
 
 /**
@@ -407,8 +408,14 @@ describe('战斗状态层对齐行为真值', () => {
      * 这一条会红，那时候上面的逐字段比对就自己盖得住它了，这条登记该撤掉。
      */
     it('回地图那条出口摘不摘 em2/em3，今天还观测不到 —— 登记在案', () => {
-      const sceneExits = exits.filter((e) => e.panel === 'scenePanel')
-      expect(sceneExits.length, '没有一份真值走回地图那条出口').toBeGreaterThan(0)
+      // **只看打输那条路**。打赢也回 scenePanel（`VictoryReminder` 结算完就切，
+      // xl-rh9.13 的 `battle-victory` 走的正是那一条），可它根本不经过
+      // `GameOver.update()`，摘不摘 em2/em3 与它无关 —— 不筛的话这条登记会被
+      // 一份打赢的真值撞红，而红的理由是假的。
+      const sceneExits = exits.filter(
+        (e) => e.panel === 'scenePanel' && traceOf(e.name).ticks[traceOf(e.name).ticks.length - 1]!.outcome === 'defeat',
+      )
+      expect(sceneExits.length, '没有一份**打输**的真值走回地图那条出口').toBeGreaterThan(0)
       for (const { name } of sceneExits) {
         const trace = traceOf(name)
         expect(
