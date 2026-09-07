@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs'
-import { repoPath } from '../test/repoPath'
+import { javaSource } from '../test/javaSource'
 
 /**
  * 把 `src/battle/Enemy.java`（GBK）里的怪物出厂数据解出来，给 `units.test.ts`
@@ -73,15 +72,6 @@ export interface SourceEnemy {
   skill: SourceSkill
 }
 
-/**
- * GBK 源码要显式解码。按 UTF-8 读出来的中文全是乱码，而**乱码与"源码里没有
- * 这个 case"在正则下长得一样** —— 匹配不到就是 0 行，0 行的逐行对比恒真。
- * 下面每个 `slice` 前的 `indexOf` 检查就是拦这个的第一道。
- */
-function javaSource(path: string): string {
-  return new TextDecoder('gbk').decode(readFileSync(repoPath(path)))
-}
-
 /** 截出 `from` 与 `to` 之间那一段；任何一头找不到就抛。 */
 function sliceBetween(src: string, what: string, from: string, to: string): string {
   const a = src.indexOf(from)
@@ -102,6 +92,12 @@ function casesOf(body: string, what: string): Map<string, string> {
   for (const m of body.matchAll(/case "([^"]+)":([\s\S]*?)break;/g)) {
     const name = m[1]!
     if (out.has(name)) throw new Error(`${what} 里出现了两个同名的 case "${name}"`)
+    // Java 的 case 穿透（`case "A": case "B": …break;`）会让 B 整个落进 A 的块
+    // 里，而 B 自己一个 case 都解不出来 —— 那是**少一行**，不是零行，上面那条
+    // "一个 case 都没解出来"拦不住。今天源码里没有穿透，这道门盯的是哪天有了。
+    if (m[2]!.includes('case "')) {
+      throw new Error(`${what} 的 case "${name}" 里还套着一个 case —— 出现了 case 穿透`)
+    }
     out.set(name, m[2]!)
   }
   if (out.size === 0) throw new Error(`${what} 里一个 case 都没解出来 —— 解析器该改了`)

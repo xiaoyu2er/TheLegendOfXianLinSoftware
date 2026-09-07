@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { parseEnemySource } from './enemySource'
 import type { EnemySpec } from './units'
@@ -12,15 +13,6 @@ import { BGM_BY_BACKGROUND, ENEMIES, battleBgm, derive, expToLevelUp, refreshVal
  * 剩下的部分不是"随它去"，也不是"抄了就算数"——抄错了和抄对了长得一样，正是
  * 这个仓库最贵的那种失败。所以这里把它们对回**原版源码本身**。
  */
-
-/**
- * GBK 源码要显式解码。`src/` 全是 GBK+CRLF（见 CLAUDE.md），按 UTF-8 读出来
- * 的中文路径全是乱码，而乱码与"表里少一行"在正则匹配下长得一样——匹配不到
- * 就是 0 行，下面第一条断言正是拦这个的。
- */
-function javaSource(path: string): string {
-  return new TextDecoder('gbk').decode(readFileSync(repoPath(path)))
-}
 
 describe('背景图 → BGM 的那张表对回原版源码', () => {
   /** `BattlePanel.initial` 里那个 switch 的每一个 case。 */
@@ -163,10 +155,16 @@ describe('怪物出厂表逐列对回原版源码', () => {
     }
   })
 
-  it('逐行逐列相等，多一列少一列都要响', () => {
+  it('逐行逐列相等，多写一列少写一列都要响', () => {
     for (const [name, spec] of Object.entries(ENEMIES)) {
       const actual = { ...spec, speed: normaliseSpeed(spec.speed) }
-      expect(actual, `怪物「${name}」`).toEqual(fromSource(name))
+      // toStrictEqual 而不是 toEqual —— 实测的差别（2026-09-07）：给 `EnemySpec`
+      // 加一列 `foo?: number` 并在某一行写成 `foo: undefined`，`toEqual` 绿、
+      // `toStrictEqual` 红。
+      //
+      // ⚠️ 但两者都盖不住"加了一列却一行都没赋值"（实测也是绿的）：那种情况下
+      // 两边都没有那个键。那一步靠的是 TypeScript —— 新列不写 `?` 就编译不过。
+      expect(actual, `怪物「${name}」`).toStrictEqual(fromSource(name))
     }
   })
 
@@ -206,9 +204,11 @@ describe('源码解析器解不出来就抛', () => {
   }
 
   it('方法签名变了 → 抛', () => {
-    expect(() => parseEnemySource(tamper('public void initial(String name,int roleCode){', 'public void initial2(String name,int roleCode){'))).toThrow(
-      '找不到 initial(…) 的开头',
+    const text = tamper(
+      'public void initial(String name,int roleCode){',
+      'public void initial2(String name,int roleCode){',
     )
+    expect(() => parseEnemySource(text)).toThrow('找不到 initial(…) 的开头')
   })
 
   it('一个 case 都没解出来 → 抛，而不是返回空表', () => {
@@ -227,15 +227,13 @@ describe('源码解析器解不出来就抛', () => {
     expect(() => parseEnemySource(tamper('this.speed=11;', 'this.speed=hurt/2;'))).toThrow(
       '"hurt/2"',
     )
-    expect(() => parseEnemySource(tamper('this.beAttackedX=x-125;', 'this.beAttackedX=x*2;'))).toThrow(
-      '期望 x±N 的形状',
-    )
+    const shape = tamper('this.beAttackedX=x-125;', 'this.beAttackedX=x*2;')
+    expect(() => parseEnemySource(shape)).toThrow('期望 x±N 的形状')
   })
 
   it('setSkill 的参数个数变了 → 抛', () => {
-    expect(() =>
-      parseEnemySource(tamper('setSkill("怪物/怪物1攻击", 16,', 'setSkill("怪物/怪物1攻击", 16, 0,')),
-    ).toThrow('13 个参数')
+    const extra = tamper('setSkill("怪物/怪物1攻击", 16,', 'setSkill("怪物/怪物1攻击", 16, 0,')
+    expect(() => parseEnemySource(extra)).toThrow('13 个参数')
   })
 
   it('同一个字段被赋值两次 → 抛，而不是取第一个', () => {
@@ -244,10 +242,17 @@ describe('源码解析器解不出来就抛', () => {
     )
   })
 
+  it('Java 的 case 穿透 → 抛，而不是把下一个 case 吞进上一个的块里', () => {
+    // `case "A": case "B": …break;` 在 `case "…":([\s\S]*?)break;` 下会让 B 整个
+    // 落进 A 的块里，而 B 自己再也解不出来 —— 少一行，不是零行。今天源码里没有
+    // 穿透，所以这条盯的是"哪天有了"。
+    const through = tamper('case "怪物2":', 'case "怪物2之类":\r\n\tcase "怪物2":')
+    expect(() => parseEnemySource(through)).toThrow('case 穿透')
+  })
+
   it('两个 switch 的 case 名单对不上 → 抛', () => {
-    expect(() => parseEnemySource(tamper(/case "怪物2":\s*\r?\n\s*setSkill[\s\S]*?break;/, ''))).toThrow(
-      '名单对不上',
-    )
+    const gone = tamper(/case "怪物2":\s*\r?\n\s*setSkill[\s\S]*?break;/, '')
+    expect(() => parseEnemySource(gone)).toThrow('名单对不上')
   })
 
   /**

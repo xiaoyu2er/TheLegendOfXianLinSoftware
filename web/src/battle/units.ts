@@ -378,6 +378,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 460,
     exp: 330,
     money: 1200,
+    // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -10,
     beAttackedOffsetY: 0,
@@ -406,6 +407,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 520,
     exp: 360,
     money: 1200,
+    // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -30,
     beAttackedOffsetY: 0,
@@ -515,7 +517,7 @@ export function enemySpec(name: string): EnemySpec {
  * `Enemy.initial()` 与 `loadAnimation()` 那两个 switch 解成一张表，逐列对。
  * 这一节原先写的是「怪物表没有这种东西可对，解它的那个解析器本身就会成为
  * 新的错处」—— 前半句已经不成立；后半句的答案是**解不出来就当场抛**，
- * 而不是解出 0 行然后恒真地通过（那条路上的七道门各有一条篡改验证）。
+ * 而不是解出 0 行然后恒真地通过（它每一道门都有一条篡改验证盯着）。
  * 表仍然只抄跑得到行为真值的那几只：源码对得住"抄的数对不对"，
  * 对不住"这一行的动画、伤害、退出分支是不是真的走过一遍"。
  */
