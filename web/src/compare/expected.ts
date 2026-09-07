@@ -100,19 +100,22 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 装配的剧本比出来是"零帧差异"，和"两端完全一致"长得一模一样。
     //
     // 所以这里没有分区表态（`gaps`）：一帧都还没比过，划不出缺口区来。
-    // web 侧接上战斗装配是 xl-1vu.7 的事，接上之后这条要换成量过的表态。
+    //
+    // **接线要等 M2（xl-82c）在 web 侧把战斗面板建起来**，xl-1vu 这个 SPEC 不做
+    // （xl-1vu.7 收的口是"装配不出来必须响亮失败"，不是"把它装配出来"）。到那时
+    // 这一条要么变 `match`，要么带上真量出来的 `maxRatio` / `gaps`。
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
-    issue: 'xl-1vu.7',
+    issue: 'xl-82c',
   },
   'battle-em3-box': {
     status: 'unassembled',
-    // 与 battle-min 同一个原因：取图页还没有战斗装配（xl-1vu.7）。这一条多出来
+    // 与 battle-min 同一个原因：取图页还没有战斗装配（等 M2 / xl-82c）。这一条多出来
     // 的意义不在像素上，而在**状态字段**上 —— 它是 xl-1dv.8（EnemySlector 判
     // em3 用了 height1）在真值里唯一观测得到的那一场，判据在
     // `src/state/battleEnemyBox.test.ts`。battle-min 的三只怪图都是 172 高，
     // 那一场里写对与写错导出来的数完全相同。
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
-    issue: 'xl-1vu.7',
+    issue: 'xl-82c',
   },
   'dorm-walk': {
     status: 'gap',
@@ -326,9 +329,10 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 非零退出 —— 而不是静静地比出"零帧差异"。
     //
     // 所以这里既不写 maxRatio 也不写 gaps：一帧都还没比过，写任何数都是编的。
-    // 商店在 web 侧画出来之后，这一条要么改成 match，要么带上真量出来的表态。
+    // 商店在 web 侧画出来之后，这一条要么改成 match，要么带上真量出来的表态 ——
+    // **那是 M4 的事，xl-1vu 这个 SPEC 不接线**。
     why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
-    issue: 'xl-knp.1 / xl-1vu.7',
+    issue: 'xl-knp.1',
   },
   'menu-equip': {
     status: 'unassembled',
@@ -339,9 +343,10 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     //
     // 因此这里**不写 gaps 分区**：分区表态的判据是"缺口区之外逐像素相等"，
     // 而这条剧本一个像素都还没画出来过，写分区等于凭空声明一份没量过的账。
-    // 菜单在 web 侧画出来之后，这一条要么改成 match，要么带上真量出来的分区。
+    // 菜单在 web 侧画出来之后，这一条要么改成 match，要么带上真量出来的分区 ——
+    // **那是 M3 的事，xl-1vu 这个 SPEC 不接线**。
     why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
-    issue: 'xl-6lo / xl-1vu.7',
+    issue: 'xl-6lo',
   },
 }
 

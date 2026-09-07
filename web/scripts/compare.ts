@@ -5,6 +5,9 @@ import { DEFAULT_TOLERANCE, diffImage, frameDiff, summarize } from '../src/compa
 import type { FrameResult, SequenceResult } from '../src/compare/diff'
 import { expectationOf, scriptNames } from '../src/compare/expected'
 import type { Expectation } from '../src/compare/expected'
+import { checkStanding, unassembledLine } from '../src/compare/unassembled'
+import type { DriverStanding } from '../src/compare/unassembled'
+import { IMPLEMENTED_DRIVERS } from '../src/replay/implemented'
 import { decodePng, encodePng } from '../src/compare/png'
 import { judgeRegions, partitionedDiff } from '../src/compare/regions'
 import type { PartitionedFrame, RegionVerdict } from '../src/compare/regions'
@@ -29,6 +32,8 @@ const STAGE_HEIGHT = 640
 
 interface Manifest {
   readonly format: string
+  /** 驱动器判别名（xl-1vu.2）。由导出侧写进 frames.json，比对侧照它判能不能比。 */
+  readonly driver: string
   readonly script: string
   readonly scene: string
   readonly tickMs: number
@@ -61,12 +66,23 @@ async function main(): Promise<void> {
   const root = repoPath('tools/traces/compare')
   const manifests = wanted.map((name) => readManifest(root, name))
 
-  if (!skipCapture) await capture(root, manifests, 'web', null)
+  // 先分流：哪几条 web 侧根本装配不出来（xl-1vu.7）。这一步必须在开浏览器
+  // **之前**做完 —— 一条一条撞上去的话，撞到第一条就整轮中断，后面那些能比的
+  // 剧本一帧都比不成，`--self-check` 也跟着不跑。实测过：默认全跑时第一条按
+  // 字典序是 battle-em3-box，整条流水线就停在那里。
+  //
+  // `checkStanding` 是双向的：表说比得了而页面装不出、页面装得出而表还写着
+  // unassembled，两种都当场抛。见 `src/compare/unassembled.ts`。
+  const standings = manifests.map((m) => checkStanding(m.script, m.driver))
+  const blocked = standings.filter((s) => !s.implemented)
+  const comparable = manifests.filter((m) => !blocked.some((s) => s.script === m.script))
 
-  const reports = manifests.map((m) => compareOne(root, m, threshold, tolerance))
-  report(reports, threshold, tolerance)
+  if (!skipCapture && comparable.length > 0) await capture(root, comparable, 'web', null)
 
-  const selfCheckOk = selfCheck ? await runSelfCheck(root, manifests, tolerance) : true
+  const reports = comparable.map((m) => compareOne(root, m, threshold, tolerance))
+  report(reports, blocked, threshold, tolerance)
+
+  const selfCheckOk = selfCheck ? await runSelfCheck(root, comparable, tolerance) : true
   const failed = reports.filter((r) => !r.ok)
   writeFileSync(
     join(root, 'report.json'),
@@ -78,6 +94,14 @@ async function main(): Promise<void> {
         scripts: reports.length,
         frames: reports.reduce((n, r) => n + r.sequence.frames, 0),
         failed: failed.map((r) => r.name),
+        // 装配不出来的那几条也要进报告：只记 failed 的话，一份机器可读的报告
+        // 会显示"0 条失败"，而实际上有三条一帧都没比过。
+        unassembled: blocked.map((s) => ({
+          name: s.script,
+          driver: s.driver,
+          why: s.expectation.why ?? null,
+          issue: s.expectation.issue ?? null,
+        })),
         reports,
       },
       null,
@@ -85,7 +109,7 @@ async function main(): Promise<void> {
     )}\n`,
     'utf8',
   )
-  process.exit(failed.length === 0 && selfCheckOk ? 0 : 1)
+  process.exit(failed.length === 0 && selfCheckOk && blocked.length === 0 ? 0 : 1)
 }
 
 // ================= 取图 =================
@@ -105,6 +129,7 @@ async function capture(
   try {
     browser = await launch(`${url}replay.html`)
     await waitForPage(browser)
+    await assertPageAgrees(browser)
     for (const m of manifests) {
       const dir = join(root, m.script, side)
       resetDir(dir)
@@ -183,6 +208,35 @@ async function waitForPage(browser: Browser): Promise<void> {
     await new Promise((r) => setTimeout(r, 100))
   }
   throw new Error('60 秒内取图页没有装上 __xlReplay')
+}
+
+/**
+ * 核一次：取图页运行时**真的**装配得出来的那几个驱动器，与本进程读的那份
+ * 名单（`src/replay/implemented.ts`）是不是同一批。
+ *
+ * 为什么要核。分流是在开浏览器之前做的，靠的是那个数组；而真正决定"装不装得
+ * 出来"的是页面里的 `ASSEMBLIES`。两者由类型钉着（`Record<ImplementedDriver,
+ * Assembly>`），可类型只管编译期 —— 真出现分家时，表现是比对器把一条页面其实
+ * 装得出来的剧本当成"比不了"跳过，或者反过来，撞上一个装不出来的驱动器。
+ * 前者安安静静地少比一条，正是这条流水线最不能有的失败形状。
+ */
+async function assertPageAgrees(browser: Browser): Promise<void> {
+  const page = await browser.evaluate<string[] | null>('window.__xlDrivers ?? null')
+  if (!Array.isArray(page) || page.length === 0) {
+    throw new Error(
+      `取图页没有报出它的装配名单（window.__xlDrivers = ${JSON.stringify(page)}）。` +
+        `报不出来就没法核 —— 这一条不许降级成"那就信本地这份名单"。`,
+    )
+  }
+  const mine = [...IMPLEMENTED_DRIVERS].sort()
+  const theirs = [...page].sort()
+  if (mine.join('、') !== theirs.join('、')) {
+    throw new Error(
+      `装配名单分家了：src/replay/implemented.ts 说 ${mine.join('、')}，` +
+        `而取图页运行时装得出 ${theirs.join('、')}。两份必须一致 —— ` +
+        `比对器就是照前者决定哪些剧本连试都不试的。`,
+    )
+  }
 }
 
 // ================= 比对 =================
@@ -277,6 +331,13 @@ async function runSelfCheck(
 ): Promise<boolean> {
   const HERO_DX = 8
   process.stdout.write('\n流水线自检：故意改坏一处渲染\n')
+  if (manifests.length === 0) {
+    // 一条可比的剧本都没有时自检"全过"，与真的验过一遍长得一模一样。
+    // 只跑装配不出来的那几条剧本时会走到这里（`tools/compare-frames.sh
+    // menu-equip --self-check`）。
+    process.stdout.write('  失败  没有一条装配得出来的剧本可供注入 —— 自检什么都没验\n')
+    return false
+  }
   let ok = true
   for (const m of manifests) {
     const clean = diffSide(root, m, 'web', tolerance)
@@ -329,6 +390,14 @@ function readManifest(root: string, name: string): Manifest {
     throw new Error(`${file} 的 format 是 ${m.format}，本工具只认 xianlin-frames/1`)
   }
   if (m.ticks.length === 0) throw new Error(`${file} 里一帧都没有`)
+  // 判别名是分流的唯一依据（xl-1vu.7）。缺了它，`checkStanding` 收到的是
+  // undefined —— 那是"读不出来"，不该被当成"某个默认驱动器"。
+  if (typeof m.driver !== 'string' || m.driver.length === 0) {
+    throw new Error(
+      `${file} 没有报驱动器判别名（driver = ${JSON.stringify(m.driver)}）——` +
+        `重跑一遍 tools/compare-frames.sh，它负责出原版那一半。`,
+    )
+  }
   const onDisk = readdirSync(join(root, name, 'java')).filter((f) => f.endsWith('.png')).length
   if (onDisk !== m.ticks.length) {
     throw new Error(`${file} 说有 ${m.ticks.length} 帧，目录里却有 ${onDisk} 个 PNG`)
@@ -340,6 +409,7 @@ function readManifest(root: string, name: string): Manifest {
 
 function report(
   reports: readonly ScriptReport[],
+  blocked: readonly DriverStanding[],
   threshold: number,
   tolerance: number,
 ): void {
@@ -362,10 +432,27 @@ function report(
   }
   const failed = reports.filter((r) => !r.ok)
   process.stdout.write(
-    failed.length === 0
-      ? `\n${reports.length}/${reports.length} 条剧本符合预期。\n`
-      : `\n${failed.length}/${reports.length} 条剧本不符合预期：${failed.map((r) => r.name).join('、')}\n`,
+    // 一条都没比成时不许印"0/0 条剧本符合预期" —— 那句话读起来跟全过一模一样。
+    // 只跑装配不出来的剧本时会走到这里。
+    reports.length === 0
+      ? `\n一条剧本都没比成 —— 这一趟没有任何像素被比过。\n`
+      : failed.length === 0
+        ? `\n${reports.length}/${reports.length} 条剧本符合预期。\n`
+        : `\n${failed.length}/${reports.length} 条剧本不符合预期：${failed.map((r) => r.name).join('、')}\n`,
   )
+  // 装配不出来的那几条**单独一段**，而且要点名（xl-1vu.7）。混在上面那份
+  // "N/N 条符合预期"里的话，一条一帧都没比过的剧本会被读成一条比过了的。
+  if (blocked.length > 0) {
+    process.stdout.write(
+      `\nweb 侧还装配不出来的剧本 ${blocked.length} 条 —— 这一趟它们一帧都没比过：\n`,
+    )
+    for (const s of blocked) process.stdout.write(`  装不出  ${unassembledLine(s)}\n`)
+    process.stdout.write(
+      `  取图页现在实现了：${[...IMPLEMENTED_DRIVERS].sort().join('、')}。` +
+        `等上面那几张票把 web 侧的面板建起来，再回 src/compare/expected.ts 把表态换掉。\n` +
+        `  （非零退出。一条没被装配的剧本比出来是"零帧差异"，跟"两端完全一致"长得一模一样。）\n`,
+    )
+  }
 }
 
 function pct(x: number): string {
