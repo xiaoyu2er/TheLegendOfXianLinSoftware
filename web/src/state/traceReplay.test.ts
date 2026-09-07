@@ -422,12 +422,13 @@ function observed(t: number, world: World) {
     py: world.role.py,
     dir: world.role.dir,
     frame: world.role.frame,
+    runFrame: world.role.runFrame,
     running: world.role.running,
     moving: roleMoving(world.role),
   }
 }
 
 function expected(tick: TraceTick) {
-  const { x, y, px, py, dir, frame, running, moving } = tick.role
-  return { t: tick.t, x, y, px, py, dir, frame, running, moving }
+  const { x, y, px, py, dir, frame, runFrame, running, moving } = tick.role
+  return { t: tick.t, x, y, px, py, dir, frame, runFrame, running, moving }
 }

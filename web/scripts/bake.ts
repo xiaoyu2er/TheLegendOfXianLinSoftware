@@ -45,8 +45,8 @@ const SCRIPTS = resolve(REPO, 'script')
  * **跑步图的文件从 1 开始**，而绘制时的下标从 0 开始，差的这个 1 在这里抹平。
  */
 const ROLE_SPRITES = {
-  walk: { dir: 'roles/zhangxiaofan', count: 32, firstFile: 0 },
-  run: { dir: 'roles/zhangxiaofanRun', count: 16, firstFile: 1 },
+  walk: { dir: 'roles/zhangxiaofan', count: 32, firstFile: 0, width: 32, height: 64 },
+  run: { dir: 'roles/zhangxiaofanRun', count: 16, firstFile: 1, width: 42, height: 64 },
 } as const
 
 /**
@@ -228,7 +228,12 @@ function main(): void {
       }
       const relative = `roles/${gait}/${frame}.webp`
       manifest[roleAssetId(gait, frame)] = relative
-      bytes += toWebp(source, resolve(ASSETS_OUT, relative))
+      // 原版 `Role.drawHero` 的 drawImage 带**源矩形** (0,0)-(width,height)，
+      // 素材比它大的那几张是被裁掉的，不是被缩的。仓库里真有两张：
+      // roles/zhangxiaofanRun/15.png 与 16.png 是 42×65（其余 14 张 42×64）。
+      // 不裁的话渲染层 setSize(42,64) 会把 65 行重采样成 64 行 —— 整个人物
+      // 纵向糊掉一点，看起来完全正常，只有逐像素比对量得出来（xl-u39）。
+      bytes += toWebp(source, resolve(ASSETS_OUT, relative), sourceRect(source, spec))
     }
     console.log(`  主角${gait === 'walk' ? '行走' : '跑步'}图 ${spec.count} 帧 → roles/${gait}/*.webp`)
   }
@@ -445,12 +450,51 @@ function format(value: unknown, indent: string): string {
  *   dist/assets 下是一堆独立文件，只有真的走进大迷宫的玩家才下载它一次。
  *   「双份 + 按缩放选」与「渐进加载」两种方案反而会让仓库更大。
  */
-function toWebp(source: string, destination: string): number {
+function toWebp(source: string, destination: string, crop?: Crop): number {
   mkdirSync(dirname(destination), { recursive: true })
   const lossless = source.toLowerCase().endsWith('.png')
   const flags = lossless ? ['-lossless'] : ['-q', '80']
-  execFileSync('cwebp', ['-quiet', ...flags, source, '-o', destination])
+  const cropFlags = crop ? ['-crop', '0', '0', String(crop.width), String(crop.height)] : []
+  execFileSync('cwebp', ['-quiet', ...cropFlags, ...flags, source, '-o', destination])
   return statSync(destination).size
+}
+
+interface Crop {
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * 一张主角精灵图要裁到多大：`Role.drawHero` 那个 drawImage 的源矩形与素材
+ * 本身的交集。
+ *
+ * 取交集而不是无脑裁到 (width, height)，是因为 Java 的语义是"源矩形超出图片
+ * 的部分不存在，剩下的按目标矩形缩放"：素材比源矩形**小**的那一维，原版是
+ * 拉伸，裁不出东西来，交给渲染层的 setSize 去拉正好一致。今天 48 张里没有
+ * 这种，但把规则写全比写死"就是 42×64"安全——素材换一批不会悄悄错。
+ *
+ * 返回 null 表示素材恰好就是源矩形，不必裁。
+ */
+function sourceRect(source: string, spec: { width: number; height: number }): Crop | undefined {
+  const { width, height } = pngSize(source)
+  const crop = { width: Math.min(width, spec.width), height: Math.min(height, spec.height) }
+  return crop.width === width && crop.height === height ? undefined : crop
+}
+
+/**
+ * 读一张 PNG 的宽高。IHDR 必须是第一个块，宽高就是它头 8 个字节
+ * （PNG 规范 §11.2.2），所以读前 24 个字节就够。
+ *
+ * 头 8 个字节的魔数要核：核了的话，喂进来一个不是 PNG 的文件会抛；不核的话
+ * 会安静地返回两个垃圾数字，而"裁到一个垃圾尺寸"看起来跟裁对了一样。
+ */
+function pngSize(file: string): { width: number; height: number } {
+  const head = readFileSync(file).subarray(0, 24)
+  const magic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  if (head.length < 24 || !head.subarray(0, 8).equals(magic)) {
+    throw new Error(`${file} 不是 PNG，读不出宽高`)
+  }
+  return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) }
 }
 
 function requireCwebp(): void {
