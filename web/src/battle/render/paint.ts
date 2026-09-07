@@ -86,7 +86,11 @@ export function barWidth(value: number, max: number): number {
 export function createPaintState(w: BattleWorld): PaintState {
   const bars = new Map<PartyKey, BarWidths>()
   const angry = new Map<PartyKey, { code: number; frame: number }>()
-  for (const h of w.heroes) {
+  // **出战名单，不是 `bp.heroes`。** 两者今天只在打输出口的末尾分家
+  // （那里有一句 `heroes.clear()`），而状态栏读的是 `bp.zxf/yj/lxq`、
+  // 怒气槽读的是 `initial()` 建好就再没动过的 `angryBars` —— 两者都不受
+  // 那一句影响。拿 `heroes` 建的话，全灭之后底下三格会整排消失。
+  for (const h of w.party) {
     bars.set(h.spec.key, { hp: barWidth(h.hp, h.hpMax), mp: barWidth(h.mp, h.mpMax) })
     // `AngryBar` 的构造函数：`currentImage=images.get(0)`，code 还是 0。
     angry.set(h.spec.key, { code: 0, frame: 0 })
@@ -145,9 +149,9 @@ export function applyPaintInput(w: BattleWorld, p: PaintState, input: BattleInpu
  *
  * ⚠️ 一处已知的不等价：`GameOver.update()` 排在 `stateBlank.update()` **之后**，
  * 而打输回地图那条出口会在那里把两个人复位成半血（`ZhangXiaoFan.hp=hpMax/2`）。
- * 原版的条子要到**下一拍**才看见那个血，这里同一拍就看见了，差一拍。三条打输
- * 剧本今天在 web 侧还跑不完（归 xl-rh9.8），等它们跑得起来、真的进了逐帧比对，
- * 这一处要么被比出来、要么就得在这里拆成两段调用。**先记着，不先猜。**
+ * 原版的血条要到**下一拍**才看见那个血，这里同一拍就看见了，差一拍。它只在
+ * `battle-defeat-scene` 的末拍发生，而条子每拍只走 1 px —— 也就是一帧里最多
+ * 差一个像素列。真进了逐帧比对之后由那边说话（那条剧本的表态里记着这一笔）。
  */
 export function advancePaintState(w: BattleWorld, p: PaintState): void {
   updateMouse(p)
@@ -174,7 +178,7 @@ function updateMouse(p: PaintState): void {
  * 两条都不成立，条子不动。这里照写成两条，好让它和原版逐行对得上。
  */
 function updateBars(w: BattleWorld, p: PaintState): void {
-  for (const h of w.heroes) {
+  for (const h of w.party) {
     const bar = p.bars.get(h.spec.key)
     if (!bar) {
       // 出战名单在一场战斗里不变（`BattlePanel.initial` 建完就不动了）。
@@ -198,7 +202,7 @@ function step1(bar: BarWidths, key: keyof BarWidths, target: number): void {
  * `drawList.ts` 的 `angryBarOps`。
  */
 function updateAngry(w: BattleWorld, p: PaintState): void {
-  for (const h of w.heroes) {
+  for (const h of w.party) {
     const a = p.angry.get(h.spec.key)
     if (!a) throw new Error(`${h.spec.key} 不在这份 PaintState 的怒气槽里`)
     if (!isAngry(h)) continue

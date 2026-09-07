@@ -25,7 +25,8 @@ import type { DrawOp, Rect } from './drawList'
  *    （`sy1 = 80 - height` 而 height 算到 100），Java2D 把图外那部分当成透明，
  *    也就是**少画几行**，不是把图挤扁。目标与源等大时裁一刀就等价，见 `clip()`。
  * 3. **字画在基线上**。`g.drawString(s, x, y)` 的 y 是基线，不是行盒左上角。
- *    与 `scene/sceneRenderer.ts` 同一个理由，用 2D canvas 自己写字。
+ *    与 `scene/sceneRenderer.ts` 同一个理由，用 2D canvas 自己写字；ascent
+ *    是量出来的，不是拍的常数（见 `textTexture`）。
  */
 
 export interface BattleRenderer {
@@ -67,14 +68,50 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   // 去去），来回建销毁精灵不值得。
   const pool: { sprite: Sprite; frame: Texture }[] = []
 
-  // 文字层：一张与画布同样大的 2D canvas，写完当纹理贴上去。
-  const textCanvas = document.createElement('canvas')
-  textCanvas.width = STAGE_WIDTH
-  textCanvas.height = STAGE_HEIGHT
-  const ctx = textCanvas.getContext('2d')
-  if (!ctx) throw new Error('取不到战斗文字层的 2D context')
-  const textSprite = new Sprite(Texture.from(textCanvas))
-  let drawnText = ''
+  // 文字：**每条 `drawString` 各自一张小纹理**，不是合成一整层。
+  //
+  // 原本是合成一层再插进 z 序里的（跟 `scene/sceneRenderer.ts` 的旁白一样），
+  // 第一次真跑就炸了：`StateBlank.drawStateBlank` 是**按人**循环的，一个人
+  // 一条血、一条灵力、三行字，于是文字与图片在第 6..18 条之间交替出现。
+  // 合成一层就只能插在一个位置上，那会改 z 序。
+  //
+  // 每条一张纹理是唯一不改 z 序的做法。代价是一帧最多九张小纹理，而它们按
+  // 文字内容缓存 —— 血量不变就不重画。
+  const textCache = new Map<string, { texture: Texture; left: number; ascent: number }>()
+  const measureCanvas = document.createElement('canvas')
+  const measureCtx0 = measureCanvas.getContext('2d')
+  if (!measureCtx0) throw new Error('取不到战斗文字层的 2D context')
+  const measureCtx = measureCtx0
+
+  /**
+   * 把一串字画成一张刚好裹住它的纹理，并记下**基线在纹理里的位置**。
+   *
+   * `g.drawString(s,x,y)` 的 y 是基线；精灵摆的是左上角。两者差一个随字体
+   * 而变的 ascent，所以这里量出来带着走 —— 拍一个常数的话，换一台机器换一条
+   * 后备字体链，整排字就上下错开几个像素。
+   */
+  function textTexture(text: string): { texture: Texture; left: number; ascent: number } {
+    const cached = textCache.get(text)
+    if (cached) return cached
+    const pad = 2
+    measureCtx.font = FONT
+    const m = measureCtx.measureText(text)
+    const left = Math.ceil(m.actualBoundingBoxLeft) + pad
+    const ascent = Math.ceil(m.actualBoundingBoxAscent) + pad
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, left + Math.ceil(m.actualBoundingBoxRight) + pad)
+    canvas.height = Math.max(1, ascent + Math.ceil(m.actualBoundingBoxDescent) + pad)
+    const c = canvas.getContext('2d')
+    if (!c) throw new Error('取不到战斗文字纹理的 2D context')
+    c.font = FONT
+    // `g.setColor(Color.black)`。
+    c.fillStyle = '#000000'
+    c.textBaseline = 'alphabetic'
+    c.fillText(text, left, ascent)
+    const made = { texture: Texture.from(canvas), left, ascent }
+    textCache.set(text, made)
+    return made
+  }
 
   function slot(i: number): { sprite: Sprite; frame: Texture } {
     while (pool.length <= i) {
@@ -132,29 +169,19 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   }
 
   function draw(ops: readonly DrawOp[]): void {
-    // 文字全部写进那一张 canvas，整层插在**第一条文字指令**的位置上。
-    // 今天的文字只有状态栏那一撮，是连续的；不连续就意味着有一层文字被夹在
-    // 别的精灵中间，那时候这里必须响，而不是悄悄把它挪到前面去。
-    const textIndices = ops.map((op, i) => (op.kind === 'text' ? i : -1)).filter((i) => i >= 0)
-    if (textIndices.length > 0) {
-      const first = textIndices[0]!
-      const last = textIndices[textIndices.length - 1]!
-      if (last - first + 1 !== textIndices.length) {
-        throw new Error(
-          `这一帧的文字指令不连续（第 ${first}..${last} 条里夹着图片）。` +
-            `文字整层合成一张纹理插在第一条的位置上 —— 夹着别的东西时那样做会改 z 序。`,
-        )
-      }
-    }
-
     let n = 0
-    let textAt = -1
     for (const op of ops) {
+      const s = slot(n)
       if (op.kind === 'text') {
-        if (textAt < 0) textAt = n
+        const t = textTexture(op.text)
+        s.sprite.texture = t.texture
+        // 基线对齐：精灵左上角 = 落笔点减去纹理里的 (left, ascent)。
+        s.sprite.position.set(op.x - t.left, op.y - t.ascent)
+        s.sprite.setSize(t.texture.width, t.texture.height)
+        s.sprite.visible = true
+        n++
         continue
       }
-      const s = slot(n)
       const tex = textureOf(op.id)
       if (op.kind === 'image') {
         s.sprite.texture = tex
@@ -178,32 +205,9 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
       s.sprite.visible = true
       n++
     }
+    // 这一帧没用到的精灵全部藏起来。**不藏的话**上一帧的伤害数字会留在屏幕
+    // 上，而那看起来像"伤害数字停留得久了一点"，不像一个错。
     for (let i = n; i < pool.length; i++) pool[i]!.sprite.visible = false
-
-    // 文字层：内容变了才重画（每帧重传一张 1024×640 的纹理不便宜，而这几行
-    // 只在血量变化时才变）。
-    const key = ops
-      .filter((op): op is Extract<DrawOp, { kind: 'text' }> => op.kind === 'text')
-      .map((op) => `${op.x},${op.y},${op.text}`)
-      .join('\n')
-    if (key !== drawnText) {
-      ctx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
-      ctx.font = FONT
-      // `g.setColor(Color.black)`。
-      ctx.fillStyle = '#000000'
-      ctx.textBaseline = 'alphabetic'
-      for (const op of ops) {
-        if (op.kind === 'text') ctx.fillText(op.text, op.x, op.y)
-      }
-      textSprite.texture.source.update()
-      drawnText = key
-    }
-    if (textAt < 0) {
-      if (textSprite.parent) stage.removeChild(textSprite)
-    } else {
-      if (!textSprite.parent) stage.addChild(textSprite)
-      stage.setChildIndex(textSprite, Math.min(textAt, stage.children.length - 1))
-    }
   }
 
   return {

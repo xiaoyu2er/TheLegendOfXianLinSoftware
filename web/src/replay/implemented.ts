@@ -27,7 +27,7 @@
  * `unassembled` 表态**必须**同时改成 `match` 或量出来的 `gap` —— 不改的话
  * `unassembled.ts` 的双向检查会红（"页面已经装得出来了，表却还说比不了"）。
  */
-export const IMPLEMENTED_DRIVERS = ['scene'] as const
+export const IMPLEMENTED_DRIVERS = ['scene', 'battle'] as const
 
 export type ImplementedDriver = (typeof IMPLEMENTED_DRIVERS)[number]
 

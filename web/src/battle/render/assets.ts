@@ -63,6 +63,8 @@ export const ANGRY_BACK_ID = battleId('怒气槽/底.png')
 export const PROGRESS_BAR_ID = battleId('进度条/进度条.png')
 export const PET_HEAD_ID = battleId('小精灵/头像.png')
 export const CLOUD_ID = battleId('其他/云雾.png')
+export const GAME_OVER_LEFT_ID = battleId('全灭图/全灭图1.png')
+export const GAME_OVER_RIGHT_ID = battleId('全灭图/全灭图2.png')
 
 /** 怒气槽那四张（0 基）。 */
 export function angryId(frame: number): AssetId {
@@ -162,7 +164,8 @@ export function backgroundId(path: string): AssetId {
  */
 export function battleTextureIds(w: {
   background: string
-  heroes: readonly { roleCode: 1 | 2 | 3; spec: { key: PartyKey; frames: number; beAttackedFrames: number; victoryFrames: number; deadFrames: number; attack: { name: string; length: number } } }[]
+  /** **出战名单**（`party`），不是会被清空的 `bp.heroes`。 */
+  party: readonly { roleCode: 1 | 2 | 3; spec: { key: PartyKey; frames: number; beAttackedFrames: number; victoryFrames: number; deadFrames: number; attack: { name: string; length: number } } }[]
   slots: readonly ({ name: string; spec: { length: number; beAttackedFrames: number }; skill: { name: string; length: number } } | null)[]
 }): AssetId[] {
   const ids = new Set<AssetId>()
@@ -173,6 +176,8 @@ export function battleTextureIds(w: {
   ids.add(ANGRY_BACK_ID)
   ids.add(PROGRESS_BAR_ID)
   ids.add(PET_HEAD_ID)
+  ids.add(GAME_OVER_LEFT_ID)
+  ids.add(GAME_OVER_RIGHT_ID)
   for (let i = 0; i < 4; i++) ids.add(angryId(i))
   for (let i = 0; i < 5; i++) ids.add(instructId(i))
   for (let i = 0; i < 8; i++) ids.add(mouseId(i))
@@ -180,7 +185,7 @@ export function battleTextureIds(w: {
     for (const variant of [1, 2, 3] as const) ids.add(commandButtonId(key, variant))
   }
   for (const type of [1, 2]) for (let d = 0; d <= 9; d++) ids.add(hurtDigitId(type, d))
-  for (const h of w.heroes) {
+  for (const h of w.party) {
     ids.add(heroHeadId(h.roleCode))
     ids.add(heroPanelId(h.spec.key))
     for (let i = 0; i < h.spec.frames; i++) ids.add(heroWalkId(h.roleCode, i))

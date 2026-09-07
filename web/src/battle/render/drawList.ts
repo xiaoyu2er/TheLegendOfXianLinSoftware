@@ -6,6 +6,8 @@ import { enemyShowsSelected } from './hitBox'
 import {
   ANGRY_BACK_ID,
   CLOUD_ID,
+  GAME_OVER_LEFT_ID,
+  GAME_OVER_RIGHT_ID,
   HP_BAR_ID,
   MP_BAR_ID,
   PROGRESS_BAR_ID,
@@ -48,8 +50,10 @@ import type { BattleWorld, Enemy, Hero } from '../types'
  *
  * ## 还没实现的层：抛，不静默
  *
- * 25 层里有 6 层今天画不出来（药品菜单 / 技能菜单 / 小精灵 / 战斗状态图标 /
- * 胜利结算 / 全灭图），因为它们要么归别的票、要么状态层根本没有那几个字段。
+ * 25 层里有 5 层今天画不出来（药品菜单 / 技能菜单 / 提示图 / 战斗状态图标 /
+ * 胜利结算），因为它们要么归别的票、要么状态层根本没有那几个字段（提示图
+ * 只记了"画没画"、状态图标只记了"生没生效"，都画不出是哪一张、在哪儿）。
+ * 小精灵是第六种情况：世界里**根本没有那个字段**，结构性缺席。
  * 这些层的处置**不是"什么都不画"** —— 那样"没实现"和"这一帧本来就没有它"
  * 长得一模一样。处置是：那一层**真的要画**的时候当场抛，并点名归哪张票。
  * 四份战斗真值今天一次都触发不到它们（判据见 `drawList.test.ts` 的
@@ -123,6 +127,11 @@ const ANGRY_H = 80
 const BAR_Y = 50
 /** 三个人在状态栏 / 怒气槽里的格位。原版按 `roleCode` 分的 switch。 */
 const SLOT: Readonly<Record<1 | 2 | 3, number>> = { 1: 0, 2: 1, 3: 2 }
+/** 画布尺寸，与全灭图那两个源矩形里写死的 640 / 1024 / 512 一致。 */
+const STAGE_W = 1024
+const STAGE_H = 640
+/** `GameOver` 构造函数里的 `rsx2=512` —— 右半幅的源矩形右边界。 */
+const GAME_OVER_HALF = 512
 
 /**
  * 画这一帧。**只读**世界与 `PaintState`，一个字段都不写回去。
@@ -138,8 +147,11 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   backgroundAnimOps(w, push)
   // 3 状态栏
   stateBlankOps(w, p, push)
-  // 4 怒气槽（每个出战的人一条，顺序就是 `bp.heroes`）
-  for (const h of w.heroes) angryBarOps(w, p, h, push)
+  // 4 怒气槽：**读的是出战名单，不是 `bp.heroes`**。`angryBars` 在 `initial()`
+  //   里按出战名单建好之后就再没动过，而 `bp.heroes` 在打输出口的末尾被清空
+  //   （`GameOver.update()` 那句 `heroes.clear()`）。拿 heroes 画的话，全灭
+  //   之后底下三个怒气槽会整排消失，而原版还画着。
+  for (const h of w.party) angryBarOps(w, p, h, push)
   // 5 控制台
   commandOps(w, p, push)
   // 6 药品菜单
@@ -191,9 +203,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 23 游标
   mouseOps(w, p, push)
   // 24 全灭图
-  if (w.gameOverDrawn) {
-    unimplemented('game-over', '全灭图对开（打输的两条出口）', 'xl-rh9.8')
-  }
+  gameOverOps(w, push)
   // 25 开场云雾
   startAnimOps(w, push)
 
@@ -237,11 +247,13 @@ function backgroundAnimOps(w: BattleWorld, push: (op: DrawOp) => void): void {
  * `drawImage(null,…)`，也就是整格空着，而不是后面的人往前挪。
  */
 function stateBlankOps(w: BattleWorld, p: PaintState, push: (op: DrawOp) => void): void {
-  for (const h of w.heroes) {
+  // 同怒气槽：`StateBlank` 读的是 `bp.zxf/yj/lxq`，那三个引用在整场战斗里
+  // 都不变，与 `bp.heroes` 的清空无关。
+  for (const h of w.party) {
     const k = SLOT[h.roleCode]
     push({ kind: 'image', layer: 'state-blank', id: heroPanelId(h.spec.key), x: PANEL_STRIDE * k, y: PANEL_Y })
   }
-  for (const h of w.heroes) {
+  for (const h of w.party) {
     const k = SLOT[h.roleCode]
     const bar = p.bars.get(h.spec.key)
     if (!bar) throw new Error(`${h.spec.key} 不在这份 PaintState 里`)
@@ -497,6 +509,34 @@ function mouseOps(w: BattleWorld, p: PaintState, push: (op: DrawOp) => void): vo
   // 原版的游标图在第一次 `update()` 之前是 null，什么都不画。
   if (p.mouse.frame === null) return
   push({ kind: 'image', layer: 'mouse', id: mouseId(p.mouse.frame), x: w.currentX, y: w.currentY })
+}
+
+/**
+ * 全灭图：两张半幅从左右**对开**（`GameOver.drawGameOver`）。
+ *
+ * 十六个坐标里只有四个会动，状态层记的就是那四个（xl-rh9.8 的 `GameOverAnim`）；
+ * 另外十二个是构造函数里写死的常量，抄在下面。两边都是 1:1（目标与源同时
+ * 每拍加/减 8），所以拉伸不会出现。
+ */
+function gameOverOps(w: BattleWorld, push: (op: DrawOp) => void): void {
+  const g = w.gameOver
+  if (!g.isDraw) return
+  // 左：目标 (0,0)-(ldx2,640)，源 (0,0)-(lsx2,640)。
+  push({
+    kind: 'rect',
+    layer: 'game-over',
+    id: GAME_OVER_LEFT_ID,
+    dest: { x: 0, y: 0, width: g.ldx2, height: STAGE_H },
+    src: { x: 0, y: 0, width: g.lsx2, height: STAGE_H },
+  })
+  // 右：目标 (rdx1,0)-(1024,640)，源 (rsx1,0)-(512,640)。
+  push({
+    kind: 'rect',
+    layer: 'game-over',
+    id: GAME_OVER_RIGHT_ID,
+    dest: { x: g.rdx1, y: 0, width: STAGE_W - g.rdx1, height: STAGE_H },
+    src: { x: g.rsx1, y: 0, width: GAME_OVER_HALF - g.rsx1, height: STAGE_H },
+  })
 }
 
 /** 开场云雾：同一张图**对开**，左半幅每拍 +30、右半幅每拍 −30。 */
