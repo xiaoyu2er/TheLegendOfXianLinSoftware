@@ -6,6 +6,8 @@ import type { FrameResult, SequenceResult } from '../src/compare/diff'
 import { expectationOf, scriptNames } from '../src/compare/expected'
 import type { Expectation } from '../src/compare/expected'
 import { decodePng, encodePng } from '../src/compare/png'
+import { judgeRegions, partitionedDiff } from '../src/compare/regions'
+import type { PartitionedFrame, RegionVerdict } from '../src/compare/regions'
 import { repoPath } from '../src/test/repoPath'
 import { launch } from './cdp'
 import type { Browser } from './cdp'
@@ -42,6 +44,8 @@ interface ScriptReport {
   readonly sequence: SequenceResult
   readonly ok: boolean
   readonly verdict: string
+  /** 只有分区表态的剧本有：硬比区 / 每个缺口区各自的账。 */
+  readonly regions?: RegionVerdict | undefined
 }
 
 async function main(): Promise<void> {
@@ -191,9 +195,31 @@ function compareOne(
   const sequence = summarize(results, threshold)
   const expectation = expectationOf(m.script)
   const diverged = sequence.firstDivergent !== null
-  const ok = expectation.status === 'match' ? !diverged : diverged
-  const verdict =
-    expectation.status === 'match'
+
+  // 分区表态的剧本走另一套判据（`src/compare/regions.ts`）：整屏的 ratio 与
+  // threshold 仍然算出来给报告看，但**判通不通过的是分区那一套** —— 硬比区
+  // 一个超容差的像素都不许有，每个缺口区各自双向红。
+  let regions: RegionVerdict | undefined
+  if (expectation.gaps) {
+    const rects = expectation.gaps.map((g) => g.rect)
+    const javaDir0 = join(root, m.script, 'java')
+    const webDir0 = join(root, m.script, 'web')
+    const frames: PartitionedFrame[] = m.ticks.map((t) => {
+      const a = decodePng(readFrame(javaDir0, t, m.script, '原版'))
+      const b = decodePng(readFrame(webDir0, t, m.script, 'Web'))
+      return { tick: t, ...partitionedDiff(a, b, rects, tolerance) }
+    })
+    regions = judgeRegions(frames, expectation.gaps)
+  }
+
+  const ok = regions
+    ? regions.ok
+    : expectation.status === 'match'
+      ? !diverged
+      : diverged
+  const verdict = regions
+    ? regions.verdict
+    : expectation.status === 'match'
       ? diverged
         ? `回归：第 ${sequence.firstDivergent} 帧起偏离`
         : '一致'
@@ -216,7 +242,7 @@ function compareOne(
     writeFileSync(join(diffDir, frameName(t)), encodePng(diffImage(a, b, tolerance)))
   }
 
-  return { name: m.script, expectation, sequence, ok, verdict }
+  return { name: m.script, expectation, sequence, ok, verdict, regions }
 }
 
 /** 逐帧比原版与某一侧产物的差异。`side` 是 `<剧本>/` 下的子目录名。 */
