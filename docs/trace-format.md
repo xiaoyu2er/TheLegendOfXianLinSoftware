@@ -51,7 +51,7 @@ tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 
 ```
 确定性 OK：battle-defeat-scene 两次导出逐字节一致（362264 字节）
-确定性 OK：battle-defeat-slot2 两次导出逐字节一致（144332 字节）
+确定性 OK：battle-defeat-slot2 两次导出逐字节一致（144421 字节）
 确定性 OK：battle-defeat-start 两次导出逐字节一致（280257 字节）
 确定性 OK：battle-em3-box      两次导出逐字节一致（1296045 字节）
 确定性 OK：battle-min          两次导出逐字节一致（688276 字节）
@@ -405,10 +405,10 @@ if(bp.em1.name.equals("罹年居士")){        // 剧情必败战 → 回地图
 写法分岔：原版只看 `em1`，走 `startPanel`；写成"有没有"的实现会走
 `scenePanel`，`awaitExit` 当场非零退出。
 
-**它是这批战斗剧本里唯一一份合成的遭遇**，因为原版 96 份脚本的 Fight 数据里
-没有任何一行把罹年居士排在第 2/3 槽（它只出现一次：`脚本22` 第 1 行，独自
-一只）。剧本格式本来就允许三个槽位随便填，怪物名也都是原版 `Enemy.initial`
-认得的；破"逐行取自原版数据"这个惯例是有意的，剧本的 `description` 里写明了。
+**它这一行怪物不取自原版的 Fight 数据**，因为原版 96 份脚本里没有任何一行
+把罹年居士排在第 2/3 槽（它只出现一次：`脚本22` 第 1 行，独自一只）。剧本
+格式本来就允许三个槽位随便填，怪物名也都是原版 `Enemy.initial` 认得的；破
+"逐行取自原版数据"这个惯例是有意的，剧本的 `description` 里写明了。
 
 实测过它确实在验（xl-rh9.6）：把 `src/battle/GameOver.java` 那一句改成
 `em1 || em2 || em3` 三个槽位都比，重新导出三份打输真值 ——
@@ -903,5 +903,5 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `battle-em3-box` | 战斗（`driver` = `battle`） | 让 xl-1dv.8（`EnemySlector` 判 em3 用了 `height1`）在真值里露头的那一场：`脚本20.txt` 第 3 行的 Fight 数据，em1 的图 188×220 而 em3 的图 124×172 |
 | `battle-defeat-scene` | 战斗（`driver` = `battle`） | 打输的第一条出口：`脚本22.txt` 第 1 行的剧情必败战（`罹年居士` 独自一只，hp/hurt/defense 全是 9999）。全灭之后一路记到切回 `scenePanel`，张小凡与文敏各回半血。第 2/3 槽是 `null` —— 原版的 Fight 数据一行可以只写一只怪 |
 | `battle-defeat-start` | 战斗（`driver` = `battle`） | 打输的第二条出口：`脚本37.txt` 第 1 行（`罹年居士分身` ×3，等级压到 1 让它必输）。全灭之后切回 `startPanel`，谁的血都不回。它钉住那个名字比较是**逐字相等**而不是包含 |
-| `battle-defeat-slot2` | 战斗（`driver` = `battle`） | 唯一一份**合成**的遭遇（不取自原版 Fight 数据）：第 1 槽 `怪物1`、第 2 槽 `罹年居士`。全灭之后照样切回 `startPanel` —— 它钉住那个判断只看 `em1`，而不是"三个槽位里有没有" |
+| `battle-defeat-slot2` | 战斗（`driver` = `battle`） | **合成**的遭遇（不取自原版 Fight 数据）：第 1 槽 `怪物1`、第 2 槽 `罹年居士`。全灭之后照样切回 `startPanel` —— 它钉住那个判断只看 `em1`，而不是"三个槽位里有没有" |
 | `shop-trade` | 商店（`driver` = `shop`） | 药店与装备超市各走一条完整的买卖：买 2 份金创药 → 钱不够被拒（金钱与背包一个数都没动） → 卖回 1 份 → 装备超市买月苗刀 → 切到鞋子那栏卖掉皮靴 → 切回武器栏确认刚买的还在。加减按钮的两端也都走到了 |

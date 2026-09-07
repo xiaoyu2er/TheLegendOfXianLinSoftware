@@ -147,16 +147,16 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
   },
   'battle-defeat-slot2': {
     status: 'unassembled',
-    // 打输的第三份真值（xl-rh9.6），也是第一份**合成**的战斗剧本：第 1 槽是
-    // 「怪物1」、第 2 槽才是「罹年居士」，原版 96 份脚本的 Fight 数据里没有
-    // 这一行。装配不出来的理由同上（M2 / xl-rh9.4）。
+    // 打输的第三份真值（xl-rh9.6）：第 1 槽是「怪物1」、第 2 槽才是「罹年
+    // 居士」，这一行不取自原版的 Fight 数据。它钉住 `GameOver.update()` 那个
+    // 判断只看 `em1`，而不是「三个槽位里有没有」——另外两条打输剧本都盖不住
+    // 这一种写错法，来龙去脉在 `docs/trace-format.md` §「打输的两条出口」。
     //
-    // 它钉住的是另外两条打输剧本盖不住的那一种写错法：把 GameOver.update()
-    // 的判断写成「三个槽位里**有没有**罹年居士」而不是「**第一只**是不是」。
-    // battle-defeat-scene 的罹年居士本来就在第 1 槽、battle-defeat-start 里
-    // 根本没有罹年居士 —— 两种写法在那两份里结果相同，只有这一份能把它们分开。
+    // 装配不出来的理由与上面几条相同（web 侧还没有战斗面板）。`issue` 写
+    // xl-rh9.9：那是注册战斗装配、把这几条表态从「装不出」换掉的那一张。
+    // 上面两条打输剧本写的 xl-rh9.4 已经拆成 .7/.8/.9，主干合并时一并改。
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
-    issue: 'xl-rh9.4',
+    issue: 'xl-rh9.9',
   },
   'dorm-walk': {
     status: 'gap',
