@@ -254,3 +254,23 @@ git branch -d <slug>                     # 分支要单独删，它不管
 **6. 引号与 heredoc。** 中文正文里的半角引号会提前闭合 shell 字符串（派工脚本
 曾因此 exit 127）；一条命令里写两个 heredoc 会产生一个消息是垃圾的提交，而且
 **不报错**。长文本一律写文件再 `--file=<路径>` 或 `"$(cat 文件)"`。
+
+**7. 篡改本身可能根本没写进去，而工具照样 exit 0。** `sed -i.orig 's/BG_COUNT
+= 53/= 52/'` 改一行算出来的常量——那个字面量不存在，sed 没匹配到，**退出码
+仍是 0**，于是"篡改了但测试是绿的"，看起来像判据失灵（`xl-23y` 实测）。凡是
+篡改验证，先确认篡改生效再看颜色：
+
+    python3 -c "s=open(p).read(); assert OLD in s, '篡改点没匹配到'; open(p,'w').write(s.replace(OLD,NEW,1))"
+
+**8. `git diff --name-only` 会把中文路径整个加引号**（`"web/src/\345\244..."`）。
+喂进 shell 循环后 `git show` / `cmp` 全部 "no such file"，而
+`cmp -l a b | wc -l` 照样打印 **0** ——和"零字节不同"长得一模一样（`xl-23y`
+实测，本仓库的产物路径几乎全是中文）。用 NUL 分隔读：
+
+    git diff --name-only -z -- <路径> | while IFS= read -r -d '' f; do … done
+
+**9. 判定 m4a 重烘 churn 要看偏移，不要看字节个数。** `bake-m4a-timestamps`
+那条 memory 原先记的"每个文件恰好 12 个字节不同"不是常数——`xl-23y` 那趟实测
+是 18 个。差多少取决于距上次烘焙过了多久（两个 4 字节时间戳里有几个字节恰好
+相同）。判据是**差异偏移是否全部小于 300**（mvhd/tkhd/mdhd 都在文件头）。
+memory 已按实测改写。这条本身也是"别人的数字要自己再量一遍"的实例。
