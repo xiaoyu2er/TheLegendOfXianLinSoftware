@@ -110,6 +110,12 @@ describe('属性公式', () => {
  *
  * 分母是**我们表里有几行**（`Object.keys(ENEMIES).length`），不是源码的 25 行
  * —— 那张表只抄跑得到真值的那几只，还会随别人的票一起长。
+ *
+ * ## 篡改验证（2026-09-07 实测）
+ *
+ * 7 行 × 每行 24 列 = **168 次逐列篡改**（数值 +1、名字加后缀、罹年居士那个
+ * `zhangSpeed + 6` 改成 `+ 7`），每次都先断言篡改真的写进了文件再跑
+ * `vitest run src/battle/units.test.ts`：**168 红 0 绿**。
  */
 describe('怪物出厂表逐列对回原版源码', () => {
   const source = parseEnemySource()
