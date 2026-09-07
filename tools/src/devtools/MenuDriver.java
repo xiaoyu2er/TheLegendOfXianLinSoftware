@@ -26,7 +26,8 @@ import shop.EquipmentPack;
 import tools.Clock;
 
 /**
- * 菜单面板的驱动器。**一步 = 一次输入事件**，不是一个 tick。
+ * 菜单面板的驱动器。**一步 = 一次输入事件**，不是一个 tick —— 唯一的例外是
+ * {@code tick} 指令，那一条一步就是一次 {@code run()} 的循环体（见下面「tick」一节）。
  *
  * 为什么不是 tick：{@code MenuPanel} 只有 133 行，既没有 run 循环也没有 paint
  * 覆写 —— 它是个 CardLayout 容器，真正画东西的是底下的物品 / 装备 / 奇术 /
@@ -323,11 +324,16 @@ public final class MenuDriver implements TraceDriver {
         int after = getInt(m, "code");
         Object image = field(m, "currentImage");
         if (before < 8) {
-            if (after != before + 1 || image != mouseFrames(m).get(before)) {
-                fail(p.getName() + " 的鼠标帧没有按 Mouse.update() 推进：code " + before
-                        + " → " + after + "（应为 " + (before + 1) + "），图是第 "
-                        + mouseFrames(m).indexOf(image) + " 张（应为第 " + before + " 张）"
-                        + " —— 这一 tick 没落到 Mouse.update() 上");
+            // 两个条件分开报。合成一条的话，"计数器没动"会连带印一句
+            // "图是第 0 张（应为第 0 张）"—— 一句断言了并没有发生的不一致，
+            // 于是"这一 tick 根本没落地"与"原版换图规则变了"两种失败长得一样。
+            if (after != before + 1) {
+                fail(p.getName() + " 的鼠标帧计数器没有推进：code " + before + " → " + after
+                        + "（应为 " + (before + 1) + "）—— 这一 tick 没落到 Mouse.update() 上");
+            }
+            if (image != mouseFrames(m).get(before)) {
+                fail(p.getName() + " 的鼠标帧换错了图：第 " + mouseFrames(m).indexOf(image)
+                        + " 张（应为第 " + before + " 张）—— Mouse.update() 是先取图再自增");
             }
         } else if (after != 1 || image != beforeImage) {
             fail(p.getName() + " 的鼠标帧在 code==8 时应该回到 1 且不换图，实际 code=" + after

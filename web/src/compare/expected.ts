@@ -358,6 +358,10 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // `magic.animation.code` 逐帧推进记下来的真值。菜单的鼠标图标与技能动画
     // 在 web 侧做出来之后，逐帧对齐的对象是它，不是 menu-equip（那一条整条
     // 都停在第 0 帧）。
+    //
+    // **接线时记得把取帧密度调到 `--every 1`。** `tools/compare-frames.sh` 缺省
+    // 25 个 tick 取一帧，这条剧本 47 步只出 2 帧 —— 而它的全部意义在逐帧上，
+    // 按缺省采样等于两帧里什么动画都没采到，却照样"比过了"。
     why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
     issue: 'xl-6lo',
   },
