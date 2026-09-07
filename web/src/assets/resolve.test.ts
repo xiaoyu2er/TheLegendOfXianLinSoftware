@@ -8,11 +8,21 @@ import { BG_COUNT } from '../state/narratage'
 import { bgmAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from './ids'
 import { knownAssetIds, resolveAsset, resolveAssetOrNull, resolveBgmOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
+import { DEFERRED_TOP_DIRS, IMAGE_ROOT, isDeferredBattleAsset } from './battleAssets'
+import { listFiles } from './listFiles'
 import { repoPath } from '../test/repoPath'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
 function headFilesInRepo(): number {
   return readdirSync(repoPath('heads')).filter((f) => /^heads \(\d+\)\.png$/.test(f)).length
+}
+
+/**
+ * `image/` 下**不走按需加载**的文件有几个。战斗常用素材那一类的分母，
+ * 从素材源头数：目录里有什么就该烘什么，切出去的正是 `DEFERRED_TOP_DIRS`。
+ */
+function bundledBattleFilesInRepo(): number {
+  return listFiles(repoPath(IMAGE_ROOT)).filter((f) => !isDeferredBattleAsset(f)).length
 }
 
 describe('资产逻辑 ID', () => {
@@ -93,6 +103,10 @@ describe('资产逻辑 ID', () => {
     // 旁白背景的分母来自 `state/narratage.ts` 的 BG_COUNT，也就是原版
     // `Narratage` 构造函数里那个 2..53 的循环，不在这里另抄一个数字。
     expect(ids.filter((id) => id.startsWith('narratage:bg:'))).toHaveLength(BG_COUNT)
+    // 战斗常用素材（xl-rh9.2）。分母从 `image/` 现扫，减去按需加载的那两个
+    // 目录 —— 那 1770 帧不在这张表里，走 `resolveDeferredBattleAsset`。
+    // 边界与两边的双向判据见 `battleAssets.test.ts`。
+    expect(ids.filter((id) => id.startsWith('battle:'))).toHaveLength(bundledBattleFilesInRepo())
     const known = [
       'map:',
       'role:walk:',
@@ -104,6 +118,8 @@ describe('资产逻辑 ID', () => {
       // 背景音乐（xl-9bd.12）。烘的只有 M1 用到的那几首，其余的落在
       // `deferredBgm.json` 上，不在映射表里 —— 见 `assets/resolve.ts`。
       'bgm:',
+      // 战斗常用素材（xl-rh9.2）。
+      'battle:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })
@@ -133,6 +149,18 @@ describe('资产逻辑 ID', () => {
     // 名单上的查出来是 null，映射表里的查出来是 URL，都不抛。
     for (const id of deferred) expect(resolveBgmOrNull(id)).toBeNull()
     for (const id of baked) expect(resolveBgmOrNull(id)).toContain('bgm/')
+  })
+
+  it('战斗常用素材查得出 URL，走的是主包那条 ?url glob', () => {
+    // 上面那条只数了映射表的条数——映射表有一条而产物不在，`resolveAsset` 的
+    // 第二层守卫才会响，而那一层没人走过就等于没验。
+    const [id] = knownAssetIds().filter((k) => k.startsWith('battle:'))
+    expect(id).toBeDefined()
+    expect(decodeURIComponent(resolveAsset(id as string))).toContain('battle/')
+    // 按需那两个目录一张都不该在这张表里。
+    expect(
+      knownAssetIds().filter((k) => DEFERRED_TOP_DIRS.some((d) => k.startsWith(`battle:${d}/`))),
+    ).toEqual([])
   })
 
   it('旁白背景的每一帧都在映射表里', () => {

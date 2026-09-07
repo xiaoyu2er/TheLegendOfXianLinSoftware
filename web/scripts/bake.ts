@@ -21,8 +21,18 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, relative as relativePath, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
 import { bakerSources, hashFiles } from '../src/assets/bakeStamp'
+import {
+  BUNDLED_DIR,
+  DEFERRED_PUBLIC_DIR,
+  DEFERRED_TOP_DIRS,
+  IMAGE_ROOT,
+  battleAssetId,
+  battleProductPath,
+  isDeferredBattleAsset,
+} from '../src/assets/battleAssets'
 import {
   bgmAssetId,
   dialogueAssetId,
@@ -33,6 +43,7 @@ import {
   roleAssetId,
 } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
+import { listFiles } from '../src/assets/listFiles'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
@@ -134,6 +145,11 @@ const MANIFEST_OUT = resolve(WEB, 'src/generated/assets.json')
 const MISSING_OUT = resolve(WEB, 'src/generated/missingAssets.json')
 const DEFERRED_BGM_OUT = resolve(WEB, 'src/generated/deferredBgm.json')
 const STAMP_OUT = resolve(WEB, 'src/generated/bakeStamp.json')
+const DEFERRED_BATTLE_OUT = resolve(WEB, 'src/generated/battleAnimations.json')
+
+/** 原版战斗素材根目录，与按需产物在 `public/` 下的落点。 */
+const IMAGES = resolve(REPO, IMAGE_ROOT)
+const PUBLIC_OUT = resolve(WEB, 'public')
 
 /** `NPCs/曾书书/9.png` 里 `NPCs/` 那一段。`sceneAssets.ts` 拼的就是这个前缀。 */
 const NPC_PREFIX = 'NPCs/'
@@ -309,17 +325,135 @@ function main(): void {
     process.exit(1)
   }
 
+  const battle = bakeBattleImages(scenes, manifest)
+
   bakeBgm(scenes, manifest)
 
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧）→ WebP 共 ${kb(bytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 战斗常用 ${battle.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes)}`,
   )
 
   writeStamp()
 }
 
+
+/**
+ * 战斗素材（xl-rh9.2）：把 `image/` 下的**每一个文件**烘成 WebP，并按
+ * `battleAssets.ts` 那条边界分开落盘——常用的进 `src/generated/assets/battle/`
+ * （随主包的 `?url` glob 走），技能动画与背景动画进 `public/battle-anim/`
+ * （Vite 原样拷贝，不产生 JS 模块，运行时按名单动态取）。
+ *
+ * **分母是现扫出来的**：`image/` 下有什么就烘什么，不写死目录名单、也不写死
+ * 数量。原版 `src/battle/` 的 31 个文件用十几种不同的规则拼路径（`小头.png`、
+ * `选中.png`、`<技能名>/<帧号>.png`、`技能按钮/<角色>/技能<n>.png`……），
+ * 抄一份规则表过来等于把那 8201 行重写一遍，而抄漏一条的表现是"某张图取不到"
+ * ——那是 xl-rh9.4 才会撞上的、最难定位的一类错。扫目录没有这个问题：
+ * 少一个文件是源素材少了，`git status` 立刻看得见。
+ *
+ * 顺带把脚本数据里的战斗背景**对账**一遍：`Fight` 段第 0 列的每一条（含那
+ * 3 条 Windows 反斜杠路径）都得在刚烘出来的名单里。checkSceneAssets 只保证
+ * "源文件在"，这里保证"产物也在、而且 ID 算得出来"——两件事，中间那一步
+ * （`battleAssetId` 的规范化）没人验就等于没验。
+ */
+function bakeBattleImages(
+  scenes: readonly SceneScript[],
+  manifest: Record<string, string>,
+): { bundled: number; bundledBytes: number } {
+  // 每次全量重来，与 ASSETS_OUT 同一个理由：留着上一轮的产物会让"删掉一个
+  // 素材"表现为"什么都没发生"。
+  const publicDeferred = resolve(PUBLIC_OUT, DEFERRED_PUBLIC_DIR)
+  rmSync(publicDeferred, { recursive: true, force: true })
+
+  const relatives = listFiles(IMAGES).sort()
+  if (relatives.length === 0) {
+    // "一个文件都没扫到"与"全烘完了"在产物上长得一模一样：两边都是零个差异。
+    console.error(`${IMAGES} 下一个文件都没有 —— 战斗素材的分母是从这里现扫的`)
+    process.exit(1)
+  }
+
+  const deferredFiles: Record<string, string> = {}
+  // 按需产物没有内容指纹（`public/` 下的文件名 Vite 原样保留），所以自己算一个
+  // 摘要当版本号。摘要吃的是**产物字节**：cwebp 是确定性的（m4a 那种"每次都
+  // 变"的问题只出在 afconvert 身上，见 `bake-m4a-timestamps` 那条 memory），
+  // 所以这个版本号只会因为素材真的变了而变。
+  const version = createHash('sha256')
+  let bundled = 0
+  let bundledBytes = 0
+  let deferred = 0
+  let deferredBytes = 0
+
+  // **两个包共用一张"谁占了哪个产物路径"的表**，用来查撞车。
+  //
+  // 撞车是真会发生的：源里既有 `.png` 也有 `.jpg`（`背景动画` 那 753 张全是
+  // jpg），而产物一律是 `.webp` —— 同一个目录下的 `x.png` 与 `x.jpg` 会写到
+  // 同一个 `x.webp` 上，后写的那张**静静盖掉**前一张。今天仓库里一对都没有
+  // （实测），所以这条守卫平时不响；但它不响的样子和"撞了却没查"一模一样，
+  // 而后者的表现是画面上某一帧换了张图。
+  //
+  // 判撞车不能只看 `manifest`：按需那一半根本不进 `manifest`，只看它等于对
+  // 1770 张里的撞车视而不见。也不再逐条 `Object.entries().find` —— 那是
+  // 2000 多次 O(n) 扫描。
+  const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+  const claim = (product: string, id: string): void => {
+    const owner = claimed.get(product)
+    if (owner !== undefined) {
+      console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
+      process.exit(1)
+    }
+    claimed.set(product, id)
+  }
+
+  for (const relative of relatives) {
+    const id = battleAssetId(`${IMAGE_ROOT}/${relative}`)
+    const product = battleProductPath(relative)
+    const source = resolve(IMAGES, relative)
+    claim(product, id)
+    if (isDeferredBattleAsset(relative)) {
+      const destination = resolve(publicDeferred, product.slice(DEFERRED_PUBLIC_DIR.length + 1))
+      deferredBytes += toWebp(source, destination)
+      deferredFiles[id] = product
+      version.update(product).update('\0').update(readFileSync(destination))
+      deferred++
+      continue
+    }
+    manifest[id] = product
+    bundledBytes += toWebp(source, resolve(ASSETS_OUT, product))
+    bundled++
+  }
+
+  writeFileSync(
+    DEFERRED_BATTLE_OUT,
+    `${JSON.stringify({ version: version.digest('hex').slice(0, 16), files: deferredFiles }, null, 2)}\n`,
+    'utf8',
+  )
+
+  // 战斗背景的对账。缺一条就退出：这一列正是那 3 条反斜杠路径的所在地，
+  // 而"ID 算错了"的表现是运行时那一场战斗背景全白 —— 跟原版十三年来的
+  // 表现一模一样，没人分得出是复刻还是漏烘。
+  const unresolved: string[] = []
+  for (const scene of scenes) {
+    for (const ref of scanSceneAssets(scene).refs) {
+      if (ref.kind !== 'battleBackground') continue
+      const id = battleAssetId(ref.raw)
+      if (manifest[id] === undefined && deferredFiles[id] === undefined) {
+        unresolved.push(`${ref.where}: ${ref.raw} → ${id}`)
+      }
+    }
+  }
+  if (unresolved.length > 0) {
+    console.error(`战斗背景有 ${unresolved.length} 条烘不出产物：`)
+    for (const u of unresolved) console.error(`  ${u}`)
+    process.exit(1)
+  }
+
+  console.log(
+    `战斗素材 ${relatives.length} 张 → 常用 ${bundled} 张进 ${BUNDLED_DIR}/（${kb(bundledBytes)}）` +
+      `、${DEFERRED_TOP_DIRS.join(' / ')} 共 ${deferred} 张按需加载进 public/${DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
+  )
+  return { bundled, bundledBytes }
+}
 
 /**
  * 写烘焙指纹（xl-23y）。放在 `main` 的最后：**先有产物、后有指纹**，中途

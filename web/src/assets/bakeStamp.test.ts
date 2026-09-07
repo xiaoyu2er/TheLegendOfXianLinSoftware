@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -6,6 +6,7 @@ import { repoPath } from '../test/repoPath'
 import manifest from '../generated/assets.json'
 import stamp from '../generated/bakeStamp.json'
 import { BAKER_ENTRY, bakerSources, hashFile, hashFiles } from './bakeStamp'
+import { listFiles } from './listFiles'
 import type { BakeStamp } from './bakeStamp'
 
 /**
@@ -205,17 +206,6 @@ describe('指纹本身不是空转', () => {
     expect(bakerSources(dir, 'entry.ts')).toEqual(['entry.ts'])
   })
 })
-
-/** 目录下的全部文件，相对 `root` 的路径。 */
-function listFiles(root: string, prefix = ''): string[] {
-  const out: string[] = []
-  for (const name of readdirSync(resolve(root, prefix))) {
-    const relative = prefix === '' ? name : `${prefix}/${name}`
-    if (statSync(resolve(root, relative)).isDirectory()) out.push(...listFiles(root, relative))
-    else out.push(relative)
-  }
-  return out
-}
 
 /**
  * ## 这条判据进不进 CI

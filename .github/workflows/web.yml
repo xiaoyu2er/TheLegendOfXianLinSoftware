@@ -21,11 +21,13 @@ on:
     # 目录数出来的**，加一份带新种子的剧本而这里不跑，同样是哑的。
     paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java', 'tools/random-golden/**',
             'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
-            'dialogue/**', 'tools/traces/out/**', 'tools/traces/scripts/**']
+            'dialogue/**', 'tools/traces/out/**', 'tools/traces/scripts/**',
+            'image/**']
   pull_request:
     paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java', 'tools/random-golden/**',
             'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
-            'dialogue/**', 'tools/traces/out/**', 'tools/traces/scripts/**']
+            'dialogue/**', 'tools/traces/out/**', 'tools/traces/scripts/**',
+            'image/**']
 
 # 只在 web/、黄金测试的输入、或本工作流自身变动时跑：Java 侧的其余改动
 # 与这条流水线无关。
