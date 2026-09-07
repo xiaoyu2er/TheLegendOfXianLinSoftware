@@ -1,6 +1,7 @@
 import { readTrace, traceNamesOf } from '../state/trace'
 import type { BattleInput } from './step'
 import type { BattleSnapshot } from './snapshot'
+import type { ExitPanel } from './types'
 
 /**
  * 战斗行为真值的读取器。**跑在 Node 上**（它转手的是 `state/trace.ts` 的
@@ -32,8 +33,15 @@ export interface BattleTraceTick extends BattleSnapshot {
  */
 export interface BattleTraceStep {
   readonly op: string
-  /** 只有 `op === 'awaitExit'` 才有：原版当场切到的那一块面板。 */
-  readonly panel?: string
+  /**
+   * 只有 `op === 'awaitExit'` 才有：原版当场切到的那一块面板。
+   *
+   * 类型就是 `ExitPanel` —— 面板名只该有**一处**定义，写成 `string` 的话
+   * 测试里那句 `expect(world.exitPanel).toBe(panel)` 会退化成两个字符串比大小，
+   * 而剧本里写错一个面板名与写对了长得一样。真值里出现别的名字时，
+   * `readBattleTrace` 当场拦下（见下面的 `assertExitPanel`）。
+   */
+  readonly panel?: ExitPanel
 }
 
 /** 战斗剧本里那几行（`docs/trace-format.md` §战斗剧本）。 */
@@ -68,5 +76,16 @@ export function readBattleTrace(name: string): BattleTrace {
     throw new Error(`${name} 说有 ${trace.tickCount} 步，实际 ${trace.ticks.length} 步`)
   }
   if (trace.ticks.length === 0) throw new Error(`${name} 一步都没有`)
+  // `panel` 的类型是断言来的（整份真值都是 `as unknown as`），所以在这里核一次。
+  // 不核的话，剧本里写了个不存在的面板名会一路当成合法值传到断言里。
+  for (const step of trace.script.steps) {
+    if (step.op !== 'awaitExit') continue
+    if (step.panel !== 'scenePanel' && step.panel !== 'startPanel') {
+      throw new Error(
+        `${name} 的 awaitExit 要的面板是 ${String(step.panel)} —— ` +
+          '战斗只有 scenePanel / startPanel 两条出口（GameLauncher.switchTo）。',
+      )
+    }
+  }
   return trace
 }

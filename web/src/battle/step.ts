@@ -514,6 +514,8 @@ function updateGameOver(w: BattleWorld): void {
 
 /** 回地图那条出口。原版**不判空**地读 `bp.zxf` / `bp.yj`，也不碰陆雪琪。 */
 function exitToScene(w: BattleWorld): void {
+  // 原版这一支还有一句 `GameLauncher.SCENE_SIGNAL=1`。那是**场景面板**的字段，
+  // 不属于战斗世界，也不在战斗真值里 —— 回地图之后场景那边怎么接，归 xl-rh9.5。
   w.exitPanel = 'scenePanel'
   w.em1 = null
   w.enemies.length = 0
@@ -818,6 +820,10 @@ function checkHeroDead(w: BattleWorld): void {
     h.deadAnimation.isStop = false
   }
   if (!w.heroes.every((h) => h.isDead)) return
+  // 原版这里还有一句 `MusicReader.readmusic("战斗失败.wav")`。**不实现，也不
+  // 在真值里**：`readmusic` 走的是另一个 MusicPlayer，碰不到 `currentPlayingBGM`
+  // ——而导出器的 `audio.bgm` 取的正是后者（音效有自己的观察点 tools.MusicLog，
+  // 战斗驱动器没取它，归 xl-1vu.8）。这一句归渲染/音频那张票。
   w.progressBar.isDraw = false
   w.gameOver.isDraw = true
   w.gameOver.isStop = false

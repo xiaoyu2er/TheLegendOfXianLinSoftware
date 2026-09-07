@@ -7,7 +7,7 @@ import { stepBattle } from './step'
 import { replayBattle } from './replay'
 import { BATTLE_TRACE_NAMES, readBattleTrace } from './trace'
 import type { BattleTrace } from './trace'
-import type { BattleWorld } from './types'
+import type { BattleWorld, ExitPanel } from './types'
 
 /**
  * 战斗状态层逐字段对齐行为真值。
@@ -38,13 +38,26 @@ import type { BattleWorld } from './types'
  */
 
 /**
- * 已经对齐的那几份 —— 每加一份都要在这里显式登记。
+ * 已经对齐的那几份 —— 每加一份都要在这里**显式登记**。
  *
- * **不写死内容**：`BATTLE_TRACE_NAMES` 现从磁盘数，这里跟着它走。原来那张
- * 手抄的名单在 xl-rh9.8 之后就只剩下"抄漏了"这一种取值了，而抄漏的表现是
- * 少跑一份真值 —— 和全绿长得一样。
+ * ⚠️ 这张表**必须手写**。写成 `= BATTLE_TRACE_NAMES`（跟着磁盘走）时，下面
+ * 第一条用例的四段断言全部变成恒真：`unaccounted` 必空、包含关系必真、
+ * `PENDING` 那个循环零轮、交集必空 —— 于是"真值目录里冒出一份没人回放的
+ * 剧本"会被**自动算作已对齐**，而那正是这一整套对撞要拦的东西。
+ * （dispatch.md §「注释里写『这里会红』，就得像判据一样被跑一遍」。）
+ *
+ * 这不违反 dispatch.md 纪律 3「别把『目前只有 X』写死」—— 那一条禁的是把
+ * **数量 / 分母**写死（`toHaveLength(5)`、`SCENES = […]` 当分母用）。这里
+ * 分母仍然是磁盘上的 `BATTLE_TRACE_NAMES`，写死的是"谁已经有人回放了"这份
+ * 登记，而登记正是要人来签的。
  */
-const IMPLEMENTED: readonly string[] = BATTLE_TRACE_NAMES
+const IMPLEMENTED: readonly string[] = [
+  'battle-min',
+  'battle-em3-box',
+  'battle-defeat-scene',
+  'battle-defeat-start',
+  'battle-defeat-slot2',
+]
 
 /**
  * 还没对齐的那几份，各自写明归哪张票。
@@ -57,6 +70,20 @@ const IMPLEMENTED: readonly string[] = BATTLE_TRACE_NAMES
  */
 const PENDING: Readonly<Record<string, string>> = {}
 
+/**
+ * 读一份战斗真值，**同名只读一次**。下面几条判据要先"算哪几场观测得到"、
+ * 再在那几场上断言，同一个名字会被读上三四遍；真值最大的一份有 744 步。
+ */
+const traceCache = new Map<string, BattleTrace>()
+function traceOf(name: string): BattleTrace {
+  let trace = traceCache.get(name)
+  if (!trace) {
+    trace = readBattleTrace(name)
+    traceCache.set(name, trace)
+  }
+  return trace
+}
+
 /** 怪物出场图（`Images.get(0)`）的像素尺寸。 */
 function spriteSize(name: string): { width: number; height: number } {
   const png = decodePng(readFileSync(repoPath('image/怪物', name, '1.png')))
@@ -65,7 +92,7 @@ function spriteSize(name: string): { width: number; height: number } {
 
 /** 把一份真值从头跑到尾，返回真值与推出来的世界。**不做任何比对**。 */
 function runToEnd(name: string): { trace: BattleTrace; world: BattleWorld } {
-  const trace = readBattleTrace(name)
+  const trace = traceOf(name)
   const world = replayBattle(trace, spriteSize)
   for (const tick of trace.ticks) stepBattle(world, tick.input)
   return { trace, world }
@@ -82,7 +109,7 @@ function enemyAt(trace: BattleTrace, slot: number) {
 }
 
 /** 剧本里那条 `awaitExit` 要的出口面板；没有这条指令就是 `null`。 */
-function scriptedExit(trace: BattleTrace): string | null {
+function scriptedExit(trace: BattleTrace): ExitPanel | null {
   const step = trace.script.steps.find((s) => s.op === 'awaitExit')
   if (!step) return null
   if (step.panel === undefined) {
@@ -116,7 +143,7 @@ describe('战斗状态层对齐行为真值', () => {
 
   for (const name of IMPLEMENTED) {
     it(`${name}：逐步逐字段与真值相等`, () => {
-      const trace = readBattleTrace(name)
+      const trace = traceOf(name)
       expect(trace.tickCount).toBeGreaterThan(0)
 
       const world = replayBattle(trace, spriteSize)
@@ -132,7 +159,7 @@ describe('战斗状态层对齐行为真值', () => {
     })
 
     it(`${name}：虚拟时间与步数自洽`, () => {
-      const trace = readBattleTrace(name)
+      const trace = traceOf(name)
       const world = replayBattle(trace, spriteSize)
       for (const tick of trace.ticks) {
         expect(world.tick).toBe(tick.t)
@@ -146,7 +173,7 @@ describe('战斗状态层对齐行为真值', () => {
   describe('xl-1dv.9：Enemy.hp 不夹到 0，末步会留下负血', () => {
     /** 末步真的有负血的那几场 —— 从真值现算，不写名单。 */
     const observable = IMPLEMENTED.filter((name) =>
-      lastEnemies(readBattleTrace(name)).some((e) => e !== null && e.hp < 0),
+      lastEnemies(traceOf(name)).some((e) => e !== null && e.hp < 0),
     )
 
     it('至少有一份真值末步留着负血 —— 否则这条缺陷又观测不到了', () => {
@@ -174,7 +201,7 @@ describe('战斗状态层对齐行为真值', () => {
      * 抄错了和抄对了推出来的框完全相同。
      */
     const observable = IMPLEMENTED.filter((name) => {
-      const trace = readBattleTrace(name)
+      const trace = traceOf(name)
       const em1 = enemyAt(trace, 1)
       const em3 = enemyAt(trace, 3)
       if (!em1 || !em3) return false
@@ -191,7 +218,7 @@ describe('战斗状态层对齐行为真值', () => {
 
     for (const name of observable) {
       it(`${name}：第三槽框高等于第一只的图高，且不等于它自己的`, () => {
-        const trace = readBattleTrace(name)
+        const trace = traceOf(name)
         const em1 = enemyAt(trace, 1)!
         const em3 = enemyAt(trace, 3)!
         const h1 = spriteSize(em1.name).height
@@ -213,8 +240,8 @@ describe('战斗状态层对齐行为真值', () => {
     /** 剧本里写了 `awaitExit` 的那几场，连它要的面板一起。 */
     const exits = IMPLEMENTED.map((name) => ({
       name,
-      panel: scriptedExit(readBattleTrace(name)),
-    })).filter((e): e is { name: string; panel: string } => e.panel !== null)
+      panel: scriptedExit(traceOf(name)),
+    })).filter((e): e is { name: string; panel: ExitPanel } => e.panel !== null)
 
     it('两条出口都各有真值盖着 —— 只盖住一条时"分支走反了"看不出来', () => {
       const panels = new Set(exits.map((e) => e.panel))
@@ -235,7 +262,7 @@ describe('战斗状态层对齐行为真值', () => {
     }
 
     it('没写 awaitExit 的那几场，跑到末步一次面板都没切', () => {
-      const noExit = IMPLEMENTED.filter((name) => scriptedExit(readBattleTrace(name)) === null)
+      const noExit = IMPLEMENTED.filter((name) => scriptedExit(traceOf(name)) === null)
       expect(noExit.length, '五份真值全都以切面板收尾了？那上面那条反方向就没了').toBeGreaterThan(0)
       for (const name of noExit) {
         expect(runToEnd(name).world.exitPanel, `${name} 不该切面板`).toBeNull()
@@ -256,7 +283,7 @@ describe('战斗状态层对齐行为真值', () => {
       const sceneExits = exits.filter((e) => e.panel === 'scenePanel')
       expect(sceneExits.length, '没有一份真值走回地图那条出口').toBeGreaterThan(0)
       for (const { name } of sceneExits) {
-        const trace = readBattleTrace(name)
+        const trace = traceOf(name)
         expect(
           [enemyAt(trace, 2), enemyAt(trace, 3)],
           `${name} 走的是回地图那条出口，而它第 2/3 槽站了人 —— ` +
@@ -273,9 +300,9 @@ describe('战斗状态层对齐行为真值', () => {
     it('三种写错法各自都还有一场抓得到', () => {
       const em1s = exits.map(({ name }) => ({
         name,
-        first: enemyAt(readBattleTrace(name), 1)!.name,
+        first: enemyAt(traceOf(name), 1)!.name,
         others: [2, 3]
-          .map((slot) => enemyAt(readBattleTrace(name), slot)?.name)
+          .map((slot) => enemyAt(traceOf(name), slot)?.name)
           .filter((n): n is string => n !== undefined),
       }))
       // 写成「三个槽位里有没有」→ 要有一场：第一只不是它，别的槽位是。
