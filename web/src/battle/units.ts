@@ -236,10 +236,10 @@ export interface EnemySpec {
    * 见 `units.test.ts`）。仍然分成两个字段，因为「恰好相等」与「就是同一个
    * 数」在原版里不是同一件事。
    *
-   * ⚠️ **这一列今天没有真值判据**：整个状态层还没有人读 `skillHurt`
+   * ⚠️ **这一列没有真值判据**：整个状态层还没有人读 `skillHurt`
    * （怪物出技能那条伤害路归 xl-rh9.9），所以五份真值里抄错了和抄对了推出来
    * 的数完全相同 —— 实测把罹年居士分身的 600 改成 590，逐字段比对全绿。
-   * 守着它的是 `units.test.ts` 里那条「解源码数遍所有 case，一行都没分开过」。
+   * 守着它的是 `units.test.ts` 里那条逐列对回源码的判据（xl-rh9.10）。
    */
   skillHurt: number
   defense: number
@@ -273,6 +273,11 @@ export interface EnemySpec {
  * 怪物出厂表。**导出**是给 `units.test.ts` 用的：那条对回原版源码的判据拿
  * 这张表当分母（表里有几行就核几行），而不是拿源码当分母 —— 源码有 25 个
  * case，这里只抄了跑得到真值的那几只。
+ *
+ * **每一列都有判据**（xl-rh9.10）：大多数列被五份 driver=battle 的行为真值
+ * 逐字段盖着，而所有列——盖得住的那些也一样——由 `units.test.ts` 里那条整行
+ * `toEqual` 对回 `src/battle/Enemy.java`。用 `toEqual` 而不是逐字段挑，是为了
+ * 让"新加一列却没去源码里找它的出处"也响。
  */
 export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
   怪物1: {
@@ -373,6 +378,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 460,
     exp: 330,
     money: 1200,
+    // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -10,
     beAttackedOffsetY: 0,
@@ -401,6 +407,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 520,
     exp: 360,
     money: 1200,
+    // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -30,
     beAttackedOffsetY: 0,
@@ -504,11 +511,15 @@ export function enemySpec(name: string): EnemySpec {
  *
  * 为什么这里不像怪物表那样「只抄有真值盖得住的那几行」：这十二行有一条
  * **分母固定的判据** —— `units.test.ts` 现从 `src/battle/BattlePanel.java`
- * （GBK）里把那个 switch 解出来逐行对。怪物表没有这种东西可对（那些数字散在
- * 一个 25 路 switch 的字段赋值里，解它的那个解析器本身就会成为新的错处），
- * 所以它只抄跑得到真值的那几只。**唯一的例外是 `skillHurt`**：那一列没有
- * 任何真值读得到，于是 `units.test.ts` 用一个只认两个字段赋值的窄解析器把它
- * 对回源码 —— 窄到解不出来就当场抛，而不是解出 0 行然后恒真地通过。
+ * （GBK）里把那个 switch 解出来逐行对。
+ *
+ * 怪物表**现在也有这种东西可对了**（xl-rh9.10）：`enemySource.ts` 把
+ * `Enemy.initial()` 与 `loadAnimation()` 那两个 switch 解成一张表，逐列对。
+ * 这一节原先写的是「怪物表没有这种东西可对，解它的那个解析器本身就会成为
+ * 新的错处」—— 前半句已经不成立；后半句的答案是**解不出来就当场抛**，
+ * 而不是解出 0 行然后恒真地通过（它每一道门都有一条篡改验证盯着）。
+ * 表仍然只抄跑得到行为真值的那几只：源码对得住"抄的数对不对"，
+ * 对不住"这一行的动画、伤害、退出分支是不是真的走过一遍"。
  */
 export const BGM_BY_BACKGROUND: Readonly<Record<string, string>> = {
   'image/背景图/伏魔山树林.png': 'B6.mp3',
