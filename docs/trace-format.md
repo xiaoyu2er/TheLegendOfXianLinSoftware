@@ -344,8 +344,18 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `command` | `button` | 点控制台的一个按钮（`attack`/`skill`/`defend`/`thing`）。菜单在预算内没出来 —— 硬失败。 |
 | `target` | `enemy` | 点某个怪物（1/2/3）。槽位空着、或者点下去 `currentBeAttacked` 没变 —— 硬失败。 |
 | `autoAttack` | `until`, `max` | 「能点击就点『击』，能选敌就选第一个还站着的怪物」，一直打到分出胜负。`until` 是 `victory`/`defeat`/`decided`；打成了别的结局，或者跑满 `max` 步还没分出来 —— 都是硬失败。 |
+| `skillMenu` | `button` | 点技能菜单上的一颗按钮（`skill1`..`skill5` / `return`）。菜单没打开就等；等到超预算是硬失败。这一场只有几颗按钮由 `<主角>.skillNumber` 那个静态字段的初值定（2/3/2），点一颗不存在的 —— 硬失败。 |
+| `drugMenu` | `button` | 点药品菜单上的一颗按钮（`drug1`..`drug6` / `return`）。同上。 |
+| `autoUntilRound` | `round`, `max` | 像 `autoAttack` 那样自动打，直到**控制台出现在指定回合上**（1 张 / 2 文 / 3 陆）为止，到了就停手、这一拍不点任何东西。跑满 `max` 步 —— 硬失败。 |
 | `awaitExit` | `panel`, `max` | 等原版自己把面板切走，并断言切到了哪一块（`panel` 是 `GameLauncher` 那八张 `CardLayout` 卡片名之一，打输能走到的是 `scenePanel` / `startPanel`）。切到别的一块、或者跑满 `max`（默认 300）还没切 —— 都是硬失败。 |
 | `wait` | `ticks` | 空等（与场景共用）。 |
+
+`autoUntilRound` 存在的理由与 `autoAttack` 是同一条：**谁先跑满行动条由速度
+与种子决定，写剧本的人事先不知道。** 而"点技能菜单上的第二颗"是**认人**的
+—— 张小凡的第二颗是浪里寻花（给怪挂体力下降），文敏的第二颗是追星破月
+（给自己挂敏捷提升），两条路数完全不同。把回合序写死等于赌一次，而赌错了
+导出的是一份"点了另一个人的技能"的真值：它有头有尾、步数像模像样、退出码 0。
+`battle-min` 那一场实测的回合序是 **3 → 2 → 1**（速度 13/10/9）。
 
 `autoAttack` 是**策略**而不是一串写死的点击，因为一场战斗要打几个回合取决于
 每次伤害掷出多少 —— 写剧本的人事先不知道。写死次数只要少一次，导出的就是一份
@@ -496,10 +506,10 @@ xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/1
  "heroes":[{"code":1,"hp":1260,"hpMax":1260,"mp":540,"mpMax":540,
             "angry":0,"isAngry":false,"dead":false,"speed":9,
             "drawn":true,"frame":1,
-            "state":{"type":0,"rounds":0,"usable":false,"role":0}}],
+            "state":{"type":0,"rounds":0,"usable":false,"role":0,"x":0,"y":0}}],
  "enemies":[{"slot":1,"name":"怪物1","hp":250,"speed":11,"onField":true,
              "dead":false,"drawn":true,"frame":1,
-             "state":{"type":0,"rounds":0,"usable":false,"role":0},
+             "state":{"type":0,"rounds":0,"usable":false,"role":0,"x":0,"y":0},
              "box":[100,220,124,172]}],
  "hurts":[{"value":186,"type":1,"x":60,"y":330,"drawn":true,"frame":1}],
  "ui":{"command":false,"skillMenu":false,"drugMenu":false,"selectable":false,
@@ -507,7 +517,18 @@ xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/1
        "startAnim":true},
  "anim":{"skill":null,"skillFrame":0,"skillDrawn":false,"skillX":0,"skillY":0,
          "bg":null,"bgFrame":0,"bgDrawn":false},
+ "reminder":{"image":null,"code":0,"stopped":true,
+             "dx1":500,"dy1":120,"dx2":500,"dy2":120},
+ "menus":{"skill":null,"drug":null},
  "audio":{"bgm":"B6.mp3"}}
+```
+
+菜单真的画出来的那几拍，`menus` 那两项才有内容：
+
+```json
+ "menus":{"skill":{"group":"yu","buttons":[1,2,1],"return":1,"returnY":316,
+                   "introDrawn":true,"introImage":"文敏/2","introY":256},
+          "drug":null}
 ```
 
 | 字段 | 来源 |
@@ -521,6 +542,9 @@ xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/1
 | `hurts[]` | `BattlePanel.hurtValues`。原版每算一次伤害就 new 一个塞进去，动画播完自己收摊 —— 这是"这一击打了多少"唯一的可断言出处。 |
 | `ui` | 控制台 / 技能菜单 / 药品菜单 / 怪物选择器 / 指示器 / 提示 / 胜利提示 / 全灭图 / 开场动画，九个 `isDraw` 类标志。 |
 | `anim` | 技能动画与背景动画的名字、帧号、坐标。 |
+| `<单位>.state` | 一个 `BattleState`。`x`/`y` 是 xl-rh9.11 补的 —— 状态图标就画在这两个数上，而 `clear()` **不清它们**（留着上一次的值）。`successRate` 不记：`set()` 只把它当入参读，那个字段恒为 0。 |
+| `reminder` | 提示图（xl-rh9.11）。画没画在 `ui.reminder` 里，这里是**画的是哪一张**与那个会张开的目标矩形。⚠️ `image` 是**文件号**：`show(i)` 取的是 `images.get(i)`，而 `images` 装的是 `1.png`..`22.png`，所以 `show(19)` 画的是 `20.png`。源矩形 `(0,0)-(128,24)` 与 `centreX/centreY` 是构造函数里的常量，不记。 |
+| `menus` | 技能菜单与药品菜单（xl-rh9.11）。**只在真的画出来那几拍才有内容**，其余是 `null` —— 两个菜单加起来二十来个字段，逐拍写满等于给每份真值凭空加上两千行恒定值。`buttons` 是每颗按钮现在贴的三张里的哪一张（1 常态 / 2 待点 / 3 按下），按**引用身份**认，认不出是硬失败。`skill.returnY` 落在 `226 + 按钮数×30` 上，而按钮数是 `skillNumber` 那个静态字段的初值（2/3/2），与等级无关。 |
 
 ### 真值里能看见的原版缺陷
 
@@ -904,4 +928,5 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `battle-defeat-scene` | 战斗（`driver` = `battle`） | 打输的第一条出口：`脚本22.txt` 第 1 行的剧情必败战（`罹年居士` 独自一只，hp/hurt/defense 全是 9999）。全灭之后一路记到切回 `scenePanel`，张小凡与文敏各回半血。第 2/3 槽是 `null` —— 原版的 Fight 数据一行可以只写一只怪 |
 | `battle-defeat-start` | 战斗（`driver` = `battle`） | 打输的第二条出口：`脚本37.txt` 第 1 行（`罹年居士分身` ×3，等级压到 1 让它必输）。全灭之后切回 `startPanel`，谁的血都不回。它钉住那个名字比较是**逐字相等**而不是包含 |
 | `battle-defeat-slot2` | 战斗（`driver` = `battle`） | **合成**的遭遇（不取自原版 Fight 数据）：第 1 槽 `怪物1`、第 2 槽 `罹年居士`。全灭之后照样切回 `startPanel` —— 它钉住那个判断只看 `em1`，而不是"三个槽位里有没有" |
+| `battle-menus` | 战斗（`driver` = `battle`） | 点得下去的「技」与「物」（xl-rh9.11）：与 `battle-min` 同一场遭遇、换一颗种子。文敏那一回合先点「物」翻药品菜单（存货全是 0，点金创药走 `Reminder.show(19)`，也就是 `20.png`），返回后点「技」用技能2 追星破月 → 自己挂「敏捷提升」（type 1 @ 800,150，speed 10→11），到期那一拍又退回去（speed 11→10）；张小凡那一回合用技能2 浪里寻花 → 第 3 槽那只怪挂「体力下降」（type 8 @ 60,330）。三张提示图的文件号实测是 **20 / 7 / 2**，三条来路各不相同 |
 | `shop-trade` | 商店（`driver` = `shop`） | 药店与装备超市各走一条完整的买卖：买 2 份金创药 → 钱不够被拒（金钱与背包一个数都没动） → 卖回 1 份 → 装备超市买月苗刀 → 切到鞋子那栏卖掉皮靴 → 切回武器栏确认刚买的还在。加减按钮的两端也都走到了 |
