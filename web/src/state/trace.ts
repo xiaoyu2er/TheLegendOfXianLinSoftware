@@ -156,6 +156,25 @@ export function readTrace(name: string): Trace {
 }
 
 /**
+ * 其中**场景面板**导出来的那几份（`driver === 'scene'`）。
+ *
+ * 为什么要分出来：`Trace` 上那一堆 `role` / `npcs` / `viewport` / `scene`
+ * 只有场景真值才有。战斗真值（xl-1vu.4）记的是行动条、回合归属、双方 HP 与
+ * 伤害数字，形状完全不同 —— 把它塞进按场景形状写的用例里，得到的是一句
+ * `Cannot read properties of undefined`，那不是判据，是噪声。
+ *
+ * **筛子是 `driver`，不是名字**：判别名由导出侧的驱动器自己报（xl-1vu.2），
+ * 而按名字前缀猜"这份大概是战斗的"就又是一份会和实现分家的名单。
+ *
+ * 分母仍然是现数的：新加一份场景真值，下面这些用例立刻多一组；
+ * 而一份场景真值要是哪天报错了判别名，它会从这里掉出去 —— 所以
+ * `traceHeader.test.ts` 盯着"这个列表不许空、且掉出去的那些确实不是 scene"。
+ */
+export const SCENE_TRACE_NAMES: readonly string[] = TRACE_NAMES.filter(
+  (name) => readTrace(name).driver === 'scene',
+)
+
+/**
  * 读一份 trace 的头并校验它。**独立成函数是为了能拿篡改过的 JSON 直接测它**——
  * 校验只在读磁盘那条路上存在的话，"它到底拦不拦得住"就没有办法验证。
  *

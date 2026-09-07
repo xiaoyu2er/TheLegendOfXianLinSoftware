@@ -46,6 +46,18 @@ export const CANVAS_WIDTH = 1024
 export const CANVAS_HEIGHT = 640
 
 export const EXPECTED: Readonly<Record<string, Expectation>> = {
+  'battle-min': {
+    status: 'gap',
+    // 战斗真值（xl-1vu.4）。取图页今天只有场景那一套装配，遇到
+    // `driver: "battle"` 会由 `replay/drivers.ts` 的 `pickAssembly` **抛**，
+    // 整条比对流水线非零退出并点名是哪个驱动器 —— 那正是要的行为：一条没被
+    // 装配的剧本比出来是"零帧差异"，和"两端完全一致"长得一模一样。
+    //
+    // 所以这里没有分区表态（`gaps`）：一帧都还没比过，划不出缺口区来。
+    // web 侧接上战斗装配是 xl-1vu.7 的事，接上之后这条要换成量过的表态。
+    why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
+    issue: 'xl-1vu.7',
+  },
   'dorm-walk': {
     status: 'gap',
     // 地图底图已逐像素对齐（xl-9bd.16），NPC 已实现并逐 tick 对齐（xl-9bd.9），

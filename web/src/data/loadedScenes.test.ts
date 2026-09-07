@@ -1,8 +1,6 @@
-import { readdirSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { repoPath } from '../test/repoPath'
 import { step } from '../state/step'
-import { readTrace, replayWorld, sceneSourceOf } from '../state/trace'
+import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import type { World } from '../state/types'
 import { exitTargets } from './loadedScenes'
 import { sceneNameFromPath } from './scenes'
@@ -24,10 +22,9 @@ import { getScene } from './scenesEager'
  * 场景，都是回放出来的，不是手抄的。名单从目录现扫，分母是它自己的长度。
  */
 
-const TRACE_NAMES = readdirSync(repoPath('tools/traces/out'))
-  .filter((f) => f.endsWith('.trace.json'))
-  .map((f) => f.replace(/\.trace\.json$/, ''))
-  .sort()
+// 只看场景真值：战斗真值（xl-1vu.4）里没有场景、没有出口，
+// `switchesOf` 对它无从下手。名单仍然是现数的，见 `state/trace.ts`。
+const TRACE_NAMES = SCENE_TRACE_NAMES
 
 /** 真值里的一次换场景，连同"换之前那个世界预取了些什么"。 */
 interface Switch {

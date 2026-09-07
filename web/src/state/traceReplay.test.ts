@@ -3,7 +3,7 @@ import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import { step } from './step'
 import { roleMoving, roleTileX, roleTileY } from './role'
-import { TRACE_NAMES, readTrace, replayWorld, sceneNameOf, sceneSourceOf } from './trace'
+import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneNameOf, sceneSourceOf } from './trace'
 import type { TraceTick } from './trace'
 import type { World } from './types'
 
@@ -32,17 +32,17 @@ describe('回放行为真值', () => {
    * 能回放的是**场景已烘焙**的那几份。这里把可回放与不可回放的名单都写死：
    * 少回放了一份要响。"跳过了所以没报错"是这个项目的招牌坑。
    */
-  const replayable = TRACE_NAMES.filter((name) =>
+  const replayable = SCENE_TRACE_NAMES.filter((name) =>
     SCENE_NAMES.includes(sceneNameOf(readTrace(name))),
   )
   /** 出口要换场景，`step()` 就得能同步取到下一个场景（见 `state/step.ts`）。 */
   const scenes = sceneSourceOf(getScene)
 
   it('xl-9bd.4 之后 96 个场景全部烘焙，每一份 trace 因此都可回放', () => {
-    // 分母是 TRACE_NAMES 本身（它从 tools/traces/out/ 现数）：将来加了 trace
+    // 分母是 SCENE_TRACE_NAMES 本身（它从 tools/traces/out/ 现数）：将来加了 trace
     // 而场景没烘出来，这里会响；而"一份都没有"也会响，不会静静地全绿。
-    expect(TRACE_NAMES.length).toBeGreaterThan(0)
-    expect(replayable).toEqual([...TRACE_NAMES])
+    expect(SCENE_TRACE_NAMES.length).toBeGreaterThan(0)
+    expect(replayable).toEqual([...SCENE_TRACE_NAMES])
     // dorm-intro 走的是 脚本1，它在 xl-9bd.4 之前不在烘焙名单里。
     expect(sceneNameOf(readTrace('dorm-intro'))).toBe('脚本1')
   })

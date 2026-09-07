@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
 import { step } from '../state/step'
-import { TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
+import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import type { DialogueState } from '../state/dialogue'
 import { BOX_HEIGHT, BOX_WIDTH, boxPatch, textCells } from './dialogueLayout'
 
@@ -31,7 +31,7 @@ function dialogueFrames(name: string): DialogueState[] {
 describe('对话框的摆位', () => {
   // 分母是"真值里到底有多少个对话帧"，从真值现数：哪天剧本换了、对话没了，
   // 下面那句 `toBeGreaterThan(0)` 会响，而不是这几条断言悄悄一个都没跑。
-  const frames = TRACE_NAMES.flatMap(dialogueFrames)
+  const frames = SCENE_TRACE_NAMES.flatMap(dialogueFrames)
 
   it('真值里确实有对话帧可验', () => {
     expect(frames.length).toBeGreaterThan(0)

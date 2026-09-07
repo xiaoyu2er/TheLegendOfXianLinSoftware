@@ -48,7 +48,11 @@ echo "原版侧：$every 个 tick 取一帧"
 for n in "${names[@]}"; do
   [ -f "$SCRIPTS/$n.json" ] || { echo "找不到剧本 $SCRIPTS/$n.json" >&2; exit 2; }
   mkdir -p "$OUT/$n/java"
+  # --add-opens 与 tools/export-trace.sh 里那一处同源：战斗驱动器要给
+  # java.lang.Math 私有的 Random 播种。两处的 java 命令行必须一致，否则
+  # 「导得出来的剧本」在这两条路上会不一样。
   "$JAVA_HOME/bin/java" -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
+    --add-opens java.base/java.lang=ALL-UNNAMED \
     -Djava.awt.headless=false -cp "$CP" \
     devtools.ExportTrace "$SCRIPTS/$n.json" "$OUT/$n/java/trace.json" \
     --frames "$OUT/$n/java" --every "$every" | sed 's/^/  /'

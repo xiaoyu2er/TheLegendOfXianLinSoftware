@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TRACE_NAMES, parseTrace, readTrace } from './trace'
+import { SCENE_TRACE_NAMES, TRACE_NAMES, parseTrace, readTrace } from './trace'
 
 /**
  * 真值头的校验（xl-1vu.2）。
@@ -48,5 +48,20 @@ describe('入库的每一份真值都过得了这道校验', () => {
   // 分母是 TRACE_NAMES（从磁盘现数），不是写死的条数。
   it.each(TRACE_NAMES)('%s', (name) => {
     expect(readTrace(name).driver.length).toBeGreaterThan(0)
+  })
+})
+
+describe('按驱动器分组的真值名单', () => {
+  // SCENE_TRACE_NAMES 是下面一大批"按场景形状写"的用例的分母。它要是空了，
+  // 那些用例会**一条都不跑而全绿** —— 又一次"没找到东西"当成了通过。
+  it('场景真值不止一份', () => {
+    expect(SCENE_TRACE_NAMES.length).toBeGreaterThan(0)
+  })
+
+  it('掉出场景名单的那几份，driver 确实不是 scene', () => {
+    // 反过来钉一遍：筛子筛掉的必须是真的非场景真值，而不是某份场景真值
+    // 因为头里少写了判别名而被顺手漏掉。
+    const dropped = TRACE_NAMES.filter((n) => !SCENE_TRACE_NAMES.includes(n))
+    for (const name of dropped) expect(readTrace(name).driver).not.toBe('scene')
   })
 })
