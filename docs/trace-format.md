@@ -91,6 +91,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 ```json
 {
   "format": "xianlin-trace/1",
+  "driver": "scene",
   "script": { "...剧本原样回显..." },
   "tickCount": 538,
   "ticks": [
@@ -114,6 +115,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 
 | 字段 | 来源 |
 |---|---|
+| `driver` | **驱动器判别名**：这份真值是原版哪个面板导出来的。场景是 `scene`；战斗 / 菜单 / 商店各有各的。由 `TraceDriver.kind()` 报出，不是导出器按剧本猜的 —— 「装配哪一套」与「是谁导出的」必须是同一件事。 |
 | `t` / `vt` | tick 序号 / 虚拟毫秒（`t * tickMs`）。 |
 | `ip` | 当前执行到剧本的第几条指令。比对失败时用来定位是哪一段。 |
 | `input` | **本 tick 实际喂给原版的按键事件**。Web 侧照着回放即可，不必重新实现规划器 —— 声明式指令负责编写，`input` 负责复现。 |
@@ -132,6 +134,26 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `audio.bgm` | `MusicPlayer.currentPlayingBGM`。是一个可断言的字符串，不是"调用了 play()"。 |
 | `viewport` | `OtherEvent.calOffset()` 算出的六元组，对应 spec 里的 `computeViewport`。 |
 | `drawOrder` | `npcs-first` / `hero-first`，对应 spec 里的 `computeDrawOrder`。**旁白期间是 `null`** —— 原版 `paint()` 里主角与 NPC 的绘制整个在 `if (!narratage.isNarratage)` 里面，那些帧没有绘制顺序这回事。 |
+
+### 回放端拿 `driver` 做什么
+
+取图页（`web/src/replay/main.ts`）进门先按这个字段从装配表里挑一套
+（`web/src/replay/drivers.ts` 的 `pickAssembly`）：建什么世界、用哪个渲染器、
+叠哪些 DOM 层，各驱动器各一套。
+
+**挑不出来是硬失败，而且要点名。** 未实现的驱动器如果被跳过，那条剧本比出来
+的是「零帧差异」—— 和「两端完全一致」长得一模一样，整条流水线的判据就废了。
+所以判别名缺失、形状不对、或者 Web 侧还没有那一套，一律抛：页面里的异常经
+`scripts/cdp.ts` 的 `evaluate` 转成 Node 侧的 Error，再由 `scripts/compare.ts`
+的 `main().catch` 变成**退出码 2**，消息里带着是哪个驱动器、本页实现了哪些。
+
+实测（2026-09-06，把 `tools/traces/compare/dorm-walk/java/trace.json` 的判别
+字段改掉，跑 `pnpm exec vite-node scripts/compare.ts -- dorm-walk`）：
+
+- 改成 `"battle"` → 退出码 2，`驱动器 battle 在取图页还没有实现，装配不出来。本页实现了：scene。`
+- 整行删掉 → 退出码 2，`真值没有报驱动器判别名（driver = undefined）。`
+
+判别名**没有默认值**。默认成 `scene` 等于把一份来路不明的真值当场景真值回放。
 
 ## 确定性是怎么做到的
 
@@ -187,9 +209,11 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 已实测（macOS / openjdk 17，两次独立 JVM 进程）：
 
 ```
-确定性 OK：bigmap-walk 两次导出逐字节一致（1154743 字节）
-确定性 OK：dorm-intro  两次导出逐字节一致（3434580 字节）
-确定性 OK：dorm-walk   两次导出逐字节一致（374314 字节）
+确定性 OK：bigmap-walk 两次导出逐字节一致（1189286 字节）
+确定性 OK：dorm-exit   两次导出逐字节一致（1161429 字节）
+确定性 OK：dorm-intro  两次导出逐字节一致（3591275 字节）
+确定性 OK：dorm-walk   两次导出逐字节一致（394779 字节）
+确定性 OK：milestone   两次导出逐字节一致（8101705 字节）
 ```
 
 跨机器、跨 JDK 版本的一致性**未验证**。
