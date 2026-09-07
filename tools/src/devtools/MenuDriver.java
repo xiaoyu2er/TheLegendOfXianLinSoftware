@@ -49,9 +49,10 @@ import tools.Clock;
  *      照样开着：真实 TimerQueue 只要还能触发，两遍导出就不可能逐字节一致，
  *      而菜单页面里那三个子面板的构造会读上百张图，期间足够触发很多次。
  *   3. 音效。{@code MusicReader.closeMusic()} 之后 {@code playmusic} 整个方法
- *      是空操作 —— 不开音频设备、不起播放线程。代价是**菜单真值里没有音效**：
- *      原版把文件名记在 {@code MusicPlayer.filename} 上，而那行赋值在
- *      {@code CAN_PLAY_MUSIC} 的判断里面，关掉就观察不到。见 docs/trace-format.md。
+ *      是空操作 —— 不开音频设备、不起播放线程。文件名照样记得到：观察点不是
+ *      {@code MusicPlayer.filename}（那行赋值在 {@code CAN_PLAY_MUSIC} 判断里面），
+ *      而是 {@code MusicReader.readmusic} 的入口。见 {@link MusicTap} 与
+ *      docs/trace-format.md。
  *   4. 绘制。每一步之后真的调一次 {@code currentPanel.paint()}，画进离屏图。
  *      不能省：{@code EquipPanel.drawWarning()} 会把"已装备 / 不能使用"两个
  *      拒绝标志**清零**，{@code showValueDifference()} 会算出属性差值 ——
@@ -99,6 +100,12 @@ public final class MenuDriver implements TraceDriver {
     /** 本步派发出去的输入事件（菜单一步只有一个，写成数组是与场景真值同形）。 */
     private final List<String> pending = new ArrayList<>();
 
+    /** 音效观察点。静音导出下照样记得到文件名，见 {@link MusicTap}（xl-1vu.8）。 */
+    private final MusicTap music;
+
+    /** 本步触发的音效文件名，按调用先后排列。空数组 = 这一步原版不出声。 */
+    private String[] musicThisStep = new String[0];
+
     private int ip;              // 当前指令
     private int at;              // 产出这一步的那条指令（ip 在本步末尾就前进了）
     private int sub;             // 指令内的第几个事件（0=按下 1=松开）
@@ -111,7 +118,7 @@ public final class MenuDriver implements TraceDriver {
     private boolean warnEquipped;
     private boolean warnCannotUse;
 
-    MenuDriver(MenuScript script) { this.script = script; }
+    MenuDriver(MenuScript script) { this.script = script; this.music = new MusicTap(script.name); }
 
     private void fail(String msg) {
         String where = ip < script.steps.size()
@@ -132,7 +139,7 @@ public final class MenuDriver implements TraceDriver {
     @Override
     public boolean step() {
         if (!started) { start(); started = true; }
-        if (ip >= script.steps.size()) return false;
+        if (ip >= script.steps.size()) { music.requireRecorded(); return false; }
         if (steps >= script.maxSteps) {
             fail("超过剧本的 maxSteps=" + script.maxSteps + "，剧本没有跑完");
         }
@@ -147,6 +154,13 @@ public final class MenuDriver implements TraceDriver {
         warnCannotUse = getInt(equipPanel(), "canBeEquiped") == 1;
 
         current().paint(sink);
+
+        // 必须在 paint 之后取 —— **原版的 paint 真的出声**。EquipPanel.drawWarning()
+        // 里有两处 readmusic("禁止.wav")，就在把 isEquiped/canBeEquiped 清零的那同
+        // 一段里。实测 menu-equip 30 步记到的 14 次音效中，有 2 次（t=6 与 t=10 的
+        // 那两声禁止）是 paint 打出来的；drain 挪到 dispatch 之前，这两声会整体
+        // 错位到下一步。取样点与拒绝标志正相反：那两个标志要在 paint **之前**抓。
+        musicThisStep = music.drain();
 
         if (done) { ip++; sub = 0; } else { sub++; }
         steps++;
@@ -442,6 +456,10 @@ public final class MenuDriver implements TraceDriver {
         }
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
+
+        // 最后一步：打开音效记录并当场自检。放在铺开局状态之后，是为了让
+        // addEquipment/addDrug 万一出声也不会算到第 0 步头上。
+        music.arm();
     }
 
     /**
@@ -596,6 +614,7 @@ public final class MenuDriver implements TraceDriver {
         b.append("{\"t\":").append(index);
         b.append(",\"ip\":").append(at);
         b.append(",\"input\":[").append(String.join(",", pending)).append("]");
+        b.append(",\"music\":").append(Json.plainArr(musicThisStep));
         b.append(",\"panel\":").append(Json.str(panelName()));
         b.append(",\"hero\":").append(currentHero());
         b.append(",\"heroes\":").append(heroesJson());
