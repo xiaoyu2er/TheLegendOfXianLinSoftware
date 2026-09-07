@@ -1,0 +1,17 @@
+{
+  "name": "battle-em3-box",
+  "description": "让 xl-1dv.8 在真值里露头的那一场：脚本20 第 3 行的 Fight 数据（武林高手2/5 商塔弟子/6 商塔护法/7）。em1 的图 188x220、em3 的图 124x172，而 EnemySlector 判 em3 时用的是 height1 —— 于是 enemies[3].box 的高会记成 220，比这只怪真实的 172 高出 48px。battle-min 那一场三只怪的图都是 172 高，缺陷在真值里看不出来。",
+  "driver": "battle",
+  "background": "image/背景图/商塔迷宫.png",
+  "party": ["zhang", "yu", "lu"],
+  "level": { "zhang": 10, "yu": 10, "lu": 10 },
+  "enemies": ["武林高手2/5", "商塔弟子/6", "商塔护法/7"],
+  "seed": 20260907,
+  "tickMs": 100,
+  "maxTicks": 6000,
+  "steps": [
+    { "op": "command", "button": "attack", "budget": 400 },
+    { "op": "target", "enemy": 1, "budget": 50 },
+    { "op": "autoAttack", "until": "victory", "max": 4000 }
+  ]
+}
