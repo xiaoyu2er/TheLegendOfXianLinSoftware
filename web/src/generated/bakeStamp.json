@@ -16,7 +16,7 @@
     "web/src/state/npc.ts": "9694fa399c2f44026ca018e8f7afe37a95185b9ea7d4ad0464ed9c44dd6b6553",
     "web/src/state/role.ts": "3b2ca2f6d64483d21639e1645f48b20879222a59ba563b5c821b1ec70fd23da3",
     "web/src/state/timer.ts": "836ef72b45e1930db3aeea089bbe6b699eee75a9d0af483990be80b7be0f7056",
-    "web/src/state/types.ts": "e3c0741044d4d62c5b6a90536644a27dbc9fe2e1c776d344a43c4ad8618df915"
+    "web/src/state/types.ts": "8c217be8516104979f0381fb64bf9eb75ced664f5fb6b347e09e1b1cf268e053"
   },
   "inputs": {
     "NPCs/厨师1/1.png": "d339407f5881072d19597ab27cf154d8170c9b04ceb0c16db18d7a13be560535",

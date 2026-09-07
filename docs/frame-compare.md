@@ -35,9 +35,13 @@ tools/speed-probe.sh                             # 两端时间加速的实测�
 
 ## 两端是怎么跑同一份剧本的
 
-原版侧就是 trace 导出器多存了几张图：它每个 tick 真的调一次 `paint()`
-（`paint()` 有副作用，不能省），`--frames` 只是把那张已经画好的
-1024×640 位图每 n 个 tick 写成 PNG，并记一份**帧清单**。
+原版侧就是 trace 导出器多存了几张图：它每个 tick 真的调一次 `paint()`，
+`--frames` 只是把那张已经画好的 1024×640 位图每 n 个 tick 写成 PNG，并记一份
+**帧清单**。**每步都画，两条独立的理由**：场景侧 `ScenePanel.paint()` 有副作用
+（`calOffset()` 算视口，`@` / `$` 会写 `dialogueFight` / `gameOver`），省不得；
+战斗侧 `paint()` 实测**没有**副作用（2026-09-06 推翻旧结论，见
+`docs/trace-format.md`），但位图本身就是这份真值的交付物，而"省一次绘制"正是
+那种省对了和省错了长得一样的优化。
 
 Web 侧是一个 dev-only 的取图页（`web/replay.html` + `src/replay/main.ts`），
 在**真的无头 Chrome** 里跑真的 Pixi 渲染器，按 trace 里那一 tick 实际喂给原版的
