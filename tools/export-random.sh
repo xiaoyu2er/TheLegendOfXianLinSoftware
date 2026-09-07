@@ -9,6 +9,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
+# 参数只认 --check。不认识的参数要响亮失败，不能被无声吃掉然后 exit 0 ——
+# 那样「跑过了没确定性检查」和「跑过了且确定性 OK」长得一模一样。
+check=0
+for a in "$@"; do
+  case "$a" in
+    --check) check=1 ;;
+    *) echo "不认识的参数：${a}，只接受 --check" >&2; exit 2 ;;
+  esac
+done
+
 # 总是重建：只判断目录存在会在源码改动后静默使用陈旧的 class。
 tools/build.sh >/dev/null
 
@@ -25,7 +35,7 @@ run() {  # run <输出路径>
 
 run "$OUT"
 
-if [ "${1:-}" = "--check" ]; then
+if [ "$check" = 1 ]; then
   tmp="$(mktemp -t xl-random)"
   run "$tmp" >/dev/null
   if cmp -s "$OUT" "$tmp"; then

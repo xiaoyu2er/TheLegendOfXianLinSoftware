@@ -28,20 +28,26 @@
  * `Math.random()` 背后那唯一一个全局 `Random`），而不是各处各起一条流。
  */
 
-const MULTIPLIER = 0x5deece66dn
-const ADDEND = 0xbn
-/** 48 位掩码。LCG 的状态就是 48 位，`java.util.Random` 的类注释写死了这三个常量。 */
-const MASK = (1n << 48n) - 1n
+/**
+ * 规范里写死的三个 LCG 常量，与 `java.util.Random` 的类注释逐字对应。
+ *
+ * 导出它们不是为了给别人调，是为了让判据能把**实现里的这三个数**与黄金数据里
+ * 那份 `algorithm` 对上 —— 否则那三个数会在导出器、实现、测试里各写一遍，
+ * 而"三处各自写死的常量"和"一处是判据"长得一样。
+ */
+export const LCG = Object.freeze({
+  multiplier: 0x5deece66dn,
+  addend: 0xbn,
+  /** 48 位掩码：LCG 的状态就是 48 位。 */
+  mask: (1n << 48n) - 1n,
+})
+
+const { multiplier: MULTIPLIER, addend: ADDEND, mask: MASK } = LCG
 
 export class JavaRandom {
   #state: bigint
 
   constructor(seed: number | bigint) {
-    this.#state = scramble(seed)
-  }
-
-  /** 与 `Random.setSeed(long)` 相同：重新播种，等价于新建一个实例。 */
-  setSeed(seed: number | bigint): void {
     this.#state = scramble(seed)
   }
 
@@ -89,5 +95,13 @@ export class JavaRandom {
 }
 
 function scramble(seed: number | bigint): bigint {
+  // Java 的种子是 long。用 number 传进来时超出 2^53 的部分早在到这里之前就丢了，
+  // 而丢了精度的序列**前几个值可能还是对的** —— 那正是本文件在防的那种失败。
+  // 所以在这里响亮地断掉，别让它变成一条安静跑偏的流。
+  if (typeof seed === 'number' && !Number.isSafeInteger(seed)) {
+    throw new RangeError(
+      `种子 ${seed} 不是安全整数：Java 的种子是 64 位 long，超过 2^53 请用 bigint 传`,
+    )
+  }
   return (BigInt(seed) ^ MULTIPLIER) & MASK
 }
