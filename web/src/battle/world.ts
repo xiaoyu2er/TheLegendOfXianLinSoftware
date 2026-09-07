@@ -1,4 +1,5 @@
 import { JavaRandom } from '../game/javaRandom'
+import { victoryInformation } from './victory'
 import { ENEMY_SLOT_POS, HEROES, battleBgm, derive, enemySpec, expToLevelUp } from './units'
 import type { PartyKey } from './units'
 import type {
@@ -292,13 +293,11 @@ export function createBattle(config: BattleConfig): BattleWorld {
     launchCode: 0,
     skillMenuDrawn: false,
     drugMenuDrawn: false,
-    victoryDrawn: false,
-    victoryStopped: true,
+    // `new VictoryReminder(this)` —— 构造函数里就把 getInformation() 跑完了。
+    victoryReminder: victoryInformation({ zhang: zxf, yu: yj, lu: lxq }, enemies),
     // `GameOver` 构造函数里那四个会动的坐标（另外十二个只被 paint 读）。
     gameOver: { isDraw: false, isStop: true, code: 0, ldx2: 0, lsx2: 0, rdx1: 1024, rsx1: 512 },
-    victoryUpdates: 0,
-    // `VictoryReminder.getInformation()` 在 `initial()` 里就把它算死了。
-    expToGet: enemies.reduce((sum, e) => sum + e.spec.exp, 0),
+    sceneSignal: false,
     currentX: 0,
     currentY: 0,
   }

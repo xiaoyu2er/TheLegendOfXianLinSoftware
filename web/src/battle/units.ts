@@ -246,6 +246,16 @@ export interface EnemySpec {
   hp: number
   exp: number
   money: number
+  /**
+   * `Enemy.thing`：打赢之后掉的那一样东西，写法是 `名字/类型`，
+   * 类型 `1` 是药品（进背包）、`2` 是装备（进装备包）。
+   * `VictoryReminder.update()` 就是照这个字符串分发的。
+   *
+   * ⚠️ **这一列今天没有行为真值判据**：五份 driver=battle 的真值都停在结算
+   * 之前，`thing` 抄错了和抄对了推出来的每一个字段都相同。守着它的是
+   * `units.test.ts` 里那条「逐行对回 `Enemy.initial()` 的源码」。
+   */
+  thing: string
   /** `Enemy.skillNum`：`EnemyAI.skillToUse` 掷的就是它。原版默认 1。 */
   skillNum: number
   /** `beAttackedX/Y` 相对出场坐标的偏移。 */
@@ -291,6 +301,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 250,
     exp: 200,
     money: 1000,
+    thing: '金创药/1',
     skillNum: 2,
     beAttackedOffsetX: 0,
     beAttackedOffsetY: 0,
@@ -319,6 +330,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 300,
     exp: 200,
     money: 1200,
+    thing: '姜黄粉/1',
     // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -125,
@@ -349,6 +361,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 500,
     exp: 500,
     money: 3800,
+    thing: '神农药方/1',
     // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -20,
@@ -378,6 +391,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 460,
     exp: 330,
     money: 1200,
+    thing: '还魄丹/1',
     // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -10,
@@ -407,6 +421,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 520,
     exp: 360,
     money: 1200,
+    thing: '还灵丹/1',
     // 原版没给它写 skillNum，用的是字段初值 1。
     skillNum: 1,
     beAttackedOffsetX: -30,
@@ -440,6 +455,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 9999,
     exp: 9999,
     money: 9999,
+    thing: '御衡镇日刀/2',
     skillNum: 2,
     beAttackedOffsetX: -60,
     beAttackedOffsetY: 0,
@@ -469,6 +485,7 @@ export const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     hp: 2000,
     exp: 2000,
     money: 3000,
+    thing: '神农药方/1',
     skillNum: 2,
     beAttackedOffsetX: -60,
     beAttackedOffsetY: 0,

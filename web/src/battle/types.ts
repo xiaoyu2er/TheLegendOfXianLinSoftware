@@ -227,6 +227,57 @@ export interface GameOverAnim {
   rsx1: number
 }
 
+/**
+ * `VictoryReminder` —— 打赢之后的结算。字段名照抄原版（`thing_dx1` 这类下划线
+ * 名字改成小驼峰，别的一个不改），逐句实现在 `victory.ts`。
+ *
+ * ⚠️ **这一整块没有行为真值覆盖**：五份 driver=battle 的真值里，`battle-min`
+ * 的末步正是「胜利」第一次出现的那一刻，三份打输的走的是 `GameOver`。所以
+ * 这里每一个字段抄错了和抄对了推出来的真值都相同 —— 它的判据在
+ * `victory.test.ts`（常量对回原版源码 + 两条路端到端 + 发奖那一拍），
+ * 理由与做法写在 `victory.ts` 的头注释里。
+ */
+export interface VictoryReminderState {
+  isDraw: boolean
+  /** 原版**从来不把它置回 true** —— 切了面板之后这个 update 还在跑。 */
+  isStop: boolean
+  /** 卷轴：`dy2` 与 `sy2` 每拍 +20，`sy2` 到 480 就是拉满。 */
+  dy2: number
+  sy2: number
+  /** 物品框那八个坐标，`thingSx1` 每拍 -4，从 60 数到 0。 */
+  thingDx1: number
+  thingDy1: number
+  thingDx2: number
+  thingDy2: number
+  thingSx1: number
+  thingSy1: number
+  thingSx2: number
+  thingSy2: number
+  /** 卷轴拉满之后才开始数。15 查升级、25 翻页、35–54 属性滚动、55 收尾。 */
+  timeCode: number
+  /** 这一场能拿多少经验 / 钱 / 掉落物，`getInformation()` 在开场就算死了。 */
+  expToGet: number
+  moneyToGet: number
+  /** 每只怪一项，写法 `名字/类型`，顺序就是 `bp.enemies` 的顺序。 */
+  things: string[]
+  /**
+   * 原版那个裸的 `ArrayList<Integer>`，15 项：0–2 是三个人「还差多少经验
+   * 升级」，3–6 / 7–10 / 11–14 是三个人的四项属性。下标常量见
+   * `victory.ts` 的 `SHOW_EXP_INDEX` / `SHOW_ATTR_START`。
+   *
+   * **缺席角色的那几项是 `null`**：原版读的是静态字段（没出战也有值），
+   * 这一层没有那份数据，而原版从头到尾没有读过它们。
+   */
+  showNums: (number | null)[]
+  firstIsDraw: boolean
+  secondIsDraw: boolean
+  levelUpIsDraw: boolean
+  getThingIsDraw: boolean
+  firstString: boolean
+  secondString: boolean
+  thirdString: boolean
+}
+
 /** `GameLauncher.switchTo` 切到了哪一块面板。还没切是 null。 */
 export type ExitPanel = 'scenePanel' | 'startPanel'
 
@@ -291,13 +342,18 @@ export interface BattleWorld {
 
   skillMenuDrawn: boolean
   drugMenuDrawn: boolean
-  victoryDrawn: boolean
-  victoryStopped: boolean
+  /** 打赢之后那一整段结算（`VictoryReminder`）—— 见 `victory.ts`。 */
+  victoryReminder: VictoryReminderState
   gameOver: GameOverAnim
-  /** 胜利那段还没实现的收尾跑了几拍 —— 见 `step.ts` 的 `updateVictoryReminder`。 */
-  victoryUpdates: number
-  /** `VictoryReminder.expToGet`：开场时按三只怪的经验合计算死。 */
-  expToGet: number
+  /**
+   * `GameLauncher.SCENE_SIGNAL`。切回场景那一刻置 1，场景面板下一拍读到它就
+   * 把该场景的 BGM 重新放上再清零（`ScenePanel.step()`）。两条回地图的路
+   * ——打赢结算完、剧情必败战——都会置它。
+   *
+   * 「回到地图上原来的位置」不需要这一层做任何事：主角的 x/y 一直在场景面板
+   * 手里，战斗从没碰过。
+   */
+  sceneSignal: boolean
 
   /** 鼠标当前位置（`BattlePanel.currentX/currentY`）。 */
   currentX: number

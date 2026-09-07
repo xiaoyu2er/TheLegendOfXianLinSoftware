@@ -1,4 +1,5 @@
 import { expToLevelUp, refreshValue } from './units'
+import { updateVictoryReminder } from './victory'
 import type { SkillSpec } from './units'
 import type {
   BattleState,
@@ -439,24 +440,6 @@ function updateStartAnimation(w: BattleWorld): void {
 }
 
 /**
- * `VictoryReminder.update()` —— 结算、发经验、属性滚动、回地图，整段归
- * **xl-rh9.5**。`battle-min` 正正停在"胜利"第一次出现的那一刻，所以它在这份
- * 真值里**只跑一次**，而那一次改的字段（`sy2` / `timeCode` 那些）一个都不在
- * 真值里。跑到第二次就说明有人把真值往后接了，那时候这里必须响。
- */
-function updateVictoryReminder(w: BattleWorld): void {
-  if (w.victoryStopped) return
-  w.victoryUpdates++
-  if (w.victoryUpdates > 1) {
-    throw new Error(
-      'VictoryReminder.update() 跑到了第二拍 —— 胜利之后的结算（经验、物品、钱、' +
-        '升级、回地图）还没有实现，归 xl-rh9.5。battle-min 停在胜利出现的那一刻，' +
-        '第一拍改的字段一个都不在真值里，第二拍起就不是了。',
-    )
-  }
-}
-
-/**
  * `GameOver.update()` —— 全灭图对开，开满之后再数十下，然后**按第一只怪的
  * 名字**分岔：叫「罹年居士」就切回地图（scenePanel），其余一律切回标题
  * （startPanel）。
@@ -514,9 +497,12 @@ function updateGameOver(w: BattleWorld): void {
 
 /** 回地图那条出口。原版**不判空**地读 `bp.zxf` / `bp.yj`，也不碰陆雪琪。 */
 function exitToScene(w: BattleWorld): void {
-  // 原版这一支还有一句 `GameLauncher.SCENE_SIGNAL=1`。那是**场景面板**的字段，
-  // 不属于战斗世界，也不在战斗真值里 —— 回地图之后场景那边怎么接，归 xl-rh9.5。
+  // `GameLauncher.switchTo("scene")` 顺带置 `SCENE_SIGNAL=1`（xl-rh9.5）：
+  // 场景面板下一拍读到它就把该场景的 BGM 重新放上再清零。它不在战斗真值里
+  // （导出器的 snapshotState 不取它），判据在 `victory.test.ts`：两条回地图的
+  // 路——打赢结算完与剧情必败战——都要置它，回标题那条不许置。
   w.exitPanel = 'scenePanel'
+  w.sceneSignal = true
   w.em1 = null
   w.enemies.length = 0
   const revive = (h: Hero | null, who: string): void => {
@@ -762,8 +748,15 @@ function enemyCalDamage(w: BattleWorld, e: Enemy): void {
 
 // ================= 检查器 =================
 
-/** `Check.checkEnemyDead()`：摘掉死掉的怪，全摘光就是胜利。 */
-function checkEnemyDead(w: BattleWorld): void {
+/**
+ * `Check.checkEnemyDead()`：摘掉死掉的怪，全摘光就是胜利 —— 发经验、清状态、
+ * 查升级、起胜利动画、拉开结算卷轴。
+ *
+ * **导出**是给 `victory.test.ts` 用的：结算那一段没有行为真值（`battle-min`
+ * 停在胜利出现的那一刻），而要走到「有人升级」那条路，得让一场等级配得上的
+ * 仗赢下来。原版这也是 `Check` 的 public 方法，不是为了测试新开的口子。
+ */
+export function checkEnemyDead(w: BattleWorld): void {
   const drop = (e: Enemy | null, clear: () => void) => {
     if (!e || e.hp > 0) return
     const at = w.enemies.indexOf(e)
@@ -784,7 +777,7 @@ function checkEnemyDead(w: BattleWorld): void {
   })
   if (w.em1 || w.em2 || w.em3) return
 
-  for (const h of w.heroes) h.exp += w.expToGet
+  for (const h of w.heroes) h.exp += w.victoryReminder.expToGet
   for (const h of w.heroes) {
     if (h.battleState.isUsable) {
       returnFromState(h.battleState)
@@ -801,8 +794,8 @@ function checkEnemyDead(w: BattleWorld): void {
     h.victoryAnimation.isStop = false
   }
   w.progressBar.isDraw = false
-  w.victoryDrawn = true
-  w.victoryStopped = false
+  w.victoryReminder.isDraw = true
+  w.victoryReminder.isStop = false
 }
 
 /** `Check.checkHeroDead()`：怪物的技能播完之后检查我方。 */
