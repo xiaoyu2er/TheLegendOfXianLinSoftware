@@ -214,5 +214,9 @@ The five canonical roles, applied as bd labels with their default names. See
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (neither exists
-yet; created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root, both created
+2026-09-07 by the M2 grilling. `CONTEXT.md` is a **glossary only** — it pins
+down three words that were each doing two jobs (脚本 vs 剧本, 真值's three
+meanings, 一步's per-driver definitions). Decisions live in `docs/adr/`
+(five so far), each ticket's acceptance bar in `bd show <id>`. Maintained by
+`/domain-modeling`. See `docs/agents/domain.md`.
