@@ -450,7 +450,7 @@ function format(value: unknown, indent: string): string {
  *   dist/assets 下是一堆独立文件，只有真的走进大迷宫的玩家才下载它一次。
  *   「双份 + 按缩放选」与「渐进加载」两种方案反而会让仓库更大。
  */
-function toWebp(source: string, destination: string, crop?: Crop): number {
+function toWebp(source: string, destination: string, crop?: SourceRect): number {
   mkdirSync(dirname(destination), { recursive: true })
   const lossless = source.toLowerCase().endsWith('.png')
   const flags = lossless ? ['-lossless'] : ['-q', '80']
@@ -459,26 +459,44 @@ function toWebp(source: string, destination: string, crop?: Crop): number {
   return statSync(destination).size
 }
 
-interface Crop {
+interface SourceRect {
   readonly width: number
   readonly height: number
 }
 
 /**
- * 一张主角精灵图要裁到多大：`Role.drawHero` 那个 drawImage 的源矩形与素材
- * 本身的交集。
+ * 一张主角精灵图要裁到多大：`Role.drawHero` 那个 drawImage 的源矩形。
+ * 返回 `undefined` 表示素材恰好就是源矩形，不必裁。
  *
- * 取交集而不是无脑裁到 (width, height)，是因为 Java 的语义是"源矩形超出图片
- * 的部分不存在，剩下的按目标矩形缩放"：素材比源矩形**小**的那一维，原版是
- * 拉伸，裁不出东西来，交给渲染层的 setSize 去拉正好一致。今天 48 张里没有
- * 这种，但把规则写全比写死"就是 42×64"安全——素材换一批不会悄悄错。
+ * 素材比源矩形**小**的那一维一律硬失败，因为烘焙这条路走不出正确答案。
+ * 实测过 Java2D 在这种情况下做什么（openjdk 17，headless，2026-09-06）：
+ * 一张 42×32 的纯红图按 `drawImage(src, 0,0,42,64, 0,0,42,64, null)` 画到
+ * 一块蓝底上，得到**红 1344 / 蓝 1344**，第 0~31 行是红、第 32~63 行还是蓝。
+ * 也就是说它**不拉伸**：缩放比按源矩形算（这里 1:1），源矩形里超出图片的
+ * 部分干脆不画。
  *
- * 返回 null 表示素材恰好就是源矩形，不必裁。
+ * 而 Web 侧渲染层是 `setSize(42, 64)` —— 裁一张 42×32 出来再 setSize，会把它
+ * 拉满 64 行，正好是原版不做的那件事。要复刻就得把产物**补白**到源矩形大小，
+ * cwebp 干不了。今天 48 张里一张这样的都没有（`roleSpriteSize.test.ts` 把
+ * "偏大的恰好是 14/15 两帧"也断言了），所以这里只负责在素材换了的那天响，
+ * 而不是悄悄烘出一张会被拉伸的图。
  */
-function sourceRect(source: string, spec: { width: number; height: number }): Crop | undefined {
+function sourceRect(
+  source: string,
+  spec: { width: number; height: number },
+): SourceRect | undefined {
   const { width, height } = pngSize(source)
-  const crop = { width: Math.min(width, spec.width), height: Math.min(height, spec.height) }
-  return crop.width === width && crop.height === height ? undefined : crop
+  if (width < spec.width || height < spec.height) {
+    throw new Error(
+      `${source} 是 ${width}×${height}，小于原版 drawHero 的源矩形 ` +
+        `${spec.width}×${spec.height}。原版在这种情况下是**不画**缺的那部分，` +
+        `而 Web 侧 setSize 会把它拉满；要复刻得把产物补白到源矩形大小，` +
+        `cwebp 做不到（xl-u39）。`,
+    )
+  }
+  return width === spec.width && height === spec.height
+    ? undefined
+    : { width: spec.width, height: spec.height }
 }
 
 /**
