@@ -4,12 +4,15 @@
  * 全部照抄 `src/battle/` 下的原版：我方在 `ZhangXiaoFan/YuJie/LuXueQi` 的
  * 构造函数与 `refreshValue()` 里，怪物在 `Enemy.initial()` 那个 26 路 switch 里。
  *
- * ## 怪物表为什么只有两行
+ * ## 怪物表为什么不是 26 行
  *
- * 这张表**按名字查，查不到就抛**。今天入库的只有 `battle-min` 那一场用到的两
- * 只 —— 抄一行没有判据的数据，抄错了和抄对了长得一样，而这张票的判据只盖得住
- * 这两只。其余各行随它们各自的行为真值一起补（`battle-em3-box` 与两场打输归
- * xl-rh9.8）。查不到时的表现是**当场抛并点名**，不是"用一份默认值悄悄打下去"。
+ * 这张表**按名字查，查不到就抛**。入库的只有**跑得到行为真值**的那几只 ——
+ * 抄一行没有判据的数据，抄错了和抄对了长得一样。原版那个 switch 有 26 个
+ * case，这里今天是 7 行：`battle-min` 的两只（怪物1 / 怪物2）、
+ * `battle-em3-box` 的三只（武林高手2 / 商塔弟子 / 商塔护法）、
+ * 两场打输的两只（罹年居士 / 罹年居士分身）。**这个数字不写进任何断言** ——
+ * 它随真值一起长，写死了就要在别人加真值时冲突。其余各行随它们各自的行为真值
+ * 一起补。查不到时的表现是**当场抛并点名**，不是"用一份默认值悄悄打下去"。
  */
 
 /** `refreshValue()`：七个派生值全从四项基础属性算出来。 */
@@ -216,8 +219,23 @@ export interface EnemySpec {
   /** 走图帧数（`Enemy.length`），`doAction()` 的上界。 */
   length: number
   beAttackedFrames: number
-  speed: number
+  /**
+   * `Enemy.initial` 里那一行 `this.speed=…`。
+   *
+   * 26 行里 25 行是常量，**罹年居士那一行不是** —— 原版写的是
+   * `ZhangXiaoFan.speed+6`，读的是张小凡那个 `public static int speed`，也就是
+   * 「比张小凡快 6」。抄成常量的话它跟等级一起漂：`battle-defeat-scene` 的
+   * 张小凡是 20 级（agile 48 → speed 24），真值记的正是 30。
+   */
+  speed: number | ((zhangSpeed: number) => number)
   hurt: number
+  /**
+   * `this.skillHurt=…`。26 行里 24 行写的是 `skillHurt=hurt`，另外两行
+   * （罹年居士 9999 / 罹年居士分身 600）写的是字面量而值恰好等于 `hurt` ——
+   * 也就是说这张表里它**从来没有**与 `hurt` 分开过。仍然分成两个字段，
+   * 因为「恰好相等」与「就是同一个数」在原版里不是同一件事。
+   */
+  skillHurt: number
   defense: number
   hp: number
   exp: number
@@ -251,6 +269,8 @@ const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     beAttackedFrames: 6,
     speed: 11,
     hurt: 250,
+    // 原版这一行写的是 `skillHurt=hurt`。
+    skillHurt: 250,
     defense: 60,
     hp: 250,
     exp: 200,
@@ -278,6 +298,7 @@ const ENEMIES: Readonly<Record<string, EnemySpec>> = {
     beAttackedFrames: 6,
     speed: 10,
     hurt: 260,
+    skillHurt: 260,
     defense: 60,
     hp: 300,
     exp: 200,
@@ -298,6 +319,153 @@ const ENEMIES: Readonly<Record<string, EnemySpec>> = {
       withdrawCode: 16,
       toZhang: 20,
       toYu: 30,
+      toLu: 0,
+    },
+  },
+  // 以下三只由 `battle-em3-box` 盖住（脚本20 第 3 行的 Fight 数据）。
+  武林高手2: {
+    length: 5,
+    beAttackedFrames: 6,
+    speed: 12,
+    hurt: 440,
+    skillHurt: 440,
+    defense: 130,
+    hp: 500,
+    exp: 500,
+    money: 3800,
+    // 原版没给它写 skillNum，用的是字段初值 1。
+    skillNum: 1,
+    beAttackedOffsetX: -20,
+    beAttackedOffsetY: 0,
+    skill: {
+      name: '怪物/武林高手2攻击',
+      length: 26,
+      offsetX: -10,
+      offsetY: -170,
+      beAttackedCode: 17,
+      beAttackedTimes: 1,
+      runCode: 9,
+      attackCode: 20,
+      withdrawCode: 26,
+      toZhang: 40,
+      toYu: 50,
+      toLu: 0,
+    },
+  },
+  商塔弟子: {
+    length: 9,
+    beAttackedFrames: 6,
+    speed: 13,
+    hurt: 450,
+    skillHurt: 450,
+    defense: 220,
+    hp: 460,
+    exp: 330,
+    money: 1200,
+    skillNum: 1,
+    beAttackedOffsetX: -10,
+    beAttackedOffsetY: 0,
+    skill: {
+      name: '怪物/商塔弟子攻击',
+      length: 29,
+      offsetX: -10,
+      offsetY: -170,
+      beAttackedCode: 7,
+      beAttackedTimes: 3,
+      runCode: 8,
+      attackCode: 20,
+      withdrawCode: 29,
+      toZhang: 30,
+      toYu: 30,
+      toLu: 0,
+    },
+  },
+  商塔护法: {
+    length: 4,
+    beAttackedFrames: 6,
+    speed: 14,
+    hurt: 450,
+    skillHurt: 450,
+    defense: 150,
+    hp: 520,
+    exp: 360,
+    money: 1200,
+    skillNum: 1,
+    beAttackedOffsetX: -30,
+    beAttackedOffsetY: 0,
+    skill: {
+      name: '怪物/商塔护法攻击',
+      length: 28,
+      offsetX: -10,
+      offsetY: -170,
+      beAttackedCode: 7,
+      beAttackedTimes: 3,
+      runCode: 8,
+      attackCode: 17,
+      withdrawCode: 28,
+      toZhang: 0,
+      toYu: 30,
+      toLu: 0,
+    },
+  },
+  // 以下两只由两场打输的真值盖住。名字**只差三个字**，而 `GameOver.update()`
+  // 分岔靠的正是这个字符串：写成 startsWith / includes 就会把「罹年居士分身」
+  // 也认成「罹年居士」（见 `step.ts` 的 exit 判定与 `battle-defeat-start`）。
+  罹年居士: {
+    length: 6,
+    beAttackedFrames: 6,
+    // 原版：`this.speed=ZhangXiaoFan.speed+6;` —— 全表唯一一行不是常量的速度。
+    speed: (zhangSpeed) => zhangSpeed + 6,
+    hurt: 9999,
+    skillHurt: 9999,
+    defense: 9999,
+    hp: 9999,
+    exp: 9999,
+    money: 9999,
+    skillNum: 2,
+    beAttackedOffsetX: -60,
+    beAttackedOffsetY: 0,
+    skill: {
+      name: '怪物/罹年居士攻击',
+      length: 10,
+      offsetX: -20,
+      offsetY: -130,
+      beAttackedCode: 4,
+      beAttackedTimes: 1,
+      runCode: 4,
+      attackCode: 7,
+      withdrawCode: 10,
+      toZhang: 0,
+      toYu: 20,
+      toLu: 0,
+    },
+  },
+  罹年居士分身: {
+    length: 6,
+    beAttackedFrames: 6,
+    speed: 18,
+    hurt: 600,
+    // 原版这一行写的是字面量 600，不是 `skillHurt=hurt`（值相同）。
+    skillHurt: 600,
+    defense: 190,
+    hp: 2000,
+    exp: 2000,
+    money: 3000,
+    skillNum: 2,
+    beAttackedOffsetX: -60,
+    beAttackedOffsetY: 0,
+    skill: {
+      name: '怪物/罹年居士分身攻击',
+      length: 10,
+      offsetX: -20,
+      offsetY: -130,
+      beAttackedCode: 4,
+      beAttackedTimes: 1,
+      runCode: 4,
+      attackCode: 7,
+      withdrawCode: 10,
+      toZhang: 0,
+      toYu: 20,
       toLu: 0,
     },
   },

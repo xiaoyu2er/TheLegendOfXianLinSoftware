@@ -457,19 +457,104 @@ function updateVictoryReminder(w: BattleWorld): void {
 }
 
 /**
- * `GameOver.update()` —— 全灭图对开、72 步之后按第一只怪的名字分岔（回地图 /
- * 回标题）。两条出口各有一份行为真值，归 **xl-rh9.8**。同上，第一拍改的
- * （`lsx2` 那几个像素）不在真值里，第二拍起就是了。
+ * `GameOver.update()` —— 全灭图对开，开满之后再数十下，然后**按第一只怪的
+ * 名字**分岔：叫「罹年居士」就切回地图（scenePanel），其余一律切回标题
+ * （startPanel）。
+ *
+ * 计时全靠 `lsx2`：每拍 +8，64 拍到 512，此后 `code` 每拍 +1 到 10 —— 第 64
+ * 拍那一次里两件事发生在同一个 `update()` 里（`lsx2` 刚好等于 512 就接着数
+ * 第一下），所以从全灭到切面板一共 73 次 `update()`。第一次与 `defeat` 置位
+ * 落在同一拍，真值上是 72 步。
+ *
+ * ## 那句字符串比较是**逐字相等，且只看第一只**
+ *
+ * 原版写的是 `bp.em1.name.equals("罹年居士")`。三份打输真值各自堵住一种写错法：
+ *
+ * - 写成「三个槽位里有没有」→ `battle-defeat-slot2` 红（罹年居士在第 2 槽，
+ *   原版走的仍是回标题那条）；
+ * - 写成 `startsWith` / `includes` → `battle-defeat-start` 红
+ *   （「罹年居士分身」以「罹年居士」开头）；
+ * - 整条分支走反 → 三份两两对照都红。
+ *
+ * ## 两条出口清的东西不一样，这也是判据
+ *
+ * 回地图只摘掉 `em1`、只把张小凡与文敏复位成**半血**（陆雪琪一个字段都不碰）；
+ * 回标题把三个槽位全摘掉、三个人都只把绘制标志翻回来、谁的血都不回。
  */
 function updateGameOver(w: BattleWorld): void {
-  if (w.gameOverStopped) return
-  w.gameOverUpdates++
-  if (w.gameOverUpdates > 1) {
+  const g = w.gameOver
+  if (g.isStop) return
+  if (g.lsx2 < 512) {
+    g.lsx2 += 8
+    g.ldx2 += 8
+    g.rsx1 -= 8
+    g.rdx1 -= 8
+  }
+  if (g.lsx2 !== 512) return
+  if (g.code < 10) g.code++
+  if (g.code !== 10) return
+
+  const em1 = w.em1
+  if (em1 === null) {
+    // 原版这一句是 `bp.em1.name.equals(...)`，em1 为 null 时当场 NPE。
+    // 这里也不给它兜底：兜底等于替原版决定了一个它没有的行为。
     throw new Error(
-      'GameOver.update() 跑到了第二拍 —— 打输的两条出口（罹年居士回地图 / 其余回标题）' +
-        '还没有实现，归 xl-rh9.8。',
+      '全灭结算时第一个槽位已经空了 —— 原版 GameOver.update() 在这里读的是 ' +
+        '`bp.em1.name`，会抛 NullPointerException。这一层不替它选一条出口。',
     )
   }
+  // 逐字相等，且只看第一只 —— 见上面那张写错法对照表。
+  if (em1.name === '罹年居士') {
+    exitToScene(w)
+  } else {
+    exitToStart(w)
+  }
+  g.isStop = true
+}
+
+/** 回地图那条出口。原版**不判空**地读 `bp.zxf` / `bp.yj`，也不碰陆雪琪。 */
+function exitToScene(w: BattleWorld): void {
+  w.exitPanel = 'scenePanel'
+  w.em1 = null
+  w.enemies.length = 0
+  const revive = (h: Hero | null, who: string): void => {
+    if (h === null) {
+      throw new Error(
+        `回地图那条出口要把${who}复位，可他/她没有出战 —— 原版这一句 ` +
+          '（`bp.zxf.deadAnimation.isDraw=false`）在这里会抛 NullPointerException。',
+      )
+    }
+    h.deadAnimation.isDraw = false
+    h.isDraw = true
+    // `ZhangXiaoFan.hp=ZhangXiaoFan.hpMax/2` —— Java 的整数除法，向零截尾。
+    h.hp = Math.trunc(h.hpMax / 2)
+  }
+  revive(w.zxf, '张小凡')
+  revive(w.yj, '文敏')
+  // 陆雪琪不在这条分支里，连 isDraw 都不翻回来（原版就是这么写的）。
+  w.heroes.length = 0
+}
+
+/**
+ * 回标题那条出口。三个槽位全摘掉，三个人都判空，谁的血都不回。
+ *
+ * **还换歌**：`GameLauncher.switchTo("start")` 那一支里多一句
+ * `MusicReader.readBGM("主题曲.mp3")`，回地图那一支没有。所以两条出口在
+ * `audio.bgm` 上也分得开 —— 这一条是真值自己给出来的，不是补的判据。
+ */
+function exitToStart(w: BattleWorld): void {
+  w.exitPanel = 'startPanel'
+  w.bgm = '主题曲.mp3'
+  w.em1 = null
+  w.em2 = null
+  w.em3 = null
+  w.enemies.length = 0
+  for (const h of [w.zxf, w.yj, w.lxq]) {
+    if (h === null) continue
+    h.deadAnimation.isDraw = false
+    h.isDraw = true
+  }
+  w.heroes.length = 0
 }
 
 // ================= 战斗状态 =================
@@ -734,8 +819,8 @@ function checkHeroDead(w: BattleWorld): void {
   }
   if (!w.heroes.every((h) => h.isDead)) return
   w.progressBar.isDraw = false
-  w.gameOverDrawn = true
-  w.gameOverStopped = false
+  w.gameOver.isDraw = true
+  w.gameOver.isStop = false
 }
 
 function levelUp(h: Hero): void {

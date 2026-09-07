@@ -23,6 +23,19 @@ export interface BattleTraceTick extends BattleSnapshot {
   readonly input: readonly BattleInput[]
 }
 
+/**
+ * 剧本里的一条指令（`docs/trace-format.md` §战斗剧本的 steps）。
+ *
+ * 只声明用得到的那两项：`op` 与 `awaitExit` 的 `panel`。**这不是"其余字段
+ * 不存在"** —— `budget` / `until` / `max` 那些是给导出器用的，回放这一层
+ * 一个都不读。
+ */
+export interface BattleTraceStep {
+  readonly op: string
+  /** 只有 `op === 'awaitExit'` 才有：原版当场切到的那一块面板。 */
+  readonly panel?: string
+}
+
 /** 战斗剧本里那几行（`docs/trace-format.md` §战斗剧本）。 */
 export interface BattleTraceScript {
   readonly name: string
@@ -33,6 +46,7 @@ export interface BattleTraceScript {
   readonly seed: number
   readonly tickMs: number
   readonly maxTicks: number
+  readonly steps: readonly BattleTraceStep[]
 }
 
 export interface BattleTrace {
