@@ -7,6 +7,7 @@ import { loadScene } from '../data/scenes'
 import { DialogueBox } from '../ui/DialogueBox'
 import '../index.css'
 import { createSceneRenderer } from '../scene/sceneRenderer'
+import { pickAssembly } from './drivers'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { initiate, step } from '../state/step'
 import type { InputEvent, World } from '../state/types'
@@ -34,6 +35,11 @@ interface ReplayTick {
 }
 
 interface ReplayTrace {
+  /**
+   * 驱动器判别名（xl-1vu.2）。**这一份必须是 `scene`** —— 下面那套装配建的是
+   * 场景世界、贴的是场景渲染器。别的驱动器由 `pickAssembly` 挡在门外。
+   */
+  readonly driver: string
   readonly script: {
     readonly name: string
     /** 预热脚本，可为 null。**回放必须照做**，理由见 `state/trace.ts` 的 `replayWorld`。 */
@@ -46,6 +52,15 @@ interface ReplayTrace {
   readonly tickCount: number
   readonly ticks: readonly ReplayTick[]
 }
+
+/**
+ * 一套装配：装载一份真值、把世界推到某一步并画出来。
+ *
+ * 与 `ReplayApi` 同形，但**每个驱动器一套**：场景装的是 Pixi 场景 + 对话框
+ * DOM 层，战斗 / 菜单 / 商店各自会装别的。取图页对外只有一个 `__xlReplay`，
+ * 进门先按判别名挑一套（见 `./drivers.ts`）。
+ */
+type Assembly = ReplayApi
 
 export interface ReplayApi {
   /** 装载一份 trace：建世界、建渲染器、把场景贴上去。返回场景名与 tick 数。 */
@@ -74,7 +89,7 @@ async function take(name: string) {
 
 const stem = (file: string) => file.replace(/\.txt$/, '')
 
-const api: ReplayApi = {
+const sceneAssembly: Assembly = {
   async load(traceJson: string) {
     const parsed = JSON.parse(traceJson) as ReplayTrace
     const sceneName = stem(parsed.script.scene)
@@ -128,6 +143,36 @@ const api: ReplayApi = {
     drawOverlay(world)
     await twoFrames()
     return { t, timeMs: world.timeMs, x: world.role.px >> 5, y: world.role.py >> 5 }
+  },
+}
+
+/**
+ * 判别名 → 装配。**名单只有这一份**，`pickAssembly` 报"本页实现了哪些"时
+ * 数的就是它 —— 另抄一张名单，加了驱动器却忘了改名单的那天，报出来的话是错的。
+ */
+const ASSEMBLIES: Readonly<Record<string, Assembly>> = { scene: sceneAssembly }
+
+/** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */
+let current: Assembly | null = null
+
+/**
+ * 取图页对外的那一个入口：**先按真值自报的驱动器挑装配，再交给它**。
+ *
+ * 挑不出来就抛 —— 页面里抛出的异常会被 `scripts/cdp.ts` 的 `evaluate` 原样
+ * 转成 Node 侧的 Error，`scripts/compare.ts` 的 `main().catch` 再把它变成
+ * 退出码 2。也就是说"这个驱动器 Web 侧还没实现"走的是**非零退出**那条路，
+ * 而不是"这条剧本比出来零差异"那条。
+ */
+const api: ReplayApi = {
+  async load(traceJson: string) {
+    const header = JSON.parse(traceJson) as { driver?: unknown; script?: { name?: unknown } }
+    const where = typeof header.script?.name === 'string' ? header.script.name : '这份真值'
+    current = pickAssembly(header.driver, ASSEMBLIES, where)
+    return current.load(traceJson)
+  },
+  async seek(t: number) {
+    if (!current) throw new Error('还没 load 就 seek')
+    return current.seek(t)
   },
 }
 

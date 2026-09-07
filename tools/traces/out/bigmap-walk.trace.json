@@ -1,5 +1,6 @@
 {
   "format": "xianlin-trace/1",
+  "driver": "scene",
   "script": {"name":"bigmap-walk","description":"大地图走动：在 100x80 的卷动地图上走一段、跑两段、四个方向都用到。覆盖视口跟随与边缘夹取、绘制顺序、会走动与原地动的 NPC。","warmup":"脚本1.txt","scene":"大地图.txt","isScript":false,"tickMs":10,"maxTicks":30000,"steps":[{"op":"walkTo","x":13,"y":8},{"op":"walkTo","x":13,"y":15},{"op":"runTo","x":9,"y":15},{"op":"walkTo","x":9,"y":16},{"op":"runTo","x":17,"y":16},{"op":"walkTo","x":17,"y":11},{"op":"walkTo","x":17,"y":10},{"op":"wait","ticks":30}]},
   "tickCount": 842,
   "ticks": [

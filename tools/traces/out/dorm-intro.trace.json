@@ -1,5 +1,6 @@
 {
   "format": "xianlin-trace/1",
+  "driver": "scene",
   "script": {"name":"dorm-intro","description":"宿舍开场：脚本1 的旁白逐字播完，接一整段 23 句的主线对话（头像式与名字式两种对话框都有）。覆盖旁白、自动对话、逐字游标与翻页。","warmup":null,"scene":"脚本1.txt","isScript":true,"tickMs":10,"maxTicks":40000,"steps":[{"op":"waitNarratage"},{"op":"advanceAll","max":64},{"op":"wait","ticks":30}]},
   "tickCount": 4123,
   "ticks": [

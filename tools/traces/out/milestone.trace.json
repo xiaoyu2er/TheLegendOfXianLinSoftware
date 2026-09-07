@@ -1,5 +1,6 @@
 {
   "format": "xianlin-trace/1",
+  "driver": "scene",
   "script": {"name":"milestone","description":"M1 里程碑：原版开场从头走一遍 —— 脚本1 的旁白播完、23 句主线对话按完、跟曾书书搭一次话，出宿舍门进大地图夜（脚本2），那边的旁白与 27 句对话也走完，从 (65,13) 进大活夜（背景音乐第一次切换）、在里面走一段，再从大活夜的门出来回到大地图夜（第二次切换），在大地图上走两步收尾。覆盖旁白、主线对话、NPC 口头语、出口切换的三条分支、背景音乐切换、卷动地图的视口跟随。","warmup":null,"scene":"脚本1.txt","isScript":true,"tickMs":10,"maxTicks":60000,"steps":[{"op":"waitNarratage"},{"op":"advanceAll","max":64},{"op":"walkTo","x":14,"y":8},{"op":"walkTo","x":14,"y":6},{"op":"talk"},{"op":"advanceAll","max":8},{"op":"walkTo","x":14,"y":8},{"op":"walkTo","x":13,"y":11},{"op":"exitTo","x":14,"y":19},{"op":"waitIdle"},{"op":"waitNarratage"},{"op":"advanceAll","max":64},{"op":"walkTo","x":65,"y":14},{"op":"exitTo","x":65,"y":13},{"op":"waitIdle"},{"op":"walkTo","x":15,"y":14},{"op":"wait","ticks":200},{"op":"walkTo","x":15,"y":18},{"op":"exitTo","x":15,"y":19},{"op":"waitIdle"},{"op":"walkTo","x":64,"y":17},{"op":"wait","ticks":300}]},
   "tickCount": 9158,
   "ticks": [

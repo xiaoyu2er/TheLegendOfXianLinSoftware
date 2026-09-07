@@ -13,6 +13,14 @@ import type { InputEvent, TilePos, World } from './types'
  */
 export interface Trace {
   readonly format: string
+  /**
+   * **驱动器判别名**（xl-1vu.2）：这份真值是原版哪一个面板导出来的
+   * （场景 = `scene`，将来还有战斗 / 菜单 / 商店）。由导出侧的
+   * `TraceDriver.kind()` 写入，回放端照它决定装配哪一套。
+   *
+   * 没有它，回放端只能猜；而猜错的表现是"装出来的东西不对"，不是"读不出来"。
+   */
+  readonly driver: string
   readonly script: {
     readonly name: string
     /**
@@ -144,9 +152,28 @@ export const TRACE_NAMES: readonly string[] = readdirSync(repoPath('tools/traces
 
 export function readTrace(name: string): Trace {
   const path = repoPath('tools/traces/out', `${name}.trace.json`)
-  const trace = JSON.parse(readFileSync(path, 'utf8')) as Trace
+  return parseTrace(readFileSync(path, 'utf8'), path)
+}
+
+/**
+ * 读一份 trace 的头并校验它。**独立成函数是为了能拿篡改过的 JSON 直接测它**——
+ * 校验只在读磁盘那条路上存在的话，"它到底拦不拦得住"就没有办法验证。
+ *
+ * 校的是两件事：格式版本，以及驱动器判别名**在场且形状对**。判别名缺失时不许
+ * 有默认值 —— 默认成 `scene` 等于把一份来路不明的真值当场景真值回放，而那种
+ * 失败长得和成功一模一样。这里不校名单：认哪些驱动器是回放端的事
+ * （见 `src/replay/drivers.ts`），读取器替它记一份就会和实现分家。
+ */
+export function parseTrace(json: string, path: string): Trace {
+  const trace = JSON.parse(json) as Trace
   if (trace.format !== 'xianlin-trace/1') {
     throw new Error(`${path} 的 format 是 ${trace.format}，本读取器只认 xianlin-trace/1。`)
+  }
+  if (typeof trace.driver !== 'string' || !/^[a-z][a-z0-9-]*$/.test(trace.driver)) {
+    throw new Error(
+      `${path} 的 driver 是 ${JSON.stringify(trace.driver)}，` +
+        `真值必须自报驱动器判别名（形如 scene），否则回放端只能猜。`,
+    )
   }
   return trace
 }
