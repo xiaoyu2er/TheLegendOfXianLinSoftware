@@ -37,7 +37,14 @@ import javax.imageio.ImageIO;
  */
 public final class ExportTrace {
 
-    private final TraceScript script;
+    private final File scriptFile;
+
+    // ---- 剧本回显。由 run() 里选驱动器那一处按剧本类型填上。 ----
+    private String scriptName = "?";
+    private String scriptScene = "?";
+    private int scriptTickMs;
+    private String scriptJson = "null";
+    private String driverKind = "?";
 
     // ---- 帧导出（--frames，默认关闭；关闭时下面这几个字段一个都不读） ----
     private File framesDir;
@@ -46,7 +53,7 @@ public final class ExportTrace {
     private int frameW;
     private int frameH;
 
-    private ExportTrace(TraceScript script) { this.script = script; }
+    private ExportTrace(File scriptFile) { this.scriptFile = scriptFile; }
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
@@ -57,7 +64,7 @@ public final class ExportTrace {
         if (!in.isFile()) die("找不到剧本文件: " + in.getPath());
         if (!new File("script").isDirectory()) die("找不到 script/ 目录 —— 必须在仓库根目录运行");
 
-        ExportTrace t = new ExportTrace(TraceScript.load(in));
+        ExportTrace t = new ExportTrace(in);
         for (int i = 2; i < args.length; i++) {
             switch (args[i]) {
                 case "--frames":
@@ -79,7 +86,7 @@ public final class ExportTrace {
         try (Writer w = new OutputStreamWriter(new FileOutputStream(dst), StandardCharsets.UTF_8)) {
             w.write(out);
         }
-        System.out.println("导出 " + t.script.name + " -> " + dst.getPath()
+        System.out.println("导出 " + t.scriptName + " -> " + dst.getPath()
                 + (t.framesDir == null ? "" : "（" + t.sampled.size() + " 帧 -> " + t.framesDir.getPath() + "）"));
         // 必须显式退出：音频播放线程与 Swing 的 TimerQueue 都不是守护线程。
         System.exit(0);
@@ -93,8 +100,9 @@ public final class ExportTrace {
     // ================= 主流程 =================
 
     private String run() throws Exception {
-        TraceDriver driver = new SceneDriver(script);
+        TraceDriver driver = pickDriver();
         String kind = requireKind(driver);
+        driverKind = kind;
         prepareFramesDir();
 
         StringBuilder body = new StringBuilder();
@@ -112,11 +120,52 @@ public final class ExportTrace {
         b.append("{\n");
         b.append("  \"format\": \"xianlin-trace/1\",\n");
         b.append("  \"driver\": ").append(Json.str(kind)).append(",\n");
-        b.append("  \"script\": ").append(script.toJson()).append(",\n");
+        b.append("  \"script\": ").append(scriptJson).append(",\n");
         b.append("  \"tickCount\": ").append(steps).append(",\n");
         b.append("  \"ticks\": [\n").append(body).append("\n  ]\n");
         b.append("}\n");
         return b.toString();
+    }
+
+    /**
+     * 按剧本自报的 {@code driver} 选一支驱动器，顺手把剧本回显与帧清单要的
+     * 那几个字段填上。**每接一个面板就在这里加一支**，不要顺手改成注册表 ——
+     * 几张票并行时那种重构 git 合得干净、编译才报错（见 docs/agents/dispatch.md）。
+     *
+     * 缺 {@code driver} 字段时默认 {@code scene}：五份场景真值的剧本都是在这个
+     * 字段之前写的，给它们补一个字段等于改剧本回显，五份真值要跟着重导。
+     * 默认值是**唯一**的宽容之处 —— 认不出的名字一律硬失败，绝不猜。
+     */
+    private TraceDriver pickDriver() throws Exception {
+        String want = JsonIn.strOr(
+                JsonIn.obj(JsonIn.parse(new String(
+                        java.nio.file.Files.readAllBytes(scriptFile.toPath()),
+                        StandardCharsets.UTF_8)), "剧本"),
+                "driver", "scene");
+        switch (want) {
+            case "scene": {
+                TraceScript s = TraceScript.load(scriptFile);
+                scriptName = s.name;
+                scriptScene = s.scene;
+                scriptTickMs = s.tickMs;
+                scriptJson = s.toJson();
+                return new SceneDriver(s);
+            }
+            case "menu": {
+                MenuScript s = MenuScript.load(scriptFile);
+                scriptName = s.name;
+                // 菜单不是 tick 驱动的：一步是一次输入事件，没有时长。写 0 而不是
+                // 编一个像模像样的 10 —— 帧清单里同时写着 driver，读的人分得开。
+                scriptScene = "menu";
+                scriptTickMs = 0;
+                scriptJson = s.toJson();
+                return new MenuDriver(s);
+            }
+            default:
+                die(scriptFile.getPath() + " 的 driver 是 \"" + want
+                        + "\"，导出器只认 scene / menu");
+                return null;
+        }
     }
 
     /**
@@ -176,7 +225,7 @@ public final class ExportTrace {
             frameW = b.getWidth();
             frameH = b.getHeight();
         } else if (b.getWidth() != frameW || b.getHeight() != frameH) {
-            die(script.name + "：第 " + tick + " 帧是 " + b.getWidth() + "×" + b.getHeight()
+            die(scriptName + "：第 " + tick + " 帧是 " + b.getWidth() + "×" + b.getHeight()
                     + "，而第一帧是 " + frameW + "×" + frameH);
         }
     }
@@ -188,13 +237,14 @@ public final class ExportTrace {
     private void writeFrameManifest(int tickCount) {
         // 一帧都没采到还照样写一份清单，等于交出一份"比 0 帧、全绿"的比对基准 ——
         // 那种失败长得和成功一模一样。宽高也只能从真存下来的那张图上取。
-        if (sampled.isEmpty()) die(script.name + "：开了 --frames 却一帧都没采到");
+        if (sampled.isEmpty()) die(scriptName + "：开了 --frames 却一帧都没采到");
         StringBuilder b = new StringBuilder();
         b.append("{\n");
         b.append("  \"format\": \"xianlin-frames/1\",\n");
-        b.append("  \"script\": ").append(Json.str(script.name)).append(",\n");
-        b.append("  \"scene\": ").append(Json.str(script.scene)).append(",\n");
-        b.append("  \"tickMs\": ").append(script.tickMs).append(",\n");
+        b.append("  \"driver\": ").append(Json.str(driverKind)).append(",\n");
+        b.append("  \"script\": ").append(Json.str(scriptName)).append(",\n");
+        b.append("  \"scene\": ").append(Json.str(scriptScene)).append(",\n");
+        b.append("  \"tickMs\": ").append(scriptTickMs).append(",\n");
         b.append("  \"width\": ").append(frameW).append(",\n");
         b.append("  \"height\": ").append(frameH).append(",\n");
         b.append("  \"every\": ").append(every).append(",\n");
@@ -209,7 +259,7 @@ public final class ExportTrace {
         try (Writer w = new OutputStreamWriter(new FileOutputStream(dst), StandardCharsets.UTF_8)) {
             w.write(b.toString());
         } catch (java.io.IOException e) {
-            die(script.name + "：写不出 " + dst.getPath() + "：" + e);
+            die(scriptName + "：写不出 " + dst.getPath() + "：" + e);
         }
     }
 }

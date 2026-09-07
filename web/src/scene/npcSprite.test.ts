@@ -6,7 +6,7 @@ import { getScene } from '../data/scenesEager'
 import { KNOWN_DEFECTS } from '../assets/knownMissing'
 import { createNpcs } from '../state/npc'
 import { step } from '../state/step'
-import { TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
+import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import { npcSprite } from './npcSprite'
 
 /**
@@ -52,7 +52,7 @@ describe('NPC 精灵', () => {
     // 主角画在 `(x, y-32)`，NPC 画在 `(x, y)`（`NPC.drawNPC` vs `Role.drawHero`）。
     // 位置这件事有真值：逐 tick 拿三份 trace 里的 NPC 像素坐标对。
     let checked = 0
-    for (const name of TRACE_NAMES) {
+    for (const name of SCENE_TRACE_NAMES) {
       const trace = readTrace(name)
       let world = replayWorld(trace, getScene)
       for (const tick of trace.ticks) {
