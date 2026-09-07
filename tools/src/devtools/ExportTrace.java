@@ -93,7 +93,9 @@ public final class ExportTrace {
     // ================= 主流程 =================
 
     private String run() throws Exception {
-        TraceDriver driver = new SceneDriver(script);
+        // 选驱动器。剧本的 driver 字段说了算（TraceScript 已经校过它认识这个名字），
+        // 而写进真值头的判别名仍由驱动器自己报 —— 见 requireKind。
+        TraceDriver driver = script.isBattle() ? new BattleDriver(script) : new SceneDriver(script);
         String kind = requireKind(driver);
         prepareFramesDir();
 
