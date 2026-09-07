@@ -1,8 +1,28 @@
 # 派工：把一张 bd 票交给一个 agent
 
-这份文件是**被派工的 agent 自己要读的**。派工者只需要给一句话：
+这份文件是**被派工的 agent 自己要读的**。派工者给的那一句话必须**以斜杠命令开头**：
 
-> 你负责 bd issue `<id>`。先跑 `bd show <id>` 读票，再读 `docs/agents/dispatch.md`，然后用 `/implement` 完成它。
+> `/implement bd issue <id>。先跑 bd show <id> 读票，再读 docs/agents/dispatch.md。`
+
+**「行首」不是格式讲究，是它生效与否的分界。** 斜杠命令由**客户端**展开：写在
+行首，agent 收到的第一条消息是 `<command-name>/mattpocock-skills:implement</command-name>`
+加参数、skill 正文直接进上下文；夹在句子中间（「……然后用 `/implement` 完成它」）
+就只是一句普通文本，模型把它当建议，skill **一次都不会生效**。
+
+这不是推测，是数出来的（2026-09-06，同一个仓库、相邻的两张票）：
+
+| prompt 写法 | skill 生效 | typecheck | pnpm test | /code-review |
+|---|---|---|---|---|
+| 句中「用 `/implement`」 | 否 | **0 次** | **0 次** | 0 次 |
+| 行首 `/implement …` | **是** | **13 次** | **9 次** | **1 次** |
+
+那个 0 次是有代价的：`xl-1vu.6` 因此一次 web 门禁都没跑，漏了一条表态，
+主干合并时才发现。skill 正文里「经常跑 typecheck、最后跑全量测试、用
+`/code-review` 复查」这三句，实测是真的会被照做的。
+
+⚠️ 一个会骗人的读数：**Skill 工具的调用次数是 0，不代表 skill 没生效** ——
+行首展开发生在客户端，根本不经过那个工具。要判断生效与否，看 agent 收到的
+第一条消息里有没有 `<command-name>` 块。
 
 票的正文与验收标准是唯一的需求来源；本仓库的约定在 `CLAUDE.md` 与
 `docs/agents/issue-tracker.md`。
@@ -214,11 +234,16 @@ git branch -d <slug>                     # 分支要单独删，它不管
 
     cd web && pnpm exec vite-node scripts/compare.ts -- <剧本>
 
-**4. 测试环境会被你自己的环境污染。** 验 `.zshrc` 里那个按项目选配置目录的
+**4. worktree 里的 `web/node_modules` 是空的。** herdr 新建的 worktree 不带它，
+头一次跑 `compare-frames.sh` 会得到 `Command "vite-node" not found`，跑
+`pnpm typecheck` 会得到 `tsc: command not found`。**先 `cd web && pnpm install`。**
+不装就等于两条 web 门禁一条都没跑过——`xl-1vu.6` 就是这么漏掉一条表态的。
+
+**5. 测试环境会被你自己的环境污染。** 验 `.zshrc` 里那个按项目选配置目录的
 `claude()` 函数时，头一轮每个分支都返回同一个值——因为跑测试的这个进程本身就
 带着 `CLAUDE_CONFIG_DIR`。要 `env -u CLAUDE_CONFIG_DIR zsh -ic '...'` 才测得准。
 凡是「读环境变量再决定」的东西，先把那个变量清掉。
 
-**5. 引号与 heredoc。** 中文正文里的半角引号会提前闭合 shell 字符串（派工脚本
+**6. 引号与 heredoc。** 中文正文里的半角引号会提前闭合 shell 字符串（派工脚本
 曾因此 exit 127）；一条命令里写两个 heredoc 会产生一个消息是垃圾的提交，而且
 **不报错**。长文本一律写文件再 `--file=<路径>` 或 `"$(cat 文件)"`。
