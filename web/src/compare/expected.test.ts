@@ -46,10 +46,15 @@ describe('跨端比对的期望表', () => {
     // 与 unassembled 同一条理由（一帧都没比过），只是「比不了」的原因不同：
     // 驱动器装得出，可这条剧本会走进一层还没实现的绘制。分母从表里现数。
     const unpainted = Object.entries(EXPECTED).filter(([, e]) => e.status === 'unpainted')
+    // xl-rh9.12 把菜单 / 提示图 / 状态图标四层画出来之后，`battle-menus` 换成了
+    // 真量出来的 gap —— 今天**一条 unpainted 都没有**，所以下面那个循环是空转的。
+    // 签一个 0（而不是删掉，也不是留着恒红的 `> 0`）：谁再表一条 unpainted，
+    // 这一行立刻红，他得回来把这句话改掉，顺带读到下面那三条要求什么。
+    // 同一个处置也用在 `battle/render/drawList.test.ts` 那一头。
     expect(
-      unpainted.length,
-      '一条 unpainted 都没有了？那几层画出来之后把这条判据删掉',
-    ).toBeGreaterThan(0)
+      unpainted.map(([name]) => name),
+      '有剧本表 unpainted 了？把这条登记改掉，下面那三条会开始验它',
+    ).toEqual([])
     for (const [name, e] of unpainted) {
       expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
       expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()

@@ -36,6 +36,7 @@ import {
 import {
   bgmAssetId,
   dialogueAssetId,
+  drugPictureAssetId,
   headAssetId,
   mapAssetId,
   narratageBgAssetId,
@@ -45,6 +46,7 @@ import {
 import { normalizePath } from '../src/assets/path'
 import { listFiles } from '../src/assets/listFiles'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
+import { DRUGS } from '../src/battle/drugs'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
@@ -89,6 +91,16 @@ const DIALOGUE_IMAGES = {
  * 画面上跟正常的循环分不开。
  */
 const NARRATAGE_BG_DIR = 'backImages/NarratageBackImages'
+
+/**
+ * 药品菜单那六张介绍图（xl-rh9.12）。原版 `ShopReader.readDrug()` 拼的是
+ * `sources/Shop/药品/回复类/<drug.txt 第 4 列>`。
+ *
+ * **不在 `image/` 下**，所以它不归 `bakeBattleImages` 那趟现扫；张数与文件名
+ * 同样不写死 —— 目录里有什么就烘什么，再拿 `DRUGS`（判据在 `drugs.test.ts`，
+ * 它自己去读那份 GBK 数据）逐条对账。少一张的表现是"点到那一行没有图"。
+ */
+const DRUG_PICTURE_DIR = 'sources/Shop/药品/回复类'
 
 /**
  * 要转码哪几首背景音乐，范围**从行为真值里现读**：`tools/traces/out/` 下的
@@ -318,6 +330,27 @@ function main(): void {
     bytes += toWebp(source, resolve(ASSETS_OUT, relative))
   }
   console.log(`  旁白背景图 ${BG_COUNT} 帧 → narratage/*.webp`)
+
+  // 药品菜单的介绍图（xl-rh9.12）。分母是现扫出来的，对账用的是 `DRUGS`。
+  const drugPictures = readdirSync(resolve(REPO, DRUG_PICTURE_DIR)).sort()
+  if (drugPictures.length === 0) {
+    // "一张都没扫到"与"全烘完了"在产物上长得一样：两边都是零个差异。
+    console.error(`${DRUG_PICTURE_DIR} 下一张图都没有 —— 药品介绍图的分母是从这里现扫的`)
+    process.exit(1)
+  }
+  for (const file of drugPictures) {
+    const relative = `drugs/${stripExtension(file)}.webp`
+    manifest[drugPictureAssetId(file)] = relative
+    bytes += toWebp(resolve(REPO, DRUG_PICTURE_DIR, file), resolve(ASSETS_OUT, relative))
+  }
+  // 对账：`drug.txt` 里点名的那六张，一张都不许烘不出来。目录扫得到而数据
+  // 没点名的（今天没有）留着无妨 —— 反过来才是错。
+  for (const drug of DRUGS) {
+    if (manifest[drugPictureAssetId(drug.picture)] === undefined) {
+      missing.push(`药品介绍图 ${DRUG_PICTURE_DIR}/${drug.picture}`)
+    }
+  }
+  console.log(`药品介绍图 ${drugPictures.length} 张 → drugs/*.webp`)
 
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)

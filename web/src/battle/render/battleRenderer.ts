@@ -234,11 +234,20 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
 /**
  * 一个战斗素材的 URL。**边界判在这里，只判一次**：`技能动画` 与 `背景动画`
  * 走 `public/` 按需加载，其余走带指纹的主包产物（`assets/battleAssets.ts`）。
+ *
+ * `drug:` 是唯一一个不带 `battle:` 前缀却要在战斗里画的（xl-rh9.12）：药品
+ * 菜单的介绍图在 `sources/Shop/药品/回复类/` 下，不在 `image/` 里，所以走
+ * 主包那一条 —— 按需那条边界是按 `image/` 的顶层目录切的，`drug:` 根本不在
+ * 那个坐标系里。**前缀是白名单**：认不出来的一律抛，不猜；猜出来的 ID 要么
+ * 查不到，要么恰好撞上别的素材（画错图，且悄无声息）。
  */
+const DRUG_PREFIX = 'drug:'
+
 async function urlOf(id: AssetId): Promise<string> {
+  if (id.startsWith(DRUG_PREFIX)) return resolveAsset(id)
   const relative = id.startsWith('battle:') ? id.slice('battle:'.length) : null
   if (relative === null) {
-    throw new Error(`战斗渲染只认 battle: 前缀的逻辑 ID，收到 ${id}`)
+    throw new Error(`战斗渲染只认 battle: 与 ${DRUG_PREFIX} 前缀的逻辑 ID，收到 ${id}`)
   }
   return isDeferredBattleAsset(relative) ? resolveDeferredBattleAsset(id) : resolveAsset(id)
 }

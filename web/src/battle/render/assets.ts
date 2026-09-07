@@ -1,6 +1,9 @@
 import { battleAssetId } from '../../assets/battleAssets'
 import type { AssetId } from '../../assets/ids'
+import { drugPictureAssetId } from '../../assets/ids'
 import { normalizePath } from '../../assets/path'
+import { DRUGS } from '../drugs'
+import { SKILLS, SKILL_MENU, SKILL_NUMBER } from '../skills'
 import type { BattleWorld } from '../types'
 import type { PartyKey } from '../units'
 
@@ -148,6 +151,110 @@ export function backgroundId(path: string): AssetId {
   return battleAssetId(normalizePath(path))
 }
 
+// ===== 技能菜单 / 药品菜单 / 提示图 / 战斗状态图标（xl-rh9.12）=====
+
+/** `SkillMenu` 的背板（`image/技能菜单/技能显示框.png`）。 */
+export const SKILL_MENU_BACK_ID = battleId('技能菜单/技能显示框.png')
+/** `DrugMenu` 的背板（`image/药品菜单/药品显示框.png`）。 */
+export const DRUG_MENU_BACK_ID = battleId('药品菜单/药品显示框.png')
+
+/**
+ * 技能菜单里第 `index` 颗按钮（0 基）现在贴的那一张。
+ *
+ * 原版 `SkillMenu.getImage()` 拼的是
+ * `image/技能菜单/技能按钮/<角色>/技能<i>按钮<j>.png`，`i` 从 1 起、
+ * `j` 是 1 常态 / 2 待点 / 3 按下 —— 与 `GameButton` 那三张一一对应。
+ */
+export function skillButtonId(key: PartyKey, index: number, variant: 1 | 2 | 3): AssetId {
+  return battleId(`技能菜单/技能按钮/${HERO_DIR[key]}/技能${index + 1}按钮${variant}.png`)
+}
+
+/** 技能菜单的返回按钮（`SkillMenu.checkRound()` 现建的那一颗）。 */
+export function skillReturnId(variant: 1 | 2 | 3): AssetId {
+  return battleId(`技能菜单/技能按钮/返回/返回${variant}.png`)
+}
+
+/**
+ * 技能说明图。入参就是真值里 `menus.skill.introImage` 那个串（`"文敏/2"`），
+ * 它由 `step.ts` 拼成 `<SKILL_INTRO_DIR[key]>/<i+1>`。
+ */
+export function skillIntroId(introImage: string): AssetId {
+  return battleId(`技能说明/${introImage}.png`)
+}
+
+/**
+ * 药品菜单里第 `index` 颗按钮（0 基）。**第七颗是返回**，它跟前六颗不在同一
+ * 个命名规则上（`返回1.png` 而不是 `药品7按钮1.png`）—— 原版
+ * `DrugMenu.getImage()` 就是两个循环读进同一个 `buttonImages` 的。
+ */
+export function drugButtonId(index: number, variant: 1 | 2 | 3): AssetId {
+  if (index < 0 || index > DRUGS.length) {
+    throw new Error(`药品菜单只有 ${DRUGS.length + 1} 颗按钮（六种药 + 返回），要第 ${index} 颗`)
+  }
+  return index === DRUGS.length
+    ? battleId(`药品菜单/返回${variant}.png`)
+    : battleId(`药品菜单/药品${index + 1}按钮${variant}.png`)
+}
+
+/**
+ * 药品的介绍图。**不在 `image/` 下** —— 它是商店那一摊的数据
+ * （`sources/Shop/药品/回复类/`），见 `assets/ids.ts` 的 `drugPictureAssetId`。
+ */
+export function drugPictureId(index: number): AssetId {
+  const drug = DRUGS[index]
+  if (!drug) throw new Error(`药品菜单要第 ${index} 种药的介绍图，而一共只有 ${DRUGS.length} 种`)
+  return drugPictureAssetId(drug.picture)
+}
+
+/** 提示图。`file` 是**文件号**（1..22），不是 `show(i)` 的入参，见 `types.ts`。 */
+export function reminderId(file: number): AssetId {
+  if (!Number.isInteger(file) || file < 1 || file > REMINDER_COUNT) {
+    throw new Error(`提示图只有 1..${REMINDER_COUNT} 号，要的是 ${file}`)
+  }
+  return battleId(`提示图/${file}.png`)
+}
+
+/** `Reminder.loadImage()` 那个 `for(int i=1;i<=22;i++)`。 */
+export const REMINDER_COUNT = 22
+
+/**
+ * `BattleState.getImage()` 那个 12 路 switch：`type` → `image/状态/<名>.png`。
+ *
+ * 抄的是一张表，所以**有人核**：`assets.test.ts` 打开 GBK 的
+ * `src/battle/BattleState.java`，把那个 switch 的 `case N: … 状态/<名>.png`
+ * 逐条解出来再对。抄错一条的表现是"挂了状态，图标是另一个" —— 画面上完全
+ * 正常，只有逐帧比对量得出来。
+ */
+const STATE_ICON_NAME: Readonly<Record<number, string>> = {
+  1: '敏捷提升',
+  2: '武力提升',
+  3: '精气提升',
+  4: '体力提升',
+  5: '敏捷下降',
+  6: '武力下降',
+  7: '精气下降',
+  8: '体力下降',
+  9: '中毒',
+  10: '麻痹',
+  11: '金钟罩',
+  12: '潜能爆发',
+}
+
+/** 这 12 个 `type` —— `battleTextureIds` 与判据都拿它当分母。 */
+export const STATE_ICON_TYPES: readonly number[] = Object.keys(STATE_ICON_NAME).map(Number)
+
+/** 战斗状态图标（`BattleState.getImage()` 那个 12 路 switch）。 */
+export function stateIconId(type: number): AssetId {
+  const name = STATE_ICON_NAME[type]
+  if (name === undefined) {
+    throw new Error(
+      `战斗状态 ${type} 没有图标 —— 原版 BattleState.getImage() 的 switch 只有 1..12，` +
+        `落到 default 时 stateImage 还是上一次那张（或 null）。挂上这个 type 的是状态层。`,
+    )
+  }
+  return battleId(`状态/${name}.png`)
+}
+
 /**
  * **这一场用得到的全部纹理**，开打之前一次载齐。
  *
@@ -175,6 +282,47 @@ export function battleTextureIds(w: Pick<BattleWorld, 'background' | 'party' | '
     for (const variant of [1, 2, 3] as const) ids.add(commandButtonId(key, variant))
   }
   for (const type of [1, 2]) for (let d = 0; d <= 9; d++) ids.add(hurtDigitId(type, d))
+  // 菜单 / 提示图 / 状态图标（xl-rh9.12）。这几批**与出场阵容无关的**部分
+  // 全量载：原版三个构造函数就是无条件读全的（`Reminder` 读 22 张、
+  // `BattleState.getImage()` 那 12 路 switch 谁都可能走到、药品菜单六种药
+  // 与返回按钮各三张）。按"这一场会用到哪几张"筛，等于在这里再实现一遍
+  // 状态层的分支，而筛错一条的表现是"某一帧少一个精灵"。
+  ids.add(SKILL_MENU_BACK_ID)
+  ids.add(DRUG_MENU_BACK_ID)
+  for (let f = 1; f <= REMINDER_COUNT; f++) ids.add(reminderId(f))
+  for (const type of STATE_ICON_TYPES) ids.add(stateIconId(type))
+  for (const variant of [1, 2, 3] as const) {
+    ids.add(skillReturnId(variant))
+    for (let i = 0; i <= DRUGS.length; i++) ids.add(drugButtonId(i, variant))
+  }
+  for (let i = 0; i < DRUGS.length; i++) ids.add(drugPictureId(i))
+  // 技能菜单那几颗**按出战名单**：原版 `SkillMenu.getImage()` 三段各套着
+  // `if(bp.zxf!=null)`，没出战的人一张都不读。
+  for (const h of w.party) {
+    const key = h.spec.key
+    for (let i = 0; i < SKILL_NUMBER[key]; i++) {
+      for (const variant of [1, 2, 3] as const) ids.add(skillButtonId(key, i, variant))
+      ids.add(skillIntroId(`${HERO_DIR[key]}/${i + 1}`))
+      // 菜单上点得到的那几招，各自的技能动画与**背景动画**（xl-rh9.12）。
+      //
+      // 原先这里只有 `h.spec.attack` 那一套普攻的帧 —— 五条老剧本一次技能都
+      // 没用过，所以少推这一批的表现是"什么都没发生"。`battle-menus` 一点
+      // 「技」就撞上了：`textureOf` 当场报「这一场没有载入它」。
+      //
+      // 分母是**菜单上真有几颗按钮**（`SKILL_NUMBER`），不是表里写满的五颗：
+      // 点不到的那几招这一场一帧都取不到。
+      //
+      // **陆雪琪那几招今天不在 `SKILLS` 里**（一条都没抄，归 xl-rh9.14），
+      // 所以这里查不到就跳过 —— 而这不是静默：真点下去，`step.ts` 那一头会
+      // 当场抛并点名 xl-rh9.14，比"少载几张图"早得多。
+      const entry = SKILLS[key][SKILL_MENU[key][i]!.pattern]
+      if (!entry) continue
+      for (let f = 1; f <= entry.animation.length; f++) ids.add(skillAnimId(entry.animation.name, f))
+      for (let f = 1; f <= entry.background.length; f++) {
+        ids.add(backgroundAnimId(entry.background.name, f))
+      }
+    }
+  }
   for (const h of w.party) {
     ids.add(heroHeadId(h.roleCode))
     ids.add(heroPanelId(h.spec.key))

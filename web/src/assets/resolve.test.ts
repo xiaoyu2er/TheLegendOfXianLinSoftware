@@ -25,6 +25,14 @@ function bundledBattleFilesInRepo(): number {
   return listFiles(repoPath(IMAGE_ROOT)).filter((f) => !isDeferredBattleAsset(f)).length
 }
 
+/**
+ * 药品介绍图那一类的分母（xl-rh9.12），同样从素材源头数：
+ * `sources/Shop/药品/回复类/` 下有几张，映射表里就该有几条。
+ */
+function drugPictureFilesInRepo(): number {
+  return readdirSync(repoPath('sources/Shop/药品/回复类')).length
+}
+
 describe('资产逻辑 ID', () => {
   it('从地图文件名推出 ID，扩展名与目录都不参与', () => {
     expect(mapAssetId('宿舍.png')).toBe('map:宿舍')
@@ -107,6 +115,9 @@ describe('资产逻辑 ID', () => {
     // 目录 —— 那 1770 帧不在这张表里，走 `resolveDeferredBattleAsset`。
     // 边界与两边的双向判据见 `battleAssets.test.ts`。
     expect(ids.filter((id) => id.startsWith('battle:'))).toHaveLength(bundledBattleFilesInRepo())
+    // 药品菜单的介绍图（xl-rh9.12）。它不在 `image/` 下，所以不归上面那个
+    // 分母 —— 见 `assets/ids.ts` 的 `drugPictureAssetId`。
+    expect(ids.filter((id) => id.startsWith('drug:'))).toHaveLength(drugPictureFilesInRepo())
     const known = [
       'map:',
       'role:walk:',
@@ -120,6 +131,8 @@ describe('资产逻辑 ID', () => {
       'bgm:',
       // 战斗常用素材（xl-rh9.2）。
       'battle:',
+      // 药品菜单的介绍图（xl-rh9.12），在 `sources/Shop/` 下不在 `image/` 下。
+      'drug:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })

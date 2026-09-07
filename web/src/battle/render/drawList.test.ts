@@ -174,8 +174,9 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
         'state-blank',
       ].sort(),
     )
-    // 反方向：碰不到的那 11 层是**有名有姓**的，不是"剩下的"。其中 6 层今天
-    // 画不出来（各自归哪张票见 drawList.ts），5 层是这一场里确实没发生。
+    // 反方向：碰不到的那 11 层是**有名有姓**的，不是"剩下的"。**这一场碰不到
+    // 不等于画不出来** —— 菜单那几层 xl-rh9.12 已经画出来了，只是 battle-min
+    // 一次菜单都没开；今天真正画不出来的只剩胜利结算（xl-rh9.13）。
     // 这一条只跑 battle-min；「所有战斗真值合起来盖到了哪几层」在下面那个
     // describe 里，两者的分母不同。
     const unseen = BATTLE_LAYERS.filter((l) => !seen.has(l))
@@ -183,13 +184,13 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
       [
         'background-anim', // 只有技能才放，这一场全是普攻
         'dead-anim', // 我方没人倒下
-        'drug-menu', // 没实现，归 xl-rh9.11
-        'enemy-state', // 没实现（真值没记坐标），归 xl-rh9.11
-        'game-over', // 没实现，归 xl-rh9.8；这一场也没输
+        'drug-menu', // 这一场没点过「物」（battle-menus 点了）
+        'enemy-state', // 这一场没人挂上状态（battle-menus 敌我各挂过一次）
+        'game-over', // 这一场没输
         'hero-state', // 同 enemy-state
         'pet', // 结构性缺席：世界里根本没有这个字段
-        'reminder', // 没实现（真值只记了布尔），归 xl-rh9.11
-        'skill-menu', // 没实现，归 xl-rh9.11
+        'reminder', // 这一场没有提示（battle-menus 触发过两种）
+        'skill-menu', // 这一场没点过「技」
         'victory-anim', // 胜利动画与胜利结算同一拍开始，而那一拍收不进来
         'victory-reminder', // 画不出来，归 xl-rh9.13；这一场只在末拍出现
       ].sort(),
@@ -275,6 +276,192 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
   })
 })
 
+describe('battle-menus：菜单 / 提示图 / 状态图标四层逐帧点名（xl-rh9.12）', () => {
+  /**
+   * 这四层的判据全在 `battle-menus` 那份真值里 —— 它真的点过「技」与「物」、
+   * 真的挂上过敌我两侧的战斗状态。这里回放它，把**跨端逐帧比对会采样到的
+   * 那几拍**（`--every 25`）逐条摊开断言。
+   *
+   * 为什么挑采样点而不是随便挑几拍：这几拍正是像素比对真的会看的那几帧。
+   * 断言写在别处的话，"清单对了"与"比对看到的那一帧对了"就分了家。
+   */
+  const frames = (() => {
+    const trace = readBattleTrace('battle-menus')
+    const world = replayBattle(trace, spriteSize)
+    const paint = createPaintState(world)
+    const out = new Map<number, DrawOp[]>()
+    for (const tick of trace.ticks) {
+      for (const input of tick.input) applyPaintInput(world, paint, input)
+      stepBattle(world, tick.input)
+      advancePaintState(world, paint)
+      // 末拍是胜利结算（xl-rh9.13），照旧抛 —— 它由下面单独一条钉住。
+      if (snapshotBattle(world).ui.victory) break
+      out.set(tick.t, battleDrawList(world, paint))
+    }
+    return out
+  })()
+
+  const at = (t: number, layer: LayerName): DrawOp[] => {
+    const ops = frames.get(t)
+    expect(ops, `第 ${t} 拍没收到清单`).toBeDefined()
+    return ops!.filter((op) => op.layer === layer)
+  }
+  /** 一条绘制指令摊成可比的形状。`rect` 连源矩形一起摊 —— 提示图靠它。 */
+  const flat = (op: DrawOp): unknown =>
+    op.kind === 'text'
+      ? ['text', op.text, op.x, op.y]
+      : op.kind === 'image'
+        ? ['image', op.id, op.x, op.y]
+        : [
+            'rect',
+            op.id,
+            [op.dest.x, op.dest.y, op.dest.width, op.dest.height],
+            [op.src.x, op.src.y, op.src.width, op.src.height],
+          ]
+
+  it('第 125 拍：药品菜单开着，第一颗按钮待点、六行存货都是 0、金创药的介绍图在', () => {
+    // 真值 t=125：buttons=[2,1,1,1,1,1,1]、stock 六个 0、introDrug=0、
+    // introY=226、introText="hp 300 mp 0"。
+    //
+    // **存货那六个 0 不是占位**：`ShopReader.readDrug()` 不给 `numberGOT` 赋值，
+    // 新开档六种药一个都没有 —— 正因如此点下去走的是 `reminder.show(19)`
+    // 那一路，这条剧本才同时盖住了药品菜单与提示图两层。
+    expect(at(125, 'drug-menu').map(flat)).toEqual([
+      ['image', 'battle:药品菜单/药品显示框.png', 340, 200],
+      ['image', 'battle:药品菜单/药品1按钮2.png', 395, 226],
+      ['image', 'battle:药品菜单/药品2按钮1.png', 395, 256],
+      ['image', 'battle:药品菜单/药品3按钮1.png', 395, 286],
+      ['image', 'battle:药品菜单/药品4按钮1.png', 395, 316],
+      ['image', 'battle:药品菜单/药品5按钮1.png', 395, 346],
+      ['image', 'battle:药品菜单/药品6按钮1.png', 395, 376],
+      // 第七颗是返回，命名规则与前六颗**不同**。
+      ['image', 'battle:药品菜单/返回1.png', 395, 406],
+      ['text', '0', 575, 246],
+      ['text', '0', 575, 276],
+      ['text', '0', 575, 306],
+      ['text', '0', 575, 336],
+      ['text', '0', 575, 366],
+      ['text', '0', 575, 396],
+      // 介绍图不在 `image/` 下 —— 它是商店那一摊的数据，前缀因此是 `drug:`。
+      ['image', 'drug:金创药.png', 220, 226],
+      ['text', 'hp 300 mp 0', 230, 246],
+    ])
+  })
+
+  it('第 275 拍：技能菜单画的是张小凡那组，介绍图却还是文敏的', () => {
+    // 真值 t=275：group="zhang"、buttons=[1,2]、returnY=286，而
+    // introImage="文敏/2"、introY=256。
+    //
+    // **这不是抄错了，是原版缺陷的复刻**：`SkillMenu.isDrawIntro` 一旦置真就
+    // 再也没人清过它，`introduceImage` 也留着 —— 于是张小凡这一轮的菜单上
+    // 挂着文敏上一轮鼠标扫过的那张说明图。改"顺手清一下"会让这一帧对不上。
+    expect(at(275, 'skill-menu').map(flat)).toEqual([
+      ['image', 'battle:技能菜单/技能显示框.png', 340, 200],
+      ['image', 'battle:技能菜单/技能按钮/张小凡/技能1按钮1.png', 395, 226],
+      ['image', 'battle:技能菜单/技能按钮/张小凡/技能2按钮2.png', 395, 256],
+      // 返回按钮排在最后一颗的下一格 —— 张小凡只有两颗技能，所以是 286。
+      ['image', 'battle:技能菜单/技能按钮/返回/返回1.png', 395, 286],
+      ['image', 'battle:技能说明/文敏/2.png', 160, 256],
+    ])
+  })
+
+  it('第 175 拍：文敏那一组三颗，返回按钮跟着往下挪一格', () => {
+    // 同一层换一组：文敏 3 颗（SKILL_NUMBER.yu = 3）、返回在 316。
+    // 与上一条对着看，"画错组"与"返回按钮算错位置"就分得开了。
+    expect(at(175, 'skill-menu').map(flat)).toEqual([
+      ['image', 'battle:技能菜单/技能显示框.png', 340, 200],
+      ['image', 'battle:技能菜单/技能按钮/文敏/技能1按钮1.png', 395, 226],
+      ['image', 'battle:技能菜单/技能按钮/文敏/技能2按钮2.png', 395, 256],
+      ['image', 'battle:技能菜单/技能按钮/文敏/技能3按钮1.png', 395, 286],
+      ['image', 'battle:技能菜单/技能按钮/返回/返回1.png', 395, 316],
+    ])
+    // 这一拍 isDrawIntro 还是假的（鼠标刚点进来），所以没有第五条图。
+  })
+
+  it('提示图：文件号与 show() 的入参差一，目标矩形每拍朝两边张开', () => {
+    // `show(19)`（药品存货不足）画的是 **20.png** —— `loadImage()` 装的是
+    // 1..22 而 `show(i)` 取 `images.get(i)`。差一抄反的表现是"提示图换了一张"，
+    // 而那 22 张长得都差不多。
+    expect(at(125, 'reminder').map(flat)).toEqual([
+      ['rect', 'battle:提示图/20.png', [460, 112, 80, 16], [0, 0, 128, 24]],
+    ])
+    // 另外两种提示：t=200 是 7.png（灵力不够 / 技能相关那一路），
+    // t=300 是 2.png。三种都由这条剧本触发，源矩形恒为 (0,0)-(128,24)。
+    expect(at(200, 'reminder').map(flat)).toEqual([
+      ['rect', 'battle:提示图/7.png', [490, 118, 20, 4], [0, 0, 128, 24]],
+    ])
+    expect(at(300, 'reminder').map(flat)).toEqual([
+      ['rect', 'battle:提示图/2.png', [485, 117, 30, 6], [0, 0, 128, 24]],
+    ])
+    // **这一层是战斗里唯一真的在缩放的**：目标 80×16 对源 128×24。
+    // 采样方式在这里看得见（Java2D 最近邻 / Pixi 默认线性，见 battleRenderer）。
+  })
+
+  it('战斗状态图标：我方那一层与怪物那一层各画各的，落点是 set() 写死的', () => {
+    // 真值 t=300：文敏挂着 type 1（敏捷提升）在 (800,150)，第 3 槽那只怪
+    // 挂着 type 8（体力下降）在 (60,330)。敌我两侧由这一条剧本一起盖住。
+    expect(at(300, 'hero-state').map(flat)).toEqual([
+      ['image', 'battle:状态/敏捷提升.png', 800, 150],
+    ])
+    expect(at(300, 'enemy-state').map(flat)).toEqual([
+      ['image', 'battle:状态/体力下降.png', 60, 330],
+    ])
+    // t=200 时怪物那边还没挂上 —— 两层不是同一个开关。
+    expect(at(200, 'hero-state').map(flat)).toEqual([
+      ['image', 'battle:状态/敏捷提升.png', 800, 150],
+    ])
+    expect(at(200, 'enemy-state')).toEqual([])
+  })
+
+  it('四层的 z 序：药品菜单在控制台之后、技能菜单在行动条之后、状态图标在技能动画之后', () => {
+    // 次序是 `BATTLE_LAYERS` 定的，而那份名单由本文件开头那条从 GBK 源码现解
+    // 出来对。这里换一个角度再钉一遍：真的画出来的那几拍，相邻层的相对位置。
+    const rank = new Map(BATTLE_LAYERS.map((l, i) => [l, i]))
+    const seq = (t: number): LayerName[] => {
+      const ops = frames.get(t)!
+      return [...new Set(ops.map((op) => op.layer))]
+    }
+    // 第 125 拍：控制台已经收起来了（点「物」那一下），药品菜单排在
+    // 状态栏之后、我方走图之前。
+    expect(seq(125).filter((l) => ['state-blank', 'drug-menu', 'hero'].includes(l))).toEqual([
+      'state-blank',
+      'drug-menu',
+      'hero',
+    ])
+    // 第 175 拍：技能菜单夹在行动条与怪物被击之间。
+    expect(seq(175).filter((l) => ['progress-bar', 'skill-menu'].includes(l))).toEqual([
+      'progress-bar',
+      'skill-menu',
+    ])
+    // 第 300 拍：技能动画 → 我方状态 → 怪物状态 → 提示图，一路递增。
+    const order = seq(300).filter((l) =>
+      ['skill-anim', 'hero-state', 'enemy-state', 'reminder'].includes(l),
+    )
+    expect(order).toEqual(['skill-anim', 'hero-state', 'enemy-state', 'reminder'])
+    expect(order.map((l) => rank.get(l)!)).toEqual([...order.map((l) => rank.get(l)!)].sort((a, b) => a - b))
+  })
+
+  it('末拍照旧抛，点名 xl-rh9.13 —— 这四层画出来了，胜利结算还没有', () => {
+    const trace = readBattleTrace('battle-menus')
+    const world = replayBattle(trace, spriteSize)
+    const paint = createPaintState(world)
+    let threw: string | null = null
+    for (const tick of trace.ticks) {
+      for (const input of tick.input) applyPaintInput(world, paint, input)
+      stepBattle(world, tick.input)
+      advancePaintState(world, paint)
+      if (!snapshotBattle(world).ui.victory) continue
+      try {
+        battleDrawList(world, paint)
+      } catch (e) {
+        threw = e instanceof Error ? e.message : String(e)
+      }
+      break
+    }
+    expect(threw, 'battle-menus 的末拍没有抛 —— 胜利结算被静默跳过了').toMatch(/xl-rh9\.13/)
+  })
+})
+
 describe('全部战斗真值合起来画到了哪几层', () => {
   /**
    * **哪几层真的被像素比对盖住了**，逐层登记。
@@ -292,36 +479,34 @@ describe('全部战斗真值合起来画到了哪几层', () => {
   const COVERED: readonly LayerName[] = [
     'angry-bar',
     'background',
+    // xl-rh9.12 之前这一层只有代码没有判据：battle-menus 是唯一用技能的剧本，
+    // 而它在开菜单那一拍就先撞上 drug-menu 抛了，背景动画一帧也没走到。
+    'background-anim',
     'command',
     'dead-anim',
+    'drug-menu',
     'enemy',
     'enemy-be-attacked',
+    'enemy-state',
     'game-over',
     'hero',
     'hero-be-attacked',
+    'hero-state',
     'hurt-value',
     'instruct',
     'mouse',
     'progress-bar',
+    'reminder',
     'skill-anim',
+    'skill-menu',
     'start-anim',
     'state-blank',
   ]
 
   /** 一次都没画到的层，各自写明为什么。**没有第三种。** */
   const UNCOVERED: Readonly<Record<string, string>> = {
-    'background-anim':
-      '只有技能才放。battle-menus 用了两次技能，可它在开菜单那一拍就先撞上 ' +
-      'drug-menu 抛了 —— 这一层仍然只有代码、没有判据。归 xl-rh9.12',
     'victory-anim': '与胜利结算同一拍开始，而那一拍先被 victory-reminder 拦下来抛（xl-rh9.13）',
     pet: '结构性缺席：世界里根本没有 pet 字段，只有陆雪琪的秘术召得出来',
-    'drug-menu':
-      '点「物」才打开。battle-menus 点过了，可这一层还没画 —— 撞上就抛，' +
-      '那条剧本因此在 expected.ts 里表着 unpainted。归 xl-rh9.12',
-    'skill-menu': '点「技」才打开，同 drug-menu —— 这一层抛，归 xl-rh9.12',
-    reminder: '真值已经记了是第几张与目标矩形（xl-rh9.11），可这一层还没画 —— 抛，归 xl-rh9.12',
-    'hero-state': '战斗状态图标：真值已经记了 type 与坐标，这一层还没画 —— 抛，归 xl-rh9.12',
-    'enemy-state': '同 hero-state，怪物身上那一层',
     'victory-reminder': '胜利结算画面归 xl-rh9.13 —— 这一层抛（状态层已由 xl-rh9.5 做完）',
   }
 
@@ -400,7 +585,7 @@ describe('伤害数字的位数', () => {
   })
 })
 
-describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () => {
+describe('哪条剧本在末拍之前抛，与它的表态对得上（xl-rh9.11）', () => {
   /**
    * `expected.ts` 的 `unpainted` 说的是：驱动器装得出，可**这条剧本**会走进一层
    * 还没实现的绘制，于是跨端比对在它身上一帧都比不成。
@@ -466,12 +651,29 @@ describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () =>
     expect(attempts.length).toBeGreaterThan(0)
   })
 
-  it('至少有一条剧本表着 unpainted —— 否则下面两条是空转的', () => {
+  it('今天一条战斗剧本都不表 unpainted —— 这是一份登记，不是自动推导', () => {
+    // xl-rh9.12 之前这里要求「至少有一条」，理由是没有的话下面 unpainted 那
+    // 一支就是空转的。四层画出来之后 `battle-menus` 换成了真量出来的 gap，
+    // 于是**一条都没有了** —— 而 unpainted 那一支现在确实是空转的。
+    //
+    // 把这条改成签一个 0，是为了让"空转"这件事**自己会响**：谁哪天再表一条
+    // unpainted（比如 xl-rh9.13 之前有人给胜利结算配一条只到末拍之外的剧本），
+    // 这一行立刻红，他得回来把这句话改掉，顺带就读到了下面那两支各自要求
+    // 什么。留着 `toBeGreaterThan(0)` 反而是恒红，留空则是恒绿。
+    //
+    // **另一支不是空转的**：五条 gap 剧本每一条都在跑「不许在末拍之前抛」。
     const unpainted = attempts.filter((a) => expectationOf(a.name).status === 'unpainted')
     expect(
-      unpainted.length,
-      '一条 unpainted 的战斗剧本都没有了？那几层画出来之后，把这一整个 describe 删掉',
-    ).toBeGreaterThan(0)
+      unpainted.map((a) => a.name),
+      '有剧本表 unpainted 了？把这条登记改掉，下面那一支会开始验它',
+    ).toEqual([])
+  })
+
+  it('剩下的每一条都真的比得成 —— 分母是全部战斗真值', () => {
+    // 上面那条签了 0 之后，「这个 describe 还在验东西吗」必须另有答案：
+    // 每一条剧本都要走到下面那一支去。
+    const checked = attempts.filter((a) => expectationOf(a.name).status !== 'unpainted')
+    expect(checked.length).toBe(BATTLE_TRACE_NAMES.length)
   })
 
   for (const a of attempts) {
