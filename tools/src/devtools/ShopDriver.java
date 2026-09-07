@@ -105,12 +105,6 @@ public final class ShopDriver implements TraceDriver {
     /** 本步派发出去的输入事件（写成数组是与场景/菜单真值同形）。 */
     private final List<String> pending = new ArrayList<>();
 
-    /** 音效观察点。静音导出下照样记得到文件名，见 {@link MusicTap}（xl-1vu.8）。 */
-    private final MusicTap music;
-
-    /** 本步触发的音效文件名，按调用先后排列。空数组 = 这一步原版不出声。 */
-    private String[] musicThisStep = new String[0];
-
     private int ip;                 // 当前指令
     private int at;                 // 产出这一步的那条指令（ip 在本步末尾就前进了）
     private int sub;                // 指令内的第几个事件（0=按下 1=松开）
@@ -119,7 +113,7 @@ public final class ShopDriver implements TraceDriver {
     private int steps;
     private boolean started;
 
-    ShopDriver(ShopScript script) { this.script = script; this.music = new MusicTap(script.name); }
+    ShopDriver(ShopScript script) { this.script = script; }
 
     private void fail(String msg) {
         String where = ip < script.steps.size()
@@ -140,7 +134,7 @@ public final class ShopDriver implements TraceDriver {
     @Override
     public boolean step() {
         if (!started) { start(); started = true; }
-        if (ip >= script.steps.size()) { music.requireRecorded(); return false; }
+        if (ip >= script.steps.size()) return false;
         if (steps >= script.maxSteps) {
             fail("超过剧本的 maxSteps=" + script.maxSteps + "，剧本没有跑完");
         }
@@ -152,10 +146,10 @@ public final class ShopDriver implements TraceDriver {
 
         panel().paint(sink);
 
-        // 在 paint 之后取，口径与菜单一致。商店这边实测 paint 一声都不出
+        // 音效不在这里取：由导出器在 step() 返回之后统一取走（MusicTap.afterStep）。
+        // 那也是 paint 之后，口径与菜单一致。商店这边实测 paint 一声都不出
         // （shop-trade 40 步，paint 期间 0 次），但菜单那边是真出声的
         // （EquipPanel.drawWarning 的两声禁止），所以两支统一按 paint 之后取。
-        musicThisStep = music.drain();
 
         if (done) { ip++; sub = 0; } else { sub++; }
         steps++;
@@ -354,7 +348,7 @@ public final class ShopDriver implements TraceDriver {
 
         // 最后一步：打开音效记录并当场自检。放在铺开局状态之后，是为了让
         // addDrug/addEquipment 万一出声也不会算到第 0 步头上。
-        music.arm();
+        MusicTap.arm(script.name);
     }
 
     /**
@@ -655,7 +649,7 @@ public final class ShopDriver implements TraceDriver {
         b.append("{\"t\":").append(index);
         b.append(",\"ip\":").append(at);
         b.append(",\"input\":[").append(String.join(",", pending)).append("]");
-        b.append(",\"music\":").append(Json.plainArr(musicThisStep));
+        b.append(",\"music\":").append(MusicTap.json());
         b.append(",\"shop\":").append(Json.str(active));
         b.append(",\"category\":").append(Json.str(category()));
         b.append(",\"coins\":").append(Money.getCoins());

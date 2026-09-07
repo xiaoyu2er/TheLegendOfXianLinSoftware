@@ -100,12 +100,6 @@ public final class MenuDriver implements TraceDriver {
     /** 本步派发出去的输入事件（菜单一步只有一个，写成数组是与场景真值同形）。 */
     private final List<String> pending = new ArrayList<>();
 
-    /** 音效观察点。静音导出下照样记得到文件名，见 {@link MusicTap}（xl-1vu.8）。 */
-    private final MusicTap music;
-
-    /** 本步触发的音效文件名，按调用先后排列。空数组 = 这一步原版不出声。 */
-    private String[] musicThisStep = new String[0];
-
     private int ip;              // 当前指令
     private int at;              // 产出这一步的那条指令（ip 在本步末尾就前进了）
     private int sub;             // 指令内的第几个事件（0=按下 1=松开）
@@ -118,7 +112,7 @@ public final class MenuDriver implements TraceDriver {
     private boolean warnEquipped;
     private boolean warnCannotUse;
 
-    MenuDriver(MenuScript script) { this.script = script; this.music = new MusicTap(script.name); }
+    MenuDriver(MenuScript script) { this.script = script; }
 
     private void fail(String msg) {
         String where = ip < script.steps.size()
@@ -139,7 +133,7 @@ public final class MenuDriver implements TraceDriver {
     @Override
     public boolean step() {
         if (!started) { start(); started = true; }
-        if (ip >= script.steps.size()) { music.requireRecorded(); return false; }
+        if (ip >= script.steps.size()) return false;
         if (steps >= script.maxSteps) {
             fail("超过剧本的 maxSteps=" + script.maxSteps + "，剧本没有跑完");
         }
@@ -155,12 +149,12 @@ public final class MenuDriver implements TraceDriver {
 
         current().paint(sink);
 
-        // 必须在 paint 之后取 —— **原版的 paint 真的出声**。EquipPanel.drawWarning()
-        // 里有两处 readmusic("禁止.wav")，就在把 isEquiped/canBeEquiped 清零的那同
-        // 一段里。实测 menu-equip 30 步记到的 14 次音效中，有 2 次（t=6 与 t=10 的
-        // 那两声禁止）是 paint 打出来的；drain 挪到 dispatch 之前，这两声会整体
-        // 错位到下一步。取样点与拒绝标志正相反：那两个标志要在 paint **之前**抓。
-        musicThisStep = music.drain();
+        // 音效不在这里取：它由导出器在 step() 返回之后统一取走（MusicTap.afterStep，
+        // xl-1vu.11 之前是四支驱动器各抄一遍）。那也是 paint 之后 —— **原版的 paint
+        // 真的出声**，EquipPanel.drawWarning() 里两处 readmusic("禁止.wav")，实测
+        // menu-equip 30 步记到的 14 次里有 2 次（t=6 与 t=10 那两声禁止）是 paint
+        // 打出来的。取样点与上面那两个拒绝标志正相反：标志要在 paint **之前**抓，
+        // 因为 drawWarning() 出声的同一段就把它们清零了。
 
         if (done) { ip++; sub = 0; } else { sub++; }
         steps++;
@@ -459,7 +453,7 @@ public final class MenuDriver implements TraceDriver {
 
         // 最后一步：打开音效记录并当场自检。放在铺开局状态之后，是为了让
         // addEquipment/addDrug 万一出声也不会算到第 0 步头上。
-        music.arm();
+        MusicTap.arm(script.name);
     }
 
     /**
@@ -614,7 +608,7 @@ public final class MenuDriver implements TraceDriver {
         b.append("{\"t\":").append(index);
         b.append(",\"ip\":").append(at);
         b.append(",\"input\":[").append(String.join(",", pending)).append("]");
-        b.append(",\"music\":").append(Json.plainArr(musicThisStep));
+        b.append(",\"music\":").append(MusicTap.json());
         b.append(",\"panel\":").append(Json.str(panelName()));
         b.append(",\"hero\":").append(currentHero());
         b.append(",\"heroes\":").append(heroesJson());
