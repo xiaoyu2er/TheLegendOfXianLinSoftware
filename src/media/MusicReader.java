@@ -9,6 +9,9 @@ public class MusicReader {
 	 }
 	 
 	 public static void readmusic(String s){
+		// 观察点：这一行在 playmusic 的 CAN_PLAY_MUSIC 判断之外，静音导出真值时
+		// 也记得下来。默认关闭，是空操作。见 tools.MusicLog 与 bd xl-1vu.8。
+		tools.MusicLog.record(s);
 		music.playmusic(s);
 	 }
 	 
