@@ -198,6 +198,13 @@ function pressMenuButton(b: MenuButton, x: number, y: number): void {
  * `buttonImage=normalImage`。按下之后把鼠标挪开再松手，那颗按钮的
  * `isclicked` 会一直挂着，下一次任何一个 `checkReleased` 都会把它当成
  * 「刚被点过」。照抄。
+ *
+ * **这一条今天观测不到**（xl-rh9.11 篡改 T3：在 `else` 里补上
+ * `b.isclicked = false`，逐字段比对全绿）。理由是结构性的：导出器的
+ * `clickMenuButton` 按下与松开用的是**同一个坐标**，于是命中与否两次相同 ——
+ * 落在框里的那颗两种写法都会被清，框外的那几颗 `isclicked` 本来就是 false。
+ * 要观测到它，得有一条剧本在按钮上按下、把游标挪开、再松手，而今天没有这种
+ * 指令。照抄它是因为它是原版真的会走的一支，不是因为有判据盖得住。
  */
 function releaseMenuButton(b: MenuButton, x: number, y: number): void {
   if (hit(b, x, y)) {

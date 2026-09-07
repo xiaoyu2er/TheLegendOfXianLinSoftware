@@ -269,23 +269,66 @@ describe('战斗状态层对齐行为真值', () => {
       expect(enemySide.length, '没有一份真值给怪物挂上过战斗状态').toBeGreaterThan(0)
     })
 
-    it('状态到期那一支也走到过 —— 只盖住"挂上"时 returnFromState 写反了看不出来', () => {
+    /** 某个还活着的我方单位，`state.usable` 从 true 变回 false 的那些拍。 */
+    function clearedTicks(name: string): number[] {
+      const ticks = traceOf(name).ticks
+      const out: number[] = []
+      for (let i = 1; i < ticks.length; i++) {
+        const prev = ticks[i - 1]!
+        if (
+          ticks[i]!.heroes.some((h, k) => prev.heroes[k]!.state.usable && !h.state.usable && !h.dead)
+        ) {
+          out.push(i)
+        }
+      }
+      return out
+    }
+
+    it('退回那一段（returnFromState）真的被调用过 —— 只盖住"挂上"时它写反了看不出来', () => {
       // 挂上（`checkState`）与退回（`returnFromState`）是严格互逆的两段。
       // 只盖住"挂上"的话，把退回那一段整个写错（甚至写成再加一次）推出来的
       // 过程一模一样 —— 因为它一次都没被调用。
-      // 观测点：某个还活着的单位，`state.usable` 从 true 变回了 false。
-      const expired = withState.filter((name) =>
-        traceOf(name).ticks.some((t, i, all) => {
-          if (i === 0) return false
-          const prev = all[i - 1]!
-          return t.heroes.some((h, k) => prev.heroes[k]!.state.usable && !h.state.usable && !h.dead)
-        }),
-      )
+      // `battle-menus` 里文敏的敏捷提升被退回时 speed 从 11 掉回 10，逐字段
+      // 比对盖得住那一拍。
+      const cleared = withState.filter((name) => clearedTicks(name).length > 0)
       expect(
-        expired.length,
-        '没有一份真值里的战斗状态到期过 —— returnFromState 那一支一次都没被调用，' +
+        cleared.length,
+        '没有一份真值里的战斗状态被退回过 —— returnFromState 一次都没被调用，' +
           '写反了和写对了推出来的东西完全相同。',
       ).toBeGreaterThan(0)
+    })
+
+    /**
+     * ⚠️ **第二处登记在案的观测不到**（xl-rh9.11 篡改验证 T18）。
+     *
+     * 状态被退回有**两条路**，而今天只有一条走得到：
+     *
+     * 1. **打赢那一刻**统一清（`Check.checkEnemyDead` 里那个
+     *    `for(Hero hero:bp.heroes){ if(isUsable){ returnFromState(); clear(); } }`）；
+     * 2. **回合数走完**（`BattleState.check()` 里 `roundNum<=0` 那一支）。
+     *
+     * `battle-menus` 走的是第 1 条：文敏那个 2 回合的敏捷提升在打赢那一拍
+     * （t=460）被清掉，speed 11→10。第 2 条一次都没走到 —— 实测把
+     * `checkStateCommon` 里 `returnFrom()` 后面那句 `clearState(s)` **整个删掉**，
+     * 逐字段比对全绿。
+     *
+     * 判别法写在这里：第 2 条走到的样子是「状态被清掉那一拍，胜负还没分」。
+     * 哪天有真值满足它，这一条就红，那时候上面的逐字段比对自己盖得住第 2 条，
+     * 这条登记该撤掉。
+     */
+    it('回合数走完那一条清除路径，今天还观测不到 —— 登记在案', () => {
+      const midBattle: string[] = []
+      for (const name of withState) {
+        const ticks = traceOf(name).ticks
+        for (const i of clearedTicks(name)) {
+          if (ticks[i]!.outcome === 'undecided') midBattle.push(`${name}@${ticks[i]!.t}`)
+        }
+      }
+      expect(
+        midBattle,
+        '有真值在胜负未分时清掉了战斗状态 —— `BattleState.check()` 里 roundNum 用完' +
+          '那一支现在走得到了，把这条登记换成正面比对。',
+      ).toEqual([])
     })
 
     /**
