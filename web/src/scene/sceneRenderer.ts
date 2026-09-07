@@ -10,6 +10,7 @@ import type { NpcState } from '../state/npc'
 import { createWorld } from '../state/step'
 import type { World } from '../state/types'
 import { TEXT_FONT_STACK } from '../textFont'
+import { FONT_SIZE, baselineY, layoutLine } from './narratageLayout'
 import { npcSprite } from './npcSprite'
 import { roleSprite } from './roleSprite'
 import { computeDrawOrder, computeViewport, mapTiles, npcLayerOffset } from './viewport'
@@ -37,17 +38,14 @@ function nearest(texture: Texture): Texture {
 }
 
 /**
- * 旁白文字的排版，四个数照抄原版 `Narratage.drawNarratage` / `init`：
- * 字号 20 的粗体白字，左边距 50，第 `i` 行的**基线**在 `fontSize * (3 + 2i)`
- * ——也就是 60 / 100 / 140 …，行距正好两倍字号。
+ * 旁白文字的排版在 `narratageLayout.ts`：字号、左边距、每行的基线、以及
+ * **逐字按格摆**的那条规则（xl-9bd.18）都在那边，这里只负责画。
  *
  * 字体原版写的是 `文鼎粗钢笔行楷`，那是一款没有随游戏交付的中文字体，两端
  * 各自退到本机的默认字体。**字形因此不会逐像素相同**，这是已知偏离，记在
  * `compare/expected.ts` 的 dorm-intro 那条里；为什么不打包一款字体来消掉它，
  * 见 `src/textFont.ts`。位置与颜色是准的。
  */
-const TEXT_LEFT = 50
-const FONT_SIZE = 20
 const FONT_STACK = TEXT_FONT_STACK
 
 export interface SceneRenderer {
@@ -297,10 +295,17 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       textCtx.font = `bold ${FONT_SIZE}px ${FONT_STACK}`
       textCtx.fillStyle = '#ffffff'
       textCtx.textBaseline = 'alphabetic'
+      // **逐字摆，不是 `fillText(整行)`**：浏览器给中文的步进不是原版
+      // `FontMetrics` 那个整 20 px，一行 43 个字累起来是十几个像素的横向
+      // 漂移（xl-9bd.18）。理由与实测见 `narratageLayout.ts`。
+      const measure = (char: string): number => textCtx.measureText(char).width
       for (let i = 0; i < MAX_LINE; i++) {
         const line = narratage.text[i]
         if (line == null) continue
-        textCtx.fillText(line, TEXT_LEFT, FONT_SIZE * (3 + 2 * i))
+        const y = baselineY(i)
+        for (const cell of layoutLine(line, measure)) {
+          textCtx.fillText(cell.char, cell.x, y)
+        }
       }
       narratageText.texture.source.update()
       drawnText = key
