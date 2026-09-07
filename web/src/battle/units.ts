@@ -30,7 +30,7 @@ export interface Attributes {
   strength: number
 }
 
-export function refreshValue(a: Attributes): Derived {
+export function derive(a: Attributes): Derived {
   return {
     hpMax: a.physicalPower * 70,
     mpMax: a.sprit * 30,
@@ -41,6 +41,19 @@ export function refreshValue(a: Attributes): Derived {
     defense: a.physicalPower * 5,
     skillDefense: a.physicalPower * 2 + a.sprit * 3,
   }
+}
+
+/**
+ * `refreshValue()` 整个方法：七个派生值重算，**再把 hp / mp 夹回上限**。
+ *
+ * 那两句 `if(hp>=hpMax){hp=hpMax;}` 在今天这两个调用点上都观测不到（建人物与
+ * 升级之后紧接着就是 `hp=hpMax`），照抄是因为读档那条路
+ * （`intialFromInfo`，归 M3）也调它，而那里的 hp 是从存档读来的。
+ */
+export function refreshValue(u: Attributes & Derived & { hp: number; mp: number }): void {
+  Object.assign(u, derive(u))
+  if (u.hp >= u.hpMax) u.hp = u.hpMax
+  if (u.mp >= u.mpMax) u.mp = u.mpMax
 }
 
 /** `expToLevelUp=(int)(500*Math.pow(1.4,level))`。 */
@@ -306,8 +319,17 @@ export function enemySpec(name: string): EnemySpec {
   return spec
 }
 
-/** `BattlePanel.initial` 里那个背景图 → BGM 的 switch。认不出的背景不播 BGM。 */
-const BGM_BY_BACKGROUND: Readonly<Record<string, string>> = {
+/**
+ * `BattlePanel.initial` 里那个背景图 → BGM 的 switch，**十二行全抄**。
+ * 认不出的背景一首都不播（原版那个 switch 没有 default）。
+ *
+ * 为什么这里不像怪物表那样「只抄有真值盖得住的那几行」：这十二行有一条
+ * **分母固定的判据** —— `units.test.ts` 现从 `src/battle/BattlePanel.java`
+ * （GBK）里把那个 switch 解出来逐行对。怪物表没有这种东西可对（那些数字散在
+ * 一个 26 路 switch 的字段赋值里，解它的那个解析器本身就会成为新的错处），
+ * 所以它只抄跑得到真值的那几只。
+ */
+export const BGM_BY_BACKGROUND: Readonly<Record<string, string>> = {
   'image/背景图/伏魔山树林.png': 'B6.mp3',
   'image/背景图/校园小道.png': 'B6.mp3',
   'image/背景图/大活迷宫.png': '仗剑.mp3',

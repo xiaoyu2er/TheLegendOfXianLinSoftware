@@ -210,6 +210,10 @@ function updateProgress(w: BattleWorld): void {
     if (w.zxf && !w.zxf.isDead) p.zhangX += w.zxf.speed
     if (w.yj && !w.yj.isDead) p.yuX += w.yj.speed
     if (w.lxq && !w.lxq.isDead) p.luX += w.lxq.speed
+    // 原版这里还有一行 `if(bp.pet!=null){petX+=bp.pet.speed;}`。小精灵只由
+    // 陆雪琪的秘术召得出来，这一层还没有秘术，`pet` 恒为 null —— 那一行恒不
+    // 执行，所以这里是**不写**而不是漏写。召得出小精灵那天（xl-rh9.9）连同
+    // `startEnemyRound` 上头那个 throw 一起补。
     if (w.em1) p.enemy1X += w.em1.speed
     if (w.em2) p.enemy2X += w.em2.speed
     if (w.em3) p.enemy3X += w.em3.speed
@@ -359,9 +363,27 @@ function updateHurtValue(hv: HurtValue): void {
   }
 }
 
+/**
+ * `Instruct.start()`：按当前回合把指示图标放到那个人头上。
+ *
+ * 三路 switch 里没有「怪物的回合」那几支 —— 原版就没写，所以怪物行动时
+ * 指示器停在**上一个我方单位**留下的坐标上。那也是照抄的一部分。
+ * 坐标不在这份真值里（只记 `ui.instruct` 这个布尔），渲染那张票会用到。
+ */
 function instructStart(w: BattleWorld): void {
-  w.instruct.isDraw = true
-  w.instruct.isStop = false
+  const i = w.instruct
+  if (w.currentRound === 1 && w.zxf) {
+    i.x = w.zxf.x + 210
+    i.y = w.zxf.y + 75
+  } else if (w.currentRound === 2 && w.yj) {
+    i.x = w.yj.x + 85
+    i.y = w.yj.y - 20
+  } else if (w.currentRound === 3 && w.lxq) {
+    i.x = w.lxq.x + 45
+    i.y = w.lxq.y - 20
+  }
+  i.isDraw = true
+  i.isStop = false
 }
 
 function updateInstruct(w: BattleWorld): void {
@@ -387,8 +409,8 @@ function updateReminder(w: BattleWorld): void {
     r.code = 0
     r.dx1 = r.centreX
     r.dx2 = r.centreX
-    r.dy1 = 120
-    r.dy2 = 120
+    r.dy1 = r.centreY
+    r.dy2 = r.centreY
   }
 }
 
@@ -407,8 +429,10 @@ function updateBackgroundAnimation(w: BattleWorld): void {
 function updateStartAnimation(w: BattleWorld): void {
   const s = w.startAnimation
   if (s.isStop) return
-  if (s.leftX < 1024) s.leftX += 30
-  else {
+  if (s.leftX < 1024) {
+    s.leftX += 30
+    s.rightX -= 30
+  } else {
     s.isDraw = false
     s.isStop = true
   }
@@ -601,10 +625,24 @@ function pushHurt(w: BattleWorld, hurt: number, type: number, x: number, y: numb
 
 /** `ZhangXiaoFan/YuJie/LuXueQi.calDamage()` 的普通攻击那一路。 */
 function heroCalDamage(w: BattleWorld, h: Hero): void {
+  // 原版 `case 5/6/7` 是 `currentEnemies.add(bp.em1)` —— **没有判空**
+  // （只有打全体的 `case 8` 有）。槽位空着时它是一发 NPE。这里不"顺手补上
+  // 判空"（那是 ADR-0001 明令不许的"把缺陷修好"），也不静默跳过 —— 静默跳过
+  // 会导出一份"打过了、一切正常、可就是没人挨打"的 trace。照抄的是**它会炸**
+  // 这件事，只是把炸法换成一句说得清的话。
   const targets: Enemy[] = []
-  if (w.currentBeAttacked === 5 && w.em1) targets.push(w.em1)
-  if (w.currentBeAttacked === 6 && w.em2) targets.push(w.em2)
-  if (w.currentBeAttacked === 7 && w.em3) targets.push(w.em3)
+  const aimed = (e: Enemy | null, slot: number): Enemy => {
+    if (!e) {
+      throw new Error(
+        `currentBeAttacked 指着第 ${slot} 槽，而那一槽已经空了 —— ` +
+          '原版 Hero.calDamage 的 case 5/6/7 没有判空，这里是一发 NPE。',
+      )
+    }
+    return e
+  }
+  if (w.currentBeAttacked === 5) targets.push(aimed(w.em1, 1))
+  if (w.currentBeAttacked === 6) targets.push(aimed(w.em2, 2))
+  if (w.currentBeAttacked === 7) targets.push(aimed(w.em3, 3))
   if (w.currentBeAttacked === 8) for (const e of [w.em1, w.em2, w.em3]) if (e) targets.push(e)
   for (const e of targets) {
     let damage = h.hurt - e.defense + w.random.scaledInt(15)
@@ -709,7 +747,7 @@ function levelUp(h: Hero): void {
   h.agile += d.agile
   h.strength += d.strength
   h.exp -= h.expToLevelUp
-  Object.assign(h, refreshValue(h))
+  refreshValue(h)
   h.hp = h.hpMax
   h.mp = h.mpMax
   h.expToLevelUp = expToLevelUp(h.level)

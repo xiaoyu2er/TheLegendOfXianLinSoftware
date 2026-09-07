@@ -184,6 +184,9 @@ export interface Instruct {
   code: number
   isDraw: boolean
   isStop: boolean
+  /** `Instruct.start()` 里那个三路 switch 算出来的落点。 */
+  x: number
+  y: number
 }
 
 export interface Reminder {
@@ -191,15 +194,17 @@ export interface Reminder {
   isDraw: boolean
   isStop: boolean
   centreX: number
+  centreY: number
   dx1: number
   dx2: number
   dy1: number
   dy2: number
 }
 
-/** `StartAnimation`：云雾对开，每拍 30px。 */
+/** `StartAnimation`：云雾**对开**，左半幅每拍 +30、右半幅每拍 -30。 */
 export interface StartAnimation {
   leftX: number
+  rightX: number
   isDraw: boolean
   isStop: boolean
 }

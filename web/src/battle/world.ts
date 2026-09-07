@@ -1,12 +1,5 @@
 import { JavaRandom } from '../game/javaRandom'
-import {
-  ENEMY_SLOT_POS,
-  HEROES,
-  battleBgm,
-  enemySpec,
-  expToLevelUp,
-  refreshValue,
-} from './units'
+import { ENEMY_SLOT_POS, HEROES, battleBgm, derive, enemySpec, expToLevelUp } from './units'
 import type { PartyKey } from './units'
 import type {
   BattleState,
@@ -59,7 +52,7 @@ function button(x: number, y: number): GameButton {
 function makeHero(key: PartyKey, level: number): Hero {
   const spec = HEROES[key]
   const attributes = spec.attributes(level)
-  const derived = refreshValue(attributes)
+  const derived = derive(attributes)
   return {
     spec,
     roleCode: spec.roleCode,
@@ -222,8 +215,19 @@ export function createBattle(config: BattleConfig): BattleWorld {
       defend: button(500 - 58, 300 + 40),
       thing: button(500 + 58, 300 + 40),
     },
-    instruct: { code: 0, isDraw: false, isStop: true },
-    reminder: { code: 0, isDraw: false, isStop: true, centreX: 500, dx1: 500, dx2: 500, dy1: 120, dy2: 120 },
+    instruct: { code: 0, isDraw: false, isStop: true, x: 0, y: 0 },
+    // `new Reminder(this, 500, 120)`，八个坐标都从这两个中心出发。
+    reminder: {
+      code: 0,
+      isDraw: false,
+      isStop: true,
+      centreX: 500,
+      centreY: 120,
+      dx1: 500,
+      dx2: 500,
+      dy1: 120,
+      dy2: 120,
+    },
     selector: {
       isSlectable: false,
       x1: em1?.x ?? 0,
@@ -261,7 +265,7 @@ export function createBattle(config: BattleConfig): BattleWorld {
       isOver: false,
     },
     backgroundAnimation: { name: null, length: 0, code: 0, isDraw: false, isStop: true, isOver: false },
-    startAnimation: { leftX: 0, isDraw: true, isStop: false },
+    startAnimation: { leftX: 0, rightX: 0, isDraw: true, isStop: false },
     hurtValues: [],
     launchCode: 0,
     skillMenuDrawn: false,
