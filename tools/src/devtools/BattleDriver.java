@@ -99,6 +99,7 @@ public final class BattleDriver implements TraceDriver {
 
     private final TraceScript script;
     private Gated bp;
+    private PanelTap tap;
     private Graphics sink;
     private Thread loop;
     private boolean pumped;          // 第一次放行要 interrupt，之后是 release
@@ -137,16 +138,41 @@ public final class BattleDriver implements TraceDriver {
     @Override
     public boolean step() {
         if (bp == null) start();
-        if (ip >= script.steps.size()) return false;
+        if (ip >= script.steps.size()) return finish();
         if (ticks >= script.maxTicks) fail("超过剧本的 maxTicks=" + script.maxTicks + "，剧本没有跑完");
         pending.clear();
         advanceScript();
-        if (ip >= script.steps.size() && pending.isEmpty()) return false;
+        if (ip >= script.steps.size() && pending.isEmpty()) return finish();
 
         pump();            // 放行一次原版循环体，等它跑完
+        requireExitAnnounced();
         bp.paint(sink);    // 绘制有没有副作用是另一回事，位图是交付物
         ticks++;
         return true;
+    }
+
+    /**
+     * 剧本跑完了。返回 false 之前先拦一种收工方式：**全灭了，而面板还没切走**。
+     *
+     * 全灭之后原版必然切面板 —— {@code GameOver.update()} 把全灭图对开 512px
+     * （每步 8px）再数 10 下，74 步之后一定走到那句
+     * {@code em1.name.equals("罹年居士")}。停在那之前收工，导出的是一份**两条
+     * 出口都还没走**的真值：它有头有尾、步数像模像样、退出码 0，而分支写反了
+     * 与写对了在它里面长得一模一样。这正是本票（xl-rh9.3）要堵的形状，所以
+     * 让它非零退出，而不是靠写剧本的人记得加 {@code awaitExit}。
+     *
+     * <b>只拦 defeat，不拦 victory。</b>打赢之后原版不自动切面板（结算、发钱、
+     * 经验、升级、回地图是另一段），{@code battle-min} 就正正停在"胜利"第一次
+     * 出现的那一刻 —— 那一段没有真值覆盖是**已知的、归 xl-rh9.5 的**账，不是
+     * 这里该顺手改掉的东西。
+     */
+    private boolean finish() {
+        if (outcome().equals("defeat") && tap.card() == null) {
+            fail("剧本跑完了，我方已全灭而原版还没切面板 —— 全灭之后 GameOver.update() "
+                    + "必然在 74 步内切回地图或标题，停在这里导出的是一份走到半路的真值。"
+                    + "用 awaitExit 把那一步接住");
+        }
+        return false;
     }
 
     /** 放行一次 {@code run()} 的循环体，并等它跑到闸门上。 */
@@ -171,6 +197,11 @@ public final class BattleDriver implements TraceDriver {
         // （与 SceneDriver 同一套，理由见那边）。
         media.MusicReader.closeBGM();
         media.MusicPlayer.CAN_PLAY_BGM = media.MusicPlayer.NO;
+
+        // 观察点要在建面板之前装好：切面板这件事是原版自己在循环体里做的，
+        // 装晚了就有一段"切了而没人记"的窗口，而那段窗口里的失败长得像成功。
+        tap = new PanelTap();
+        main.GameLauncher.switcher = tap;
 
         // 先冻住 sleep 再建面板：构造函数里就把 run() 线程起来了。
         Clock.setFactor(FREEZE_FACTOR);
@@ -282,7 +313,8 @@ public final class BattleDriver implements TraceDriver {
             if (!entered) {
                 entered = true;
                 spent = 0;
-                left = in.op.equals("wait") ? in.ticks : in.op.equals("autoAttack") ? in.max : 0;
+                left = in.op.equals("wait") ? in.ticks
+                        : in.op.equals("autoAttack") || in.op.equals("awaitExit") ? in.max : 0;
             }
             if (exec(in)) { ip++; entered = false; continue; }
             if (++spent > in.budget) {
@@ -312,6 +344,8 @@ public final class BattleDriver implements TraceDriver {
                 return true;
             case "autoAttack":
                 return autoAttack(in);
+            case "awaitExit":
+                return awaitExit(in);
             default:
                 fail("不认识的指令 " + in.op);
                 return true;
@@ -345,6 +379,56 @@ public final class BattleDriver implements TraceDriver {
             clickEnemy(slot);
         }
         return false;
+    }
+
+    /**
+     * 等原版自己把面板切走，并断言它切到了哪一块。
+     *
+     * 为什么这条指令必须存在：{@code gameOver.isDraw} 一置真，
+     * {@link #outcome()} 就报 defeat —— 那只是全灭图**开始**对开的那一刻。
+     * 真正分岔的那一句在 74 步之后（{@code GameOver.update()}：对开 512px、
+     * 每步 8px，然后数 10 下），它只比一个字符串：第一只怪叫不叫「罹年居士」。
+     * 停在 defeat 就收工，导出的是一份**两条出口都还没走**的真值 —— 而
+     * 「分支写反了」与「分支写对了」在那样的真值里长得一模一样，正是本票要
+     * 堵的那个形状。
+     *
+     * 断言写在剧本里、由导出器当场判，形状照抄场景那边的 {@code exitTo}。
+     */
+    private boolean awaitExit(TraceScript.Instruction in) {
+        String card = tap.card();
+        if (card != null) {
+            if (!card.equals(in.panel)) {
+                fail("剧本要的出口是 " + in.panel + "，原版切到的是 " + card);
+            }
+            if (tap.count() != 1) {
+                fail("原版切了 " + tap.count() + " 次面板，一份剧本只接得住一次");
+            }
+            return true;
+        }
+        if (left <= 0) {
+            fail("等了 " + in.max + " 步，原版一次都没切面板（gameOver "
+                    + getBool(get(bp, "gameOver"), "isDraw") + "，victory "
+                    + getBool(get(bp, "victoryReminder"), "isDraw") + "）");
+        }
+        left--;
+        return false;
+    }
+
+    /**
+     * 面板被切走了，而当前指令不是 {@code awaitExit} —— 硬失败。
+     *
+     * 没有这道检查时的失败形状：一份剧本 autoAttack 到 defeat 就收工，原版随后
+     * 若在最后一步里恰好切了面板，真值照样导出、退出码 0，而那一步之后的状态
+     * （血量被改回半血、怪物被摘空）没有任何人在看。切面板是一件**必须被剧本
+     * 显式接住**的事。
+     */
+    private void requireExitAnnounced() {
+        if (tap.card() == null) return;
+        String op = ip < script.steps.size() ? script.steps.get(ip).op : "（剧本已结束）";
+        if (!op.equals("awaitExit")) {
+            fail("原版把面板切到了 " + tap.card() + "，而当前指令是 " + op
+                    + " —— 切面板必须由 awaitExit 接住");
+        }
     }
 
     /** 还在场上（没被 {@code Check.checkEnemyDead} 摘掉）的第一个槽位，1/2/3；没有则 0。 */
@@ -645,6 +729,37 @@ public final class BattleDriver implements TraceDriver {
 
     private static int getInt(Object o, String name)      { return (Integer) get(o, name); }
     private static boolean getBool(Object o, String name)  { return (Boolean) get(o, name); }
+
+    // ================= 面板跳转观察点 =================
+
+    /**
+     * 记下原版把面板切到了哪一块。
+     *
+     * {@code GameLauncher.switchTo} 走的是 {@code switcher.show(c, "xxxPanel")}，
+     * 而导出器里 {@code GameLauncher} 从没被构造过 —— {@code c} 是 null，
+     * {@code CardLayout.show} 会当场 NPE。那条 NPE 抛在 {@code run()} 线程上，
+     * 而它的 try/catch 只包住 sleep（xl-1dv.10），于是线程静静地死掉、闸门
+     * 永远等不到放行：**导出挂死，而挂死看起来只是"跑得慢"**。
+     *
+     * 所以把 {@code GameLauncher.switcher} 这个 public static 字段换成本类：
+     * {@code show} 只记名字、不碰容器。换掉的是**画面切换这个动作**，不是
+     * 决定切到哪一块的那段判断 —— 那一句仍然是 {@code GameOver.update()} 里
+     * 原版自己的 {@code em1.name.equals("罹年居士")}，一个字没动。
+     */
+    private static final class PanelTap extends java.awt.CardLayout {
+        private static final long serialVersionUID = 1L;
+        private volatile String card;
+        private volatile int count;
+
+        @Override
+        public void show(java.awt.Container parent, String name) {
+            card = name;
+            count++;
+        }
+
+        String card()  { return card; }
+        int count()    { return count; }
+    }
 
     // ================= 闸门 =================
 

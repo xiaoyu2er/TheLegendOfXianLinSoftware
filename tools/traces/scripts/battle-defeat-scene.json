@@ -1,0 +1,16 @@
+{
+  "name": "battle-defeat-scene",
+  "description": "剧情必败战：脚本22 第 1 行的 Fight 数据（商塔顶层，罹年居士 独自一只）。这一场在原版里赢不了 —— 罹年居士 的 hp/hurt/defense 全是 9999，速度是张小凡的 +6。打到全灭之后 GameOver.update() 只比第一只怪的名字：等于「罹年居士」就切回 scenePanel，张小凡与文敏各回半血。真值一直记到那一次切面板为止，因为「分支写反了」与「分支写对了」在停在 defeat 的真值里长得一模一样。等级取 20 只是为了让血量与伤害是个像样的数，胜负与它无关。",
+  "driver": "battle",
+  "background": "image/背景图/商塔顶层.png",
+  "party": ["zhang", "yu", "lu"],
+  "level": { "zhang": 20, "yu": 20, "lu": 20 },
+  "enemies": ["罹年居士/5", null, null],
+  "seed": 20260908,
+  "tickMs": 100,
+  "maxTicks": 3000,
+  "steps": [
+    { "op": "autoAttack", "until": "defeat", "max": 2000 },
+    { "op": "awaitExit", "panel": "scenePanel", "max": 200 }
+  ]
+}

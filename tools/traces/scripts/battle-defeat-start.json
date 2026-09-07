@@ -1,0 +1,16 @@
+{
+  "name": "battle-defeat-start",
+  "description": "普通全灭：脚本37 第 1 行的 Fight 数据（比武场，罹年居士分身 三只）。等级压到 1 是为了让这一场必输 —— 三只 2000 血、每下 600 伤害。全灭之后走的是另一条出口：切回 startPanel，谁的血都不回。它同时钉住那个字符串比较是**逐字相等**而不是包含：「罹年居士分身」以「罹年居士」开头，用 startsWith / includes 写的分支会把这一场也送回地图。",
+  "driver": "battle",
+  "background": "image/背景图/比武场.png",
+  "party": ["zhang", "yu"],
+  "level": { "zhang": 1, "yu": 1 },
+  "enemies": ["罹年居士分身/5", "罹年居士分身/6", "罹年居士分身/7"],
+  "seed": 20260909,
+  "tickMs": 100,
+  "maxTicks": 3000,
+  "steps": [
+    { "op": "autoAttack", "until": "defeat", "max": 2000 },
+    { "op": "awaitExit", "panel": "startPanel", "max": 200 }
+  ]
+}

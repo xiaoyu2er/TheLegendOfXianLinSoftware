@@ -38,6 +38,10 @@ import java.util.Map;
  *   target  {enemy}           点某个怪物（1/2/3）。选不了、或者那个槽位已经空了 —— 硬失败。
  *   autoAttack {until, max}   一直「能点击就点击、能选敌就选第一个活着的」，
  *                             直到分出胜负；到 max 还没分出来 —— 硬失败。
+ *   awaitExit {panel, max}    等原版自己把面板切走，并断言切到了哪一块。
+ *                             切到别的一块、或者到 max 还没切 —— 硬失败。
+ *                             形状照抄场景那边的 exitTo：「到了而没换」与「到了」
+ *                             在 trace 里长得一模一样，所以由导出器当场判。
  *   wait    {ticks}           空等若干 tick（两套词汇共用）。
  *
  * 每条指令有 tick 预算（budget，默认 2000）。超预算是硬失败，不是静默跳过 ——
@@ -83,11 +87,13 @@ public final class TraceScript {
         public final String button, until;
         /** 战斗：`target` 点哪个怪物槽位（1/2/3）。 */
         public final int enemy;
+        /** 战斗：`awaitExit` 断言原版切到了哪块面板（CardLayout 的卡片名）。 */
+        public final String panel;
         Instruction(String op, int x, int y, int ticks, int times, int max, int budget,
-                    String button, String until, int enemy) {
+                    String button, String until, int enemy, String panel) {
             this.op = op; this.x = x; this.y = y;
             this.ticks = ticks; this.times = times; this.max = max; this.budget = budget;
-            this.button = button; this.until = until; this.enemy = enemy;
+            this.button = button; this.until = until; this.enemy = enemy; this.panel = panel;
         }
     }
 
@@ -96,7 +102,20 @@ public final class TraceScript {
             "waitNarratage");
 
     private static final List<String> BATTLE_OPS = Arrays.asList(
-            "command", "target", "autoAttack", "wait");
+            "command", "target", "autoAttack", "awaitExit", "wait");
+
+    /**
+     * {@code awaitExit} 认的面板名：{@code GameLauncher.setLayout()} 往
+     * {@code CardLayout} 里注册的那八张卡片，逐字照抄。
+     *
+     * 为什么用卡片名而不是 {@code switchTo("scene")} 那个入参：观察点就在
+     * {@code CardLayout.show} 上，卡片名是**观察到的那个字符串本身**。中间加一层
+     * 入参↔卡片名的映射等于把原版那张表誊抄一遍，而誊错了的表现是真值里一个
+     * 看上去正常的面板名。
+     */
+    private static final List<String> PANELS = Arrays.asList(
+            "startPanel", "scenePanel", "battlePanel", "shopPanel",
+            "equipmentShopPanel", "menuPanel", "lsPanel", "endPanel");
 
     private static final List<String> DRIVERS = Arrays.asList("scene", "battle");
     private static final List<String> BUTTONS = Arrays.asList("attack", "skill", "defend", "thing");
@@ -201,7 +220,7 @@ public final class TraceScript {
                 throw new IllegalArgumentException("driver " + driver + " 不认识的指令 " + op + "，可用的是 " + ops);
             }
             int x = 0, y = 0, ticks = 0, times = 0, max = 0, enemy = 0;
-            String button = null, until = null;
+            String button = null, until = null, panel = null;
             if (!battle && isMove(op)) { x = JsonIn.i(s, "x"); y = JsonIn.i(s, "y"); }
             if (op.equals("wait"))       ticks = JsonIn.i(s, "ticks");
             if (op.equals("advance"))    times = JsonIn.i(s, "times");
@@ -223,8 +242,17 @@ public final class TraceScript {
                 }
                 max = JsonIn.iOr(s, "max", 2000);
             }
+            if (op.equals("awaitExit")) {
+                panel = JsonIn.str(s, "panel");
+                if (!PANELS.contains(panel)) {
+                    throw new IllegalArgumentException("不认识的面板 " + panel + "，可用的是 " + PANELS);
+                }
+                // 全灭图对开 512px（每步 8px）再数 10 下才跳转，一共 74 步；
+                // 默认给 300 是留了余量，撞上上限是硬失败而不是导出一份短的。
+                max = JsonIn.iOr(s, "max", 300);
+            }
             steps.add(new Instruction(op, x, y, ticks, times, max,
-                    JsonIn.iOr(s, "budget", 2000), button, until, enemy));
+                    JsonIn.iOr(s, "budget", 2000), button, until, enemy, panel));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
@@ -269,6 +297,7 @@ public final class TraceScript {
             if (s.op.equals("command"))    b.append(",\"button\":").append(Json.str(s.button));
             if (s.op.equals("target"))     b.append(",\"enemy\":").append(s.enemy);
             if (s.op.equals("autoAttack")) b.append(",\"until\":").append(Json.str(s.until)).append(",\"max\":").append(s.max);
+            if (s.op.equals("awaitExit"))  b.append(",\"panel\":").append(Json.str(s.panel)).append(",\"max\":").append(s.max);
             if (s.op.equals("wait"))       b.append(",\"ticks\":").append(s.ticks);
             b.append('}');
         }
