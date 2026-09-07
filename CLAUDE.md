@@ -71,6 +71,7 @@ tools/build.sh                   # game (GBK) + dev tools (UTF-8) -> tools/build
 tools/run-game.sh                # launch the original game
 tools/export-truth.sh            # re-export the 96 script ground-truth JSONs
 tools/export-trace.sh --check    # re-export the behaviour traces, twice, and cmp
+tools/export-random.sh           # re-export the java.util.Random golden data
 
 cd web && pnpm install           # browser port; see web/README.md
 pnpm typecheck && pnpm test && pnpm build
@@ -90,7 +91,7 @@ re-export-and-diff regression checks, both of which must come back empty:
 - `tools/export-truth.sh` — data layer. Re-run it and `git diff
   tools/ground-truth` must be empty (96 scripts × 26 fields).
 - `tools/export-trace.sh --check` — behaviour layer, **all four drivers**
-  (scene / battle / menu / shop, 9 scripts). Re-run it and `git diff
+  (scene / battle / menu / shop, 12 scripts). Re-run it and `git diff
   tools/traces/out` must be empty; `--check` additionally exports each script
   twice in separate JVMs and `cmp`s them, which is what makes the traces usable
   as truth at all. **Both halves are needed**: `--check` only proves this run is
@@ -116,6 +117,14 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
 `web/` 现在能烘焙并渲染宿舍与大地图两个场景（xl-9bd.3）。数据烘焙是
 `web/scripts/bake.ts`（`pnpm bake`），产物入库在 `web/src/generated/`，
 黄金测试拿 `tools/ground-truth/` 对齐。
+
+烘焙分两半（xl-rh9.2）：场景那半（地图 / 主角 / NPC / 头像 / 对话框 / 旁白
+/ BGM）与战斗那半（`image/` 下 26 个目录 2405 个文件）。战斗素材再按顶层
+目录切成两个包 —— 技能动画与背景动画共 1770 张走 `web/public/` 按需加载，
+其余 635 张进主包（实测主包只涨 126 KB）。**产物是不是这批输入烘出来的**，
+由 `web/src/generated/bakeStamp.json` 与 `src/assets/bakeStamp.test.ts` 守着
+（xl-23y）：烘焙器源码闭包与它读过的每一个输入都算进指纹，改了烘焙器不重烘
+就会红。
 
 ## Conventions & Patterns
 
@@ -143,7 +152,8 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   both committed, and any diff in `out/` is a signal. One exporter
   (`tools/export-trace.sh`, one command for all four) dispatches on the script's
   own `driver` field to `scene` (5 scripts, a step = one tick), `battle`
-  (2 scripts, a step = one `BattlePanel.run()` loop body + one `paint()`),
+  (4 scripts — one victory, one for the em3 hit-box defect, and one per defeat
+  exit; a step = one `BattlePanel.run()` loop body + one `paint()`),
   `menu` and `shop` (1 script each, a step = one input event). An unrecognised
   name is a hard failure, never a guess — but a **missing** `driver` field
   defaults to `scene`, the exporter's one and only leniency (the five scene
