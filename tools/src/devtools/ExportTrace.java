@@ -56,6 +56,25 @@ public final class ExportTrace {
     private ExportTrace(File scriptFile) { this.scriptFile = scriptFile; }
 
     public static void main(String[] args) throws Exception {
+        // 导出真值时一律静音。理由分两半：
+        //
+        // - **BGM** 本来就是关的：三个驱动器各自在建面板之前调 closeBGM() 并把
+        //   CAN_PLAY_BGM 设成 NO。这里再设一次只是把它提前到任何驱动器之前，
+        //   顺手覆盖将来新增的驱动器。
+        // - **音效**（CAN_PLAY_MUSIC）此前只有 MenuDriver 关过（它必须关，
+        //   否则每次点击都开音频设备、起播放线程，两遍导出不可能逐字节一致）。
+        //   场景与战斗没关，于是每跑一次流水线就响一次 —— 并行派工时三四个
+        //   agent 同时跑，对用这台机器的人干扰很明显。
+        //
+        // 这不影响真值：没有任何一个真值字段观察音效状态。实测过——把两个开关
+        // 关掉重导，当时的 7 份真值与入库的**逐字节一致 7/7**。
+        //
+        // 与 xl-1vu.8 的关系：那张票讲的是「菜单真值记不到音效文件名」，因为
+        // playmusic 里 filename=name 的赋值落在 CAN_PLAY_MUSIC 判断**里面**。
+        // 这里关死开关不是挡了它——那条路本来就走不通，.8 要的是换一个观察点。
+        media.MusicPlayer.CAN_PLAY_MUSIC = media.MusicPlayer.NO;
+        media.MusicPlayer.CAN_PLAY_BGM = media.MusicPlayer.NO;
+
         if (args.length < 2) {
             System.err.println("用法: java devtools.ExportTrace <剧本.json> <输出.json> [--frames <目录> [--every <n>]]");
             System.exit(2);
