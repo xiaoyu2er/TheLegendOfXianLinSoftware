@@ -155,11 +155,15 @@ public final class BattleDriver implements TraceDriver {
      * 剧本跑完了。返回 false 之前先拦一种收工方式：**全灭了，而面板还没切走**。
      *
      * 全灭之后原版必然切面板 —— {@code GameOver.update()} 把全灭图对开 512px
-     * （每步 8px）再数 10 下，72 步之后一定走到那句
+     * （每步 8px = 64 拍）再数 10 下（= 9 拍，第 64 拍两个 if 并列地都进），
+     * 第 73 次 update 上一定走到那句
      * {@code em1.name.equals("罹年居士")}。停在那之前收工，导出的是一份**两条
      * 出口都还没走**的真值：它有头有尾、步数像模像样、退出码 0，而分支写反了
      * 与写对了在它里面长得一模一样。这正是本票（xl-rh9.3）要堵的形状，所以
      * 让它非零退出，而不是靠写剧本的人记得加 {@code awaitExit}。
+     *
+     * <p>与 {@link #requireExitAnnounced()} 是同一条规则的两半：那边拦「切了
+     * 而没人接」，这边拦「该切了而剧本先收工」。改一处记得看另一处。
      *
      * <b>只拦 defeat，不拦 victory。</b>打赢之后原版不自动切面板（结算、发钱、
      * 经验、升级、回地图是另一段），{@code battle-min} 就正正停在"胜利"第一次
@@ -169,7 +173,8 @@ public final class BattleDriver implements TraceDriver {
     private boolean finish() {
         if (outcome().equals("defeat") && tap.card() == null) {
             fail("剧本跑完了，我方已全灭而原版还没切面板 —— 全灭之后 GameOver.update() "
-                    + "必然在 72 步内切回地图或标题，停在这里导出的是一份走到半路的真值。"
+                    + "必然在 73 次 update（真值上 72 步）内切回地图或标题，"
+                    + "停在这里导出的是一份走到半路的真值。"
                     + "用 awaitExit 把那一步接住");
         }
         return false;
@@ -387,7 +392,8 @@ public final class BattleDriver implements TraceDriver {
      * 为什么这条指令必须存在：{@code gameOver.isDraw} 一置真，
      * {@link #outcome()} 就报 defeat —— 那只是全灭图**开始**对开的那一刻。
      * 真正分岔的那一句在 72 步之后（{@code GameOver.update()}：对开 512px、
-     * 每步 8px，然后数 10 下；两份真值实测都是 72 步），它只比一个字符串：第一只怪叫不叫「罹年居士」。
+     * 每步 8px = 64 拍，再数 10 下 = 9 拍，共 73 次 update；第 1 次与 defeat
+     * 置位落在同一拍里，所以真值上是 72 步 —— 两份实测都是 72），它只比一个字符串：第一只怪叫不叫「罹年居士」。
      * 停在 defeat 就收工，导出的是一份**两条出口都还没走**的真值 —— 而
      * 「分支写反了」与「分支写对了」在那样的真值里长得一模一样，正是本票要
      * 堵的那个形状。
@@ -421,6 +427,10 @@ public final class BattleDriver implements TraceDriver {
      * 若在最后一步里恰好切了面板，真值照样导出、退出码 0，而那一步之后的状态
      * （血量被改回半血、怪物被摘空）没有任何人在看。切面板是一件**必须被剧本
      * 显式接住**的事。
+     *
+     * <p>这一条与 {@link #finish()} 是同一条规则的两半，拦的时刻不同：这里拦
+     * 「切了而没人接」，{@link #finish()} 拦「该切了而剧本先收工」。改一处
+     * 记得看另一处。
      */
     private void requireExitAnnounced() {
         if (tap.card() == null) return;

@@ -127,6 +127,10 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 它对 M2 的意义不在像素上，而在**最后一步**上：`GameOver.update()` 只比
     // 第一只怪的名字，两条出口全靠这一个字符串分岔。它与 battle-defeat-start
     // 必须成对存在 —— 只测一条时，「两条都走错边」和「分支写对了」长得一模一样。
+    //
+    // `issue` 写的是 xl-rh9.4（xl-rh9 这个 SPEC 重拆 M2 之后，真正在 web 侧
+    // 接战斗装配的那一张），上面两条写的 xl-82c 是同一件事的 epic 号 ——
+    // 报告里因此会看到一个驱动器报两个票号，指的是同一个缺口。
     why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
     issue: 'xl-rh9.4',
   },
