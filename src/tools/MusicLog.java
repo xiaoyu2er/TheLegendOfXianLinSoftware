@@ -36,10 +36,6 @@ public final class MusicLog {
 		}
 	}
 
-	public static boolean isRecording() {
-		return recording;
-	}
-
 	/** 由 {@code MusicReader.readmusic} 在入口处调用。未开记录时立即返回。 */
 	public static void record(String name) {
 		if (!recording) return;
