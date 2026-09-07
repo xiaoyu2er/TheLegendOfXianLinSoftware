@@ -103,7 +103,7 @@ export interface BattleSnapshot {
  * 赢（同 `BattleDriver.outcome()`）。
  */
 export function outcomeOf(w: BattleWorld): BattleSnapshot['outcome'] {
-  if (w.gameOverDrawn) return 'defeat'
+  if (w.gameOver.isDraw) return 'defeat'
   if (w.victoryDrawn) return 'victory'
   return 'undecided'
 }
@@ -177,7 +177,8 @@ export function snapshotBattle(w: BattleWorld): BattleSnapshot {
       stopped: p.isStop,
       drawn: p.isDraw,
     },
-    heroes: w.heroes.map(heroOf),
+    // 快照读的是**出战名单**，不是 `bp.heroes` —— 后者在打输出口的末尾被清空。
+    heroes: w.party.map(heroOf),
     enemies: w.slots.map((e, i) => (e === null ? null : enemyOf(w, e, i + 1))),
     hurts: w.hurtValues.map((h) => ({
       value: h.hurt,
@@ -195,7 +196,7 @@ export function snapshotBattle(w: BattleWorld): BattleSnapshot {
       instruct: w.instruct.isDraw,
       reminder: w.reminder.isDraw,
       victory: w.victoryDrawn,
-      gameOver: w.gameOverDrawn,
+      gameOver: w.gameOver.isDraw,
       startAnim: w.startAnimation.isDraw,
     },
     anim: {

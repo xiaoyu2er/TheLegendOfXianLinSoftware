@@ -209,9 +209,40 @@ export interface StartAnimation {
   isStop: boolean
 }
 
+/**
+ * `GameOver`：全灭图从两侧对开，开满之后再数十下，然后按**第一只怪的名字**
+ * 分岔（回地图 / 回标题）。
+ *
+ * 原版有十六个坐标，这里只留会动的那四个 —— 另外十二个是构造函数里写死、
+ * 此后只被 `drawGameOver` 读的常量，改了它们状态层一个字段都不会变。真正
+ * 定时的是 `lsx2`：每拍 +8，到 512 才开始数 `code`。
+ */
+export interface GameOverAnim {
+  isDraw: boolean
+  isStop: boolean
+  code: number
+  ldx2: number
+  lsx2: number
+  rdx1: number
+  rsx1: number
+}
+
+/** `GameLauncher.switchTo` 切到了哪一块面板。还没切是 null。 */
+export type ExitPanel = 'scenePanel' | 'startPanel'
+
 export interface BattleWorld {
   /** 逻辑拍号，等价于导出器的 `t`；每调一次 `stepBattle` 加一。 */
   tick: number
+  /**
+   * `GameLauncher.switchTo(...)` 把面板切到了哪一块 —— 还没切是 `null`。
+   *
+   * 打输的两条出口只靠 `GameOver.update()` 里一句字符串比较分岔，而**分岔的
+   * 结果本身不在逐字段真值里**（导出器的 `snapshotState` 不取它）。它记在真值
+   * 头部的剧本回显里：那条 `awaitExit` 指令的 `panel`，由导出器在原版真的切
+   * 面板的那一刻当场核过（`BattleDriver.awaitExit`）。所以这一层把它推出来，
+   * 再和剧本里那一行比 —— 两边都不是手写的期望值。
+   */
+  exitPanel: ExitPanel | null
   /** 一场战斗共用**一条**随机流，取数顺序也是规格（ADR-0004）。 */
   random: JavaRandom
   background: string
@@ -221,7 +252,18 @@ export interface BattleWorld {
   currentPattern: number
   currentBeAttacked: number
 
+  /**
+   * `bp.heroes`。**会被清空**：两条打输出口的末尾都有一句 `bp.heroes.clear()`，
+   * 而循环体里每一处 `for(Hero h: bp.heroes)` 读的就是它。
+   */
   heroes: Hero[]
+  /**
+   * 出战名单，**从头到尾不变**。快照读的是它，不是 `heroes` —— 导出器
+   * `BattleDriver` 也是在开场时把名单抄进自己的 `party` 里再逐拍取值的，
+   * 所以末步那一次 `heroes.clear()` 在真值里看不见（人还在，血量与 isDraw
+   * 都还在变）。拿 `heroes` 当快照源的话，末步会变成一个空数组。
+   */
+  party: Hero[]
   zxf: Hero | null
   yj: Hero | null
   lxq: Hero | null
@@ -251,11 +293,9 @@ export interface BattleWorld {
   drugMenuDrawn: boolean
   victoryDrawn: boolean
   victoryStopped: boolean
-  gameOverDrawn: boolean
-  gameOverStopped: boolean
-  /** 那两段还没实现的收尾各自跑了几拍 —— 见 `step.ts` 的 update 守卫。 */
+  gameOver: GameOverAnim
+  /** 胜利那段还没实现的收尾跑了几拍 —— 见 `step.ts` 的 `updateVictoryReminder`。 */
   victoryUpdates: number
-  gameOverUpdates: number
   /** `VictoryReminder.expToGet`：开场时按三只怪的经验合计算死。 */
   expToGet: number
 
