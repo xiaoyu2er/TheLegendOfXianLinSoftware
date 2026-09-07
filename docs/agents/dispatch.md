@@ -69,6 +69,32 @@
 
 `bd` 在空库上返回 `0` 而不报错，所以「没找到」不能当成「没问题」。
 
+### 你在 worktree 里，但 bd 读的是主仓库那一份库
+
+实测过的链条（2026-09-06）：
+
+    worktree/.git                     ← 是个文件，不是目录
+      内容: gitdir: <主仓库>/.git/worktrees/<slug>
+           ↓
+    git rev-parse --git-common-dir    → <主仓库>/.git
+           ↓
+    bd where（在 worktree 里跑）       → <主仓库>/.beads
+                                        database: …/.beads/embeddeddolt
+
+`bd where` 是它自己给的权威答案，有疑问就跑它。
+
+三条支撑：`.beads/embeddeddolt/` 是 gitignore 掉的（见 `.beads/.gitignore`），
+所以 worktree 里**没有数据库**、跑完 bd 也不会长出来；`metadata.json` 里没有
+任何路径，两边逐字节相同；而 worktree 可能落在 `~/.herdr/` 下，沿文件系统往上
+走**永远到不了主仓库**。反证也做过：把 `.beads/` 的入库文件复制到一个没有
+`.git` 的目录，`bd count` 报 `no beads database found`、退出码 1。
+
+对你的意义：**所有 worktree 共用同一个库**，你的 `--claim` 与 `bd close` 主干
+那边立刻看得见。落点搬到哪里都不影响这件事，因为解析走的是 git 链接不是路径。
+
+⚠️ 未验证：多个 agent 同时写这一个嵌入式 Dolt 会不会冲突或丢更新，**没有测过**。
+今天四个并行没出问题，那是观察不是结论。
+
 ## 命名约定
 
 票号里的点换成横杠，得到 slug；分支名与 `BEADS_ACTOR` 都用它：
@@ -141,3 +167,33 @@ git branch -d <slug>                     # 分支要单独删，它不管
   结果写进 commit message——这是本仓库对"判据有效"的证明方式。
 - **负面用例要真做**，不要声称。
 - 优先选**失败的样子和成功不一样**的检查。「找不到东西」不许成为通过条件。
+
+## 验证动作本身的坑
+
+判据失灵与判据通过长得一模一样，所以**测法**本身也要验。下面每条这个仓库都
+真栽过，且都表现为「篡改了却没红」——看起来像判据没用，其实是测法不对。
+
+**1. 管道吞退出码。** `cmd | tail` 拿到的是 `tail` 的退出码。要判断成败的命令
+不要接管道：
+
+    cmd > /tmp/out.log 2>&1; echo "EXIT=$?"; tail -5 /tmp/out.log
+
+**2. 篡改要挑对层。** `tools/export-trace.sh --check` 只证明「这一次跑出来的
+东西可复现」——一个**稳定的**错误在它眼里和正确一模一样。能认出错误的是重导
+之后 `git diff tools/traces/out` 为不为空。挑判据时先问：这条检查失败的样子，
+和它通过的样子长得一样吗。
+
+**3. `tools/compare-frames.sh` 会重跑 Java 导出。** 手改 `tools/traces/compare/
+<剧本>/java/trace.json` 再跑它，改动会被覆盖；而 `--skip-capture` 又跳过浏览器，
+取图页根本没机会读你改的东西。要测取图页的行为，绕开外壳直接跑：
+
+    cd web && pnpm exec vite-node scripts/compare.ts -- <剧本>
+
+**4. 测试环境会被你自己的环境污染。** 验 `.zshrc` 里那个按项目选配置目录的
+`claude()` 函数时，头一轮每个分支都返回同一个值——因为跑测试的这个进程本身就
+带着 `CLAUDE_CONFIG_DIR`。要 `env -u CLAUDE_CONFIG_DIR zsh -ic '...'` 才测得准。
+凡是「读环境变量再决定」的东西，先把那个变量清掉。
+
+**5. 引号与 heredoc。** 中文正文里的半角引号会提前闭合 shell 字符串（派工脚本
+曾因此 exit 127）；一条命令里写两个 heredoc 会产生一个消息是垃圾的提交，而且
+**不报错**。长文本一律写文件再 `--file=<路径>` 或 `"$(cat 文件)"`。
