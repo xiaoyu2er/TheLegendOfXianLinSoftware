@@ -67,13 +67,66 @@
 
 ## 命名约定
 
-票号里的点换成横杠，得到 slug；分支名、worktree 目录名、`BEADS_ACTOR` 三者
-都用它：
+票号里的点换成横杠，得到 slug；分支名与 `BEADS_ACTOR` 都用它：
 
     xl-9bd.12   →   xl-9bd-12
     xl-1vu.1    →   xl-1vu-1
 
-worktree 放在仓库同级的 `../TheLegendOfXianLinSoftware-agents/<slug>`。
+herdr 的 agent 名字也用 slug —— 它不接受带点的名字（实测报
+`invalid_agent_name`）。
+
+**worktree 落在 herdr 的默认位置** `~/.herdr/worktrees/<仓库名>/<分支名>`，
+派工时不传 `--path`。
+
+两条另选的路都实测过，各自的问题：
+
+- `<repo>/.claude/worktrees/<name>`（Claude Code 的 `EnterWorktree` 约定）：
+  它嵌在仓库里，主仓库的 `git status` 立刻多出一行 `?? .claude/worktrees/`。
+  要靠改 `.gitignore` 才能用，那是给约定打补丁。
+- `../<repo>-agents/<slug>`（`tools/bd-spawn.sh` 时代的约定）：能用，但和这台
+  机器上别的项目在 herdr 的 spaces 面板里长得不一样。
+
+**worktree 不在 `~/code` 下这件事是安全的**，因为 `.zshrc` 里的 `claude()`
+按**主仓库**位置选配置目录，不按当前目录：`git rev-parse --git-common-dir`
+从链接 worktree 里也指回主仓库。（别用 `--show-toplevel` —— 它给的是当前
+worktree 自己的根。）
+
+## 派工与清理
+
+派工者做这些；被派的 agent 一件都不做：
+
+```bash
+# 建 worktree（连 workspace + tab + pane 一起给）。label 用「票号 短名」。
+herdr worktree create --cwd "$PWD" --branch <slug> --base master \
+  --label "<票号> <短名>" --no-focus
+
+# 在它给的那个 pane 里起 claude。名字用 slug。
+herdr agent start <slug> --kind claude --pane <wN>:p1 -- --dangerously-skip-permissions
+
+# 一句话 prompt
+herdr agent prompt <slug> '你负责 bd issue <票号>。先跑 bd show <票号> 读票，
+再读 docs/agents/dispatch.md，然后用 /implement 完成它。'
+
+# 哨兵：等的是 agent 的真实状态，不是票有没有被关
+herdr agent wait <slug> --until idle --until done --until blocked --timeout 7200000
+```
+
+**清理是派工者的活，在验收合并之后**，两条：
+
+```bash
+herdr worktree remove --workspace <wN>   # 删目录 + 摘 worktree + 关 workspace
+git branch -d <slug>                     # 分支要单独删，它不管
+```
+
+被派的 agent 不许删自己脚下的工作区 —— 它不知道自己的分支合没合并。
+
+两条实测得来的注意事项：
+
+- `herdr agent start` 没有 `--env`，`agent send-keys` 又要求目标已经是 agent，
+  所以没有办法往一个还只是 shell 的 pane 里打字。配置目录靠 `.zshrc` 里的
+  `claude()` 函数解决，不靠传参。
+- `agent start` 是把 `claude ...` **敲进交互式登录 zsh**（实测：claude 是那个
+  `-zsh` 的直接子进程），所以 `.zshrc` 里的函数与别名对它是有效的。
 
 ## 验收会怎么对你
 
