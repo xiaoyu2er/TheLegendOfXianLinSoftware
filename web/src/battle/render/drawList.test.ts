@@ -419,7 +419,20 @@ describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () =>
     name: string
     /** 第一次抛在第几拍（0 基，按真值的步序）；一路画到底是 null。 */
     firstThrow: number | null
-    message: string | null
+    /**
+     * **末拍之前**抛出来的每一句不同的话。
+     *
+     * ⚠️ **收的是全部，不是第一句。** 原先只收第一次抛。实测（xl-rh9.11 的
+     * 篡改 T11）：把 `drawList.ts` 里技能菜单那一层挂的票号改成另一张，整套
+     * 判据**是绿的** —— 因为 `battle-menus` 先在第 88 拍撞上药品菜单，那一句
+     * 先抛，后面几层的票号一次都没被读到。「只覆盖到第一层」与「几层都覆盖
+     * 到了」长得一模一样。抛过之后照样往下跑：`battleDrawList` 是纯函数，
+     * 抛不改世界。
+     *
+     * 末拍单独排除：打赢的那一拍撞的是胜利结算（归 xl-rh9.5），与这条表态挂的
+     * 票不是一张，而那一拍在 `--every 25` 的采样点之外、比对照常跑得完。
+     */
+    messages: string[]
     ticks: number
   }
 
@@ -427,6 +440,8 @@ describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () =>
     const trace = readBattleTrace(name)
     const world = replayBattle(trace, spriteSize)
     const paint = createPaintState(world)
+    const messages = new Set<string>()
+    let firstThrow: number | null = null
     let i = 0
     for (const tick of trace.ticks) {
       for (const input of tick.input) applyPaintInput(world, paint, input)
@@ -435,16 +450,12 @@ describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () =>
       try {
         battleDrawList(world, paint)
       } catch (e) {
-        return {
-          name,
-          firstThrow: i,
-          message: e instanceof Error ? e.message : String(e),
-          ticks: trace.ticks.length,
-        }
+        if (firstThrow === null) firstThrow = i
+        if (i < trace.ticks.length - 1) messages.add(e instanceof Error ? e.message : String(e))
       }
       i++
     }
-    return { name, firstThrow: null, message: null, ticks: trace.ticks.length }
+    return { name, firstThrow, messages: [...messages], ticks: trace.ticks.length }
   })
 
   it('分母是磁盘上的战斗真值份数', () => {
@@ -472,16 +483,21 @@ describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () =>
         expect(a.firstThrow!, `${a.name} 只在末拍抛（那是胜利结算，不是这条表态的理由）`).toBeLessThan(
           a.ticks - 1,
         )
-        // 点名：抛出来的那句话里必须有表上挂的票号，否则「画不出来」与
-        // 「画错了炸了」在报告里长得一样。
-        expect(a.message, `${a.name} 抛了，可那句话没点名 ${e.issue}`).toContain(e.issue!)
+        // 点名：末拍之前抛出来的**每一句**都必须有表上挂的票号，否则
+        // 「画不出来」与「画错了炸了」在报告里长得一样。
+        const unnamed = a.messages.filter((m) => !m.includes(e.issue!))
+        expect(unnamed, `${a.name} 抛了这几句，可它们没点名 ${e.issue}`).toEqual([])
+        // 分母：这一条剧本到底撞上了几层。只撞上一层时上面那句话就只覆盖得到
+        // 一层 —— 而 battle-menus 在末拍之前撞的是三层（药品菜单 @88、
+        // 技能菜单 @168、我方状态图标 @198）。
+        expect(a.messages.length, `${a.name} 只撞上了一层？`).toBeGreaterThan(1)
       })
     } else {
       it(`${a.name}：表没说画不出来，那它就不许在末拍之前抛`, () => {
         if (a.firstThrow === null) return
         expect(
           a.firstThrow,
-          `${a.name} 在第 ${a.firstThrow} 拍就抛了（${a.message}）—— 这条剧本其实比不了，` +
+          `${a.name} 在第 ${a.firstThrow} 拍就抛了（${a.messages[0]}）—— 这条剧本其实比不了，` +
             'expected.ts 里那笔账是编的',
         ).toBe(a.ticks - 1)
       })

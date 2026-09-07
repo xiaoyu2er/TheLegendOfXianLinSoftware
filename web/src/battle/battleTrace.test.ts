@@ -237,6 +237,89 @@ describe('战斗状态层对齐行为真值', () => {
     }
   })
 
+  describe('战斗状态（xl-rh9.11）', () => {
+    /** 真值里**真的挂上过**战斗状态的那几场 —— 从真值现算，不写名单。 */
+    const withState = IMPLEMENTED.filter((name) =>
+      traceOf(name).ticks.some(
+        (t) =>
+          t.heroes.some((h) => h.state.usable) ||
+          t.enemies.some((e) => e !== null && e.state.usable),
+      ),
+    )
+
+    it('至少有一份真值挂上过战斗状态 —— 否则那两层的坐标与 type 又没人核了', () => {
+      expect(
+        withState.length,
+        '没有一份战斗真值挂上过战斗状态 —— `setBattleState` / `heroApplyState` / ' +
+          '`enemyApplyState` 写对了和写错了推出来的东西完全相同。',
+      ).toBeGreaterThan(0)
+    })
+
+    it('敌我两侧各有一份真值挂上过 —— 只盖一侧时另一侧的坐标来源写反了看不出来', () => {
+      // 我方的坐标是 `showX/showY`，怪物的是 `x/y`，两者取值不同（文敏挂在
+      // (800,150) 而她的 x/y 是 (750,150)）。只盖住一侧的话，把两边都写成
+      // `x/y` 推出来的结果在那一侧完全正确。
+      const heroSide = withState.filter((n) =>
+        traceOf(n).ticks.some((t) => t.heroes.some((h) => h.state.usable)),
+      )
+      const enemySide = withState.filter((n) =>
+        traceOf(n).ticks.some((t) => t.enemies.some((e) => e !== null && e.state.usable)),
+      )
+      expect(heroSide.length, '没有一份真值给我方挂上过战斗状态').toBeGreaterThan(0)
+      expect(enemySide.length, '没有一份真值给怪物挂上过战斗状态').toBeGreaterThan(0)
+    })
+
+    it('状态到期那一支也走到过 —— 只盖住"挂上"时 returnFromState 写反了看不出来', () => {
+      // 挂上（`checkState`）与退回（`returnFromState`）是严格互逆的两段。
+      // 只盖住"挂上"的话，把退回那一段整个写错（甚至写成再加一次）推出来的
+      // 过程一模一样 —— 因为它一次都没被调用。
+      // 观测点：某个还活着的单位，`state.usable` 从 true 变回了 false。
+      const expired = withState.filter((name) =>
+        traceOf(name).ticks.some((t, i, all) => {
+          if (i === 0) return false
+          const prev = all[i - 1]!
+          return t.heroes.some((h, k) => prev.heroes[k]!.state.usable && !h.state.usable && !h.dead)
+        }),
+      )
+      expect(
+        expired.length,
+        '没有一份真值里的战斗状态到期过 —— returnFromState 那一支一次都没被调用，' +
+          '写反了和写对了推出来的东西完全相同。',
+      ).toBeGreaterThan(0)
+    })
+
+    /**
+     * ⚠️ **一处登记在案的观测不到**（xl-rh9.11 篡改验证 T7）。
+     *
+     * 怪物那一侧的 type 8 是「体力下降」，加成是 `defense -= 40`。而
+     * `battle-menus` 里挂上它的那一击**同时把那只怪打死了**（300 → −26，
+     * 状态在伤害算完之后才挂），此后它再没挨过打 —— 那 40 点防御一次都没有
+     * 进过伤害公式。实测：把 `e.defense -= 40` 改成 `-= 0`，逐字段比对全绿。
+     *
+     * 所以把它登记成一条判据：哪天有一条真值里被挂状态的怪**活了下来**并且
+     * 又挨了一次打，这一条就红 —— 那时候上面的逐字段比对自己就盖得住它，
+     * 这条登记该撤掉换成正面比对。
+     */
+    it('怪物身上那个加成的数值，今天还观测不到 —— 登记在案', () => {
+      const survivors: string[] = []
+      for (const name of withState) {
+        const ticks = traceOf(name).ticks
+        for (let slot = 0; slot < 3; slot++) {
+          const statedAt = ticks.findIndex((t) => t.enemies[slot]?.state.usable === true)
+          if (statedAt < 0) continue
+          const hpThen = ticks[statedAt]!.enemies[slot]!.hp
+          const hpEnd = ticks[ticks.length - 1]!.enemies[slot]!.hp
+          if (hpEnd < hpThen) survivors.push(`${name}#${slot + 1}`)
+        }
+      }
+      expect(
+        survivors,
+        '有怪物在被挂上战斗状态之后又挨了打 —— 那个加成（type 8 的 defense −40）' +
+          '现在进得了伤害公式了，把这条登记换成正面比对。',
+      ).toEqual([])
+    })
+  })
+
   describe('打输的两条出口：GameOver.update() 只比第一只怪的名字', () => {
     /** 剧本里写了 `awaitExit` 的那几场，连它要的面板一起。 */
     const exits = IMPLEMENTED.map((name) => ({
