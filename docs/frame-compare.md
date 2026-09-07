@@ -217,6 +217,84 @@ coin-hud、speech-name、speech-text、hero-run 一帧都不差了"。上界与�
 第三次是分区相对整屏多买到的那点分辨力：那一次整屏判据会说**通过**——报告那
 一行仍然是"偏离 22/22"。
 
+## 装配不出来的驱动器：未实现的 web 侧必须响亮（xl-1vu.7）
+
+四种驱动器的真值现在都齐了（场景 / 战斗 / 菜单 / 商店，见 `docs/trace-format.md`
+的「四种驱动器一览」），而**取图页只装配得出 `scene`**。剩下三种在这条流水线里
+必须响亮地失败：一条没被装配的剧本比出来是「零帧差异」，跟「两端完全一致」长得
+一模一样。
+
+流水线因此**在开浏览器之前先分流**。分流的两份记录互不抄袭：
+
+| 记录 | 说的是 | 在哪 |
+|---|---|---|
+| 名单 | 取图页**能**装配哪些判别名 | `web/src/replay/implemented.ts` |
+| 表态 | 每条剧本**声称**自己现在什么处境 | `web/src/compare/expected.ts` 的 `status` |
+
+`web/src/compare/unassembled.ts` 拿这两份对撞，**两个方向都是硬失败**：表说
+`match`/`gap` 而页面装不出（那笔账是编的，一帧都没比过）；页面已经装得出而表
+还写 `unassembled`（面板做好了而表没改，这条剧本会永远挂在"比不了"上）。
+判据在 `web/src/compare/unassembled.test.ts`，跑在 `pnpm test` 里 —— 不需要 Java
+与 Chrome，所以它进 CI，而整条流水线不进。
+
+名单为什么不能抄两份：`web/src/replay/main.ts` 的装配表声明成
+`Record<ImplementedDriver, Assembly>`，**少一个键或多一个键都是编译错**；跑起来
+之后页面还把 `Object.keys(ASSEMBLIES)` 挂在 `window.__xlDrivers` 上，比对器进门
+核一次（`assertPageAgrees`）。核不上是硬失败，不许降级成"那就信本地这份"。
+
+**为什么要提前分流而不是撞上去。** 从前是撞上去的：取图页对未实现的驱动器抛，
+异常转成 Node 侧的 Error，整轮**中断**。于是默认全跑时 —— 按字典序第一条正好是
+`battle-em3-box` —— 五条能比的场景剧本一帧都比不成，`--self-check` 也跟着不跑。
+一条把自己噎死的流水线与一条恒绿的流水线，实用价值是一样的。
+
+实测（2026-09-06，`tools/compare-frames.sh --self-check`，9 条剧本，退出码 **1**）：
+
+```
+跨端逐帧比对：5 条剧本 × 各自的帧数 = 636 帧（阈值 0.0200% 的像素，单通道容差 8）
+  …（五条场景剧本逐条印出，全部符合预期）…
+5/5 条剧本符合预期。
+
+web 侧还装配不出来的剧本 4 条 —— 这一趟它们一帧都没比过：
+  装不出  battle-em3-box  driver=battle  web 侧还没有战斗面板… · 归 xl-82c
+  装不出  battle-min      driver=battle  web 侧还没有战斗面板… · 归 xl-82c
+  装不出  menu-equip      driver=menu    Web 侧还没有菜单系统… · 归 xl-6lo
+  装不出  shop-trade      driver=shop    Web 侧还没有商店系统… · 归 xl-knp.1
+  取图页现在实现了：scene。
+  （非零退出。一条没被装配的剧本比出来是"零帧差异"，跟"两端完全一致"长得一模一样。）
+
+流水线自检：故意改坏一处渲染
+  通过  bigmap-walk / dorm-exit / dorm-intro / dorm-walk / milestone —— 五条的首个变化帧都正好是注入点
+```
+
+也就是说：**能比的照常比、照常自检，比不了的逐条点名并把退出码染红。**
+
+### 篡改验证（2026-09-06 实测，每一条都真跑过）
+
+| 伪造的假象 | 怎么造 | 结果 |
+|---|---|---|
+| 「菜单已经实现了」 | 往 `IMPLEMENTED_DRIVERS` 里加 `'menu'` | `pnpm typecheck` 报 **TS2741**（装配表少了 `menu` 这个键）；`unassembled.test.ts` 同时红两条，报「menu-equip 的表态还写着 unassembled，可取图页已经装得出 driver=menu 了」 |
+| 「这份真值是场景导出的」 | 把 `tools/traces/compare/menu-equip/java/frames.json` 的判别字段改成 `"scene"` | 退出码 **2**，同一句话 |
+| 同上，改的是 trace 那一头 | 把 `…/java/trace.json` 的判别字段改成 `"battle"` | 退出码 **2**，`帧清单说 driver=scene，旁边那份 trace.json 说 driver=battle` |
+| 「面板做好了」 | 把 `expected.ts` 里 menu-equip 的表态改成 `match` 或 `gap` | 抛，`装配不出 driver=menu` |
+
+**改判别字段必须绕开 `tools/compare-frames.sh` 直接跑
+`pnpm exec vite-node scripts/compare.ts -- <剧本> --skip-capture`** —— 那个外壳
+会重跑 Java 导出，把手改的东西覆盖掉（这条坑本身记在 `docs/agents/dispatch.md`）。
+
+顺带三处"失败长得像成功"，都在这一趟里改掉了：只跑装配不出来的剧本时原先印
+「0/0 条剧本符合预期」（读起来跟全过一样，现在印「一条剧本都没比成」）；
+`--self-check` 在没有可比剧本时原先空循环全过（现在硬失败）；`frames.json` 缺
+`driver` 字段时原先一路走到装配才炸（现在读清单时就报）。
+
+### 接线不在这张票里
+
+**非场景驱动器的跨端逐帧比对，要等各自的里程碑在 web 侧把面板建起来才接得上：**
+战斗 **M2 / xl-82c**、菜单 **M3 / xl-6lo**、商店 **M4 / xl-knp**。
+`xl-1vu` 这个 SPEC **不做接线** —— 它交付的是真值与"装配不出来必须响亮"这条
+判据。面板做好之后要动的是两处：`implemented.ts` 里加判别名（装配表跟着补，
+不补就编译不过），以及 `expected.ts` 里那条剧本的表态换成 `match` 或**真量出来的**
+`gap`；只改一处的话上面那套对撞会红。
+
 ## 自检：故意改坏一处渲染
 
 每条剧本都红着的时候，一条恒红的流水线与一条恒绿的流水线一样没有诊断力，

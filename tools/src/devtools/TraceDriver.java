@@ -17,8 +17,10 @@ import java.awt.image.BufferedImage;
  * "一步"由实现方定义：tick 驱动的场景面板一步 = 一个 tick；事件驱动的菜单
  * 与商店一步 = 一次输入事件。Web 侧 replay 的 seek 本来就是这个形状。
  *
- * 目前唯一的实现是 {@link SceneDriver}。这是有意的 —— 这条缝是先抽出来、
- * 由五份已验收的场景真值逐字节不变来证明它没改变任何行为，然后别的面板才接上来。
+ * 四支实现：{@link SceneDriver}（tick 驱动）、{@link BattleDriver}（一步 =
+ * 一次 run() 循环体 + 一次 paint()）、{@link MenuDriver} 与 {@link ShopDriver}
+ * （事件驱动）。这条缝是先抽出来、由五份已验收的场景真值逐字节不变来证明它没
+ * 改变任何行为，然后别的面板才一支支接上来的（xl-1vu）。
  */
 public interface TraceDriver {
 

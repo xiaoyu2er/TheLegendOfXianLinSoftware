@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from 'vite'
 import { DEFAULT_TOLERANCE, diffImage, frameDiff, summarize } from '../src/compare/diff'
@@ -402,7 +412,38 @@ function readManifest(root: string, name: string): Manifest {
   if (onDisk !== m.ticks.length) {
     throw new Error(`${file} 说有 ${m.ticks.length} 帧，目录里却有 ${onDisk} 个 PNG`)
   }
+  // 帧清单与它旁边那份 trace 是同一次导出的产物，判别名必须一致。分流读的是
+  // 清单，取图页读的是 trace —— 只核一头的话，改另一头就能让两边各按各的认知
+  // 跑下去（`--skip-capture` 时更是连取图页都不开，trace 那一头根本没人看）。
+  const sibling = readTraceDriver(join(root, name, 'java', 'trace.json'))
+  if (sibling !== m.driver) {
+    throw new Error(
+      `${name}：帧清单说 driver=${m.driver}，旁边那份 trace.json 说 driver=${sibling}。` +
+        `两份是同一次导出的产物，对不上说明有一头被改过 —— 重跑 tools/compare-frames.sh。`,
+    )
+  }
   return m
+}
+
+/**
+ * 读一份 trace 的判别名。**只读文件头** —— 整份 trace 最大的一份 8 MB，
+ * 而要的只是第二行那个字段。
+ *
+ * 读不到就抛。「没匹配到」在这里不许是通过条件。
+ */
+function readTraceDriver(file: string): string {
+  if (!existsSync(file)) throw new Error(`找不到 ${file} —— 先跑 tools/compare-frames.sh`)
+  const fd = openSync(file, 'r')
+  try {
+    const buf = Buffer.alloc(4096)
+    const n = readSync(fd, buf, 0, buf.length, 0)
+    const head = buf.subarray(0, n).toString('utf8')
+    const m = /"driver"\s*:\s*"([^"]*)"/.exec(head)
+    if (!m) throw new Error(`${file} 的前 ${n} 个字节里没有 driver 字段`)
+    return m[1]!
+  } finally {
+    closeSync(fd)
+  }
 }
 
 // ================= 报告 =================
