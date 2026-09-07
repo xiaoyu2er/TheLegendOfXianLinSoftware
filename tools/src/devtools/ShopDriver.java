@@ -152,7 +152,9 @@ public final class ShopDriver implements TraceDriver {
 
         panel().paint(sink);
 
-        // 在 paint 之后取，口径与菜单一致：这一步"之后"记下的所有音效。
+        // 在 paint 之后取，口径与菜单一致。商店这边实测 paint 一声都不出
+        // （shop-trade 40 步，paint 期间 0 次），但菜单那边是真出声的
+        // （EquipPanel.drawWarning 的两声禁止），所以两支统一按 paint 之后取。
         musicThisStep = music.drain();
 
         if (done) { ip++; sub = 0; } else { sub++; }

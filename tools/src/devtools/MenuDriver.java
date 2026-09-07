@@ -155,8 +155,11 @@ public final class MenuDriver implements TraceDriver {
 
         current().paint(sink);
 
-        // 在 paint 之后取：paint 本身不出声，但这样"这一步之后"的口径与其余
-        // 快照字段一致，将来 paint 里冒出音效也归得对。
+        // 必须在 paint 之后取 —— **原版的 paint 真的出声**。EquipPanel.drawWarning()
+        // 里有两处 readmusic("禁止.wav")，就在把 isEquiped/canBeEquiped 清零的那同
+        // 一段里。实测 menu-equip 30 步记到的 14 次音效中，有 2 次（t=6 与 t=10 的
+        // 那两声禁止）是 paint 打出来的；drain 挪到 dispatch 之前，这两声会整体
+        // 错位到下一步。取样点与拒绝标志正相反：那两个标志要在 paint **之前**抓。
         musicThisStep = music.drain();
 
         if (done) { ip++; sub = 0; } else { sub++; }

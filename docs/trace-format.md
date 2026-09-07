@@ -566,9 +566,22 @@ M3 / M4 判断「该不该响、响哪一个」的唯一依据。
 从按下那一步跑到松开那一步）。又一次「一个稳定的错误在 `--check` 眼里和正确
 一模一样」。
 
+**取样点必须在 `paint()` 之后，因为原版的 paint 真的出声。**
+`EquipPanel.drawWarning()` 里有两处 `readmusic("禁止.wav")` —— 就在把
+`isEquiped` / `canBeEquiped` 清零的那同一段里。实测（2026-09-06）：menu-equip
+30 步记到的 14 次音效中 **2 次是 paint 打出来的**（t=6 与 t=10 那两声禁止），
+shop-trade 40 步则是 0 次。把 `drain()` 挪到 `dispatch()` 之前，这两声会整体错位
+到下一步。**注意它与拒绝标志正好相反**：`warnEquipped` / `warnCannotUse` 必须在
+paint **之前**抓（同一个 `drawWarning()` 会把它们清零），音效必须在 paint
+**之后**取。同一个方法，两个相反的取样时机。
+
 `music` 只在 `menu` / `shop` 两支上打开。场景与战斗不 `arm()`，`MusicLog`
 一直是关的，那 7 份真值一个字节都没变（实测）。BGM 不走这条路：
 `MusicPlayer.play` 里 `currentPlayingBGM = name` 本来就在任何开关判断之外。
+
+`MusicTap.arm()` 里那道 `CAN_PLAY_MUSIC != NO` 的 if **当下打不响**：
+`ExportTrace.main` 在任何驱动器起来之前就把它设成 `NO` 了。它是留给将来某个不走
+`ExportTrace` 的调用者的前置断言，不是一道在验的检查。
 
 ### 确定性
 

@@ -29,7 +29,13 @@ import tools.MusicLog;
  *
  * 探针本身不会出声也不会碰文件：{@code CAN_PLAY_MUSIC == NO} 时 {@code playmusic}
  * 整个方法体都不进。{@link #arm()} 因此**必须在 closeMusic() 之后调**，并且自己
- * 核对这一点。
+ * 核对这一点 —— 不过要说清楚它现在的成色：{@link ExportTrace#main} 在任何驱动器
+ * 起来之前就把 {@code CAN_PLAY_MUSIC} 设成 {@code NO} 了，所以那道 if **当下
+ * 打不响**。它是留给将来某个不走 ExportTrace 的调用者的前置断言，不是一道在验的
+ * 检查；别把它当成"探针是安全的"的证据。
+ *
+ * {@link #requireRecorded()} 只在剧本正常跑完那条出口上调。跑爆 {@code maxSteps}
+ * 的剧本走不到它 —— 那是对的，maxSteps 那条失败更响，先报它。
  */
 final class MusicTap {
 
@@ -75,6 +81,4 @@ final class MusicTap {
                     + "原版都要出声，所以这不是'本来就不响'，是观察点或者 drain 的位置不对");
         }
     }
-
-    int total() { return total; }
 }
