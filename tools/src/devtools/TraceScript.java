@@ -247,7 +247,7 @@ public final class TraceScript {
                 if (!PANELS.contains(panel)) {
                     throw new IllegalArgumentException("不认识的面板 " + panel + "，可用的是 " + PANELS);
                 }
-                // 全灭图对开 512px（每步 8px）再数 10 下才跳转，一共 74 步；
+                // 全灭图对开 512px（每步 8px）再数 10 下才跳转，实测 72 步；
                 // 默认给 300 是留了余量，撞上上限是硬失败而不是导出一份短的。
                 max = JsonIn.iOr(s, "max", 300);
             }

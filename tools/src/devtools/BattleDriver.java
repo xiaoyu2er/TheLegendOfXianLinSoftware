@@ -155,7 +155,7 @@ public final class BattleDriver implements TraceDriver {
      * 剧本跑完了。返回 false 之前先拦一种收工方式：**全灭了，而面板还没切走**。
      *
      * 全灭之后原版必然切面板 —— {@code GameOver.update()} 把全灭图对开 512px
-     * （每步 8px）再数 10 下，74 步之后一定走到那句
+     * （每步 8px）再数 10 下，72 步之后一定走到那句
      * {@code em1.name.equals("罹年居士")}。停在那之前收工，导出的是一份**两条
      * 出口都还没走**的真值：它有头有尾、步数像模像样、退出码 0，而分支写反了
      * 与写对了在它里面长得一模一样。这正是本票（xl-rh9.3）要堵的形状，所以
@@ -169,7 +169,7 @@ public final class BattleDriver implements TraceDriver {
     private boolean finish() {
         if (outcome().equals("defeat") && tap.card() == null) {
             fail("剧本跑完了，我方已全灭而原版还没切面板 —— 全灭之后 GameOver.update() "
-                    + "必然在 74 步内切回地图或标题，停在这里导出的是一份走到半路的真值。"
+                    + "必然在 72 步内切回地图或标题，停在这里导出的是一份走到半路的真值。"
                     + "用 awaitExit 把那一步接住");
         }
         return false;
@@ -386,8 +386,8 @@ public final class BattleDriver implements TraceDriver {
      *
      * 为什么这条指令必须存在：{@code gameOver.isDraw} 一置真，
      * {@link #outcome()} 就报 defeat —— 那只是全灭图**开始**对开的那一刻。
-     * 真正分岔的那一句在 74 步之后（{@code GameOver.update()}：对开 512px、
-     * 每步 8px，然后数 10 下），它只比一个字符串：第一只怪叫不叫「罹年居士」。
+     * 真正分岔的那一句在 72 步之后（{@code GameOver.update()}：对开 512px、
+     * 每步 8px，然后数 10 下；两份真值实测都是 72 步），它只比一个字符串：第一只怪叫不叫「罹年居士」。
      * 停在 defeat 就收工，导出的是一份**两条出口都还没走**的真值 —— 而
      * 「分支写反了」与「分支写对了」在那样的真值里长得一模一样，正是本票要
      * 堵的那个形状。
