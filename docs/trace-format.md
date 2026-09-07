@@ -227,6 +227,151 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 加桩，那要改 `src/`。`audio.bgm` 本身是准的：`currentPlayingBGM` 在这一切
 之前就已设好。
 
+## 战斗剧本与战斗 trace（`driver: "battle"`）
+
+战斗面板与场景面板在这套设施里只共用三件事（推进一步 / 快照状态 / 快照位图，
+即 `TraceDriver`），别的都不一样：没有格子、没有主角、没有定时器，输入是鼠标。
+
+### 剧本
+
+```json
+{
+  "name": "battle-min",
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "party": ["zhang", "yu", "lu"],
+  "level": { "zhang": 5, "yu": 5, "lu": 5 },
+  "enemies": ["怪物1/5", "怪物2/6", "怪物2/7"],
+  "seed": 20260906,
+  "tickMs": 100,
+  "maxTicks": 3000,
+  "steps": [
+    { "op": "command", "button": "attack", "budget": 400 },
+    { "op": "target", "enemy": 1, "budget": 50 },
+    { "op": "autoAttack", "until": "victory", "max": 2000 }
+  ]
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `background` / `enemies` | 就是 `script/*.txt` 里 `Fight` 那一行的第一列与后三列。怪物写法 `名字/编号`，编号必须是 5/6/7（原版 `Enemy.initial` 按它定站位：5 中 / 6 上 / 7 下）。空槽位写 `null`，但三个槽位要写满。 |
+| `party` / `level` | 出战的我方单位与各自的等级。**等级没有默认值**：三个人的原版默认等级各不相同（张小凡 1 / 文敏 3 / 陆雪琪 1），而这份真值里每一个伤害数字都是从这里算出来的。 |
+| `seed` | `Math.random()` 的种子。伤害、怪物选招选人、状态命中全走它。 |
+| `tickMs` | 只能是 `100` —— `BattlePanel.run()` 的循环周期就是 `Clock.sleep(100)`。 |
+
+指令词汇：
+
+| 指令 | 参数 | 语义 |
+|---|---|---|
+| `command` | `button` | 点控制台的一个按钮（`attack`/`skill`/`defend`/`thing`）。菜单在预算内没出来 —— 硬失败。 |
+| `target` | `enemy` | 点某个怪物（1/2/3）。槽位空着、或者点下去 `currentBeAttacked` 没变 —— 硬失败。 |
+| `autoAttack` | `until`, `max` | 「能点击就点『击』，能选敌就选第一个还站着的怪物」，一直打到分出胜负。`until` 是 `victory`/`defeat`/`decided`；打成了别的结局，或者跑满 `max` 步还没分出来 —— 都是硬失败。 |
+| `wait` | `ticks` | 空等（与场景共用）。 |
+
+`autoAttack` 是**策略**而不是一串写死的点击，因为一场战斗要打几个回合取决于
+每次伤害掷出多少 —— 写剧本的人事先不知道。写死次数只要少一次，导出的就是一份
+"打到一半就停"的 trace，而它和一份打完的长得一模一样。
+
+### 一步是什么
+
+**一步 = 原版 `BattlePanel.run()` 的一次循环体 + 一次 `paint()`**，顺序
+`输入 → 循环体 → paint()`。
+
+场景那边是把 `run()` 的循环体提取成了 `step()`；战斗这边**不动 `src/`**，
+改用一道闸门：`BattleDriver.Gated` 是 `BattlePanel` 的子类，只在调用者是
+`run()` 那条线程时把 `repaint()`（循环体的最后一句，原版自己写的那一句）
+闸住，由导出器逐步放行。跑的是原版一字未改的循环体，不是它的一份誊抄。
+
+起手那一下：先 `Clock.setFactor(1e-9)` 把 `sleep(100)` 拉到约 11 天，于是
+"构造面板 → 建人物 → `initial()`"整段期间那条线程一次循环体都跑不了 ——
+否则第一次循环发生在 `initial()` 之前还是之后就成了竞态，而两种结果的 trace
+都"看上去正常"。闸门装好之后 `interrupt()` 它一次，随后 factor 调到 `1e6`
+（`sleep` 只剩 1ms）。**那次 interrupt 会在 stderr 上留一条
+`InterruptedException`，是有意的**：`run()` 的 try/catch 只包住 sleep
+（xl-1dv.10），打完照常往下跑。
+
+随机源：把 `java.lang.Math` 私有的那个 `Random` `setSeed(剧本的 seed)`。
+算法一字未动，改的只是起点。需要 `--add-opens java.base/java.lang=ALL-UNNAMED`
+（`tools/export-trace.sh` 与 `tools/compare-frames.sh` 都给了）；不给的表现是
+`BattleDriver` 当场非零退出并说明原因，不会静默导出一份每次都不同的真值。
+
+### `paint()` 到底有没有副作用
+
+**实测（2026-09-06，openjdk 17）：战斗面板的 `paint()` 对状态机没有副作用。**
+同一场战斗跑两遍，一遍每步 `paint()`、一遍一次都不 `paint()`，426 步 ×
+24 个可断言字段的逐步转储**零行差异**（两遍的胜负、步数、末帧血量也都相同）。
+
+xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/120"
+复现不出因果关系：那次测量里 `run()` 线程是自由奔跑的，`paint()` 只是让取样
+循环变慢，于是取到了更靠后的状态。**但 `paint()` 仍然每步都调** —— 位图本身
+是这份真值的交付物，而"省一次绘制"正是那种省对了和省错了长得一样的优化。
+
+### trace 的每一步记什么
+
+```json
+{"t":0,"vt":0,"ip":0,
+ "input":[{"e":"click","x":514,"y":325,"target":"command:attack"}],
+ "outcome":"undecided",
+ "round":0,"pattern":0,"beAttacked":0,
+ "bar":{"origin":300,"zhang":309,"yu":310,"lu":313,"pet":300,
+        "e1":311,"e2":310,"e3":310,"stopped":false,"drawn":true},
+ "heroes":[{"code":1,"hp":1260,"hpMax":1260,"mp":540,"mpMax":540,
+            "angry":0,"isAngry":false,"dead":false,"speed":9,
+            "drawn":true,"frame":1,
+            "state":{"type":0,"rounds":0,"usable":false,"role":0}}],
+ "enemies":[{"slot":1,"name":"怪物1","hp":250,"speed":11,"onField":true,
+             "dead":false,"drawn":true,"frame":1,
+             "state":{"type":0,"rounds":0,"usable":false,"role":0},
+             "box":[100,220,124,172]}],
+ "hurts":[{"value":186,"type":1,"x":60,"y":330,"drawn":true,"frame":1}],
+ "ui":{"command":false,"skillMenu":false,"drugMenu":false,"selectable":false,
+       "instruct":false,"reminder":false,"victory":false,"gameOver":false,
+       "startAnim":true},
+ "anim":{"skill":null,"skillFrame":0,"skillDrawn":false,"skillX":0,"skillY":0,
+         "bg":null,"bgFrame":0,"bgDrawn":false},
+ "audio":{"bgm":"B6.mp3"}}
+```
+
+| 字段 | 来源 |
+|---|---|
+| `outcome` | `undecided` / `victory` / `defeat`。分别由 `victoryReminder.isDraw` 与 `gameOver.isDraw` 判，**先判失败**。 |
+| `round` / `pattern` / `beAttacked` | `BattlePanel.currentRound` / `currentPattern` / `currentBeAttacked`。三个数合起来就是战斗状态机：谁在行动、用哪一招、打谁（编码见那三个字段的原版注释）。 |
+| `bar` | `ProgressBar` 的七个像素位置 + 起点 + `isStop`/`isDraw`。原版的行动条只有位置这一个量：谁先跑满 `origin+400` 谁行动。 |
+| `heroes[]` | 我方，顺序同 `BattlePanel.heroes`。`speed` 取的是三个类各自的静态字段（接口里没有 getter）。 |
+| `enemies[]` | **三个槽位一律写满**（空槽位是 `null`）。怪物死后 `em1/em2/em3` 会被置 `null`，但对象与 `hp` 都还在 —— `onField` 那一列负责说它还在不在场上。只记"场上还有谁"的话，最后一击打了多少就没地方看了。 |
+| `enemies[].box` | 原版 `EnemySlector` 判鼠标命中用的那个矩形，照它写的取。 |
+| `hurts[]` | `BattlePanel.hurtValues`。原版每算一次伤害就 new 一个塞进去，动画播完自己收摊 —— 这是"这一击打了多少"唯一的可断言出处。 |
+| `ui` | 控制台 / 技能菜单 / 药品菜单 / 怪物选择器 / 指示器 / 提示 / 胜利提示 / 全灭图 / 开场动画，九个 `isDraw` 类标志。 |
+| `anim` | 技能动画与背景动画的名字、帧号、坐标。 |
+
+### 真值里能看见的原版缺陷
+
+真值的职责是记录原版做了什么，不是记录它应该做什么。**导出器一处都不修**：
+
+- **xl-1dv.9 `Enemy.hp` 可为负。** 致命一击会打过头，而 `Check.checkEnemyDead`
+  只判 `<=0` 就把怪物摘掉，从不夹到 0。`battle-min` 末帧三个槽位是
+  `-12 / -88 / -84`。
+- **xl-1dv.8 `EnemySlector` 判第三个怪物时用了 `height1`。** `box` 的第三项
+  因此取的是第一个怪物图片的高。**在 `battle-min` 这一场里它是潜伏的**：
+  `怪物1` 与 `怪物2` 的图片都是 172 高，`height1` 恰好等于真实的 `height3`，
+  看不出差别。要让它真的可观测，得换一场 em1/em3 图片高度不同的遭遇。
+- **xl-1dv.6 `initial()` 只 add 不 clear。** 同一个 JVM 里连开第二场会带上第
+  一场的残留，所以**一份剧本 = 一个 JVM = 一场战斗**。这是绕开，不是修。
+
+### 回放端
+
+`web/src/replay/main.ts` 的装配表今天只有 `scene` 一项，所以战斗真值走到取图页
+会被 `pickAssembly` 挡住。实测（`tools/compare-frames.sh battle-min --every 100`）：
+
+```
+[compare] 页面里抛了异常：UnknownDriverError: battle-min：驱动器 battle 在取图页还没有实现，装配不出来。本页实现了：scene。
+退出码=2
+```
+
+这正是要的行为 —— 一条没被装配的剧本比出来是"零帧差异"，和"两端完全一致"长得
+一模一样。接上战斗装配是 xl-1vu.7 的事。
+
 ## 菜单剧本与菜单真值（`driver` = `menu`）
 
 上面整套讲的是场景驱动器。菜单是第二支（xl-1vu.5），**一步 = 一次输入事件，

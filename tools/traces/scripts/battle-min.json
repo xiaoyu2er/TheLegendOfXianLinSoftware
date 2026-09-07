@@ -1,0 +1,17 @@
+{
+  "name": "battle-min",
+  "description": "最小战斗真值：剧情1.txt 的那一场固定遭遇（三人对三怪），从开场动画打到分出胜负。第一回合的两步（点「击」、选中间那只怪）写成显式指令，之后交给 autoAttack 打完。",
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "party": ["zhang", "yu", "lu"],
+  "level": { "zhang": 5, "yu": 5, "lu": 5 },
+  "enemies": ["怪物1/5", "怪物2/6", "怪物2/7"],
+  "seed": 20260906,
+  "tickMs": 100,
+  "maxTicks": 3000,
+  "steps": [
+    { "op": "command", "button": "attack", "budget": 400 },
+    { "op": "target", "enemy": 1, "budget": 50 },
+    { "op": "autoAttack", "until": "victory", "max": 2000 }
+  ]
+}

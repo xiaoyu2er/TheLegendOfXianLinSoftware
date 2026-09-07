@@ -103,9 +103,21 @@ function tracedScenes(): string[] {
   const scenes = new Set<string>()
   for (const f of files) {
     const trace = JSON.parse(readFileSync(resolve(dir, f), 'utf8')) as {
+      driver: string
       ticks: readonly { scene: string }[]
     }
+    // 只有场景真值才有"走到过哪些场景"这回事。战斗真值（xl-1vu.4）的每一步
+    // 里没有 `scene` 字段，硬扫会往集合里塞一个 `undefined` —— 那之后烘出来
+    // 的产物少一首曲子还是多一首，谁都看不出来。战斗自己那首 BGM 要等 web
+    // 侧真有战斗面板了再烘（xl-1vu.7）。
+    if (trace.driver !== 'scene') continue
     for (const tick of trace.ticks) scenes.add(stem(tick.scene))
+  }
+  if (scenes.size === 0) {
+    // 全被筛掉了与"一份 trace 都没有"一样致命，而且更隐蔽：文件都在，
+    // 只是没有一份是场景真值。
+    console.error(`${dir} 下没有一份场景真值（driver === 'scene'）—— 烘不出背景音乐的范围`)
+    process.exit(1)
   }
   return [...scenes].sort()
 }

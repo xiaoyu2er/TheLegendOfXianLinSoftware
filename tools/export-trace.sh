@@ -31,7 +31,11 @@ fi
 
 mkdir -p "$OUT"
 run() {  # run <剧本名> <输出路径>
+  # --add-opens：战斗驱动器要把 java.lang.Math 私有的那个 Random 播上剧本给的
+  # 种子（伤害与怪物 AI 全走 Math.random）。不开这个的表现是 BattleDriver 当场
+  # 非零退出并说明原因，不会静默导出一份每次都不同的真值。
   "$JAVA_HOME/bin/java" -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
+    --add-opens java.base/java.lang=ALL-UNNAMED \
     -Djava.awt.headless=false -cp "$CP" \
     devtools.ExportTrace "$SCRIPTS/$1.json" "$2"
 }

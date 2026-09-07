@@ -180,7 +180,14 @@ export function traceNamesOf(driver: string): readonly string[] {
   return names
 }
 
-/** 场景驱动器导出的那几份真值。逐 tick 回放、视口、NPC、对话、BGM 都只吃这些。 */
+/**
+ * 场景驱动器导出的那几份真值。逐 tick 回放、视口、NPC、对话、BGM 都只吃这些。
+ *
+ * **筛子是 `driver`，不是名字**（xl-1vu.4 提的，值得留着）：判别名由导出侧的
+ * 驱动器自己报（xl-1vu.2），而按名字前缀猜"这份大概是战斗的"就又是一份会和
+ * 实现分家的名单。一份场景真值要是哪天报错了判别名，它会从这里掉出去 ——
+ * 所以 `traceHeader.test.ts` 盯着"这个列表不许空、且掉出去的那些确实不是 scene"。
+ */
 export const SCENE_TRACE_NAMES: readonly string[] = traceNamesOf('scene')
 
 /**

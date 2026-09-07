@@ -42,6 +42,21 @@ describe('跨端比对的期望表', () => {
     }
   })
 
+  it('unassembled 的表态不许带任何量出来的数 —— 一帧都没比过，写了就是编的', () => {
+    // xl-1vu.4 与 xl-1vu.5 合流时定的状态（见 expected.ts 的 status 注释）。
+    // 它是个「还没得比」，不是「比过了但差着」。加这条判据是因为一个不带任何
+    // 要求的状态就是一个逃生舱：以后谁想绕开上界，把 status 改成它就行了。
+    // 分母从表里现数。
+    const unassembled = Object.entries(EXPECTED).filter(([, e]) => e.status === 'unassembled')
+    expect(unassembled.length, '一条 unassembled 都没有了？那就把这条判据删掉').toBeGreaterThan(0)
+    for (const [name, e] of unassembled) {
+      expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
+      expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()
+      expect(e.why, `${name} 要说清楚为什么比不了`).toBeTruthy()
+      expect(e.issue, `${name} 要挂上接它的那张票`).toBeTruthy()
+    }
+  })
+
   it('缺口区的上界必须够得着 —— 上界比这块区的面积还大就永远超不了', () => {
     // "破不了的检查"和"没有检查"是同一件事，而两者都安安静静地通过。
     // 分母从矩形自己算，不写死。

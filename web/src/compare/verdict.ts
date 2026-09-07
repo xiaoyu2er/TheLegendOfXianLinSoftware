@@ -36,6 +36,15 @@ export function judgeWhole(sequence: SequenceResult, e: Expectation): WholeVerdi
       verdict: diverged ? `回归：第 ${sequence.firstDivergent} 帧起偏离` : '一致',
     }
   }
+  if (e.status === 'unassembled') {
+    // 走到这里就说明取图页居然把这条剧本装配出来了：要么面板做好了而表没改，
+    // 要么装配挑错了驱动器。两种都得响 —— 「表态说比不了、实际却比出来了」
+    // 静静通过的话，这条表态就永远不会有人回来改。
+    throw new Error(
+      `${sequence.frames} 帧比出来了，但表态还写着 unassembled（一帧都比不了）。` +
+        `如果这个面板的 web 侧已经做好了，把这条改成 match 或带上量出来的 gap。`,
+    )
+  }
   if (e.maxRatio === undefined) {
     throw new Error(
       `gap 表态没有幅度上界（maxRatio）。只有"有偏离帧"这一个通过条件的话，` +

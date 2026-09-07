@@ -39,8 +39,21 @@ import type { GapRegion } from './regions'
  * 每条剧本各拍一个数。
  */
 export interface Expectation {
-  readonly status: 'match' | 'gap'
-  /** `gap` 必须说清楚差在哪、归哪张票。`match` 不写。 */
+  /**
+   * - `match` —— 两端逐像素相等。
+   * - `gap`   —— **比过了**，剩一笔说得清、有上界的账。
+   * - `unassembled` —— **一帧都还没比过**：取图页装配不出这个驱动器，整条
+   *   流水线在这条剧本上非零退出（见 `replay/drivers.ts`）。它不是 `gap`：
+   *   `gap` 的每一个数都该是量出来的，而这种剧本一个像素都没画过，写任何
+   *   上界都是编的。web 侧把那个面板做出来之后，这一条要么变 `match`、
+   *   要么带上真量出来的 `maxRatio` / `gaps` 变成 `gap`。
+   *
+   * 这个取值是 xl-1vu.4 与 xl-1vu.5 合流时定的：两张票各自都写了
+   * `status: 'gap'` 且刻意不写上界（理由都对——没量过），而 xl-l3o 同时立了
+   * 「每条 gap 都必须有上界」。三者都对，说明缺的是一个状态，不是一个数。
+   */
+  readonly status: 'match' | 'gap' | 'unassembled'
+  /** `gap` 与 `unassembled` 必须说清楚差在哪／为什么比不了、归哪张票。`match` 不写。 */
   readonly why?: string
   readonly issue?: string
   /**
@@ -79,6 +92,18 @@ export const CANVAS_WIDTH = 1024
 export const CANVAS_HEIGHT = 640
 
 export const EXPECTED: Readonly<Record<string, Expectation>> = {
+  'battle-min': {
+    status: 'unassembled',
+    // 战斗真值（xl-1vu.4）。取图页今天只有场景那一套装配，遇到
+    // `driver: "battle"` 会由 `replay/drivers.ts` 的 `pickAssembly` **抛**，
+    // 整条比对流水线非零退出并点名是哪个驱动器 —— 那正是要的行为：一条没被
+    // 装配的剧本比出来是"零帧差异"，和"两端完全一致"长得一模一样。
+    //
+    // 所以这里没有分区表态（`gaps`）：一帧都还没比过，划不出缺口区来。
+    // web 侧接上战斗装配是 xl-1vu.7 的事，接上之后这条要换成量过的表态。
+    why: 'web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败',
+    issue: 'xl-1vu.7',
+  },
   'dorm-walk': {
     status: 'gap',
     // 地图底图已逐像素对齐（xl-9bd.16），NPC 已实现并逐 tick 对齐（xl-9bd.9），
@@ -284,7 +309,7 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     issue: 'xl-9bd.17 / xl-yg6.1 / xl-9bd.18',
   },
   'menu-equip': {
-    status: 'gap',
+    status: 'unassembled',
     // 第一条**不是场景**的剧本（xl-1vu.5，driver = menu）。Web 侧整个菜单系统
     // 都还没做（M3 / xl-6lo），所以这条剧本现在连一帧都出不来 —— 取图页拿
     // 判别名去装配会直接抛 UnknownDriverError（`src/replay/drivers.ts`），

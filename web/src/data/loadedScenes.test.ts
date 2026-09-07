@@ -22,6 +22,9 @@ import { getScene } from './scenesEager'
  * 场景，都是回放出来的，不是手抄的。名单从目录现扫，分母是它自己的长度。
  */
 
+// 下面一律用 SCENE_TRACE_NAMES：战斗与菜单真值里没有场景、没有出口，
+// `switchesOf` 对它们无从下手。名单仍然是现数的，见 `state/trace.ts` 的
+// traceNamesOf —— 它在分组为空时直接抛，不返回空数组。
 /** 真值里的一次换场景，连同"换之前那个世界预取了些什么"。 */
 interface Switch {
   readonly trace: string

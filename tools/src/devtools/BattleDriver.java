@@ -1,0 +1,676 @@
+package devtools;
+
+import java.awt.Graphics;
+import java.awt.Image;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
+import java.awt.image.BufferedImage;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.Semaphore;
+
+import battle.BattlePanel;
+import battle.Enemy;
+import battle.Hero;
+import battle.LuXueQi;
+import battle.YuJie;
+import battle.ZhangXiaoFan;
+import tools.Clock;
+
+/**
+ * 战斗面板的驱动器。一步 = 原版 {@code BattlePanel.run()} 的**一次循环体**，
+ * 外加一次 {@code paint()}，固定顺序 **输入 → 循环体 → paint()**。
+ *
+ * <h2>为什么不能像场景那样把循环体提取成 step()</h2>
+ *
+ * 场景那边把 {@code ScenePanel.run()} 的循环体整块提取成了 {@code step()}，
+ * 导出器每 tick 调一次。战斗这边**不动 src/**（这是本票的验收条件之一），
+ * 所以走的是另一条路：让原版那个线程照跑，只是把它卡在一个闸门上，
+ * 由导出器逐步放行。跑的是原版一字未改的循环体，不是它的一份誊抄。
+ *
+ * <h2>确定性从哪来</h2>
+ *
+ * 战斗面板里**一个 javax.swing.Timer 都没有**（grep 过：17 个定时器全在
+ * scene 与 menu 下）。它的时间只来自两处，随机只来自一处：
+ *
+ * <ol>
+ *   <li><b>主循环。</b>{@code run()} 是 {@code while(true){ Clock.sleep(100); …; repaint(); }}，
+ *       跑在构造函数里起的那条线程上。这里把它闸在 {@code repaint()} 上：
+ *       每放行一次，它就跑一次完整的循环体，然后停下等下一次放行。放行与
+ *       等待都由导出器主动做，与真实时间无关。
+ *       <p>起手那一下另有讲究：{@code Clock.setFactor} 先把 {@code sleep(100)}
+ *       拉到约 11 天，于是"构造面板 → 建人物 → initial()"整段期间那条线程
+ *       一次循环体都跑不了 —— 否则第一次循环发生在 {@code initial()} 之前
+ *       还是之后就成了竞态，而两种结果的 trace 都"看上去正常"。装好闸门之后
+ *       再 {@code interrupt()} 它一次把它从那场长眠里叫醒，随后 factor 调回
+ *       让 sleep 只剩 1ms —— 反正闸门在 {@code repaint()}，那 1ms 停在哪里
+ *       都不影响结果。<b>那次 interrupt 会在 stderr 上留一条
+ *       InterruptedException</b>：{@code run()} 的 try/catch 只包住 sleep
+ *       （xl-1dv.10），它把异常打出来然后照常往下跑，正是这里需要的。</li>
+ *   <li><b>绘制。</b>{@code paint()} 每步真的调一次，画进原版自己那张
+ *       {@code TYPE_INT_ARGB} 的离屏图（{@code BattlePanel.bufferedPic}），
+ *       快照的就是它。
+ *       <p><b>实测（2026-09-06）</b>：战斗面板的 {@code paint()} 对状态机
+ *       <b>没有</b>副作用 —— 同一份剧本跑两遍，一遍每步 paint、一遍一次都不
+ *       paint，426 步 × 24 个可断言字段的逐步转储**零行差异**。xl-1dv.5 记的
+ *       "不调 paint 时 command.isDraw 是 0/120、调 paint 时 59/120"复现不出
+ *       因果关系；那个测量里 run() 线程是自由奔跑的，paint 只是让取样循环变慢、
+ *       于是取到了更靠后的状态。<b>但 paint 仍然每步都调</b>：位图本身是这份
+ *       真值的交付物之一，而且"省一次绘制"正是那种省对了和省错了长得一样的
+ *       优化。</li>
+ *   <li><b>随机。</b>伤害（{@code ZhangXiaoFan.calDamage} 等 4 处）、怪物选招与
+ *       选人（{@code EnemyAI}）、状态命中（{@code BattleState.set}）全走
+ *       {@code Math.random()}。这里把 {@code java.lang.Math} 那个私有
+ *       {@code Random} 实例取出来 {@code setSeed(剧本的 seed)} —— 换的是种子，
+ *       不是算法，之后每一次 {@code Math.random()} 仍是原版那句原版那个生成器。
+ *       需要 {@code --add-opens java.base/java.lang=ALL-UNNAMED}（在
+ *       {@code tools/export-trace.sh} 里给）。</li>
+ * </ol>
+ *
+ * <h2>一次导出一场战斗</h2>
+ *
+ * {@code BattlePanel.initial()} 对 {@code heroes}/{@code enemies} 只 add 不
+ * clear（xl-1dv.6），所以同一个 JVM 里连开第二场会带上第一场的残留。本驱动器
+ * 因此只打一场：一份剧本 = 一个 JVM = 一场战斗。这是绕开那个缺陷，不是修它。
+ *
+ * <h2>原版缺陷照实导出</h2>
+ *
+ * 真值里会直接看到两条已知缺陷，**导出器一处都不修**：
+ * <ul>
+ *   <li>xl-1dv.9：{@code Enemy.hp} 会是负数（致命一击打过头，
+ *       {@code Check.checkEnemyDead} 只判 {@code <=0} 就把它摘掉，从不夹到 0）。
+ *       每个槽位的 {@code hp} 照原样写，摘掉之后也接着写（{@code alive} 那一列
+ *       负责说它还在不在场上）。</li>
+ *   <li>xl-1dv.8：{@code EnemySlector.checkMoveIn/checkClick} 判第三个怪物时
+ *       用的是 {@code height1}（第一个怪物图片的高）。每个槽位的 {@code box}
+ *       就是原版拿来判命中的那四个数，第三个槽位的高因此是第一个的高。</li>
+ * </ul>
+ */
+public final class BattleDriver implements TraceDriver {
+
+    /** 建面板那段时间里，把 {@code Clock.sleep(100)} 拉到约 11 天。 */
+    private static final double FREEZE_FACTOR = 1e-9;
+    /** 闸门装好之后：{@code Clock.ms} 会夹到最小 1ms，循环停在哪里都不影响结果。 */
+    private static final double RUN_FACTOR = 1e6;
+
+    private final TraceScript script;
+    private Gated bp;
+    private Graphics sink;
+    private Thread loop;
+    private boolean pumped;          // 第一次放行要 interrupt，之后是 release
+
+    /** 三个怪物槽位。**死掉被摘出 em1/em2/em3 之后这里仍然留着引用**，否则
+     *  负血（xl-1dv.9）与最后一击的伤害数字会在真值里凭空消失。 */
+    private final Enemy[] slots = new Enemy[3];
+    private final List<Hero> party = new ArrayList<>();
+
+    // ---- 剧本执行状态 ----
+    private int ip;
+    private boolean entered;
+    private int spent;
+    private int left;
+    private final List<String> pending = new ArrayList<>();
+    private int ticks;
+
+    BattleDriver(TraceScript script) { this.script = script; }
+
+    /**
+     * 判别名。常量而不是从剧本里读 —— 一份 trace 是哪个面板导出来的，
+     * 是导出这件事本身的属性（同 {@link SceneDriver#kind()}）。
+     */
+    @Override
+    public String kind() { return "battle"; }
+
+    private void fail(String msg) {
+        String where = ip < script.steps.size()
+                ? "第 " + ip + " 条指令 " + script.steps.get(ip).op
+                : "剧本末尾";
+        ExportTrace.die(script.name + " · " + where + " · 第 " + ticks + " 步：" + msg);
+    }
+
+    // ================= 推进一步 =================
+
+    @Override
+    public boolean step() {
+        if (bp == null) start();
+        if (ip >= script.steps.size()) return false;
+        if (ticks >= script.maxTicks) fail("超过剧本的 maxTicks=" + script.maxTicks + "，剧本没有跑完");
+        pending.clear();
+        advanceScript();
+        if (ip >= script.steps.size() && pending.isEmpty()) return false;
+
+        pump();            // 放行一次原版循环体，等它跑完
+        bp.paint(sink);    // 绘制有没有副作用是另一回事，位图是交付物
+        ticks++;
+        return true;
+    }
+
+    /** 放行一次 {@code run()} 的循环体，并等它跑到闸门上。 */
+    private void pump() {
+        if (pumped) {
+            bp.go.release();
+        } else {
+            pumped = true;
+            System.err.println("[BattleDriver] 下面这条 InterruptedException 是有意的："
+                    + "把 run() 线程从冻结的 sleep 里叫醒，之后每一步都由闸门放行。");
+            loop.interrupt();
+        }
+        bp.done.acquireUninterruptibly();
+    }
+
+    // ================= 起手 =================
+
+    private void start() {
+        seedRandom();
+
+        // 背景音乐只取 currentPlayingBGM 这个可断言的值，不需要真的出声
+        // （与 SceneDriver 同一套，理由见那边）。
+        media.MusicReader.closeBGM();
+        media.MusicPlayer.CAN_PLAY_BGM = media.MusicPlayer.NO;
+
+        // 先冻住 sleep 再建面板：构造函数里就把 run() 线程起来了。
+        Clock.setFactor(FREEZE_FACTOR);
+        bp = new Gated();
+
+        ZhangXiaoFan zxf = null;
+        YuJie yj = null;
+        LuXueQi lxq = null;
+        for (Map.Entry<String, Integer> e : script.levels.entrySet()) {
+            switch (e.getKey()) {
+                case "zhang": ZhangXiaoFan.level = e.getValue(); break;
+                case "yu":    YuJie.level        = e.getValue(); break;
+                case "lu":    LuXueQi.level      = e.getValue(); break;
+                default: throw new IllegalStateException(e.getKey());
+            }
+        }
+        // 出场坐标就是 GameLauncher 里那三行写死的值。
+        if (script.party.contains("zhang")) zxf = new ZhangXiaoFan(560, 160, bp);
+        if (script.party.contains("yu"))    yj  = new YuJie(750, 150, bp);
+        if (script.party.contains("lu"))    lxq = new LuXueQi(800, 330, bp);
+        for (Hero h : new Hero[] { zxf, yj, lxq }) if (h != null) party.add(h);
+
+        for (int i = 0; i < 3; i++) {
+            String spec = script.enemies.get(i);
+            if (spec == null) continue;
+            int slash = spec.lastIndexOf('/');
+            if (slash < 0) throw new IllegalArgumentException("怪物写法应当是 名字/编号，实际 " + spec);
+            int code = Integer.parseInt(spec.substring(slash + 1));
+            // 编号就是原版 Fight 数据里的那一位，它同时决定站位（5 中 / 6 上 / 7 下）。
+            if (code != 5 + i) {
+                throw new IllegalArgumentException("第 " + (i + 1) + " 个怪物的编号应当是 " + (5 + i)
+                        + "（原版 Enemy.initial 按它定站位），实际 " + spec);
+            }
+            slots[i] = new Enemy(spec.substring(0, slash), code, bp);
+        }
+        bp.initial(script.background, zxf, yj, lxq, slots[0], slots[1], slots[2]);
+
+        loop = findLoopThread();
+        bp.gate = loop;                 // 闸门此刻才生效：构造期间 Swing 自己也会调 repaint()
+        Clock.setFactor(RUN_FACTOR);    // 之后的 sleep 只剩 1ms
+
+        sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
+    }
+
+    /**
+     * 把 {@code java.lang.Math} 私有的那个 {@code Random} 播上剧本给的种子。
+     *
+     * 为什么不是"换掉随机源"：那个字段是 {@code static final}，换不了；而
+     * {@code Random.setSeed} 是公开的，把它播回同一个已知起点就够了 ——
+     * 算法一个字节没改，改的只是起点。
+     */
+    private void seedRandom() {
+        try {
+            Class<?> holder = Class.forName("java.lang.Math$RandomNumberGeneratorHolder");
+            Field f = holder.getDeclaredField("randomNumberGenerator");
+            f.setAccessible(true);
+            ((Random) f.get(null)).setSeed(script.seed);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            ExportTrace.die("播不了随机种子（要 --add-opens java.base/java.lang=ALL-UNNAMED）：" + e);
+        }
+    }
+
+    /**
+     * 找出 {@code BattlePanel.run()} 跑在哪条线程上。
+     *
+     * 按**栈**认而不是按线程名认：名字是 "Thread-N"，编号取决于这个 JVM 之前
+     * 建过几条线程，认错了的表现是闸门永远不生效 —— 而那看上去就像"导出很慢"。
+     */
+    private Thread findLoopThread() {
+        Thread found = null;
+        for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+            for (StackTraceElement s : e.getValue()) {
+                if (s.getClassName().equals("battle.BattlePanel") && s.getMethodName().equals("run")) {
+                    if (found != null && found != e.getKey()) {
+                        ExportTrace.die("找到不止一条 BattlePanel.run() 线程 —— 一次导出只打一场战斗");
+                    }
+                    found = e.getKey();
+                }
+            }
+        }
+        if (found == null) ExportTrace.die("找不到 BattlePanel.run() 那条线程，闸门装不上");
+        return found;
+    }
+
+    // ================= 快照位图 =================
+
+    /** 原版这一步真的画出来的那张 1024×640 位图（{@code BattlePanel.bufferedPic}）。 */
+    @Override
+    public BufferedImage snapshotImage() {
+        Object img = get(bp, "bufferedPic");
+        if (!(img instanceof BufferedImage)) {
+            fail("BattlePanel.bufferedPic 不是 BufferedImage（是 "
+                    + (img == null ? "null" : img.getClass().getName()) + "），存不了 PNG");
+        }
+        BufferedImage b = (BufferedImage) img;
+        if (b.getWidth() != 1024 || b.getHeight() != 640) {
+            fail("原版位图是 " + b.getWidth() + "×" + b.getHeight() + "，应为 1024×640");
+        }
+        return b;
+    }
+
+    // ================= 剧本执行 =================
+
+    private void advanceScript() {
+        int guard = 0;
+        while (ip < script.steps.size()) {
+            if (++guard > 256) fail("指令在一步之内空转");
+            TraceScript.Instruction in = script.steps.get(ip);
+            if (!entered) {
+                entered = true;
+                spent = 0;
+                left = in.op.equals("wait") ? in.ticks : in.op.equals("autoAttack") ? in.max : 0;
+            }
+            if (exec(in)) { ip++; entered = false; continue; }
+            if (++spent > in.budget) {
+                fail("超过本条指令的 tick 预算 " + in.budget + "（当前回合 "
+                        + getInt(bp, "currentRound") + "，控制台"
+                        + (commandDrawn() ? "已" : "未") + "出现，怪物选择器"
+                        + (selectable() ? "已" : "未") + "打开）");
+            }
+            return;
+        }
+    }
+
+    /** 返回 true 表示这条指令已完成。 */
+    private boolean exec(TraceScript.Instruction in) {
+        switch (in.op) {
+            case "wait":
+                if (left <= 0) return true;
+                left--;
+                return false;
+            case "command":
+                if (!commandDrawn()) return false;
+                clickButton(in.button);
+                return true;
+            case "target":
+                if (!selectable()) return false;
+                clickEnemy(in.enemy);
+                return true;
+            case "autoAttack":
+                return autoAttack(in);
+            default:
+                fail("不认识的指令 " + in.op);
+                return true;
+        }
+    }
+
+    /**
+     * 「能点击就点『击』，能选敌就选第一个还站着的怪物」，一直打到分出胜负。
+     *
+     * 为什么这条指令是策略而不是一串写死的点击：一场战斗要打几个回合，取决于
+     * 每一次伤害掷出来多少 —— 那是种子决定的，写剧本的人事先不知道。写死的
+     * 点击次数只要少一次，导出的就是一份"打到一半就停"的 trace，而它和一份
+     * 打完的 trace 长得一模一样。所以终止条件是**胜负本身**，不是次数；
+     * 次数只当上限，撞上了是硬失败。
+     */
+    private boolean autoAttack(TraceScript.Instruction in) {
+        String outcome = outcome();
+        if (!outcome.equals("undecided")) {
+            if (in.until.equals("decided") || in.until.equals(outcome)) return true;
+            fail("剧本要的是 " + in.until + "，实际打成了 " + outcome);
+        }
+        if (left <= 0) {
+            fail("跑满 " + in.max + " 步仍未分出胜负（我方 hp " + heroHps() + "，怪物 hp " + enemyHps() + "）");
+        }
+        left--;
+        if (commandDrawn()) {
+            clickButton("attack");
+        } else if (selectable()) {
+            int slot = firstStandingEnemy();
+            if (slot == 0) fail("怪物选择器开着，却一个还站着的怪物都没有");
+            clickEnemy(slot);
+        }
+        return false;
+    }
+
+    /** 还在场上（没被 {@code Check.checkEnemyDead} 摘掉）的第一个槽位，1/2/3；没有则 0。 */
+    private int firstStandingEnemy() {
+        for (int i = 0; i < 3; i++) if (onField(i)) return i + 1;
+        return 0;
+    }
+
+    private boolean onField(int i) {
+        return slots[i] != null && get(bp, "em" + (i + 1)) == slots[i];
+    }
+
+    // ================= 输入 =================
+    //
+    // 不重写监听器里那几句判断，而是把 MouseEvent 交给原版自己注册的那几个
+    // 监听器 —— 「鼠标点下去会发生什么」是原版的语义，抄一遍就有抄错的余地，
+    // 而抄错了的表现是 trace 里少了一步状态变化，不是报错。
+
+    private void clickButton(String button) {
+        Object cmd = get(bp, "command");
+        Object btn = get(cmd, buttonField(button));
+        int x = getInt(btn, "x") - 15 + getInt(btn, "width") / 2;
+        int y = getInt(btn, "y") - 6 + getInt(btn, "height") / 2;
+        // -15 / -6 是原版 GameButton 判命中时的偏移（tools/GameButton.java），
+        // 所以点的是**命中框**的中心，不是图片的中心。
+        moved(x, y);
+        pressed(x, y);
+        released(x, y);
+        pending.add(input("click", x, y, "command:" + button));
+    }
+
+    private static String buttonField(String button) {
+        switch (button) {
+            case "attack": return "attack";
+            case "skill":  return "skill";
+            case "defend": return "defend";
+            case "thing":  return "thing";
+            default: throw new IllegalStateException(button);
+        }
+    }
+
+    private void clickEnemy(int slot) {
+        int i = slot - 1;
+        if (!onField(i)) fail("怪物槽位 " + slot + " 上没有站着的怪物，点不了");
+        Enemy e = slots[i];
+        Image img = ((List<?>) get(e, "Images")).get(0) instanceof Image
+                ? (Image) ((List<?>) get(e, "Images")).get(0) : null;
+        if (img == null) fail("怪物槽位 " + slot + " 没有图片，算不出点在哪");
+        int x = getInt(e, "x") + img.getWidth(bp) / 2;
+        int y = getInt(e, "y") + img.getHeight(bp) / 2;
+        moved(x, y);
+        pressed(x, y);
+        int be = getInt(bp, "currentBeAttacked");
+        if (be != 4 + slot) {
+            // 点下去了而攻击目标没定 —— 说明点在了命中框外面。不拦的话导出的是
+            // 一份"点过了、一切正常、可就是没人挨打"的 trace。
+            fail("点了怪物 " + slot + " 的图片中心 (" + x + "," + y + ")，currentBeAttacked 却是 " + be);
+        }
+        pending.add(input("click", x, y, "enemy:" + slot));
+    }
+
+    private void moved(int x, int y) {
+        MouseEvent e = ev(MouseEvent.MOUSE_MOVED, x, y);
+        for (MouseMotionListener l : bp.getMouseMotionListeners()) l.mouseMoved(e);
+    }
+
+    private void pressed(int x, int y) {
+        MouseEvent e = ev(MouseEvent.MOUSE_PRESSED, x, y);
+        for (MouseListener l : bp.getMouseListeners()) l.mousePressed(e);
+    }
+
+    private void released(int x, int y) {
+        MouseEvent e = ev(MouseEvent.MOUSE_RELEASED, x, y);
+        for (MouseListener l : bp.getMouseListeners()) l.mouseReleased(e);
+    }
+
+    /** 时间戳固定为 0：它进不了 trace，但真实时间戳会让"两遍导出"多一处不确定。 */
+    private MouseEvent ev(int id, int x, int y) {
+        return new MouseEvent(bp, id, 0L, 0, x, y, 1, false, MouseEvent.BUTTON1);
+    }
+
+    private static String input(String kind, int x, int y, String target) {
+        return "{\"e\":" + Json.str(kind) + ",\"x\":" + x + ",\"y\":" + y
+                + ",\"target\":" + Json.str(target) + "}";
+    }
+
+    // ================= 状态读取 =================
+
+    private boolean commandDrawn() { return getBool(get(bp, "command"), "isDraw"); }
+    private boolean selectable()   { return getBool(get(bp, "enemySlector"), "isSlectable"); }
+
+    /**
+     * 胜负。**先判失败**：我方全灭与怪物全灭不可能同时成立，但两个标志各自
+     * 由不同的检查置位，判反了会让一场输掉的仗被记成赢。
+     */
+    private String outcome() {
+        if (getBool(get(bp, "gameOver"), "isDraw")) return "defeat";
+        if (getBool(get(bp, "victoryReminder"), "isDraw")) return "victory";
+        return "undecided";
+    }
+
+    private String heroHps() {
+        StringBuilder b = new StringBuilder();
+        for (Hero h : party) b.append(b.length() == 0 ? "" : "/").append(h.getHp());
+        return b.toString();
+    }
+
+    private String enemyHps() {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < 3; i++) {
+            b.append(i == 0 ? "" : "/").append(slots[i] == null ? "-" : String.valueOf(getInt(slots[i], "hp")));
+        }
+        return b.toString();
+    }
+
+    private static String bgm() {
+        try {
+            Field bf = media.MusicReader.class.getDeclaredField("background");
+            bf.setAccessible(true);
+            return (String) get(bf.get(null), "currentPlayingBGM");
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    // ================= 快照状态 =================
+
+    @Override
+    public String snapshotState(int tick) {
+        Object bar = get(bp, "progressBar");
+        Object sel = get(bp, "enemySlector");
+        Object skill = get(bp, "skillAnimation");
+        Object back = get(bp, "backgroundAnimation");
+
+        StringBuilder b = new StringBuilder();
+        b.append("{\"t\":").append(tick);
+        b.append(",\"vt\":").append((long) tick * script.tickMs);
+        b.append(",\"ip\":").append(Math.min(ip, script.steps.size() - 1));
+        b.append(",\"input\":[").append(String.join(",", pending)).append("]");
+        b.append(",\"outcome\":").append(Json.str(outcome()));
+
+        // 回合归属与当前动作。三个数合起来就是原版的战斗状态机：谁在行动、
+        // 用哪一招、打谁（编码见 BattlePanel 的字段注释）。
+        b.append(",\"round\":").append(getInt(bp, "currentRound"));
+        b.append(",\"pattern\":").append(getInt(bp, "currentPattern"));
+        b.append(",\"beAttacked\":").append(getInt(bp, "currentBeAttacked"));
+
+        // 行动条：原版只有像素位置这一个量，谁先跑满 400 谁行动。
+        b.append(",\"bar\":{\"origin\":").append(getInt(bar, "BarX"))
+         .append(",\"zhang\":").append(getInt(bar, "ZhangX"))
+         .append(",\"yu\":").append(getInt(bar, "YuX"))
+         .append(",\"lu\":").append(getInt(bar, "LuX"))
+         .append(",\"pet\":").append(getInt(bar, "petX"))
+         .append(",\"e1\":").append(getInt(bar, "Enemy1X"))
+         .append(",\"e2\":").append(getInt(bar, "Enemy2X"))
+         .append(",\"e3\":").append(getInt(bar, "Enemy3X"))
+         .append(",\"stopped\":").append(getBool(bar, "isStop"))
+         .append(",\"drawn\":").append(getBool(bar, "isDraw"))
+         .append("}");
+
+        b.append(",\"heroes\":[");
+        for (int i = 0; i < party.size(); i++) {
+            Hero h = party.get(i);
+            if (i > 0) b.append(',');
+            b.append("{\"code\":").append(h.getRoleCode())
+             .append(",\"hp\":").append(h.getHp())
+             .append(",\"hpMax\":").append(h.getHpMax())
+             .append(",\"mp\":").append(h.getMp())
+             .append(",\"mpMax\":").append(h.getMpMax())
+             .append(",\"angry\":").append(h.getAngryValue())
+             .append(",\"isAngry\":").append(h.wheatherAngry())
+             .append(",\"dead\":").append(h.wheatherDead())
+             .append(",\"speed\":").append(heroSpeed(h))
+             .append(",\"drawn\":").append(getBool(h, "isDraw"))
+             .append(",\"frame\":").append(getInt(h, "code"))
+             .append(",\"state\":").append(stateJson(h.getBattleState()))
+             .append("}");
+        }
+        b.append("]");
+
+        // 三个槽位一律写满：死掉之后 em1/em2/em3 会被置 null，但对象还在，
+        // hp 也还在（而且可能是负的 —— xl-1dv.9）。只写"场上还有谁"的话，
+        // 最后一击打出去多少就没地方看了。
+        b.append(",\"enemies\":[");
+        for (int i = 0; i < 3; i++) {
+            if (i > 0) b.append(',');
+            Enemy e = slots[i];
+            if (e == null) { b.append("null"); continue; }
+            b.append("{\"slot\":").append(i + 1)
+             .append(",\"name\":").append(Json.str((String) get(e, "name")))
+             .append(",\"hp\":").append(getInt(e, "hp"))
+             .append(",\"speed\":").append(getInt(e, "speed"))
+             .append(",\"onField\":").append(onField(i))
+             .append(",\"dead\":").append(getBool(e, "isDead"))
+             .append(",\"drawn\":").append(getBool(e, "isDraw"))
+             .append(",\"frame\":").append(getInt(e, "code"))
+             .append(",\"state\":").append(stateJson(get(e, "battleState")))
+             .append(",\"box\":").append(selectorBox(sel, i + 1))
+             .append("}");
+        }
+        b.append("]");
+
+        // 伤害数字：原版每算一次伤害就 new 一个 HurtValue 塞进 bp.hurtValues，
+        // 动画播完自己收摊。这是"这一击打了多少"唯一的可断言出处。
+        b.append(",\"hurts\":[");
+        List<?> hurts = (List<?>) get(bp, "hurtValues");
+        for (int i = 0; i < hurts.size(); i++) {
+            Object h = hurts.get(i);
+            if (i > 0) b.append(',');
+            b.append("{\"value\":").append(getInt(h, "hurt"))
+             .append(",\"type\":").append(getInt(h, "type"))
+             .append(",\"x\":").append(getInt(h, "x"))
+             .append(",\"y\":").append(getInt(h, "y"))
+             .append(",\"drawn\":").append(getBool(h, "isDraw"))
+             .append(",\"frame\":").append(getInt(h, "code"))
+             .append("}");
+        }
+        b.append("]");
+
+        b.append(",\"ui\":{\"command\":").append(commandDrawn())
+         .append(",\"skillMenu\":").append(getBool(get(bp, "skillMenu"), "isDraw"))
+         .append(",\"drugMenu\":").append(getBool(get(bp, "drugMenu"), "isDraw"))
+         .append(",\"selectable\":").append(getBool(sel, "isSlectable"))
+         .append(",\"instruct\":").append(getBool(get(bp, "instruct"), "isDraw"))
+         .append(",\"reminder\":").append(getBool(get(bp, "reminder"), "isDraw"))
+         .append(",\"victory\":").append(getBool(get(bp, "victoryReminder"), "isDraw"))
+         .append(",\"gameOver\":").append(getBool(get(bp, "gameOver"), "isDraw"))
+         .append(",\"startAnim\":").append(getBool(get(bp, "startAnimation"), "isDraw"))
+         .append("}");
+
+        b.append(",\"anim\":{\"skill\":").append(Json.str((String) get(skill, "name")))
+         .append(",\"skillFrame\":").append(getInt(skill, "code"))
+         .append(",\"skillDrawn\":").append(getBool(skill, "isDraw"))
+         .append(",\"skillX\":").append(getInt(skill, "x"))
+         .append(",\"skillY\":").append(getInt(skill, "y"))
+         .append(",\"bg\":").append(Json.str((String) get(back, "name")))
+         .append(",\"bgFrame\":").append(getInt(back, "code"))
+         .append(",\"bgDrawn\":").append(getBool(back, "isDraw"))
+         .append("}");
+
+        b.append(",\"audio\":{\"bgm\":").append(Json.str(bgm())).append("}");
+        return b.append("}").toString();
+    }
+
+    /** 我方的速度是三个类各自的静态字段，接口里没有 getter。 */
+    private static int heroSpeed(Hero h) {
+        switch (h.getRoleCode()) {
+            case 1:  return ZhangXiaoFan.speed;
+            case 2:  return YuJie.speed;
+            case 3:  return LuXueQi.speed;
+            default: throw new IllegalStateException("没见过的角色编号 " + h.getRoleCode());
+        }
+    }
+
+    private static String stateJson(Object st) {
+        return "{\"type\":" + getInt(st, "type")
+                + ",\"rounds\":" + getInt(st, "roundNum")
+                + ",\"usable\":" + getBool(st, "isUsable")
+                + ",\"role\":" + getInt(st, "roleCode") + "}";
+    }
+
+    /**
+     * 原版判鼠标命中时用的那个矩形，**照它写的取**。
+     *
+     * 第三个槽位的高取的是 {@code height1}（第一个怪物图片的高）—— 那就是
+     * xl-1dv.8。这里不"顺手改成 height3"：真值的职责是记录原版做了什么。
+     */
+    private static String selectorBox(Object sel, int slot) {
+        switch (slot) {
+            case 1: return box(getInt(sel, "x1"), getInt(sel, "y1"), getInt(sel, "width1"), getInt(sel, "height1"));
+            case 2: return box(getInt(sel, "x2"), getInt(sel, "y2"), getInt(sel, "width2"), getInt(sel, "height2"));
+            case 3: return box(getInt(sel, "x3"), getInt(sel, "y3"), getInt(sel, "width3"), getInt(sel, "height1"));
+            default: throw new IllegalStateException("槽位 " + slot);
+        }
+    }
+
+    private static String box(int x, int y, int w, int h) {
+        return "[" + x + "," + y + "," + w + "," + h + "]";
+    }
+
+    // ================= 反射 =================
+
+    private static Object get(Object o, String name) {
+        Class<?> c = o.getClass();
+        while (c != null) {
+            try {
+                Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f.get(o);
+            } catch (NoSuchFieldException e) {
+                c = c.getSuperclass();
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        throw new RuntimeException("没有字段 " + name + " on " + o.getClass());
+    }
+
+    private static int getInt(Object o, String name)      { return (Integer) get(o, name); }
+    private static boolean getBool(Object o, String name)  { return (Boolean) get(o, name); }
+
+    // ================= 闸门 =================
+
+    /**
+     * 装了闸门的 {@link BattlePanel}：{@code run()} 每跑完一次循环体就停在
+     * {@code repaint()} 上，等导出器放行。
+     *
+     * 为什么闸在 {@code repaint()}：它是循环体的最后一句，而且是原版自己写的
+     * 那一句。闸在别处就得先在中间插一个自己的钩子，那才是改行为。
+     *
+     * 为什么要认线程：构造 {@code JPanel} 的过程中 Swing 自己就会调
+     * {@code repaint()}（{@code BasicPanelUI.installDefaults} → {@code setFont}），
+     * 那一次发生在 {@code gate} 还没设上的时候。不认线程就会当场把主线程锁死 ——
+     * 实测过，卡在 {@code JComponent.setFont}。
+     */
+    private static final class Gated extends BattlePanel {
+        private static final long serialVersionUID = 1L;
+        final Semaphore done = new Semaphore(0);
+        final Semaphore go = new Semaphore(0);
+        volatile Thread gate;
+
+        @Override
+        public void repaint() {
+            if (Thread.currentThread() != gate) { super.repaint(); return; }
+            done.release();
+            go.acquireUninterruptibly();
+        }
+    }
+}

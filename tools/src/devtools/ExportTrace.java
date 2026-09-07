@@ -151,6 +151,16 @@ public final class ExportTrace {
                 scriptJson = s.toJson();
                 return new SceneDriver(s);
             }
+            case "battle": {
+                // 战斗与场景共用 TraceScript —— 它按 driver 字段挑指令词汇那一套
+                // （见 TraceScript 的类注释）。战斗没有场景文件，scene 为 null。
+                TraceScript s = TraceScript.load(scriptFile);
+                scriptName = s.name;
+                scriptScene = s.scene;
+                scriptTickMs = s.tickMs;
+                scriptJson = s.toJson();
+                return new BattleDriver(s);
+            }
             case "menu": {
                 MenuScript s = MenuScript.load(scriptFile);
                 scriptName = s.name;
@@ -163,7 +173,7 @@ public final class ExportTrace {
             }
             default:
                 die(scriptFile.getPath() + " 的 driver 是 \"" + want
-                        + "\"，导出器只认 scene / menu");
+                        + "\"，导出器只认 scene / battle / menu");
                 return null;
         }
     }
