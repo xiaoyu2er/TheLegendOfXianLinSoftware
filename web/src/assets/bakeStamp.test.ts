@@ -159,6 +159,43 @@ describe('指纹本身不是空转', () => {
     expect(() => bakerSources(dir, 'entry.ts')).toThrowError(/import '\.\/nope' 解析不到文件/)
   })
 
+  it('字符串里的斜杠星号不会把后面的 import 吞掉', () => {
+    // 这一条是 code-review 逮到的真 bug 的回归：头一版用一条正则削块注释，
+    // `bake.ts` 里一句含 `npcs` 加两个星号的日志字符串把它带偏，581 行削成
+    // 348 行，整块烘焙代码连同其中的 import 一起进了"注释"。**它当时一声
+    // 不吭**——闭包少一个模块，指纹照样对得上，只是覆盖得更少。
+    // 复现要三样齐全，缺一样旧实现就"碰巧对"：字符串里的斜杠星号、**它后面
+    // 的 import**、以及**再后面某处真正的注释收尾符**（就是它去闭合那个假注释
+    // 的）。头一版 fixture 少了第三样，旧实现因为整条正则匹配不上而什么都没
+    // 削 —— 用例照绿，看起来像"这个 bug 不存在"。
+    const dir = mkdtempSync(resolve(tmpdir(), 'bake-stamp-'))
+    writeFileSync(
+      resolve(dir, 'entry.ts'),
+      'const log = `npcs/**.webp`\n' +
+        "import { z } from './leaf'\n" +
+        '/** 后面这段真注释里的收尾符，正是去闭合上面那个假注释的。 */\n' +
+        'export const y = [log, z]\n',
+    )
+    writeFileSync(resolve(dir, 'leaf.ts'), 'export const z = 1\n')
+    expect(bakerSources(dir, 'entry.ts')).toEqual(['entry.ts', 'leaf.ts'])
+  })
+
+  it('函数体里的动态 import 也算，行首粗读法看不见它不影响', () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'bake-stamp-'))
+    writeFileSync(
+      resolve(dir, 'entry.ts'),
+      "export async function f() {\n  return await import('./leaf')\n}\n",
+    )
+    writeFileSync(resolve(dir, 'leaf.ts'), 'export const z = 1\n')
+    expect(bakerSources(dir, 'entry.ts')).toEqual(['entry.ts', 'leaf.ts'])
+  })
+
+  it('没闭合的字符串是抛，不是猜一个路径出来', () => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'bake-stamp-'))
+    writeFileSync(resolve(dir, 'entry.ts'), "const s = 'no end\n")
+    expect(() => bakerSources(dir, 'entry.ts')).toThrowError(/没闭合的字符串/)
+  })
+
   it('注释里的示例路径不算 import', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'bake-stamp-'))
     writeFileSync(

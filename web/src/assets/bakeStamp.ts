@@ -48,18 +48,14 @@ export interface BakeStamp {
 const GENERATED = 'web/src/generated/'
 
 /** 一个文件的 sha256（十六进制）。 */
-export function hashFile(absolute: string, read: (p: string) => Buffer = readFileSync): string {
-  return createHash('sha256').update(read(absolute)).digest('hex')
+export function hashFile(absolute: string): string {
+  return createHash('sha256').update(readFileSync(absolute)).digest('hex')
 }
 
 /** 一批文件的 `仓库相对路径 → sha256`，键有序。 */
-export function hashFiles(
-  repoRoot: string,
-  paths: Iterable<string>,
-  read: (p: string) => Buffer = readFileSync,
-): Record<string, string> {
+export function hashFiles(repoRoot: string, paths: Iterable<string>): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const path of [...paths].sort()) out[path] = hashFile(resolve(repoRoot, path), read)
+  for (const path of [...paths].sort()) out[path] = hashFile(resolve(repoRoot, path))
   return out
 }
 
@@ -74,21 +70,34 @@ export function hashFiles(
  * 匹配上：那样闭包退化成入口一个文件，而「只有一个文件的闭包」和「爬全了」
  * 在结果上长得一样。抛出来才看得见。
  */
-export function bakerSources(
-  repoRoot: string,
-  entry: string = BAKER_ENTRY,
-  read: (p: string) => Buffer = readFileSync,
-): string[] {
+export function bakerSources(repoRoot: string, entry: string = BAKER_ENTRY): string[] {
   const seen = new Set<string>()
   const queue = [entry]
   while (queue.length > 0) {
     const current = queue.pop() as string
     if (seen.has(current)) continue
-    seen.add(current)
+    // 守卫必须排在 `seen.add` 前面：排在后面的话，产物虽然不再往下爬，却已经
+    // 落进返回值里被当成烘焙器源码摘要了 —— 那正是这个守卫要防的事。
     if (current.startsWith(GENERATED)) continue
+    seen.add(current)
     const absolute = resolve(repoRoot, current)
-    const source = read(absolute).toString('utf8')
-    for (const specifier of relativeSpecifiers(source)) {
+    const source = readFileSync(absolute).toString('utf8')
+    const specifiers = relativeSpecifiers(source)
+    // **换一种数法再数一遍。** 上面那个扫描器要认字符串与注释的边界，它错过
+    // 一条的表现是「闭包悄悄少一个模块，指纹照样对得上」—— 头一版就是这么
+    // 错的（见 `relativeSpecifiers` 的头注）。这里用一个完全不同的、只认
+    // 行首 `import` 的粗读法当交叉验证：两种数法不一致就抛。粗读法认不出
+    // 函数体里的动态 `import('./x')`，所以只单向要求「它找到的，扫描器也得
+    // 有」。
+    for (const declared of lineAnchoredImports(source)) {
+      if (!specifiers.includes(declared)) {
+        throw new Error(
+          `${current} 的行首 import 里有 '${declared}'，但扫描器没扫到它 —— ` +
+            `relativeSpecifiers 漏了，闭包会悄悄缩水`,
+        )
+      }
+    }
+    for (const specifier of specifiers) {
       const resolved = resolveModule(resolve(dirname(absolute), specifier))
       if (resolved === null) {
         throw new Error(`${current} 里的 import '${specifier}' 解析不到文件`)
@@ -102,22 +111,82 @@ export function bakerSources(
 /**
  * `from '<相对路径>'`、`import '<相对路径>'`、`import('<相对路径>')`。
  *
- * **先去注释再匹配。** 头一版没去，于是这个文件自己的头注里那句「`from './x'`」
- * 被当成了一条 import，`bakerSources` 直接抛 `import './x' 解析不到文件`——
- * 这次是好事（严格解析把它喊了出来），但注释里出现示例路径是常事，不能靠
- * 「以后别那么写」兜。去掉的是块注释与整行的 `//`，行尾注释留着：`//` 也可能
- * 出现在字符串里（`https://…`），从那里截断反而会造出假的 import。
+ * **逐字符扫，认字符串与注释的边界**，不是拿一条正则把块注释整段削掉。
+ * 头一版就是那么削的，code-review 量出来它在 `bake.ts` 上把 581 行削成
+ * 348 行（我自己复现过）：某条日志字符串里有 `npcs` 加两个星号加 `.webp`，
+ * 那个斜杠星号被当成块注释起头，一路吞到九十行外的下一个注释收尾符，整块
+ * 主角精灵 / 对话框 / 头像 / 旁白背景的烘焙代码都被当成了注释。
+ *
+ * **今天没出事纯属侥幸**：`bake.ts` 的相对 import 全在被吞的那一段之前。哪天
+ * 有一条落进去，那个模块就悄悄退出闭包 —— 指纹照样对得上，只是覆盖得更少了。
+ * 这正是这个函数自己的头注说必须响的那种失败，而它当时一声不吭。
+ * 交叉验证见 `lineAnchoredImports`。
+ *
+ * 已知边界（都不出现在本仓库，且失败时是抛而不是漏）：模板串里嵌套模板串，
+ * 以及正则字面量里出现注释起头符或引号。
  */
 function relativeSpecifiers(source: string): string[] {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '')
   const out: string[] = []
-  const pattern = /(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]*)['"]/g
-  for (const m of code.matchAll(pattern)) {
+  let code = '' // 到目前为止的"非字符串非注释"文本，用来看这个字符串前面是不是 import
+  let i = 0
+  while (i < source.length) {
+    const c = source[i] as string
+    const next = source[i + 1]
+    if (c === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i++
+      continue
+    }
+    if (c === '/' && next === '*') {
+      i += 2
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i++
+      i += 2
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      const { value, end } = readString(source, i, c)
+      // `from` / `import` / `import(` 紧挨着的那个字符串才是模块路径。
+      if (/(?:\bfrom|\bimport\s*\(?)\s*$/.test(code) && value.startsWith('.')) out.push(value)
+      code += ' '
+      i = end
+      continue
+    }
+    code += c
+    i++
+  }
+  return out
+}
+
+/** 从 `start` 处的引号读一个字符串字面量，返回它的值与结束后的下标。 */
+function readString(source: string, start: number, quote: string): { value: string; end: number } {
+  let value = ''
+  let i = start + 1
+  while (i < source.length) {
+    const c = source[i] as string
+    if (c === '\\') {
+      value += source[i + 1] ?? ''
+      i += 2
+      continue
+    }
+    if (c === quote) return { value, end: i + 1 }
+    value += c
+    i++
+  }
+  // 没闭合的引号：与其猜，不如抛 —— 猜出来的"路径"要么解析不到（还好），
+  // 要么恰好解析到别的文件（更糟）。
+  throw new Error(`源码里有一个没闭合的字符串（从下标 ${start} 起）`)
+}
+
+/**
+ * 只认**行首**的 `import … from '<相对路径>'` / `import '<相对路径>'`。
+ * 粗，但它的粗法与 `relativeSpecifiers` 完全不同：不去注释、不认字符串，
+ * 只赌"import 语句写在行首"。两种错法不重叠，这就是交叉验证的全部意义。
+ */
+function lineAnchoredImports(source: string): string[] {
+  const out: string[] = []
+  const pattern = /^import\s+(?:[\s\S]*?\bfrom\s*)?['"](\.[^'"]+)['"]/gm
+  for (const m of source.matchAll(pattern)) {
     const specifier = m[1]
-    // 正则里那一组不是可选的，匹配上就一定有值。写 `!` 或 `as string` 也能
-    // 过类型，但那是把「这里不可能」变成「这里不检查」；抛一次的代价是零。
-    if (specifier === undefined) throw new Error(`匹配到 import 却取不到路径：${m[0]}`)
-    out.push(specifier)
+    if (specifier !== undefined) out.push(specifier)
   }
   return out
 }

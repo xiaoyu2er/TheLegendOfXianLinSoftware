@@ -34,7 +34,8 @@ pnpm preview      # 本地预览 dist/
   现场重烘一遍比对；资源那一层（WebP / m4a / 映射表）重烘不了——`cwebp` 要
   另装、`afconvert` 是 macOS 自带而 CI 是 ubuntu，且它的产物每次都不同——改由
   `src/assets/bakeStamp.test.ts` 核烘焙时写下的指纹：烘焙器自己的源码闭包
-  （顺着 import 现爬）与它读过的 693 个输入文件，跑测试时重算 sha256 比对。
+  （顺着 import 现爬）与它读过的每一个输入文件（写这段时是 703 个，数目由
+  `bakeStamp.json` 自己数，这里只是当天的读数），跑测试时重算 sha256 比对。
   改了 `scripts/bake.ts` 却不重烘，那条红；`roleSpriteSize.test.ts` 这类核
   产物的用例照绿（实测），这正是它要补的洞（xl-23y）。
 
