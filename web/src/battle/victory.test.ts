@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { decodePng } from '../compare/png'
+import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
 import { equipmentCount, equipmentEntries, resetEquipmentPack } from '../fakes/equipmentPack'
@@ -11,8 +12,8 @@ import { BATTLE_TRACE_NAMES, readBattleTrace } from './trace'
 import { SHOW_ATTR_START, SHOW_EXP_INDEX, VICTORY } from './victory'
 import { createBattle } from './world'
 import { ENEMIES, expToLevelUp } from './units'
-import type { PartyKey } from './units'
-import type { BattleWorld, Hero } from './types'
+import type { Attributes, PartyKey } from './units'
+import type { BattleWorld } from './types'
 
 /**
  * 打赢之后的结算（`VictoryReminder`）—— 票 xl-rh9.5。
@@ -65,9 +66,9 @@ describe('结算用到的常量逐个对回 VictoryReminder.update()', () => {
    * 而错位一位之后每一项看上去都还是个合理的数。
    */
   const literals = (() => {
-    // GBK 源码要显式解码（CLAUDE.md）。按 UTF-8 读出来匹配不到 = 0 个，
+    // GBK 源码要显式解码（`javaSource`）。按 UTF-8 读出来匹配不到 = 0 个，
     // 而 0 个的逐项比对是恒真的 —— 下面第一条断言拦的正是这个。
-    const src = new TextDecoder('gbk').decode(readFileSync(repoPath('src/battle/VictoryReminder.java')))
+    const src = javaSource('src/battle/VictoryReminder.java')
     const from = src.indexOf('public void update(){')
     if (from < 0) throw new Error('在 VictoryReminder.java 里找不到 update() —— 解析器该改了')
     const body = src
@@ -130,7 +131,7 @@ describe('结算用到的常量逐个对回 VictoryReminder.update()', () => {
   })
 
   it('构造函数里那两个初值也对回源码', () => {
-    const src = new TextDecoder('gbk').decode(readFileSync(repoPath('src/battle/VictoryReminder.java')))
+    const src = javaSource('src/battle/VictoryReminder.java')
     // `thing_sx1=60;`（物品框展开的起点）与 `sy2=0;`（卷轴的起点）。
     expect(src, 'thing_sx1 的初值').toContain(`thing_sx1=${VICTORY.thingSx1Start};`)
     expect(src, 'sy2 的初值').toContain('sy2=0;')
@@ -165,7 +166,13 @@ function win(w: BattleWorld): void {
   checkEnemyDead(w)
 }
 
-function attrsOf(h: Hero) {
+/**
+ * 四项属性。返回类型写成 `Attributes` 而不是让它推断 —— 这样「升级前的那份」
+ * 与「升级后的那份」是同一个类型，下面就不需要 `as unknown as` 把一个记录硬掰
+ * 成 `Hero`。dispatch.md 说过：`as unknown as` 断言过去的东西 TypeScript 什么
+ * 都不核。
+ */
+function attrsOf(h: Attributes): Attributes {
   return {
     physicalPower: h.physicalPower,
     sprit: h.sprit,
@@ -255,7 +262,7 @@ describe('打赢之后：结算走完，回地图', () => {
     // 经验确实涨了 —— 三个人各拿全额（原版就是每人一份，不是平分）。
     expect(w.party.map((h) => h.exp)).toEqual(before.map((b) => b.exp + totalExp))
     expect(w.party.map((h) => h.isLevelUp)).toEqual([false, false, false])
-    expect(w.party.map(attrsOf)).toEqual(before.map((b) => attrsOf(b as unknown as Hero)))
+    expect(w.party.map(attrsOf)).toEqual(before.map(attrsOf))
 
     const at = exitTick(totalExp, VICTORY.levelCheckAt)
     for (let t = 1; t < at; t++) {

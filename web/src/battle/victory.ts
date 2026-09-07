@@ -1,6 +1,7 @@
 import { addDrug } from '../fakes/drugPack'
 import { addEqupment } from '../fakes/equipmentPack'
 import { addCoins } from '../fakes/wallet'
+import type { PartyKey } from './units'
 import type { BattleWorld, Hero, VictoryReminderState } from './types'
 
 /**
@@ -76,8 +77,8 @@ export const VICTORY = {
  * 「0--2 是各个英雄当前升级所需经验，3--6 是张小凡的数据，7--10 是文敏，
  * 11--14 是陆雪琪」；这里把那句注释变成常量，顺序一个不改。
  */
-export const SHOW_EXP_INDEX = { zhang: 0, yu: 1, lu: 2 } as const
-export const SHOW_ATTR_START = { zhang: 3, yu: 7, lu: 11 } as const
+export const SHOW_EXP_INDEX: Readonly<Record<PartyKey, number>> = { zhang: 0, yu: 1, lu: 2 }
+export const SHOW_ATTR_START: Readonly<Record<PartyKey, number>> = { zhang: 3, yu: 7, lu: 11 }
 
 /**
  * `getInformation()`。在 `BattlePanel.initial()` 里就跑完了 —— 也就是**开场
@@ -91,11 +92,11 @@ export const SHOW_ATTR_START = { zhang: 3, yu: 7, lu: 11 } as const
  * `for(i=0;i<=2;i++)` 会碰到，而碰到的结果没人看得见。
  */
 export function victoryInformation(
-  heroes: { zhang: Hero | null; yu: Hero | null; lu: Hero | null },
+  heroes: Readonly<Record<PartyKey, Hero | null>>,
   enemies: readonly { spec: { exp: number; money: number; thing: string } }[],
 ): VictoryReminderState {
   const showNums: (number | null)[] = new Array<number | null>(15).fill(null)
-  for (const [key, hero] of Object.entries(heroes) as [keyof typeof SHOW_EXP_INDEX, Hero | null][]) {
+  for (const [key, hero] of Object.entries(heroes) as [PartyKey, Hero | null][]) {
     if (hero === null) continue
     // `Integer i=expToLevelUp-exp; if(i<0){i=0;}`
     showNums[SHOW_EXP_INDEX[key]] = Math.max(0, hero.expToLevelUp - hero.exp)

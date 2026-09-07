@@ -20,12 +20,26 @@ import { REGISTERED_FAKES } from './registry'
  * | 册子说它是假的，而代码已经是真的（删掉模块里那句 `declareFake`） | 「册子里的每一样，磁盘上都还真是假的」 |
  * | 代码还是假的，而册子里删了它（删掉 `REGISTERED_FAKES` 里那一行） | 「磁盘上的每一样假货都登记在册」 |
  *
- * 两条篡改在 xl-rh9.5 里都真跑过一遍，各自的红见 commit message。
+ * 两条篡改在 xl-rh9.5 里都真跑过一遍：删掉 `wallet.ts` 里那句 `declareFake`
+ * 红 2 条（多的那条是下面「两套并存」，它也要先在磁盘上找到这个假货），
+ * 删掉册子里 `wallet` 那一行红 3 条。**这两个数是跑出来的**，完整的篡改记录
+ * 在 `bd show xl-rh9.5` 的关票理由里。
  */
 
-/** `web/src` 下所有非测试的 TypeScript 源码。 */
+/**
+ * 扫描根。**这张表就是这套判据的分母**，一个目录漏在外头，落在那儿的假货就会
+ * 因为「扫不到」而通过 —— 而 CONTEXT.md §响亮失败 说的正是这个：
+ * 「找不到东西」不许成为通过条件。
+ *
+ * 取的是 `web/tsconfig.json` 的 `include` 里那两个真的装 TypeScript 的目录
+ * （`vite.config.ts` 是单文件，不是目录）。下面第一条用例会核每个根都真的存在
+ * 且真的扫出了东西，还会拿 tsconfig 对撞 —— include 里冒出新目录时它红，
+ * 而不是安静地少扫一片。
+ */
+const SCAN_ROOTS = ['web/src', 'web/scripts'] as const
+
+/** 扫描根底下所有非测试的 TypeScript 源码。 */
 function sourceFiles(): string[] {
-  const root = repoPath('web/src')
   const out: string[] = []
   const walk = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -39,7 +53,7 @@ function sourceFiles(): string[] {
       out.push(path)
     }
   }
-  walk(root)
+  for (const root of SCAN_ROOTS) walk(repoPath(root))
   return out
 }
 
@@ -74,6 +88,23 @@ const DECLARED: ReadonlyMap<string, string> = (() => {
 })()
 
 describe('假货登记册（ADR-0005）', () => {
+  it('每个扫描根都真的存在，而且都扫出了源码 —— 少扫一片要响', () => {
+    for (const root of SCAN_ROOTS) {
+      const files = sourceFiles().filter((p) => p.startsWith(repoPath(root)))
+      expect(files.length, `扫描根 ${root} 一个 .ts 都没扫到 —— 路径写错了？`).toBeGreaterThan(0)
+    }
+    // 反方向：`tsconfig.json` 的 include 里冒出新目录时，这条提醒有人来加。
+    const tsconfig = JSON.parse(readFileSync(repoPath('web/tsconfig.json'), 'utf8')) as {
+      include: string[]
+    }
+    const dirs = tsconfig.include.filter((entry) => !entry.endsWith('.ts'))
+    expect(
+      dirs.map((d) => `web/${d}`).sort(),
+      'tsconfig 的 include 里有目录不在 SCAN_ROOTS 里 —— 落在那儿的假货扫不到，' +
+        '而扫不到与"没有假货"长得一样。',
+    ).toEqual([...SCAN_ROOTS].sort())
+  })
+
   it('扫描器真的扫到了东西 —— 空转要响', () => {
     // 分母是磁盘。扫描器失灵（正则写错、目录挪了、注释剥过头）时它是 0，
     // 而 0 项的双向对撞是两条恒真的检查。
