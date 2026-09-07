@@ -19,6 +19,8 @@ import type { Bitmap } from './png'
  * - 缺口区照旧记账，并且**每个区各自双向红**：某个区一帧都不差了，说明那笔账
  *   还完了而表没改，也红。整屏版的双向红是同一个性质，这里只是把分母从"整条
  *   剧本"缩到"每个区"——否则三个缺口里补上一个，另外两个会替它把红盖住。
+ *   上面那一头是**幅度上界**（`GapRegion.maxPixels`，xl-l3o）：差得比声明的多
+ *   也红。只有下界的时候，"字形还差着"与"这一块什么都没画出来"给出同一个结论。
  *
  * 判据本身（为什么不是哈希、容差是干什么的）见 `diff.ts`，这里只管分区。
  */
@@ -37,6 +39,19 @@ export interface GapRegion {
   readonly rect: Rect
   readonly why: string
   readonly issue: string
+  /**
+   * **幅度上界**（xl-l3o）：这个区在**任意单帧**里超容差的像素数的上限。
+   *
+   * 为什么必须有。缺口区原本只有下界（"一帧都不差了就红"），上界是开的 ——
+   * 于是"这块字形还没对上"与"这块什么都没画出来"给出同一个结论。实测过：把
+   * 基准侧的 `snapshotImage()` 换成一张全黑图，`dorm-walk` 的最差帧从 0.7401%
+   * 跳到 99.9565%，流水线照样放行。
+   *
+   * 取值必须**实测**（跑一遍比对，读 `report.json` 里这个区的 `gapWorst`），
+   * 再按剧本注释里写明的余量放大。上界是**每帧**的，不是所有帧之和：帧数随
+   * `--every` 变，和值跟着变，只有单帧的量在换采样密度时仍然成立。
+   */
+  readonly maxPixels: number
 }
 
 export function inRect(r: Rect, x: number, y: number): boolean {
@@ -146,8 +161,15 @@ export interface RegionVerdict {
   readonly strictDiffering: number
   /** 每个缺口区在所有帧里超容差的像素总数，与 `regions` 同序。 */
   readonly gapTotals: readonly number[]
+  /**
+   * 每个缺口区**最差的那一帧**：差了多少、是哪一帧。与 `regions` 同序。
+   * 上界要拿它来定（`GapRegion.maxPixels`），所以报告里必须能读到。
+   */
+  readonly gapWorst: readonly { readonly tick: number; readonly pixels: number }[]
   /** 一帧都不差了的缺口区的名字 —— 这些是"账还完了而表没改"。 */
   readonly closedGaps: readonly string[]
+  /** 超了上界的缺口区的名字 —— 这些是"差得比声明的多"。 */
+  readonly blownGaps: readonly string[]
 }
 
 /**
@@ -169,15 +191,28 @@ export function judgeRegions(
         '直接写 status: match 就行，不要用一张空的分区表把它伪装成有缺口。',
     )
   }
+  for (const r of regions) {
+    if (!Number.isFinite(r.maxPixels) || r.maxPixels <= 0) {
+      throw new Error(
+        `缺口区 ${r.name} 没给出幅度上界（maxPixels=${String(r.maxPixels)}）。` +
+          `没有上界的缺口区分辨不出"字形还差着"与"这一块什么都没画出来"，` +
+          `不许当成默认放行 —— 跑一遍比对，把 report.json 里这个区的 gapWorst 加上余量填进去。`,
+      )
+    }
+  }
   let firstStrictBreak: number | null = null
   let strictDiffering = 0
   let worstBreak: PartitionedFrame | null = null
   const gapTotals = new Array<number>(regions.length).fill(0)
+  const gapWorst = regions.map(() => ({ tick: frames[0]!.tick, pixels: -1 }))
   for (const f of frames) {
     if (f.gaps.length !== regions.length) {
       throw new Error(`第 ${f.tick} 帧记了 ${f.gaps.length} 个缺口区，表里声明了 ${regions.length} 个`)
     }
-    for (let k = 0; k < regions.length; k++) gapTotals[k]! += f.gaps[k]!
+    for (let k = 0; k < regions.length; k++) {
+      gapTotals[k]! += f.gaps[k]!
+      if (f.gaps[k]! > gapWorst[k]!.pixels) gapWorst[k] = { tick: f.tick, pixels: f.gaps[k]! }
+    }
     strictDiffering += f.strict.differing
     if (f.strict.differing > 0) {
       if (firstStrictBreak === null) firstStrictBreak = f.tick
@@ -185,45 +220,59 @@ export function judgeRegions(
     }
   }
   const closedGaps = regions.filter((_, k) => gapTotals[k] === 0).map((r) => r.name)
+  const blownGaps = regions.filter((r, k) => gapWorst[k]!.pixels > r.maxPixels).map((r) => r.name)
 
+  // 三条判据各自成句，**一次全报出来**：一次跑完要能看见这条剧本到底破在
+  // 哪几处。以前是命中第一条就返回，于是"硬比区破了"会把"某个区超了上界"
+  // 整个盖住 —— 而全黑图那种灾难两条会同时破。
+  const problems: string[] = []
   if (firstStrictBreak !== null) {
     const w = worstBreak!
     const box = w.strict.box
-    return {
-      ok: false,
-      verdict:
-        `硬比区破了：第 ${firstStrictBreak} 帧起有像素超容差，${frames.length} 帧合计 ` +
+    problems.push(
+      `硬比区破了：第 ${firstStrictBreak} 帧起有像素超容差，${frames.length} 帧合计 ` +
         `${strictDiffering} 个；最坏的是第 ${w.tick} 帧 ${w.strict.differing} 个` +
         `${box ? ` @ (${box.x0},${box.y0})-(${box.x1},${box.y1})` : ''}。` +
         `硬比区不许有任何一个超容差的像素 —— 要么是回归了，要么是这一块本来就该` +
         `声明成缺口区而没声明。`,
-      firstStrictBreak,
-      strictDiffering,
-      gapTotals,
-      closedGaps,
-    }
+    )
+  }
+  if (blownGaps.length > 0) {
+    problems.push(
+      `缺口区超了上界：` +
+        regions
+          .map((r, k) => ({ r, w: gapWorst[k]! }))
+          .filter(({ r, w }) => w.pixels > r.maxPixels)
+          .map(
+            ({ r, w }) =>
+              `${r.name} 第 ${w.tick} 帧 ${w.pixels} 个 > 上界 ${r.maxPixels}` +
+              `（超了 ${w.pixels - r.maxPixels} 个，${(w.pixels / r.maxPixels).toFixed(2)} 倍）`,
+          )
+          .join('；') +
+        `。缺口区记的是一笔说得清的账，差得比声明的多就不是那笔账了。`,
+    )
   }
   if (closedGaps.length > 0) {
-    return {
-      ok: false,
-      verdict:
-        `缺口区 ${closedGaps.join('、')} 一帧都不差了 —— 账还完了而表没改，` +
+    problems.push(
+      `缺口区 ${closedGaps.join('、')} 一帧都不差了 —— 账还完了而表没改，` +
         `把这些区从 expected.ts 的 gaps 里删掉（删干净之后整条就该是 match）。`,
-      firstStrictBreak,
-      strictDiffering,
-      gapTotals,
-      closedGaps,
-    }
+    )
   }
+
   return {
-    ok: true,
+    ok: problems.length === 0,
     verdict:
-      `硬比区 ${frames.length} 帧逐像素相等；` +
-      regions.map((r, k) => `${r.name} ${gapTotals[k]}`).join(' · ') +
-      '（缺口区的差异像素合计）',
+      problems.length > 0
+        ? problems.join(' ')
+        : `硬比区 ${frames.length} 帧逐像素相等；` +
+          regions
+            .map((r, k) => `${r.name} 合计 ${gapTotals[k]}、最差 ${gapWorst[k]!.pixels}/${r.maxPixels}`)
+            .join(' · '),
     firstStrictBreak,
     strictDiffering,
     gapTotals,
+    gapWorst,
     closedGaps,
+    blownGaps,
   }
 }

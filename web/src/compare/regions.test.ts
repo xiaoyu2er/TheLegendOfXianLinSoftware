@@ -91,8 +91,9 @@ describe('分区差异', () => {
 // ================= 判定 =================
 
 const REGIONS: readonly GapRegion[] = [
-  { name: 'left', rect: { x0: 0, y0: 0, x1: 1, y1: 5 }, why: '左边那块还没画', issue: 'xl-aaa' },
-  { name: 'right', rect: { x0: 6, y0: 0, x1: 7, y1: 5 }, why: '右边那块还没画', issue: 'xl-bbb' },
+  // 两个区各 12 个像素，上界给 10 —— 分母数得出来：11 个就算超。
+  { name: 'left', rect: { x0: 0, y0: 0, x1: 1, y1: 5 }, why: '左边那块还没画', issue: 'xl-aaa', maxPixels: 10 },
+  { name: 'right', rect: { x0: 6, y0: 0, x1: 7, y1: 5 }, why: '右边那块还没画', issue: 'xl-bbb', maxPixels: 10 },
 ]
 
 function frame(tick: number, strictDiffering: number, gaps: number[]): PartitionedFrame {
@@ -147,6 +148,34 @@ describe('分区判定', () => {
     expect(v.ok).toBe(false)
     expect(v.verdict).toContain('硬比区破了')
     expect(v.closedGaps).toEqual(['left', 'right'])
+  })
+
+  it('缺口区差得比上界多 —— 红，并点名是哪个区、哪一帧、超了多少', () => {
+    // 这一条是这张票（xl-l3o）：上界之前缺口区只有下界，"字形还差着"与
+    // "这一块什么都没画出来"给出同一个结论。
+    const v = judgeRegions([frame(0, 0, [3, 5]), frame(25, 0, [3, 12])], REGIONS)
+    expect(v.ok).toBe(false)
+    expect(v.blownGaps).toEqual(['right'])
+    expect(v.verdict).toContain('right 第 25 帧 12 个 > 上界 10')
+    expect(v.gapWorst[1]).toEqual({ tick: 25, pixels: 12 })
+  })
+
+  it('压在上界上算过，多一个就红', () => {
+    expect(judgeRegions([frame(0, 0, [10, 10])], REGIONS).ok).toBe(true)
+    expect(judgeRegions([frame(0, 0, [10, 11])], REGIONS).ok).toBe(false)
+  })
+
+  it('硬比区破了与缺口区超界同时报出来 —— 全黑那种灾难两条会一起破', () => {
+    const v = judgeRegions([frame(0, 7, [12, 12])], REGIONS)
+    expect(v.ok).toBe(false)
+    expect(v.verdict).toContain('硬比区破了')
+    expect(v.verdict).toContain('超了上界')
+    expect(v.blownGaps).toEqual(['left', 'right'])
+  })
+
+  it('缺口区没写上界是硬失败，不是默认放行', () => {
+    const noBound = [{ ...REGIONS[0]!, maxPixels: 0 }]
+    expect(() => judgeRegions([frame(0, 0, [3])], noBound)).toThrow(/上界/)
   })
 
   it('一帧都没比是硬失败，不是通过', () => {
