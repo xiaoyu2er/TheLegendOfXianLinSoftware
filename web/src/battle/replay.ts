@@ -23,5 +23,7 @@ export function replayBattle(trace: BattleTrace, sprite: BattleConfig['sprite'])
     enemies: s.enemies,
     seed: s.seed,
     sprite,
+    // 剧本整个不写 skillNumber 时这里是 undefined，`createBattle` 用原版初值。
+    skillNumbers: s.skillNumber,
   })
 }

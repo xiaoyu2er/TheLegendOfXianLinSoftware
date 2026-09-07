@@ -314,7 +314,9 @@ describe('全部战斗真值合起来画到了哪几层', () => {
       '只有技能才放。battle-menus 用了两次技能，可它在开菜单那一拍就先撞上 ' +
       'drug-menu 抛了 —— 这一层仍然只有代码、没有判据。归 xl-rh9.12',
     'victory-anim': '与胜利结算同一拍开始，而那一拍先被 victory-reminder 拦下来抛（xl-rh9.13）',
-    pet: '结构性缺席：世界里根本没有 pet 字段，只有陆雪琪的秘术召得出来',
+    pet:
+      'xl-rh9.14 把陆雪琪的秘术做出来之后，世界里有了 pet 字段（battle-mishu-lu ' +
+      '第 855 拍召出它）—— 这一层因此从"结构性缺席"变成了抛，归 xl-rh9.15',
     'drug-menu':
       '点「物」才打开。battle-menus 点过了，可这一层还没画 —— 撞上就抛，' +
       '那条剧本因此在 expected.ts 里表着 unpainted。归 xl-rh9.12',
@@ -474,6 +476,22 @@ describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () =>
     ).toBeGreaterThan(0)
   })
 
+  it('这些剧本合起来撞上的不止一层 —— 只剩一层时"点名对不对"就只验了一层', () => {
+    const hit = new Set<string>()
+    for (const a of attempts) {
+      if (expectationOf(a.name).status !== 'unpainted') continue
+      // 报错那句话的开头是「第 n 层「<层名>」…」，把层名摘出来当分母。
+      for (const m of a.messages) {
+        const layer = /第 \d+ 层「([a-z-]+)」/.exec(m)?.[1]
+        expect(layer, `这句报错认不出是哪一层：${m}`).toBeDefined()
+        hit.add(layer!)
+      }
+    }
+    expect(hit.size, `unpainted 的剧本合起来只撞上了 ${[...hit]} —— 分辨力只剩一层`).toBeGreaterThan(
+      1,
+    )
+  })
+
   for (const a of attempts) {
     const e = expectationOf(a.name)
     if (e.status === 'unpainted') {
@@ -490,10 +508,14 @@ describe('表态 unpainted 的剧本，真的画不出来（xl-rh9.11）', () =>
         // 「画不出来」与「画错了炸了」在报告里长得一样。
         const unnamed = a.messages.filter((m) => !m.includes(e.issue!))
         expect(unnamed, `${a.name} 抛了这几句，可它们没点名 ${e.issue}`).toEqual([])
-        // 分母：这一条剧本到底撞上了几层。只撞上一层时上面那句话就只覆盖得到
-        // 一层 —— 而 battle-menus 在末拍之前撞的是三层（药品菜单 @88、
-        // 技能菜单 @168、我方状态图标 @198）。
-        expect(a.messages.length, `${a.name} 只撞上了一层？`).toBeGreaterThan(1)
+        // 分母：这一条剧本到底撞上了几层。至少一层 —— 上面那句「每一句都点名」
+        // 在零句上是恒真的。
+        //
+        // ⚠️ **这里不能要求「不止一层」**（xl-rh9.14 撞到过）：撞几层是剧本的
+        // 性质，不是判据的。`battle-menus` 在末拍之前撞三层（药品菜单 @88、
+        // 技能菜单 @168、我方状态图标 @198），而三条秘术剧本各只撞一层 ——
+        // 它们根本不开菜单。"合起来不止一层"那件事由下面那条整体的判据管。
+        expect(a.messages.length, `${a.name} 一句都没抛？`).toBeGreaterThan(0)
       })
     } else {
       it(`${a.name}：表没说画不出来，那它就不许在末拍之前抛`, () => {

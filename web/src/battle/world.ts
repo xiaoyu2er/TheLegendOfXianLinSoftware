@@ -43,6 +43,16 @@ export interface BattleConfig {
    * 的纹理读 —— 两边读的都不是行为真值。
    */
   sprite: (name: string) => { width: number; height: number }
+  /**
+   * 技能菜单上有几颗按钮（`ZhangXiaoFan.skillNumber` 等三个 static 字段）。
+   * **剧本没写就用原版那三个字段的初值**（`SKILL_NUMBER`，2 / 3 / 2）——
+   * 导出器也是这么做的：它只写 `level = n`，构造函数一个字都不碰 skillNumber。
+   *
+   * 按等级推是错的：`intialFromInfo()` 那套「>=2 三颗、>=5 四颗、>=10 五颗」
+   * 只有读档才走，战斗面板到不了。推一个出来会让 `battle-menus` 的菜单从
+   * 2 颗变成 4 颗 —— 而多出来的那两颗一颗都点不到，看上去完全正常。
+   */
+  skillNumbers?: Readonly<Partial<Record<PartyKey, number>>> | undefined
 }
 
 function state(): BattleState {
@@ -76,9 +86,14 @@ function menuButton(index: number): MenuButton {
  * 缺席的那一组是空列表 —— 而最后一句 `skillButtons=zhangButtons` 是无条件的，
  * 所以张小凡没出战时它一开始指着一个空列表。照抄。
  */
-function makeSkillMenu(present: Readonly<Record<'zhang' | 'yu' | 'lu', boolean>>): SkillMenu {
+function makeSkillMenu(
+  present: Readonly<Record<'zhang' | 'yu' | 'lu', boolean>>,
+  counts: Readonly<Partial<Record<PartyKey, number>>>,
+): SkillMenu {
   const group = (key: 'zhang' | 'yu' | 'lu'): MenuButton[] =>
-    present[key] ? Array.from({ length: SKILL_NUMBER[key] }, (_, i) => menuButton(i)) : []
+    present[key]
+      ? Array.from({ length: counts[key] ?? SKILL_NUMBER[key] }, (_, i) => menuButton(i))
+      : []
   return {
     isDraw: false,
     group: 'zhang',
@@ -360,7 +375,12 @@ export function createBattle(config: BattleConfig): BattleWorld {
     startAnimation: { leftX: 0, rightX: 0, isDraw: true, isStop: false },
     hurtValues: [],
     launchCode: 0,
-    skillMenu: makeSkillMenu({ zhang: zxf !== null, yu: yj !== null, lu: lxq !== null }),
+    // `bp.pet=null;`（`BattlePanel.initial`）—— 陆雪琪的秘术才 new 得出来。
+    pet: null,
+    skillMenu: makeSkillMenu(
+      { zhang: zxf !== null, yu: yj !== null, lu: lxq !== null },
+      config.skillNumbers ?? {},
+    ),
     drugMenu: makeDrugMenu(),
     // `ShopReader.readDrug()` 不给 `numberGOT` 赋值，数据文件里也没有那一列。
     drugStock: DRUGS.map(() => 0),

@@ -41,6 +41,10 @@ import java.util.Map;
  *   skillMenu {button}        点技能菜单上的一颗按钮（skill1..skill5 / return）。
  *                             菜单没打开 —— 等；等到超预算是硬失败。
  *   drugMenu  {button}        点药品菜单上的一颗按钮（drug1..drug6 / return）。同上。
+ *   autoUntilAngry {round,max} 同 autoUntilRound，外加一个条件：那个人的怒气已经
+ *                             攒满（isAngry）。秘术（pattern 7）只有攒满怒气才点得
+ *                             下去，而"要挨几下才攒满"由伤害掷出来多少决定 ——
+ *                             和回合序一样，写剧本的人事先不知道。
  *   autoUntilRound {round,max} 像 autoAttack 那样自动打，直到**控制台出现在指定
  *                             回合上**为止。写剧本的人事先不知道谁先跑满行动条
  *                             （那由种子与速度决定），而"点谁的技能菜单"必须是
@@ -82,6 +86,22 @@ public final class TraceScript {
     public final List<String> party;
     /** 每个出战单位的等级（原版默认 1/3/1）。战斗的初始属性全部由它算出来。 */
     public final Map<String, Integer> levels;
+    /**
+     * 每个出战单位的技能菜单上有几颗按钮，也就是 {@code ZhangXiaoFan.skillNumber}
+     * 等三个 <b>static</b> 字段。**可以整个不写**，不写就一个字都不碰，用的是原版
+     * 那三个字段的初值（2 / 3 / 2）。
+     *
+     * <p>为什么必须由剧本给、而不是从等级推：那三个字段只由两处改 ——
+     * {@code levelUp()}（战斗胜利结算）与 {@code intialFromInfo()}（读档）。
+     * 导出器只写 {@code level = n} 再 new 一个出来，构造函数一个字都不碰它，
+     * 所以**等级再高，菜单上仍然是那几颗**。技能 3/4/5 三颗按钮由
+     * {@code SkillMenu.checkReleased} 里的 {@code if(skillNumber>=n)} 守着，
+     * 不抬这个数就一条都点不到。
+     *
+     * <p>不写时保持不动（而不是"按等级推一个"）也是为了老剧本逐字节不变：
+     * 推一个出来会让 {@code battle-menus} 的技能菜单从 2 颗变成 4 颗。
+     */
+    public final Map<String, Integer> skillNumbers;
     /** 三个怪物槽位，形如 `怪物1/5`；空槽位写 `null`。就是 Fight 数据的后三列。 */
     public final List<String> enemies;
     /** `Math.random()` 的种子。战斗的伤害与怪物 AI 全靠它才可重复，见 BattleDriver。 */
@@ -113,7 +133,7 @@ public final class TraceScript {
 
     private static final List<String> BATTLE_OPS = Arrays.asList(
             "command", "target", "autoAttack", "awaitExit", "wait",
-            "skillMenu", "drugMenu", "autoUntilRound");
+            "skillMenu", "drugMenu", "autoUntilRound", "autoUntilAngry");
 
     /**
      * {@code awaitExit} 认的面板名：{@code GameLauncher.setLayout()} 往
@@ -149,12 +169,13 @@ public final class TraceScript {
     private TraceScript(String driver, String name, String description, String warmup, String scene,
                         boolean isScript, int tickMs, int maxTicks, List<Instruction> steps,
                         String background, List<String> party, Map<String, Integer> levels,
-                        List<String> enemies, int seed) {
+                        Map<String, Integer> skillNumbers, List<String> enemies, int seed) {
         this.driver = driver;
         this.name = name; this.description = description; this.warmup = warmup;
         this.scene = scene; this.isScript = isScript;
         this.tickMs = tickMs; this.maxTicks = maxTicks; this.steps = steps;
         this.background = background; this.party = party; this.levels = levels;
+        this.skillNumbers = skillNumbers;
         this.enemies = enemies; this.seed = seed;
     }
 
@@ -199,6 +220,7 @@ public final class TraceScript {
         String background = null;
         List<String> party = null;
         Map<String, Integer> levels = null;
+        Map<String, Integer> skillNumbers = null;
         List<String> enemies = null;
         int seed = 0;
         if (battle) {
@@ -219,6 +241,26 @@ public final class TraceScript {
                 // 等级不给默认值：三个人的原版默认等级各不相同（1/3/1），
                 // 默认掉的那一份初始属性正是这份真值里所有伤害数字的来源。
                 levels.put(who, JsonIn.i(lv, who));
+            }
+            skillNumbers = new LinkedHashMap<>();
+            if (m.containsKey("skillNumber")) {
+                Map<String, Object> sn = JsonIn.obj(m.get("skillNumber"), "skillNumber");
+                for (String who : sn.keySet()) {
+                    if (!party.contains(who)) {
+                        throw new IllegalArgumentException("skillNumber 里的 " + who
+                                + " 没有出战 —— 改一个没出战的人什么都观测不到");
+                    }
+                }
+                // 顺序照 party 走，不照 JSON 里的书写顺序 —— 回显要可复现。
+                for (String who : party) {
+                    if (!sn.containsKey(who)) continue;
+                    int n = JsonIn.i(sn, who);
+                    if (n < 1 || n > 5) {
+                        throw new IllegalArgumentException("skillNumber 只能是 1..5（原版满级五颗），"
+                                + who + " 写的是 " + n);
+                    }
+                    skillNumbers.put(who, n);
+                }
             }
             enemies = new ArrayList<>();
             for (Object o : JsonIn.arr(m.get("enemies"), "enemies")) enemies.add((String) o);
@@ -263,10 +305,10 @@ public final class TraceScript {
                     throw new IllegalArgumentException(op + " 不认识的按钮 " + button + "，可用的是 " + allowed);
                 }
             }
-            if (op.equals("autoUntilRound")) {
+            if (op.equals("autoUntilRound") || op.equals("autoUntilAngry")) {
                 round = JsonIn.i(s, "round");
                 if (round < 1 || round > 3) {
-                    throw new IllegalArgumentException("autoUntilRound 的 round 只能是 1/2/3（我方三个人），实际 " + round);
+                    throw new IllegalArgumentException(op + " 的 round 只能是 1/2/3（我方三个人），实际 " + round);
                 }
                 max = JsonIn.iOr(s, "max", 2000);
             }
@@ -293,7 +335,7 @@ public final class TraceScript {
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
         return new TraceScript(driver, name, description, warmup, scene, isScript, tickMs, maxTicks,
-                steps, background, party, levels, enemies, seed);
+                steps, background, party, levels, skillNumbers, enemies, seed);
     }
 
     /**
@@ -313,14 +355,9 @@ public final class TraceScript {
         b.append(",\"description\":").append(Json.str(description));
         b.append(",\"background\":").append(Json.str(background));
         b.append(",\"party\":").append(Json.arrStr(party));
-        b.append(",\"level\":{");
-        boolean first = true;
-        for (Map.Entry<String, Integer> e : levels.entrySet()) {
-            if (!first) b.append(',');
-            first = false;
-            b.append(Json.str(e.getKey())).append(':').append(e.getValue());
-        }
-        b.append("}");
+        appendIntMap(b, "level", levels);
+        // 整个不写时**一个字都不回显** —— 老真值因此逐字节不变。
+        if (!skillNumbers.isEmpty()) appendIntMap(b, "skillNumber", skillNumbers);
         b.append(",\"enemies\":").append(Json.arrStr(enemies));
         b.append(",\"seed\":").append(seed);
         b.append(",\"tickMs\":").append(tickMs);
@@ -334,7 +371,7 @@ public final class TraceScript {
             if (s.op.equals("skillMenu") || s.op.equals("drugMenu")) {
                 b.append(",\"button\":").append(Json.str(s.button));
             }
-            if (s.op.equals("autoUntilRound")) {
+            if (s.op.equals("autoUntilRound") || s.op.equals("autoUntilAngry")) {
                 b.append(",\"round\":").append(s.round).append(",\"max\":").append(s.max);
             }
             if (s.op.equals("target"))     b.append(",\"enemy\":").append(s.enemy);
@@ -344,6 +381,18 @@ public final class TraceScript {
             b.append('}');
         }
         return b.append("]}").toString();
+    }
+
+    /** 回显一张 `{"key": 数}` 的表（`level` 与 `skillNumber` 两处形状相同）。 */
+    private static void appendIntMap(StringBuilder b, String key, Map<String, Integer> m) {
+        b.append(',').append(Json.str(key)).append(":{");
+        boolean first = true;
+        for (Map.Entry<String, Integer> e : m.entrySet()) {
+            if (!first) b.append(',');
+            first = false;
+            b.append(Json.str(e.getKey())).append(':').append(e.getValue());
+        }
+        b.append('}');
     }
 
     private String sceneJson() {

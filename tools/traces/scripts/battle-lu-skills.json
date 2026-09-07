@@ -1,0 +1,220 @@
+{
+  "name": "battle-lu-skills",
+  "description": "陆雪琪那五条技能（xl-rh9.14）。她的技能菜单在 battle-menus 里一次都没被点开，所以 skills.ts 的 lu 那一格是空的 —— 这一场把五条一起走完：灵凤吐珠（pattern 2，我方全体敏捷提升 type 1，不打伤害只扣 80 灵力）、踏月无痕（pattern 3，把张小凡与文敏的行动条直接推到终点、把三只怪的行动条推回起点，并 70% 给每只怪挂敏捷下降 type 5，扣的是 mpMax*0.6）、星火乾坤圈（pattern 4，全体攻击 + 80% 中毒 type 9）、亟电崩离（pattern 5，指定目标 + 40% 麻痹 type 10）、劈风追月（pattern 6，全体攻击 + 每只怪一个 5..10 的随机状态 + 每个活着的我方一个 1..4 的随机状态）。**成功率不是 100 的那几条正是要点**：BattleState.set 掷不中也已经把那一个随机数消耗掉了，而掷不中之后原版照样无条件调 checkState()，读到的是上一个状态的 type。这一场同时盖住敌我两侧 checkState / returnFromState 的六七个分支，以及「顶掉一个还没结算完的状态」那一路（劈风追月给我方挂随机状态时，灵凤吐珠那个 type 1 还挂着）。劈风追月点**两次**：一次只掷得出三只怪的三个类型与我方两个人的两个类型，六个与四个都要盖到就得多掷一轮。张小凡带五级出战是当肉盾用的：陆雪琪一个人扛不住三只蒙面怪人打这么多回合。",
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "party": [
+    "zhang",
+    "lu"
+  ],
+  "level": {
+    "zhang": 5,
+    "lu": 20
+  },
+  "skillNumber": {
+    "lu": 5
+  },
+  "enemies": [
+    "蒙面怪人/5",
+    "蒙面怪人/6",
+    "蒙面怪人/7"
+  ],
+  "seed": 20260929,
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "steps": [
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill1",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill2",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill3",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill4",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill5",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill5",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 250
+    }
+  ]
+}

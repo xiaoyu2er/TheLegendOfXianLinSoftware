@@ -1,0 +1,75 @@
+{
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "enemies": [
+    "物理阁大弟子/5",
+    "物理阁大弟子/6",
+    "物理阁大弟子/7"
+  ],
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "name": "battle-mishu-zhang",
+  "description": "张小凡的秘术：全体金钟罩（xl-rh9.14）。秘术是「防」那颗按钮，而它只有**怒气攒满**才点得下去 —— Command.checkReleased 里 if(bp.zxf.isAngry) 那一支，没攒满就只弹一张 22.png 的提示图、控制台还开着。怒气怎么攒：Enemy.calDamage 每打一下就把伤害加进 angryValue，攒到 hpMax*0.8 就 isAngry。所以这一场是**一个人硬扛**：张小凡二十级（hpMax 3360、防御 240），三只物理阁大弟子一发 620 打成 380，扛到第八下前后攒满，第十下才会倒下 —— 那两下的余地就是这条剧本的全部余量，换个种子未必还站得住。剧本用 autoUntilAngry 接住「控制台开在他的回合上、且怒气已满」这个事实，而不是数回合：要挨几下由伤害掷出来多少决定。金钟罩把防御与技能防御一起顶到 9999，两个回合之后 returnFromState 按公式重算回去（不是减掉 9999）。 收尾特意打到全灭：金钟罩退回去那一下是**照公式重算**（defense=physicalPower*5）而不是把 9999 减掉，而 defense 不在真值里 —— 只有退回之后再挨一下打，那两种写法算出来的伤害才分得开。张小凡放完秘术时只剩一百血，金钟罩一到期下一发就带走他，于是那一发的伤害数字正好是这条判据。",
+  "party": [
+    "zhang"
+  ],
+  "level": {
+    "zhang": 20
+  },
+  "steps": [
+    {
+      "op": "autoUntilAngry",
+      "round": 1,
+      "max": 2000,
+      "budget": 2100
+    },
+    {
+      "op": "command",
+      "button": "defend",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 1,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 1,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoAttack",
+      "until": "defeat",
+      "max": 600
+    },
+    {
+      "op": "awaitExit",
+      "panel": "startPanel",
+      "max": 300
+    }
+  ],
+  "seed": 20260950
+}

@@ -109,6 +109,31 @@ export interface Enemy {
   skill: SkillSpec
 }
 
+/**
+ * `Pet` —— 陆雪琪的秘术召出来的小精灵（xl-rh9.14）。
+ *
+ * 它是**整场战斗里唯一会中途诞生的单位**：`bp.pet` 一开始是 null，
+ * `LaunchAttack.checkLu` 的 pattern 7 那一支里 `new Pet(bp)`。在此之前
+ * `ProgressBar.updateProgress` 的 `if(bp.pet!=null){petX+=…}` 与
+ * `currentRound==4` 那一支都恒不执行。
+ *
+ * **它一个字段都不在行为真值里**（导出器的 `snapshotState` 没取它）。看得见的
+ * 是它的后果：`bar.pet` 会开始爬、`round` 会出现 4、`anim.skill` 会变成
+ * 「小精灵攻击」、怪物身上会多出一笔伤害数字。所以这里只留推得出后果的那几个
+ * 字段，`y`（`update()` 里上下浮动的那个）留着是给渲染那一层用的。
+ */
+export interface Pet {
+  x: number
+  y: number
+  /** `(int)((ZhangXiaoFan.speed+LuXueQi.speed+YuJie.speed)/3)`，召出来那一刻算死。 */
+  speed: number
+  /** `(int)((ZhangXiaoFan.hurt+LuXueQi.hurt+YuJie.hurt)/3)`。 */
+  power: number
+  isDraw: boolean
+  isStop: boolean
+  code: number
+}
+
 /** `HurtValue`：一次伤害就 new 一个，动画播完自己收摊。 */
 export interface HurtValue {
   hurt: number
@@ -419,6 +444,8 @@ export interface BattleWorld {
 
   /** `LaunchAttack.code`：怪物出手前那 5 拍前摇，整个发动器共用一个计数器。 */
   launchCode: number
+  /** `bp.pet`。陆雪琪的秘术召出来之前恒为 null（xl-rh9.14）。 */
+  pet: Pet | null
 
   skillMenu: SkillMenu
   drugMenu: DrugMenu

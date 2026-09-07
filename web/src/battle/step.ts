@@ -2,7 +2,7 @@ import { expToLevelUp, refreshValue } from './units'
 import { updateVictoryReminder } from './victory'
 import type { PartyKey, SkillSpec } from './units'
 import { DRUGS, drugIntroText } from './drugs'
-import { SKILLS, SKILL_INTRO_DIR, SKILL_MENU } from './skills'
+import { SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
 import type { SkillEntry } from './skills'
 import {
   MENU_BUTTON_H,
@@ -19,6 +19,7 @@ import type {
   Hero,
   HurtValue,
   MenuButton,
+  Pet,
 } from './types'
 
 /**
@@ -57,7 +58,7 @@ export function stepBattle(w: BattleWorld, inputs: readonly BattleInput[] = []):
   updateSkillAnimation(w)
   for (const e of w.enemies) updateBeAttacked(w, e.beAttackedAnimation)
   for (const h of w.heroes) updateBeAttacked(w, h.beAttackedAnimation)
-  // pet：小精灵由陆雪琪的秘术召唤，battle-min 一场都没召过。归 xl-rh9.9。
+  if (w.pet) updatePet(w.pet)
   for (const hv of w.hurtValues) updateHurtValue(hv)
   updateInstruct(w)
   updateReminder(w)
@@ -165,11 +166,23 @@ function commandReleased(w: BattleWorld, x: number, y: number): void {
     w.drugMenu.isDraw = true
   }
   if (c.defend.isclicked) {
-    throw new Error(
-      '「防」（秘术）还没实现：battle-menus 那条真值只点过「技」与「物」，' +
-        '而秘术那一路（张小凡全体金钟罩 / 文敏潜能爆发 / 陆雪琪召小精灵）' +
-        '一次都没走过 —— 归 xl-rh9.14。',
-    )
+    // `Command.checkReleased` 里那个三路 switch **没有 default**：不是我方回合
+    // 时它一个字都不做（控制台只在我方回合画得出来，所以走不到）。
+    const h = roundHero(w)
+    if (h !== null) {
+      if (h.isAngry) {
+        c.isDraw = false
+        // 秘术不选目标：`currentBeAttacked` 直接写死 8（全体）。张小凡与文敏的
+        // 秘术根本不看它，陆雪琪的也不看 —— 但它决定 `updateSkillAnimation` 走
+        // 哪一支偏移（8 → offsetTo1），所以照抄。
+        w.currentBeAttacked = 8
+        w.currentPattern = 7
+      } else {
+        // `bp.reminder.show(21)` —— 也就是 `22.png`。**控制台不收起来**，
+        // 这一下等于什么都没发生，可以接着点别的。
+        showReminder(w, 21)
+      }
+    }
   }
   for (const b of commandButtons(w)) if (hit(b, x, y)) b.isclicked = false
 }
@@ -234,6 +247,14 @@ function roundKey(w: BattleWorld): PartyKey | null {
   if (w.currentRound === 1) return 'zhang'
   if (w.currentRound === 2) return 'yu'
   if (w.currentRound === 3) return 'lu'
+  return null
+}
+
+/** 当前回合那个人，不是我方回合（或那个人没出战）就是 null。 */
+function roundHero(w: BattleWorld): Hero | null {
+  if (w.currentRound === 1) return w.zxf
+  if (w.currentRound === 2) return w.yj
+  if (w.currentRound === 3) return w.lxq
   return null
 }
 
@@ -486,10 +507,10 @@ function updateProgress(w: BattleWorld): void {
     if (w.zxf && !w.zxf.isDead) p.zhangX += w.zxf.speed
     if (w.yj && !w.yj.isDead) p.yuX += w.yj.speed
     if (w.lxq && !w.lxq.isDead) p.luX += w.lxq.speed
-    // 原版这里还有一行 `if(bp.pet!=null){petX+=bp.pet.speed;}`。小精灵只由
-    // 陆雪琪的秘术召得出来，这一层还没有秘术，`pet` 恒为 null —— 那一行恒不
-    // 执行，所以这里是**不写**而不是漏写。召得出小精灵那天（xl-rh9.9）连同
-    // `startEnemyRound` 上头那个 throw 一起补。
+    // 小精灵没被召出来之前 `bp.pet` 是 null，这一行恒不执行（xl-rh9.14 之前
+    // 这里连写都没写）。**它排在 lu 与 em1 之间**，而不是最后 —— 顺序在这
+    // 一段里不影响结果，照抄是为了下一个人对照原版时不必怀疑。
+    if (w.pet) p.petX += w.pet.speed
     if (w.em1) p.enemy1X += w.em1.speed
     if (w.em2) p.enemy2X += w.em2.speed
     if (w.em3) p.enemy3X += w.em3.speed
@@ -501,6 +522,14 @@ function updateProgress(w: BattleWorld): void {
     w.command.isDraw = true
     instructStart(w)
   }
+  // `ProgressBar.updateProgress` 里 `petX-BarX>=400` 那一支：它**不画控制台、
+  // 不起指示器**（小精灵不听指挥），直接把攻击模式定成 1 再选目标。
+  const startPetRound = (w2: BattleWorld) => {
+    p.isStop = true
+    w2.currentRound = 4
+    w2.currentPattern = 1
+    petEnemyToAttack(w2)
+  }
   const startEnemyRound = (round: number, e: Enemy) => {
     p.isStop = true
     w.currentRound = round
@@ -510,9 +539,8 @@ function updateProgress(w: BattleWorld): void {
   if (p.zhangX - p.barX >= ACTION_BAR_GOAL) startHeroRound(1)
   else if (p.yuX - p.barX >= ACTION_BAR_GOAL) startHeroRound(2)
   else if (p.luX - p.barX >= ACTION_BAR_GOAL) startHeroRound(3)
-  else if (p.petX - p.barX >= ACTION_BAR_GOAL) {
-    throw new Error('小精灵的回合还没实现（陆雪琪的秘术才召得出它）—— 归 xl-rh9.9')
-  } else if (w.em1 && p.enemy1X - p.barX >= ACTION_BAR_GOAL) startEnemyRound(5, w.em1)
+  else if (p.petX - p.barX >= ACTION_BAR_GOAL) startPetRound(w)
+  else if (w.em1 && p.enemy1X - p.barX >= ACTION_BAR_GOAL) startEnemyRound(5, w.em1)
   else if (w.em2 && p.enemy2X - p.barX >= ACTION_BAR_GOAL) startEnemyRound(6, w.em2)
   else if (w.em3 && p.enemy3X - p.barX >= ACTION_BAR_GOAL) startEnemyRound(7, w.em3)
 }
@@ -829,16 +857,12 @@ function exitToStart(w: BattleWorld): void {
  * `isCheck` 保证只结算一次，回合一换回来才置真。
  */
 function checkHeroState(w: BattleWorld, h: Hero): void {
-  checkStateCommon(w, h.battleState, () => excuteState(h.battleState, '我方'), () =>
-    returnHeroState(h),
-  )
+  checkStateCommon(w, h.battleState, () => heroExcuteState(w, h), () => returnHeroState(h))
 }
 
 /** `BattleState.check()`，怪物那一份。 */
 function checkEnemyState(w: BattleWorld, e: Enemy): void {
-  checkStateCommon(w, e.battleState, () => excuteState(e.battleState, '怪物'), () =>
-    returnEnemyState(e),
-  )
+  checkStateCommon(w, e.battleState, () => enemyExcuteState(w, e), () => returnEnemyState(e))
 }
 
 function checkStateCommon(
@@ -892,82 +916,244 @@ function setBattleState(
 }
 
 /**
- * `<主角>.checkState()`：把状态的加成**挂上去**（三个主角这段代码一模一样）。
+ * `<主角>.checkState()`：把状态的加成**挂上去**。
  *
- * 只有 type 1 移植了 —— `battle-menus` 里文敏技能2 挂的就是它。其余的抛并
- * 点名：一条没有真值的加成公式，抄错了和抄对了推出来的战斗过程都"很正常"。
+ * 三个主角的这段代码逐字相同，**只差一条**：`YuJie` 多一个 `case 12`
+ * （潜能爆发，她自己的秘术挂给自己）。张小凡与陆雪琪的 switch 里根本没有
+ * 那一支，所以这里也不给它们一条"什么都不做"的路 —— 那条路一旦真被走到，
+ * 静静地什么都不做与正确执行长得一样。
+ *
+ * **挂不上的那几支照样是分支，不是遗漏**：我方拿不到 5..8（敏捷/武力/精气/
+ * 体力下降）与 10（麻痹）—— 全游戏没有一招把它们挂给我方（陆雪琪的技能5 给
+ * 我方掷的是 1..4，给怪物掷的才是 5..10）。走到就抛并点名。
  */
 function heroApplyState(h: Hero): void {
   // 原版那个 switch **没有 case 0**，所以「没挂上任何状态」时它什么都不做。
   // 掷不中的时候原版照样会调这个方法（`set()` 之后那句 `checkState()` 是
   // 无条件的），读到的是**上一个**状态的 type —— 也就是说加成会被重复挂一次。
-  // 那是原版的行为，照抄（ADR-0001）；今天两条路的成功率都是 100，掷不中
-  // 这件事观测不到。
-  if (h.battleState.type === 0) return
-  if (h.battleState.type === 1) {
+  // 那是原版的行为，照抄（ADR-0001）。
+  const t = h.battleState.type
+  if (t === 0) return
+  // 1..4 加、5..8 减，两组各自的算式一模一样，只差正负号。原版是八个 case
+  // 逐个写死的，这里也逐个写：把它折成 `sign * 4` 之类的算式，抄错一个符号
+  // 与抄对了在同一场里都"很正常"。
+  if (t === 1) {
     h.agile += 2
     h.speed = Math.trunc(h.agile / 2)
     return
   }
+  if (t === 2) {
+    h.strength += 4
+    h.hurt = h.strength * 10
+    return
+  }
+  if (t === 3) {
+    h.sprit += 4
+    h.skillHurt = h.sprit * 8
+    h.skillDefense = h.physicalPower * 2 + h.sprit * 3
+    return
+  }
+  if (t === 4) {
+    h.physicalPower += 4
+    h.defense = h.physicalPower * 5
+    h.skillDefense = h.physicalPower * 2 + h.sprit * 3
+    return
+  }
+  // 金钟罩（张小凡的秘术）：防御与技能防御一起顶到 9999。
+  if (t === 11) {
+    h.defense = 9999
+    h.skillDefense = 9999
+    return
+  }
+  // 潜能爆发（文敏的秘术）：四项基础属性翻倍再 refreshValue()。
+  if (t === 12) {
+    if (h.spec.key !== 'yu') {
+      throw new Error(
+        `${h.spec.key} 身上挂上了 type 12（潜能爆发）—— 原版只有 YuJie.checkState() ` +
+          '有这一支，另外两个人的 switch 里没有 case 12（走到什么都不做）。' +
+          '而全游戏只有文敏的秘术挂得上它，所以这里不替它们编一条路。',
+      )
+    }
+    h.physicalPower *= 2
+    h.sprit *= 2
+    h.agile *= 2
+    h.strength *= 2
+    refreshValue(h)
+    return
+  }
   throw new Error(
-    `我方战斗状态 ${h.battleState.type} 的加成还没实现 —— battle-menus 只挂过 type 1` +
-      '（敏捷提升，文敏技能2）。归 xl-rh9.14。',
+    `我方战斗状态 ${t} 的加成没有移植 —— 全游戏没有一招把它挂给我方` +
+      '（陆雪琪技能5 给我方掷的是 1..4，给怪物掷的才是 5..10），' +
+      '所以一份真值都盖不住它。走到这里说明有新的路了。',
   )
 }
 
-/** `<主角>.returnFromState()`：把加成退回去。type 1 与上面严格互逆。 */
+/** `<主角>.returnFromState()`：把加成退回去，与上面严格互逆。 */
 function returnHeroState(h: Hero): void {
-  if (h.battleState.type === 1) {
+  const t = h.battleState.type
+  if (t === 1) {
     h.agile -= 2
     h.speed = Math.trunc(h.agile / 2)
     return
   }
+  if (t === 2) {
+    h.strength -= 4
+    h.hurt = h.strength * 10
+    return
+  }
+  if (t === 3) {
+    h.sprit -= 4
+    h.skillHurt = h.sprit * 8
+    h.skillDefense = h.physicalPower * 2 + h.sprit * 3
+    return
+  }
+  if (t === 4) {
+    h.physicalPower -= 4
+    h.defense = h.physicalPower * 5
+    h.skillDefense = h.physicalPower * 2 + h.sprit * 3
+    return
+  }
+  // 金钟罩退回去时**不是减掉 9999**，而是照公式重算 —— 原版就是这么写的。
+  if (t === 11) {
+    h.defense = h.physicalPower * 5
+    h.skillDefense = h.physicalPower * 2 + h.sprit * 3
+    return
+  }
+  if (t === 12) {
+    if (h.spec.key !== 'yu') {
+      throw new Error(`${h.spec.key} 身上挂着 type 12 要退回 —— 只有 YuJie 有这一支`)
+    }
+    // Java 的 `physicalPower/=2` 是整数除法，向零截尾（翻倍过的数一定是偶数，
+    // 所以今天截不掉东西；照抄是因为原版写的就是整除）。
+    h.physicalPower = Math.trunc(h.physicalPower / 2)
+    h.sprit = Math.trunc(h.sprit / 2)
+    h.agile = Math.trunc(h.agile / 2)
+    h.strength = Math.trunc(h.strength / 2)
+    // ⚠️ `refreshValue()` 会把 hp/mp **夹回新的上限** —— 潜能爆发退回去那一刻
+    // hpMax 减半，超出的血当场被削掉。
+    refreshValue(h)
+    return
+  }
+  throw new Error(`我方战斗状态 ${t} 的恢复没有移植 —— 见 heroApplyState 上面那段。`)
+}
+
+/**
+ * `<主角>.excuteState()` —— 每回合结算，switch 里只有 case 9（中毒）有动作。
+ *
+ * ⚠️ **我方今天中不了毒**：挂得上 type 9 的三处（文敏技能1、陆雪琪技能3 与
+ * 技能5）掷的对象全是怪物，陆雪琪技能5 给我方掷的范围是 1..4。所以这一支
+ * 结构性地走不到 —— 走到就抛，而不是照着怪物那一份誊一遍没人核过的算式。
+ */
+function heroExcuteState(w: BattleWorld, h: Hero): void {
+  if (h.battleState.type !== 9) return
+  void w
   throw new Error(
-    `我方战斗状态 ${h.battleState.type} 的恢复还没实现 —— 归 xl-rh9.14。`,
+    `${h.spec.key} 中毒（type 9）了 —— 全游戏没有一招把中毒挂给我方，` +
+      '这一支一份真值都盖不住。走到这里说明有新的路了。',
   )
 }
 
 /**
- * `<主角>.excuteState()` 与 `Enemy.excuteState()`。
+ * `Enemy.excuteState()` —— 中毒的怪在**自己的回合**上掉 5% 血。
  *
- * 两边的 switch 只有 case 9（中毒）有动作，其余什么都不做 —— 而中毒只由
- * 文敏技能1 与陆雪琪的两条技能挂得上，一条都没移植。合成一个函数是因为
- * 「这一支还没实现」这件事两边一模一样；等 case 9 真的做出来时它会自然分家
- * （我方扣的是 `hp*0.05` 画在 showX/showY，怪物扣的也是 5% 但画在 x/y）。
+ * 三件事按原版的顺序：先把 `hurtValues` 整个清空（正在飘的伤害数字一并没掉），
+ * 再算 `(int)(hp*0.05)` 扣掉，最后把**清空之后新加的那一个**立刻 `start()`。
+ * 那句 `for(HurtValue h:bp.hurtValues){h.start();}` 遍历的是清空后的列表，
+ * 所以只有这一个数字会飘。
  */
-function excuteState(s: BattleState, who: string): void {
-  if (s.type === 9) {
-    throw new Error(`${who}中毒（type 9）的每回合结算还没实现 —— 归 xl-rh9.14`)
+function enemyExcuteState(w: BattleWorld, e: Enemy): void {
+  if (e.battleState.type !== 9) return
+  w.hurtValues.length = 0
+  const damage = Math.trunc(e.hp * 0.05)
+  e.hp -= damage
+  pushHurt(w, damage, 1, e.x, e.y)
+  for (const hv of w.hurtValues) {
+    hv.isDraw = true
+    hv.isStop = false
   }
 }
 
-/** `Enemy.checkState()`。只有 type 8 移植了（张小凡技能2 挂的体力下降）。 */
+/**
+ * `Enemy.checkState()`。
+ *
+ * 与我方那一份**不是同一张表**：怪物只有 speed / hurt / skillHurt / defense
+ * 四个量，加减的也不是同一个数（速度 ±1、攻击 ±40、技能攻击 ±30、防御 ±40）。
+ * 合成一个函数就要在里面分两路，而分错了的表现是伤害差一点点。
+ *
+ * **1..4 走不到**：全游戏没有一招给怪物挂增益（张小凡技能2 挂 8、文敏技能1 挂 9、
+ * 陆雪琪技能2/3/4 挂 5/9/10、技能5 掷的是 5..10）。走到就抛。
+ * **9（中毒）与 11/12 在原版这个 switch 里没有 case** —— 什么都不做，
+ * 那是分支本身，不是遗漏。
+ */
 function enemyApplyState(e: Enemy): void {
   // 同 `heroApplyState`：原版那个 switch 没有 case 0。
-  if (e.battleState.type === 0) return
-  if (e.battleState.type === 8) {
+  const t = e.battleState.type
+  if (t === 0) return
+  if (t >= 1 && t <= 4) {
+    throw new Error(
+      `怪物身上挂上了 type ${t}（增益）—— 全游戏没有一招给怪物挂增益，` +
+        '这一支一份真值都盖不住。走到这里说明有新的路了。',
+    )
+  }
+  if (t === 5) {
+    e.speed -= 1
+    return
+  }
+  if (t === 6) {
+    e.hurt -= 40
+    return
+  }
+  if (t === 7) {
+    e.skillHurt -= 30
+    return
+  }
+  if (t === 8) {
     e.defense -= 40
     return
   }
-  throw new Error(
-    `怪物战斗状态 ${e.battleState.type} 的加成还没实现 —— battle-menus 只挂过 type 8` +
-      '（体力下降，张小凡技能2）。归 xl-rh9.14。',
-  )
+  // 中毒（9）在 checkState 里没有 case —— 它的动作全在 excuteState 里。
+  if (t === 9) return
+  if (t === 10) {
+    e.hurt = 0
+    e.skillHurt = 0
+    return
+  }
+  throw new Error(`怪物战斗状态 ${t} 不在 Enemy.checkState 的 switch 里`)
 }
 
 /**
- * `Enemy.returnFromState()`。
- *
- * ⚠️ **今天一次都走不到**：`battle-menus` 里那个 type 8 挂在第 3 槽那只怪身上，
- * `roundNum` 到收工都还是 2 —— 打赢的时候它一次都没轮到过。也就是说这一支
- * 与「我方那一支」不一样，它没有正面判据；写在这里是为了让走到的那一天**响**，
- * 而不是悄悄少退一次 40 点防御。
+ * `Enemy.returnFromState()`。与上面互逆，**只有麻痹那一支不是**：
+ * type 10 退回去时读的是 `hurtMax` / `skillHurtMax`（出厂值），而不是把 0 加
+ * 回去 —— 也就是说麻痹期间任何别的加减都会被它抹平。照抄。
  */
 function returnEnemyState(e: Enemy): void {
-  throw new Error(
-    `怪物战斗状态 ${e.battleState.type} 的恢复还没实现 —— battle-menus 里那个 type 8 ` +
-      '到收工都没到期（rounds 一直是 2），这一支没有真值。归 xl-rh9.14。',
-  )
+  const t = e.battleState.type
+  if (t >= 1 && t <= 4) {
+    throw new Error(`怪物身上挂着 type ${t}（增益）要退回 —— 见 enemyApplyState 上面那段。`)
+  }
+  if (t === 5) {
+    e.speed += 1
+    return
+  }
+  if (t === 6) {
+    e.hurt += 40
+    return
+  }
+  if (t === 7) {
+    e.skillHurt += 30
+    return
+  }
+  if (t === 8) {
+    e.defense += 40
+    return
+  }
+  if (t === 9) return
+  if (t === 10) {
+    e.hurt = e.hurtMax
+    e.skillHurt = e.skillHurtMax
+    return
+  }
+  throw new Error(`怪物战斗状态 ${t} 不在 Enemy.returnFromState 的 switch 里`)
 }
 
 
@@ -1000,7 +1186,8 @@ function launchAttackCheck(w: BattleWorld): void {
       if (w.lxq) checkHeroTurn(w, w.lxq)
       break
     case 4:
-      throw new Error('小精灵的回合还没实现 —— 归 xl-rh9.9')
+      checkPetTurn(w)
+      break
     case 5:
       if (w.em1) checkEnemyTurn(w, w.em1, 1)
       break
@@ -1026,12 +1213,7 @@ function checkHeroTurn(w: BattleWorld, h: Hero): void {
   // 原版这几支是**并列的 if**，不是 else-if；上面那一支把 currentPattern 归零，
   // 所以同一拍里不会两支都走。
   if (w.currentPattern >= 2 && w.currentPattern <= 6) skillAttack(w, h)
-  if (w.currentPattern === 7) {
-    throw new Error(
-      '秘术（pattern 7）还没实现：张小凡全体金钟罩 / 文敏潜能爆发 / 陆雪琪召小精灵，' +
-        '五份战斗真值一次都没用过。归 xl-rh9.14。',
-    )
-  }
+  if (w.currentPattern === 7) heroMishu(w, h)
 
   const finish = (): void => {
     for (const hv of w.hurtValues) {
@@ -1104,7 +1286,9 @@ function skillAttack(w: BattleWorld, h: Hero): void {
         '陆雪琪那五条一条都没抄（她的技能菜单在 battle-menus 里没被点过）。归 xl-rh9.14。',
     )
   }
-  if (h.mp >= entry.mpUse) {
+  // 陆雪琪的技能2 判的是 `(int)(LuXueQi.mpMax*0.6)` —— 这一处与下面 `luCalDamage`
+  // 里扣的那一处各算各的，原版就是两个方法的两个入参。
+  if (h.mp >= skillMpUse(entry, h.mpMax)) {
     w.hurtValues.length = 0
     heroCalDamage(w, h)
     w.currentPattern = 0
@@ -1144,6 +1328,218 @@ function setSkillAnimation(w: BattleWorld, spec: SkillSpec): void {
   a.isStop = false
 }
 
+// ================= 秘术（pattern 7） =================
+
+/**
+ * 三个人的秘术动画。`skillAnimation.set(名字, 帧数, x, y, 后面八个全是 0)` ——
+ * 后八个是 0 意味着：不触发被击动画、不位移。
+ */
+const MISHU_ANIM: Readonly<Record<PartyKey, SkillSpec>> = {
+  zhang: mishuAnim('张小凡秘术', 18, 560, 190),
+  yu: mishuAnim('文敏秘术', 10, 650, 100),
+  lu: mishuAnim('陆雪琪秘术', 8, 620, 300),
+}
+
+function mishuAnim(name: string, length: number, x: number, y: number): SkillSpec {
+  return {
+    name,
+    length,
+    x,
+    y,
+    beAttackedCode: 0,
+    beAttackedTimes: 0,
+    runCode: 0,
+    attackCode: 0,
+    withdrawCode: 0,
+    offsetTo1: 0,
+    offsetTo2: 0,
+    offsetTo3: 0,
+  }
+}
+
+/**
+ * `LaunchAttack.checkZhang/checkWen/checkLu` 里 `if(bp.currentPattern==7)` 那一段。
+ *
+ * 三个人的**后半截逐字相同**（收起人物、开动画、停指示器、怒气清零、
+ * `currentPattern=0`），前半截各做各的：
+ *
+ * - 张小凡：给**每个活着的我方**挂 2 回合金钟罩（type 11，防御顶到 9999）；
+ * - 文敏：给**自己**挂 3 回合潜能爆发（type 12，四项属性翻倍）；
+ * - 陆雪琪：`bp.pet=new Pet(bp)` —— 整场战斗里唯一一次凭空多出一个单位。
+ *
+ * ⚠️ 秘术**不走 `skillAttack`**：不判灵力够不够、不清 `hurtValues`、不弹提示图、
+ * 也不开背景动画。所以收尾走的是 `checkHeroTurn` 里 `skillAnimation.isOver`
+ * 那一支（`backgroundAnimation.isDraw` 一直是 false）。
+ */
+function heroMishu(w: BattleWorld, h: Hero): void {
+  if (h.spec.key === 'zhang') {
+    for (const hero of w.heroes) {
+      if (hero.isDead) continue
+      hitHeroWithState(w, hero, { rounds: 2, type: 11, successRate: 100 }, hero.roleCode)
+    }
+  } else if (h.spec.key === 'yu') {
+    // 原版这一句的 roleCode 写的是字面量 2，坐标读的是 `YuJie.showX/showY`。
+    hitHeroWithState(w, h, { rounds: 3, type: 12, successRate: 100 }, 2)
+  } else {
+    w.pet = makePet(w)
+  }
+  h.isDraw = false
+  setSkillAnimation(w, MISHU_ANIM[h.spec.key])
+  w.instruct.isDraw = false
+  w.instruct.isStop = true
+  h.angryValue = 0
+  h.isAngry = false
+  w.currentPattern = 0
+}
+
+// ================= 小精灵（陆雪琪的秘术召出来的） =================
+
+/**
+ * `new Pet(bp)`。速度与攻击力是**三个人的静态字段现算的平均值**，
+ * 召出来那一刻算死、此后不再变。
+ *
+ * ⚠️ **读的是三个静态字段，谁没出战就读到上一场留下的值** —— 这一层没有那个
+ * 东西，所以缺一个人就抛，不猜（同 `world.ts` 里 `zhangSpeed` 那一处）。
+ * 编一个值出来的表现是小精灵跑得快一点慢一点，而画面上完全正常。
+ * **死掉的人照样算**：原版读的是静态字段，与死没死无关。
+ */
+function makePet(w: BattleWorld): Pet {
+  const of = (h: Hero | null, who: string, field: 'speed' | 'hurt'): number => {
+    if (h === null) {
+      throw new Error(
+        `小精灵的属性要读${who}的静态字段（原版 \`Pet\` 的构造函数把三个人的 ` +
+          `${field} 平均一下），可这一场${who}没有出战 —— 原版这时读到的是上一场` +
+          '留下的值，这一层没有那个东西，不猜。',
+      )
+    }
+    return h[field]
+  }
+  // 原版的加法顺序是 张 + 陆 + 文（不是出场顺序），整数除法向零截尾。
+  const speed = Math.trunc(
+    (of(w.zxf, '张小凡', 'speed') + of(w.lxq, '陆雪琪', 'speed') + of(w.yj, '文敏', 'speed')) / 3,
+  )
+  const power = Math.trunc(
+    (of(w.zxf, '张小凡', 'hurt') + of(w.lxq, '陆雪琪', 'hurt') + of(w.yj, '文敏', 'hurt')) / 3,
+  )
+  return { x: 700, y: 400, speed, power, isDraw: true, isStop: false, code: 0 }
+}
+
+/** `Pet.attack()` 那一发 `skillAnimation.set(...)`。 */
+const PET_ATTACK: SkillSpec = {
+  name: '小精灵攻击',
+  length: 22,
+  x: 120,
+  y: 135,
+  beAttackedCode: 8,
+  beAttackedTimes: 1,
+  runCode: 6,
+  attackCode: 16,
+  withdrawCode: 22,
+  offsetTo1: 90,
+  offsetTo2: 210,
+  offsetTo3: 0,
+}
+
+/** `Pet.update()`：上浮五拍、下沉五拍，第十拍归零。只动 `y`。 */
+function updatePet(pet: Pet): void {
+  if (pet.isStop) return
+  if (pet.code < 5) {
+    pet.y -= 1
+    pet.code++
+  }
+  // 原版这两个 if 是并列的，而上面那一支刚把 code 加到 5 —— 于是**同一拍里
+  // 第二支也会进**，y 先减一再加一。照抄。
+  if (pet.code >= 5 && pet.code < 10) {
+    pet.y += 1
+    pet.code++
+  }
+  if (pet.code === 10) pet.code = 0
+}
+
+/**
+ * `Pet.enemyToAttack()`：掷 5..7 直到掷中一个还在场上的槽位。
+ * 与 `EnemyAI.heroToAttack` 同一种拒绝采样，**消耗不定次数随机数**。
+ */
+function petEnemyToAttack(w: BattleWorld): void {
+  for (let guard = 0; guard < 100000; guard++) {
+    const i = w.random.scaledInt(3) + 5
+    if (i === 5 && w.em1) {
+      w.currentBeAttacked = 5
+      return
+    }
+    if (i === 6 && w.em2) {
+      w.currentBeAttacked = 6
+      return
+    }
+    if (i === 7 && w.em3) {
+      w.currentBeAttacked = 7
+      return
+    }
+  }
+  // 原版在这里是死循环（三个槽位都空了而小精灵还在选目标）。挂死看起来只是
+  // "跑得慢"，所以这里响亮地断掉。
+  throw new Error('小精灵掷了十万次都没选到还在场上的怪物 —— 原版在这里会死循环')
+}
+
+/** `LaunchAttack.checkPet()`。与怪物那一份同形，只是收尾查的是怪物死没死。 */
+function checkPetTurn(w: BattleWorld): void {
+  const pet = w.pet
+  if (pet === null) {
+    throw new Error('currentRound 是 4（小精灵的回合）而 bp.pet 还是 null')
+  }
+  if (w.currentPattern === 1) {
+    // 与怪物那一支共用 `LaunchAttack.code` 这一个计数器 —— 原版就是这样。
+    if (w.launchCode < 5) w.launchCode++
+    else {
+      w.hurtValues.length = 0
+      petCalDamage(w, pet)
+      w.currentPattern = 0
+      setSkillAnimation(w, PET_ATTACK)
+      pet.isDraw = false
+      w.launchCode = 0
+    }
+  }
+  if (w.skillAnimation.isOver) {
+    w.skillAnimation.isOver = false
+    for (const hv of w.hurtValues) {
+      hv.isDraw = true
+      hv.isStop = false
+    }
+    checkEnemyDead(w)
+    pet.isDraw = true
+    w.progressBar.petX = w.progressBar.barX
+    resume(w)
+  }
+}
+
+/**
+ * `Pet.calDamage()`。
+ *
+ * ⚠️ **`currentEnemy.hp-=currentDamage;` 原版写了两遍**（`Pet.java` 里挨着的
+ * 两行），而伤害数字只加一个 —— 也就是说小精灵实际打出去的是显示值的两倍。
+ * 这是一条原版缺陷，照抄（ADR-0001）；"顺手删掉一行"的表现是小精灵变弱一半，
+ * 而画面上完全正常。
+ *
+ * 它也**不掷随机数**：伤害是 `power - defense`，没有随机偏移项。
+ */
+function petCalDamage(w: BattleWorld, pet: Pet): void {
+  let target: Enemy | null = null
+  if (w.currentBeAttacked === 5) target = w.em1
+  if (w.currentBeAttacked === 6) target = w.em2
+  if (w.currentBeAttacked === 7) target = w.em3
+  if (target === null) {
+    throw new Error(
+      `小精灵指着的槽位（currentBeAttacked=${w.currentBeAttacked}）上没有怪 —— ` +
+        '原版 `Pet.calDamage` 的三路 switch 没有 default，接下来是一发 NPE。',
+    )
+  }
+  let damage = pet.power - target.defense
+  if (damage < 0) damage = 0
+  target.hp -= damage
+  target.hp -= damage
+  pushHurt(w, damage, 1, target.x, target.y)
+}
+
 function resume(w: BattleWorld): void {
   w.currentRound = 0
   w.currentBeAttacked = 0
@@ -1160,6 +1556,9 @@ function pushHurt(w: BattleWorld, hurt: number, type: number, x: number, y: numb
 /**
  * `ZhangXiaoFan/YuJie/LuXueQi.calDamage()`：先按 `currentBeAttacked` 选目标，
  * 再按 `currentPattern` 分招。
+ *
+ * 普通攻击（pattern 1）三个人逐字相同，写在这里；五条技能三个人各不相同，
+ * 各自一个函数逐句转写（见 `skills.ts` 顶上那段：那五种形状塞不进一张表）。
  */
 function heroCalDamage(w: BattleWorld, h: Hero): void {
   const targets = heroTargets(w)
@@ -1173,38 +1572,198 @@ function heroCalDamage(w: BattleWorld, h: Hero): void {
     }
     return
   }
-  const entry = SKILLS[h.spec.key][w.currentPattern]
-  const d = entry?.damage
-  if (!d) {
-    throw new Error(
-      `${h.spec.key} 的第 ${w.currentPattern} 号招式的伤害公式还没移植 —— ` +
-        'battle-menus 只走过张小凡技能2 与文敏技能2（都是 pattern 3）。归 xl-rh9.14。',
-    )
-  }
-  // `attackSkill(baseHurt, offsetHurt, mpUse)`：**每个目标各掷一次**随机数，
-  // 全部打完之后才扣一次灵力。取数顺序本身就是规格（ADR-0004）。
+  if (h.spec.key === 'zhang') zhangCalDamage(w, h, targets)
+  else if (h.spec.key === 'yu') yuCalDamage(w, h, targets)
+  else luCalDamage(w, h, targets)
+}
+
+/**
+ * `attackSkill(baseHurt, offsetHurt, mpUse)` —— 三个主角这一段逐字相同。
+ *
+ * **每个目标各掷一次**随机数，全部打完之后才扣一次灵力。取数顺序本身就是
+ * 规格（ADR-0004）：少掷一次，之后每一发伤害都错。
+ */
+function attackSkill(
+  w: BattleWorld,
+  h: Hero,
+  targets: readonly Enemy[],
+  baseHurt: number,
+  offsetHurt: number,
+  mpUse: number,
+): void {
   for (const e of targets) {
-    let damage = h.skillHurt - e.defense + w.random.scaledInt(d.offsetHurt) + d.baseHurt
+    let damage = h.skillHurt - e.defense + w.random.scaledInt(offsetHurt) + baseHurt
     if (damage < 0) damage = 0
     e.hp -= damage
     pushHurt(w, damage, 1, e.x, e.y)
   }
-  h.mp -= d.mpUse
-  // 状态附加排在扣灵力之后（原版 `calDamage` 里 `attackSkill(...)` 那一句
-  // 返回之后才轮到那个 for），而 `set()` 每次都掷一个随机数。
-  if (d.enemyState) {
-    for (const e of targets) {
-      setBattleState(w, e.battleState, d.enemyState, e.roleCode, e.x, e.y, () => returnEnemyState(e))
-      // 原版 `e.checkState()` 是**无条件**的（掷不中也调），所以这里也不加
-      // `isUsable` 的门 —— 加了门就是替原版补了一个它没有的判断。
-      enemyApplyState(e)
-    }
+  h.mp -= mpUse
+}
+
+/** 一次 `<单位>.battleState.set(...)` + 紧跟着那句无条件的 `checkState()`。 */
+function hitEnemyWithState(
+  w: BattleWorld,
+  e: Enemy,
+  spec: { rounds: number; type: number; successRate: number },
+): void {
+  setBattleState(w, e.battleState, spec, e.roleCode, e.x, e.y, () => returnEnemyState(e))
+  // 原版 `e.checkState()` 是**无条件**的（掷不中也调），所以这里也不加
+  // `isUsable` 的门 —— 加了门就是替原版补了一个它没有的判断。
+  enemyApplyState(e)
+}
+
+function hitHeroWithState(
+  w: BattleWorld,
+  h: Hero,
+  spec: { rounds: number; type: number; successRate: number },
+  roleCode: number,
+): void {
+  setBattleState(w, h.battleState, spec, roleCode, h.showX, h.showY, () => returnHeroState(h))
+  heroApplyState(h)
+}
+
+/** `ZhangXiaoFan.calDamage()` 的 case 2..6，逐句照抄。 */
+function zhangCalDamage(w: BattleWorld, h: Hero, targets: readonly Enemy[]): void {
+  switch (w.currentPattern) {
+    // 横剑摆渡
+    case 2:
+      attackSkill(w, h, targets, 100, 20, 70)
+      return
+    // 浪里寻花：挨打的每一只 100% 进体力下降
+    case 3:
+      attackSkill(w, h, targets, 200, 60, 120)
+      for (const e of targets) hitEnemyWithState(w, e, { rounds: 2, type: 8, successRate: 100 })
+      return
+    // 银鹰掠地：自身 100% 进武力上升。原版这一句的 roleCode 写的是字面量 1。
+    case 4:
+      attackSkill(w, h, targets, 300, 100, 150)
+      hitHeroWithState(w, h, { rounds: 2, type: 2, successRate: 100 }, 1)
+      return
+    // 龙翔九天
+    case 5:
+      attackSkill(w, h, targets, 150, 20, 160)
+      return
+    // 神剑傲州
+    case 6:
+      attackSkill(w, h, targets, 250, 50, 200)
+      return
+    default:
+      throw new Error(`张小凡没有第 ${w.currentPattern} 号招式（calDamage 的 switch 只到 6）`)
   }
-  if (d.selfState) {
-    setBattleState(w, h.battleState, d.selfState, h.roleCode, h.showX, h.showY, () =>
-      returnHeroState(h),
-    )
-    heroApplyState(h)
+}
+
+/** `YuJie.calDamage()` 的 case 2..6。**case 5「妙手回春」一发伤害都不打**。 */
+function yuCalDamage(w: BattleWorld, h: Hero, targets: readonly Enemy[]): void {
+  switch (w.currentPattern) {
+    // 伏虎冲天：挨打的每一只 80% 进中毒（掷不中也已经消耗掉那一个随机数）
+    case 2:
+      attackSkill(w, h, targets, 135, 15, 80)
+      for (const e of targets) hitEnemyWithState(w, e, { rounds: 2, type: 9, successRate: 80 })
+      return
+    // 追星破月：自身 100% 进敏捷提升
+    case 3:
+      attackSkill(w, h, targets, 250, 15, 120)
+      hitHeroWithState(w, h, { rounds: 2, type: 1, successRate: 100 }, 2)
+      return
+    // 苍龙盖天
+    case 4:
+      attackSkill(w, h, targets, 100, 15, 150)
+      return
+    // 妙手回春：全员回血并**把死掉的人复活**。
+    //
+    // ⚠️ 三件事这里一条都不能省：
+    // - 遍历的是 `bp.heroes`，**不跳过死人**（复活正是靠这一点）；
+    // - 每个人各掷一次 `(int)(Math.random()*20)`，顺序就是 heroes 的顺序；
+    // - 伤害数字的 type 是 **2（回复）**，不是 1；扣灵力写死 120（不走 attackSkill）。
+    case 5:
+      for (const hero of w.heroes) {
+        const heal = Math.trunc(hero.hpMax * 0.4) + w.random.scaledInt(20)
+        hero.hp += heal
+        if (hero.hp >= hero.hpMax) hero.hp = hero.hpMax
+        // 复活：死亡标志、死亡动画、绘制标志三样一起翻回来。
+        hero.isDead = false
+        hero.deadAnimation.isDraw = false
+        hero.deadAnimation.isStop = true
+        hero.isDraw = true
+        pushHurt(w, heal, 2, hero.showX, hero.showY)
+      }
+      h.mp -= 120
+      return
+    // 蝶影神灵：自身 100% 进武力上升，**三个回合**（别的自身状态都是两个）
+    case 6:
+      attackSkill(w, h, targets, 600, 50, 200)
+      hitHeroWithState(w, h, { rounds: 3, type: 2, successRate: 100 }, 2)
+      return
+    default:
+      throw new Error(`文敏没有第 ${w.currentPattern} 号招式（calDamage 的 switch 只到 6）`)
+  }
+}
+
+/**
+ * `LuXueQi.calDamage()` 的 case 2..6。五条里只有三条打伤害。
+ *
+ * ⚠️ **挂状态的范围有两种**，抄混了看不出来：case 4 与 case 6 遍历的是
+ * `bp.enemies`（场上还站着的所有怪），case 5 遍历的是 `currentEnemies`
+ * （这一招打中的那几只）。今天这两者在 case 5 上确实不同 —— 它是唯一一条
+ * 要选目标的（`afterClicked(5, true, 0)`）。
+ */
+function luCalDamage(w: BattleWorld, h: Hero, targets: readonly Enemy[]): void {
+  switch (w.currentPattern) {
+    // 灵凤吐珠：不打伤害，给**每个活着的我方**挂敏捷提升，扣 80 灵力。
+    case 2:
+      for (const hero of w.heroes) {
+        if (hero.isDead) continue
+        hitHeroWithState(w, hero, { rounds: 2, type: 1, successRate: 100 }, hero.roleCode)
+      }
+      h.mp -= 80
+      return
+    // 踏月无痕：把张小凡与文敏的行动条直接推到终点、三只怪的推回起点，
+    // 再 70% 给每只怪挂敏捷下降。
+    //
+    // ⚠️ **它不碰陆雪琪自己那一格**，也不判陆雪琪死没死 —— 原版就写了两个人。
+    // 推到的是 `BarX+400`，正好是 `updateProgress` 判"跑满"的那个阈值。
+    case 3: {
+      const p = w.progressBar
+      if (w.zxf && !w.zxf.isDead) p.zhangX = p.barX + ACTION_BAR_GOAL
+      if (w.yj && !w.yj.isDead) p.yuX = p.barX + ACTION_BAR_GOAL
+      if (w.em1) p.enemy1X = p.barX
+      if (w.em2) p.enemy2X = p.barX
+      if (w.em3) p.enemy3X = p.barX
+      for (const e of w.enemies) hitEnemyWithState(w, e, { rounds: 1, type: 5, successRate: 70 })
+      // `mp-=(int)(mpMax*0.6)` —— 与 `skillAttack` 判够不够用的是同一个算式，
+      // 而原版把它写了两遍（见 `skills.ts` 的 `mpUse`）。
+      h.mp -= Math.trunc(h.mpMax * 0.6)
+      return
+    }
+    // 星火乾坤圈：全体攻击 + 80% 中毒，挂给 **bp.enemies**（不是 currentEnemies）
+    case 4:
+      attackSkill(w, h, targets, 80, 30, 150)
+      for (const e of w.enemies) hitEnemyWithState(w, e, { rounds: 2, type: 9, successRate: 80 })
+      return
+    // 亟电崩离：指定目标 + 40% 麻痹，挂给 **currentEnemies**
+    case 5:
+      attackSkill(w, h, targets, 200, 30, 160)
+      for (const e of targets) hitEnemyWithState(w, e, { rounds: 2, type: 10, successRate: 40 })
+      return
+    // 劈风追月：全体攻击 + 每只怪现掷一个 5..10 的状态 + 每个活着的我方现掷
+    // 一个 1..4 的状态。
+    //
+    // ⚠️ **每一只怪都是先掷类型、再由 set() 掷成功率**，两个随机数一前一后；
+    // 怪物那一轮走完才轮到我方那一轮。取数顺序就是规格（ADR-0004）。
+    case 6:
+      attackSkill(w, h, targets, 180, 30, 200)
+      for (const e of w.enemies) {
+        const type = w.random.scaledInt(6) + 5
+        hitEnemyWithState(w, e, { rounds: 2, type, successRate: 100 })
+      }
+      for (const hero of w.heroes) {
+        if (hero.isDead) continue
+        const type = w.random.scaledInt(4) + 1
+        hitHeroWithState(w, hero, { rounds: 2, type, successRate: 100 }, hero.roleCode)
+      }
+      return
+    default:
+      throw new Error(`陆雪琪没有第 ${w.currentPattern} 号招式（calDamage 的 switch 只到 6）`)
   }
 }
 

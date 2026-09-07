@@ -1,0 +1,281 @@
+{
+  "name": "battle-yu-skills",
+  "description": "文敏剩下那四条技能（xl-rh9.14）。battle-menus 只点过她的技能2（追星破月，pattern 3），这里走 case 2/4/5/6：伏虎冲天（pattern 2，指定目标，80% 给挨打的怪挂中毒 type 9）、苍龙盖天（pattern 4，全体）、妙手回春（pattern 5，currentBeAttacked=4，全员回血并把死掉的人复活）、蝶影神灵（pattern 6，指定目标，100% 给自己挂武力上升 type 2 三回合）。中毒是这一场唯一挂得上的 type 9 —— 它的每回合结算（Enemy.excuteState）在挨了毒的那只怪自己的回合上扣 5% 血。张小凡带一级出战正是为了**死给妙手回春看**：复活那几句（setDead(false) / deadAnimation / setIsDraw）只有真死过一个人才走得到，而「没人死」与「复活写错了」推出来的东西完全相同。怪物用蒙面怪人（hp 2500，三只共 7500）是为了在文敏放完四招之前打不死 —— 打死了就是胜利，后面几招一条都走不到。妙手回春排在第 10 个回合上，是为了让张小凡先被打死：他一级、700 血、防御 50，蒙面怪人一发普攻 300、一发群攻 160，攒够两三发就躺下了。",
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "party": [
+    "zhang",
+    "yu"
+  ],
+  "level": {
+    "zhang": 1,
+    "yu": 18
+  },
+  "skillNumber": {
+    "yu": 5
+  },
+  "enemies": [
+    "蒙面怪人/5",
+    "蒙面怪人/6",
+    "蒙面怪人/7"
+  ],
+  "seed": 20260915,
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "steps": [
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 400,
+      "budget": 500
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill1",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 1,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill3",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill4",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "skill",
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 20
+    },
+    {
+      "op": "skillMenu",
+      "button": "skill5",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 1,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 1,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 1,
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 150
+    }
+  ]
+}

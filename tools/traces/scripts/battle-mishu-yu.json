@@ -1,0 +1,85 @@
+{
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "enemies": [
+    "物理阁大弟子/5",
+    "物理阁大弟子/6",
+    "物理阁大弟子/7"
+  ],
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "name": "battle-mishu-yu",
+  "description": "文敏的秘术：潜能爆发（xl-rh9.14）。给自己挂三个回合的 type 12 —— 全游戏唯一一条「四项基础属性直接翻倍再 refreshValue()」的状态，而且**只有 YuJie.checkState() 有这个 case**，另外两个人的 switch 里根本没有它。退回去那一下更值得看：属性折半之后 refreshValue() 会把 hp 夹回新的上限，超出的血当场削掉。攒怒气的路数与 battle-mishu-zhang 同一套（见那份剧本的说明），文敏二十六级、hpMax 4200、防御 300，扛物理阁大弟子一发 320。",
+  "party": [
+    "yu"
+  ],
+  "level": {
+    "yu": 26
+  },
+  "steps": [
+    {
+      "op": "autoUntilAngry",
+      "round": 2,
+      "max": 2000,
+      "budget": 2100
+    },
+    {
+      "op": "command",
+      "button": "defend",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 2,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 120
+    }
+  ],
+  "seed": 20260950
+}

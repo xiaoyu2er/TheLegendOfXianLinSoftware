@@ -19,7 +19,7 @@
 | 驱动器 | 一步是什么 | 剧本 | 实现 |
 |---|---|---|---|
 | `scene` | 一个 tick | `dorm-walk` `bigmap-walk` `dorm-intro` `dorm-exit` `milestone` | `SceneDriver.java` |
-| `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `battle-min` `battle-em3-box` `battle-defeat-scene` `battle-defeat-start` `battle-defeat-slot2` | `BattleDriver.java` |
+| `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `tools/traces/scripts/battle-*.json`（这一列原先是写死的五个名字，xl-rh9.11 加了一份、xl-rh9.14 又加了六份都没跟上 —— 名单在磁盘上，别再抄一份） | `BattleDriver.java` |
 | `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
 | `shop` | 一次输入事件 | `shop-trade` | `ShopDriver.java` |
 
@@ -334,6 +334,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 |---|---|
 | `background` / `enemies` | 就是 `script/*.txt` 里 `Fight` 那一行的第一列与后三列。怪物写法 `名字/编号`，编号必须是 5/6/7（原版 `Enemy.initial` 按它定站位：5 中 / 6 上 / 7 下）。空槽位写 `null`，但三个槽位要写满。 |
 | `party` / `level` | 出战的我方单位与各自的等级。**等级没有默认值**：三个人的原版默认等级各不相同（张小凡 1 / 文敏 3 / 陆雪琪 1），而这份真值里每一个伤害数字都是从这里算出来的。 |
+| `skillNumber` | **可选**，技能菜单上给谁画几颗按钮，也就是 `ZhangXiaoFan.skillNumber` 等三个 **static** 字段（xl-rh9.14）。整个不写就一个字都不碰，用原版那三个字段的初值 **2 / 3 / 2**，而且**真值头里也不回显它** —— 老真值因此逐字节不变。写了的键必须在 `party` 里，取值 1..5。<br>为什么必须由剧本给：那三个字段只由 `levelUp()`（胜利结算）与 `intialFromInfo()`（读档）改，导出器只写 `level = n`，构造函数一个字都不碰它 —— **等级再高，菜单上仍然是那几颗**，第 3/4/5 颗被 `SkillMenu.checkReleased` 里的 `if(skillNumber>=n)` 守着。 |
 | `seed` | `Math.random()` 的种子。伤害、怪物选招选人、状态命中全走它。 |
 | `tickMs` | 只能是 `100` —— `BattlePanel.run()` 的循环周期就是 `Clock.sleep(100)`。 |
 
@@ -347,6 +348,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `skillMenu` | `button` | 点技能菜单上的一颗按钮（`skill1`..`skill5` / `return`）。菜单没打开就等；等到超预算是硬失败。这一场只有几颗按钮由 `<主角>.skillNumber` 那个静态字段的初值定（2/3/2），点一颗不存在的 —— 硬失败。 |
 | `drugMenu` | `button` | 点药品菜单上的一颗按钮（`drug1`..`drug6` / `return`）。同上。 |
 | `autoUntilRound` | `round`, `max` | 像 `autoAttack` 那样自动打，直到**控制台出现在指定回合上**（1 张 / 2 文 / 3 陆）为止，到了就停手、这一拍不点任何东西。跑满 `max` 步 —— 硬失败。 |
+| `autoUntilAngry` | `round`, `max` | 同 `autoUntilRound`，外加一个条件：那个人的**怒气已经攒满**（`isAngry`）。秘术（`command` 点 `defend`）只有攒满才点得下去 —— `Command.checkReleased` 里 `if(bp.zxf.isAngry){…}else{bp.reminder.show(21)}`，没攒满就只弹一张 22.png 的提示图、控制台还开着，而「点了防、什么都没发生」与「放了秘术」在剧本里长得一模一样。要挨几下才攒满由伤害掷出来多少决定（`angryValue` 攒到 `hpMax*0.8`），写不成固定的回合数。 |
 | `awaitExit` | `panel`, `max` | 等原版自己把面板切走，并断言切到了哪一块（`panel` 是 `GameLauncher` 那八张 `CardLayout` 卡片名之一，打输能走到的是 `scenePanel` / `startPanel`）。切到别的一块、或者跑满 `max`（默认 300）还没切 —— 都是硬失败。 |
 | `wait` | `ticks` | 空等（与场景共用）。 |
 
@@ -357,6 +359,12 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 导出的是一份"点了另一个人的技能"的真值：它有头有尾、步数像模像样、退出码 0。
 `battle-min` / `battle-menus` 那一场实测**我方**的回合序是 **3 → 2 → 1**
 （速度 13/10/9），中间夹着怪物的回合。
+
+`autoUntilAngry` 是同一条理由再走一步：怒气攒满要挨几下，取决于每一发伤害掷出
+多少。xl-rh9.14 的三份秘术剧本因此是「一个人硬扛」——**怒气的窗口只有两成血**
+（`angryValue` 攒到 `hpMax*0.8` 才算满，而攒到 `hpMax` 人就倒了），所以每一发
+伤害相对血量越小，余地越大。三份剧本各自都是扛到第八到十二下前后攒满、再挨两
+三下就会倒，换个种子未必还站得住 —— 这不是判据松，是原版的设定就这么紧。
 
 `autoAttack` 是**策略**而不是一串写死的点击，因为一场战斗要打几个回合取决于
 每次伤害掷出多少 —— 写剧本的人事先不知道。写死次数只要少一次，导出的就是一份
