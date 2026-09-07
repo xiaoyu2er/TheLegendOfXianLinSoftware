@@ -341,6 +341,23 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
     issue: 'xl-6lo',
   },
+  'menu-magic': {
+    status: 'unassembled',
+    // 奇术页与那条被冻住的 100ms 循环（xl-1vu.9，driver = menu）。与 menu-equip
+    // 同一个处境、同一个理由：Web 侧还没有菜单系统（M3 / xl-6lo），取图页装配
+    // 不出 driver=menu，一帧都出不来，所以既不写 maxRatio 也不写 gaps。
+    //
+    // 这一条对 M3 的意义不在像素上：它是**唯一**一条把 `mouse.code/frame` 与
+    // `magic.animation.code` 逐帧推进记下来的真值。菜单的鼠标图标与技能动画
+    // 在 web 侧做出来之后，逐帧对齐的对象是它，不是 menu-equip（那一条整条
+    // 都停在第 0 帧）。
+    //
+    // **接线时记得把取帧密度调到 `--every 1`。** `tools/compare-frames.sh` 缺省
+    // 25 个 tick 取一帧，这条剧本 47 步只出 2 帧 —— 而它的全部意义在逐帧上，
+    // 按缺省采样等于两帧里什么动画都没采到，却照样"比过了"。
+    why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
+    issue: 'xl-6lo',
+  },
 }
 
 /**
