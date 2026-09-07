@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import { createWorld } from '../state/step'
-import { TRACE_NAMES, readTrace, sceneNameOf, tickSceneName } from '../state/trace'
+import { SCENE_TRACE_NAMES, readTrace, sceneNameOf, tickSceneName } from '../state/trace'
 import type { TraceTick } from '../state/trace'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import type { SceneScript } from '../data/types'
@@ -21,7 +21,7 @@ import type { ViewportInput } from './viewport'
  * 测，一处错会让两处都红，定位不了。
  */
 describe('视口与绘制顺序对齐真值', () => {
-  const traces = TRACE_NAMES.map(readTrace)
+  const traces = SCENE_TRACE_NAMES.map(readTrace)
 
   /**
    * 拿来做单元用例的场景：**已烘焙场景里最宽的那一张**，从数据现推。
@@ -31,9 +31,9 @@ describe('视口与绘制顺序对齐真值', () => {
   const widest = SCENE_NAMES.reduce((a, b) => (getScene(b).col > getScene(a).col ? b : a))
 
   it('三份 trace 都带着 viewport 与 drawOrder 两个字段', () => {
-    // 分母是 TRACE_NAMES 本身：加了 trace 而没有这两个字段，这里要响，
+    // 分母是 SCENE_TRACE_NAMES 本身：加了场景 trace 而没有这两个字段，这里要响，
     // 而不是表现为下面的用例"跳过了所以全绿"。
-    expect(traces).toHaveLength(TRACE_NAMES.length)
+    expect(traces).toHaveLength(SCENE_TRACE_NAMES.length)
     for (const trace of traces) {
       expect(trace.ticks).toHaveLength(trace.tickCount)
       expect(trace.tickCount).toBeGreaterThan(0)

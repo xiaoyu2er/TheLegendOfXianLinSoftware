@@ -1,8 +1,6 @@
-import { readdirSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { repoPath } from '../test/repoPath'
 import { step } from '../state/step'
-import { readTrace, replayWorld, sceneSourceOf } from '../state/trace'
+import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import type { World } from '../state/types'
 import { exitTargets } from './loadedScenes'
 import { sceneNameFromPath } from './scenes'
@@ -23,11 +21,6 @@ import { getScene } from './scenesEager'
  * 判据全部取自真值 `tools/traces/out/`：剧本走过哪几次出口、每一次进的是哪个
  * 场景，都是回放出来的，不是手抄的。名单从目录现扫，分母是它自己的长度。
  */
-
-const TRACE_NAMES = readdirSync(repoPath('tools/traces/out'))
-  .filter((f) => f.endsWith('.trace.json'))
-  .map((f) => f.replace(/\.trace\.json$/, ''))
-  .sort()
 
 /** 真值里的一次换场景，连同"换之前那个世界预取了些什么"。 */
 interface Switch {
@@ -72,14 +65,14 @@ function switchesOf(name: string): Switch[] {
   return out
 }
 
-const SWITCHES = TRACE_NAMES.flatMap(switchesOf)
+const SWITCHES = SCENE_TRACE_NAMES.flatMap(switchesOf)
 
 describe('出口预取的目标', () => {
   it('真值里确有走 nextScript[2] 与 currentScript[2] 两支的出口', () => {
     // 这一条盯的是**真值**，不是实现：剧本里一次都没走过那两支的话，下面那条
     // "都预取到了"在一份只走 nextScene 的真值上照样全绿 —— 而它正是被回退时
     // 那 521 条测试的处境。
-    expect(TRACE_NAMES.length).toBeGreaterThan(0)
+    expect(SCENE_TRACE_NAMES.length).toBeGreaterThan(0)
     expect(SWITCHES.length).toBeGreaterThan(0)
 
     const extra = SWITCHES.filter((s) => !s.inNextScene)
@@ -100,7 +93,7 @@ describe('出口预取的目标', () => {
 describe('只拿预取到手的场景回放', () => {
   // 这一组跑的是 `replay/main.ts` 那条真路径：场景来源只有 `loadedSceneSource`，
   // 预取漏了谁，`step()` 当场抛"这个场景没准备好"——失败的样子与成功不一样。
-  it.each(TRACE_NAMES)('%s 整条剧本走得完', async (name) => {
+  it.each(SCENE_TRACE_NAMES)('%s 整条剧本走得完', async (name) => {
     // 每份剧本都要一份干净的 LOADED：上一份剧本顺手取过的场景会把这一份的
     // 缺口盖住（真实教训见 exitTargets 的注释）。
     vi.resetModules()

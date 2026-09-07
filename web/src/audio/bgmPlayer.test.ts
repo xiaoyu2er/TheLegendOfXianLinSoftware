@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { bgmAssetId } from '../assets/ids'
 import { resolveBgmOrNull } from '../assets/resolve'
 import { getScene } from '../data/scenesEager'
-import { TRACE_NAMES, readTrace } from '../state/trace'
+import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
 import { createBgmPlayer } from './bgmPlayer'
 import type { Sound } from './bgmPlayer'
 
@@ -136,7 +136,7 @@ describe('背景音乐播放器', () => {
  */
 describe('M1 用到的背景音乐', () => {
   const declared = new Set<string>()
-  for (const name of TRACE_NAMES) {
+  for (const name of SCENE_TRACE_NAMES) {
     for (const tick of readTrace(name).ticks) {
       if (tick.audio.bgm !== null) declared.add(tick.audio.bgm)
     }
@@ -153,7 +153,7 @@ describe('M1 用到的背景音乐', () => {
   })
 
   it('每一份 trace 的起手音乐就是那个场景 Music 段里写的那首', () => {
-    for (const name of TRACE_NAMES) {
+    for (const name of SCENE_TRACE_NAMES) {
       const trace = readTrace(name)
       const first = trace.ticks[0]!
       expect({ name, bgm: first.audio.bgm }).toEqual({

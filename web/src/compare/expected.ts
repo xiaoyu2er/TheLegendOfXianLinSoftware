@@ -210,6 +210,19 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '旁白与对话正文的字形（原版字体未交付）+ 右下角的金币 HUD',
     issue: 'xl-9bd.17 / xl-yg6.1',
   },
+  'menu-equip': {
+    status: 'gap',
+    // 第一条**不是场景**的剧本（xl-1vu.5，driver = menu）。Web 侧整个菜单系统
+    // 都还没做（M3 / xl-6lo），所以这条剧本现在连一帧都出不来 —— 取图页拿
+    // 判别名去装配会直接抛 UnknownDriverError（`src/replay/drivers.ts`），
+    // 而那正是想要的：一条装配不出来的剧本不许静静地比出"零帧差异"。
+    //
+    // 因此这里**不写 gaps 分区**：分区表态的判据是"缺口区之外逐像素相等"，
+    // 而这条剧本一个像素都还没画出来过，写分区等于凭空声明一份没量过的账。
+    // 菜单在 web 侧画出来之后，这一条要么改成 match，要么带上真量出来的分区。
+    why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
+    issue: 'xl-6lo / xl-1vu.7',
+  },
 }
 
 /**

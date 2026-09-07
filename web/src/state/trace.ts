@@ -156,6 +156,34 @@ export function readTrace(name: string): Trace {
 }
 
 /**
+ * `TRACE_NAMES` 里属于某个驱动器的那几份（xl-1vu.5）。
+ *
+ * 为什么需要它：`tools/traces/out/` 从 xl-1vu.5 起不再只有场景真值。这个模块
+ * 下面的 `replayWorld` / `sceneNameOf` 以及一大批测试读的都是 `script.scene`、
+ * `tick.role`、`tick.audio` 这些**只有场景真值才有**的字段，把菜单真值喂进去
+ * 只会得到一句 `Cannot read properties of undefined`。所以按判别名分组，
+ * 场景那几条测试只吃 `scene`。
+ *
+ * **分组为空是硬失败**，不是返回空数组：一条 `for (const name of [])` 的循环
+ * 一个断言都不跑，还是全绿的 —— 而"场景真值一份都没导出来"与"全都对上了"
+ * 长得一模一样，正是这个项目最贵的那类坑。
+ */
+export function traceNamesOf(driver: string): readonly string[] {
+  const names = TRACE_NAMES.filter((name) => readTrace(name).driver === driver)
+  if (names.length === 0) {
+    const seen = [...new Set(TRACE_NAMES.map((name) => readTrace(name).driver))].sort()
+    throw new Error(
+      `tools/traces/out/ 里没有一份 driver=${driver} 的真值（现有的是：${seen.join('、')}）。` +
+        `空名单会让照它循环的测试一条断言都不跑、还全绿，所以这里直接抛。`,
+    )
+  }
+  return names
+}
+
+/** 场景驱动器导出的那几份真值。逐 tick 回放、视口、NPC、对话、BGM 都只吃这些。 */
+export const SCENE_TRACE_NAMES: readonly string[] = traceNamesOf('scene')
+
+/**
  * 读一份 trace 的头并校验它。**独立成函数是为了能拿篡改过的 JSON 直接测它**——
  * 校验只在读磁盘那条路上存在的话，"它到底拦不拦得住"就没有办法验证。
  *
