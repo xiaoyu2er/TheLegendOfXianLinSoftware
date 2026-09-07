@@ -213,6 +213,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 确定性 OK：dorm-exit   两次导出逐字节一致（1161429 字节）
 确定性 OK：dorm-intro  两次导出逐字节一致（3591275 字节）
 确定性 OK：dorm-walk   两次导出逐字节一致（394779 字节）
+确定性 OK：menu-equip  两次导出逐字节一致（42314 字节）
 确定性 OK：milestone   两次导出逐字节一致（8101705 字节）
 ```
 
@@ -226,7 +227,105 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 加桩，那要改 `src/`。`audio.bgm` 本身是准的：`currentPlayingBGM` 在这一切
 之前就已设好。
 
-## 现有的三份剧本
+## 菜单剧本与菜单真值（`driver` = `menu`）
+
+上面整套讲的是场景驱动器。菜单是第二支（xl-1vu.5），**一步 = 一次输入事件，
+不是一个 tick**。
+
+`MenuPanel` 只有 133 行，是个 `CardLayout` 容器，既没有 `run` 循环也没有 `paint`
+覆写；真正画东西的是底下物品 / 装备 / 奇术 / 天书四个 `FatherPanel`。这四个面板
+唯一的时间驱动是各自那条 `while(true){ Clock.sleep(100); update(); mouse.update();
+repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段技能动画；菜单里所有
+**可断言的状态变化**（切页、切人、选中、装备、属性重算）无一例外由一次鼠标事件
+同步引起。把它硬套成逐 tick 真值，得到的是一长串一模一样的行。
+
+### 剧本
+
+```json
+{
+  "driver": "menu",
+  "name": "menu-equip",
+  "description": "一句话说明这份剧本覆盖什么",
+  "setup": {
+    "party": ["zhang"],
+    "fullHeal": true,
+    "equipment": [{ "name": "铁甲", "count": 1 }],
+    "drugs": [{ "name": "金创药", "count": 2 }]
+  },
+  "maxSteps": 200,
+  "steps": [
+    { "op": "tab", "name": "equip" },
+    { "op": "slot", "name": "weapon" },
+    { "op": "select", "index": 1 },
+    { "op": "use" }
+  ]
+}
+```
+
+`driver` 缺省是 `scene`。这是导出器**唯一**的宽容之处：五份场景剧本都写在这个
+字段之前，给它们补一个字段等于改剧本回显，五份真值要跟着重导。认不出的名字一律
+硬失败。
+
+| 指令 | 参数 | 展开成 | 语义 |
+|---|---|---|---|
+| `tab` | `name` = `thing`/`equip`/`magic`/`func` | 按下 + 松开 | 点顶栏四个标题之一 |
+| `hero` | `n` = 1/2/4 | 按下 + 松开 | 点卷轴上的头像切人（3 号宋大仁原版没做进菜单） |
+| `slot` | `name` = `weapon`/`armor`/`helmet`/`shoe`/`glove`/`decoration` | 按下 + 松开 | 装备页的六个分类 |
+| `select` | `index` | 一次 `mouseMoved` | 把鼠标移到当前列表第 index 行（从 0 起） |
+| `use` | — | 按下 + 松开 | 点"使用" |
+| `abandon` | — | 按下 + 松开 | 点"弃用" |
+
+**坐标一律不写在剧本里。** 驱动器从原版按钮对象自己的 `x/y/width/height` 反算
+落点（命中判据抄自 `GameButton.isPressedButton`，含原版那个 `-15/-6` 的偏移），
+然后**核对结果**：按下之后那个按钮必须 `isclicked`，松开之后必须不再 `isclicked`，
+`select` 之后选中的必须真是第 index 项。不核对的话，一次点空会导出一份步数完全
+正确、却什么都没发生的真值。
+
+`setup` 是**开局状态**，不是期望值：原版所有装备与药品的初始持有量都是 0
+（只有商店与剧情事件会加），不给点东西装备页永远是空的。加的路径是原版自己的
+`EquipmentPack.addEqupment` / `DrugPack.addDrug`，加完核对数量真的涨了 ——
+那两个方法是"名字对上才加"，名字打错时一声不响。`fullHeal` 补的是另一个坑：
+无参的 `MenuPanel` 构造函数里那三个英雄走的是空构造函数，静态的 `hp/mp` 因此
+停在 0（只有带 `BattlePanel` 的构造函数会拉满）。
+
+### 真值
+
+每一步记：`panel`（当前子面板）、`hero`（卷轴选中谁，天书页没有卷轴故为 `null`）、
+`heroes[]`（三个人的等级 / 体力 / 敏捷 / 武力 / 精气 / hp / hpMax / mp / mpMax /
+防御 / 技能防御 / 技能数）、`equip`、`drug`、`magic`、`func`。
+
+| 字段 | 来源 / 陷阱 |
+|---|---|
+| `equip.list` | 当前分类里画得出来的那几项。**从 `currentList` 现算**，不读 `EquipPanel.list` —— `drawEquipment()` 每画一帧就往里 `add` 一遍而从不清空，几步之后它是一份不断变长的重复列表。 |
+| `equip.selected` | `currentEquipment` 在上面那份列表里的下标。**用完最后一件之后是 `-1`**：原版让 `currentEquipment` 继续指着一件 `numberGOT` 已经是 0、列表里不再画出来的装备。 |
+| `equip.warnEquipped` / `warnCannotUse` | 两条拒绝路径：身上那一格已经有装备 / 这件不是当前角色能用的（`Equipment.user`）。**必须在 `paint()` 之前抓** —— `drawWarning()` 会把这两个标志清零，放到 paint 之后读永远是 0，得到一份"从没发生过拒绝"的真值。 |
+| `equip.diff` | 装备页中间那四个升降数字。取的是四个 `ShowValue` 对象自己的 `value`/`type`，**不是 `EquipPanel` 上那四个 `showPP/showAngile/...` 字段**：`showValueDifference()` 的 else 分支（身上那一格是空的）把绝对值直接传进 `ShowValue.show()`，一个字段都不写，于是字段里留着上一次的陈值。`signal != 1` 时记 `null` —— 那一整段（算差值 + 画四个箭头）都在 `if(signal==1)` 里面。 |
+| `magic.animation` | 开局**不是** `null`：`addMagicAnimation()` 用同一个临时字段建了 20 个动画，循环结束时它停在最后一个（文敏第 5 技能）上，于是刚进奇术页就画着那一条说明。照记不改。 |
+| `func.drawn` | 天书页当前画得出来的按钮，按字段名排序。 |
+
+**菜单真值里没有音效。** 原版把音效文件名记在 `MusicPlayer.filename` 上，而那行
+赋值在 `if (CAN_PLAY_MUSIC == YES)` 的**里面**；导出必须
+`MusicReader.closeMusic()`（否则每次点击都开音频设备、起一条播放线程，两遍导出
+不可能一致），关掉之后就观察不到了。
+
+### 确定性
+
+场景那五条（定时器冻结、固定顺序、真的 paint、反射字段排序）照旧，另加一条：
+
+**四条 `FatherPanel.run()` 线程用 `Clock.setFactor(1e-9)` 停住。** 它们在
+`FatherPanel` 的构造函数里就 `start()`，改不了（改 `src/` 不在允许范围内）。
+缩放之后 `Clock.ms(100)` = 10^11 毫秒 ≈ 3170 年，四条线程各自停在第一次
+`Thread.sleep` 上，一次都走不到 `update()/repaint()`。**必须在
+`new MenuPanel()` 之前设**，晚一步就有一条已经醒过。`Clock.delay()` 在冻结模式
+下不看 `factor`，所以这个缩放不影响定时器那一套。
+
+实测（2026-09-06）：把 `Clock.setFactor(SLOW)` 注释掉，`tools/export-trace.sh
+--check menu-equip` 立刻报"两次导出不一致"。
+
+代价是这份真值**记不到那条 100ms 循环推的东西**：鼠标图标的循环帧固定在第 0 帧，
+奇术页的技能动画固定在 `code=1`。菜单里没有别的东西靠它。
+
+## 现有的剧本
 
 | 剧本 | 场景 | 覆盖 |
 |---|---|---|
@@ -234,3 +333,5 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `bigmap-walk` | `大地图.txt` | 100×80 卷动地图的视口跟随与边缘夹取（53 个不同视口）、两段跑、13 个 NPC 里 8 个单向走动 + 4 个原地动画都在跑帧 |
 | `dorm-intro` | `脚本1.txt` | 6 句旁白逐字播完（46 个背景帧）、接一整段 23 句主线对话，头像式与名字式两种对话框、翻页 |
 | `dorm-exit` | `宿舍.txt` → `大地图.txt` → `脚本1.txt` | 出口切换的两条分支：走到 `宿舍` 门口进 `大地图`（`isScript` 置假），再从 `大地图` 走回来 —— 回的是 `currentScript[2]`（`脚本1`）而不是 `宿舍`，`isScript` 重新为真、旁白被 `narratageOver` 压掉、主线对话的进度按 `dialogueOrder` 还原。三次背景音乐切换、两个入口坐标 |
+| `milestone` | `脚本1.txt` → `脚本2` → `大活夜` → `大地图夜` | M1 里程碑：开场从头走一遍 —— 旁白 + 23 句主线对话 + 跟曾书书搭话，出门进大地图夜，那边的旁白与 27 句对话也走完，进大活夜再出来。覆盖出口切换的三条分支与两次背景音乐切换 |
+| `menu-equip` | 菜单（`driver` = `menu`） | 四个子面板各自进入与退出；装备页一整条换装：拒绝（已装备）→ 弃用（敏捷 11→10、武力 12→10、精气 11→10）→ 拒绝（藏璎环是陆雪琪专属）→ 换回武器 → 穿上铁甲（体力 10→15、血上限 700→1050、防御 50→75）→ 物品页喝药（生命 700→1000，金创药 2→1） |
