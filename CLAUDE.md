@@ -89,10 +89,13 @@ re-export-and-diff regression checks, both of which must come back empty:
 
 - `tools/export-truth.sh` — data layer. Re-run it and `git diff
   tools/ground-truth` must be empty (96 scripts × 26 fields).
-- `tools/export-trace.sh --check` — behaviour layer. Re-run it and `git diff
+- `tools/export-trace.sh --check` — behaviour layer, **all four drivers**
+  (scene / battle / menu / shop, 9 scripts). Re-run it and `git diff
   tools/traces/out` must be empty; `--check` additionally exports each script
   twice in separate JVMs and `cmp`s them, which is what makes the traces usable
-  as truth at all. See `docs/trace-format.md`.
+  as truth at all. **Both halves are needed**: `--check` only proves this run is
+  reproducible — a *stable* wrong answer looks identical to a right one, and the
+  empty `git diff` is what catches that. See `docs/trace-format.md`.
 
 `web/` has vitest (`pnpm test`). Building the real Java-side suite is tracked in
 beads (`xl-9bd.5`).
@@ -135,10 +138,28 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
 - `tools.Reader.readImage` warns on stderr for missing files; `tools.Clock`
   scales all timing with `factor` defaulting to `1.0` (identity), and has a
   default-off timer-freeze mode used only by the trace exporter.
-- **Behaviour truth lives in `tools/traces/`.** Declarative scripts in
-  `traces/scripts/`, exported per-tick traces in `traces/out/` — both are
-  committed, and any diff in `out/` is a signal. Do not hand-write expected
-  values for the state or viewport layers; read them out of a trace.
+- **Behaviour truth lives in `tools/traces/`, and it now covers four drivers.**
+  Declarative scripts in `traces/scripts/`, exported traces in `traces/out/` —
+  both committed, and any diff in `out/` is a signal. One exporter
+  (`tools/export-trace.sh`, one command for all four) dispatches on the script's
+  own `driver` field to `scene` (5 scripts, a step = one tick), `battle`
+  (2 scripts, a step = one `BattlePanel.run()` loop body + one `paint()`),
+  `menu` and `shop` (1 script each, a step = one input event). An unrecognised
+  name is a hard failure, never a guess — but a **missing** `driver` field
+  defaults to `scene`, the exporter's one and only leniency (the five scene
+  scripts predate the field; giving them one would change the script echo and
+  force a re-export). A new script that omits it gets `scene` silently, so
+  write it. Do not hand-write expected values for
+  the state or viewport layers; read them out of a trace. Overview table,
+  per-driver formats and pitfalls: `docs/trace-format.md`.
+- **Cross-end frame comparison is only wired up for `scene`.**
+  `tools/compare-frames.sh` runs the original side for all four, but the capture
+  page assembles `scene` only; battle / menu / shop wait for **M2 (xl-82c) /
+  M3 (xl-6lo) / M4 (xl-knp)** to build those panels in `web/`. Until then those
+  scripts make the pipeline **exit non-zero and name the driver plus its owning
+  issue** — a script that was never assembled compares as "zero frames differ",
+  which looks exactly like "the two sides agree". See
+  `docs/frame-compare.md` § 装配不出来的驱动器.
 
 ## Workspace layout
 

@@ -8,6 +8,7 @@ import { DialogueBox } from '../ui/DialogueBox'
 import '../index.css'
 import { createSceneRenderer } from '../scene/sceneRenderer'
 import { pickAssembly } from './drivers'
+import type { ImplementedDriver } from './implemented'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { initiate, step } from '../state/step'
 import type { InputEvent, World } from '../state/types'
@@ -149,8 +150,12 @@ const sceneAssembly: Assembly = {
 /**
  * 判别名 → 装配。**名单只有这一份**，`pickAssembly` 报"本页实现了哪些"时
  * 数的就是它 —— 另抄一张名单，加了驱动器却忘了改名单的那天，报出来的话是错的。
+ *
+ * 键的类型是 `ImplementedDriver`（`./implemented.ts` 那个数组的联合），于是
+ * **少一个键或多一个键都是编译错**。比对器跑在 Node 上，装不进这个模块
+ * （要 Pixi 与 DOM），它读的是那个数组；两边靠类型钉在一起，不靠人记得同时改。
  */
-const ASSEMBLIES: Readonly<Record<string, Assembly>> = { scene: sceneAssembly }
+const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = { scene: sceneAssembly }
 
 /** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */
 let current: Assembly | null = null
@@ -222,12 +227,21 @@ declare global {
   interface Window {
     __xlReplay?: ReplayApi
     __xlReplayError?: string
+    /**
+     * 本页**真的**装配得出来的驱动器判别名，从 `ASSEMBLIES` 现数。
+     *
+     * 比对器进门核一次（`scripts/compare.ts` 的 `assertPageAgrees`）：它自己
+     * 读的是 `replay/implemented.ts` 那个数组，而这里报的是运行时那张表。
+     * 两者对不上就是名单分家了 —— 硬失败，别让它表现成"悄悄少比了一条剧本"。
+     */
+    __xlDrivers?: readonly string[]
     /** 故意改坏渲染的注入点，见 `breakRender`。驱动器只在自检时设它。 */
     __xlBreak?: { fromTick: number; heroDx: number }
   }
 }
 
 window.__xlReplay = api
+window.__xlDrivers = Object.keys(ASSEMBLIES).sort()
 // 页面里任何没接住的异常都要变成一个驱动器读得到的字符串。否则失败的样子是
 // "驱动器等 __xlReplay 等到超时"，而真正的原因（比如某个资源 404）在控制台里，
 // 无头浏览器的控制台没人看得见。

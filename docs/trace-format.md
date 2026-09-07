@@ -10,6 +10,67 @@
 
 这里导出的每一个 tick 都是原版自己跑出来的结果，Web 侧只能对齐，不能协商。
 
+## 四种驱动器一览（xl-1vu 收口）
+
+一套设施、四支驱动器（`tools/src/devtools/TraceDriver.java` 那三件事：推进一步 /
+快照可断言状态 / 快照真的画出来的位图）。剧本一律在 `tools/traces/scripts/*.json`，
+真值一律在 `tools/traces/out/<剧本>.trace.json`，**两处都入库**。
+
+| 驱动器 | 一步是什么 | 剧本 | 实现 |
+|---|---|---|---|
+| `scene` | 一个 tick | `dorm-walk` `bigmap-walk` `dorm-intro` `dorm-exit` `milestone` | `SceneDriver.java` |
+| `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `battle-min` `battle-em3-box` | `BattleDriver.java` |
+| `menu` | 一次输入事件 | `menu-equip` | `MenuDriver.java` |
+| `shop` | 一次输入事件 | `shop-trade` | `ShopDriver.java` |
+
+**导出命令只有一条，四支通用**（选哪一支由剧本自报的 `driver` 字段定，
+`ExportTrace.pickDriver` 认不出的名字一律硬失败）：
+
+```bash
+tools/export-trace.sh                 # 全部剧本
+tools/export-trace.sh battle-min      # 只导一份
+tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
+```
+
+### 判据：两条回归，四支驱动器一视同仁
+
+与数据层那条（`tools/export-truth.sh` + `git diff tools/ground-truth` 为空）
+并列，行为层是这两条，**缺一不可**：
+
+| 检查 | 命令 | 通过条件 | 它管什么 |
+|---|---|---|---|
+| 确定性 | `tools/export-trace.sh --check` | 每份剧本在两个独立 JVM 里导出，两份产物 `cmp` 逐字节一致 | 这一次跑出来的东西可复现 |
+| 无回归 | 重导之后 `git diff tools/traces/out` | 空 | 跑出来的还是同一份东西 |
+
+**两条必须一起看。** `--check` 只证明"可复现"—— 一个**稳定的**错误在它眼里
+和正确一模一样；能认出错误的是重导之后那个 `git diff`。挑判据时先问：这条检查
+失败的样子，和它通过的样子长得一样吗。
+
+实测（2026-09-06，macOS / openjdk 17，9 份剧本全部 `--check` 通过，
+`git status` 干净）：
+
+```
+确定性 OK：battle-em3-box 两次导出逐字节一致（1296045 字节）
+确定性 OK：battle-min     两次导出逐字节一致（688276 字节）
+确定性 OK：bigmap-walk    两次导出逐字节一致（1189286 字节）
+确定性 OK：dorm-exit      两次导出逐字节一致（1161429 字节）
+确定性 OK：dorm-intro     两次导出逐字节一致（3591275 字节）
+确定性 OK：dorm-walk      两次导出逐字节一致（394779 字节）
+确定性 OK：menu-equip     两次导出逐字节一致（42314 字节）
+确定性 OK：milestone      两次导出逐字节一致（8101705 字节）
+确定性 OK：shop-trade     两次导出逐字节一致（123082 字节）
+```
+
+跨机器、跨 JDK 版本的一致性**未验证**。
+
+### 跨端逐帧比对只接了 `scene`
+
+`tools/compare-frames.sh` 那条流水线（`docs/frame-compare.md`）四支都跑得到
+原版侧，但 **Web 侧今天只装配得出 `scene`**：战斗 / 菜单 / 商店三个面板要等
+**M2（xl-82c）/ M3（xl-6lo）/ M4（xl-knp）** 各自把 web 侧建起来才接得上线。
+**xl-1vu 这个 SPEC 不做接线**，它只负责让"装配不出来"这件事**响亮**——
+详见 `docs/frame-compare.md` 的「装配不出来的驱动器」。
+
 ## 剧本（输入）
 
 UTF-8 JSON，放在 `tools/traces/scripts/*.json`。
@@ -143,15 +204,31 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 
 **挑不出来是硬失败，而且要点名。** 未实现的驱动器如果被跳过，那条剧本比出来
 的是「零帧差异」—— 和「两端完全一致」长得一模一样，整条流水线的判据就废了。
-所以判别名缺失、形状不对、或者 Web 侧还没有那一套，一律抛：页面里的异常经
-`scripts/cdp.ts` 的 `evaluate` 转成 Node 侧的 Error，再由 `scripts/compare.ts`
-的 `main().catch` 变成**退出码 2**，消息里带着是哪个驱动器、本页实现了哪些。
+
+这件事现在有**三道**（xl-1vu.7），因为它有三种走法：
+
+1. **分流**（`scripts/compare.ts`，开浏览器之前）。它拿帧清单里的 `driver` 与
+   `src/replay/implemented.ts` 那份名单比，装配不出来的剧本压根不取图，报告里
+   单独一段点名剧本、判别名、原因与归属票号，并计入非零退出（**退出码 1**）。
+   为什么要提前分流：撞上去的话，撞到第一条就整轮中断，后面那些能比的场景剧本
+   一帧都比不成 —— 默认全跑时按字典序第一条正好是 `battle-em3-box`。
+2. **对撞**（`src/compare/unassembled.ts`）。名单与 `src/compare/expected.ts`
+   的表态**两个方向都要对得上**：表说比得了而页面装不出（那笔账是编的）、
+   页面装得出而表还写 `unassembled`（面板做好了而表没改）—— 都抛。
+   进 CI 的是 `src/compare/unassembled.test.ts`，不需要 Java 与 Chrome。
+3. **兜底**（`replay/drivers.ts` 的 `pickAssembly`，页面里）。真走到取图页还
+   装不出来，就抛；异常经 `scripts/cdp.ts` 的 `evaluate` 转成 Node 侧的 Error，
+   再由 `main().catch` 变成**退出码 2**。
 
 实测（2026-09-06，把 `tools/traces/compare/dorm-walk/java/trace.json` 的判别
-字段改掉，跑 `pnpm exec vite-node scripts/compare.ts -- dorm-walk`）：
+字段改掉，跑 `pnpm exec vite-node scripts/compare.ts -- dorm-walk --skip-capture`
+—— **必须绕开 `tools/compare-frames.sh`**，它会重跑 Java 导出把改动覆盖掉）：
 
-- 改成 `"battle"` → 退出码 2，`驱动器 battle 在取图页还没有实现，装配不出来。本页实现了：scene。`
-- 整行删掉 → 退出码 2，`真值没有报驱动器判别名（driver = undefined）。`
+- 改成 `"battle"` → 退出码 2，`dorm-walk：帧清单说 driver=scene，旁边那份 trace.json 说 driver=battle。`
+- 整行删掉 → 退出码 2，`…/java/trace.json 的前 4096 个字节里没有 driver 字段`
+
+帧清单与它旁边那份 trace 是同一次导出的两个产物，判别名必须一致：分流读清单、
+取图页读 trace，只核一头的话，改另一头就能让两边各按各的认知跑下去。
 
 判别名**没有默认值**。默认成 `scene` 等于把一份来路不明的真值当场景真值回放。
 
@@ -204,20 +281,10 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 
 ### 验证
 
-`tools/export-trace.sh --check` 把每份剧本导两遍，`cmp` 两份产物。
-
-已实测（macOS / openjdk 17，两次独立 JVM 进程）：
-
-```
-确定性 OK：bigmap-walk 两次导出逐字节一致（1189286 字节）
-确定性 OK：dorm-exit   两次导出逐字节一致（1161429 字节）
-确定性 OK：dorm-intro  两次导出逐字节一致（3591275 字节）
-确定性 OK：dorm-walk   两次导出逐字节一致（394779 字节）
-确定性 OK：menu-equip  两次导出逐字节一致（42314 字节）
-确定性 OK：milestone   两次导出逐字节一致（8101705 字节）
-```
-
-跨机器、跨 JDK 版本的一致性**未验证**。
+`tools/export-trace.sh --check` 把每份剧本导两遍，`cmp` 两份产物。九份剧本这一次
+量到的字节数在上面「四种驱动器一览」那一节里，**那份名单是全的**（照抄一份到这里
+迟早漏掉新加的剧本）。确定性只是两条判据里的一条 —— 另一条是重导之后
+`git diff tools/traces/out` 为空，理由见那一节。
 
 还有一处未做结构性隔离的真实时间依赖：`MusicPlayer.play()` 开头有
 `while (!hasStop) { Clock.sleep(10); }`。`MusicReader.closeBGM()` 并不能
@@ -367,16 +434,21 @@ xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/1
 
 ### 回放端
 
-`web/src/replay/main.ts` 的装配表今天只有 `scene` 一项，所以战斗真值走到取图页
-会被 `pickAssembly` 挡住。实测（`tools/compare-frames.sh battle-min --every 100`）：
+`web/src/replay/main.ts` 的装配表今天只有 `scene` 一项，所以战斗真值在跨端比对
+里被**分流**挡在取图之前。实测（2026-09-06，
+`tools/compare-frames.sh battle-min --every 100`，原版侧照常导出 5 帧）：
 
 ```
-[compare] 页面里抛了异常：UnknownDriverError: battle-min：驱动器 battle 在取图页还没有实现，装配不出来。本页实现了：scene。
-退出码=2
+一条剧本都没比成 —— 这一趟没有任何像素被比过。
+
+web 侧还装配不出来的剧本 1 条 —— 这一趟它们一帧都没比过：
+  装不出  battle-min      driver=battle  web 侧还没有战斗面板，取图页装配不出 battle，整条流水线在这条剧本上硬失败 · 归 xl-82c
+  取图页现在实现了：scene。
+退出码=1
 ```
 
 这正是要的行为 —— 一条没被装配的剧本比出来是"零帧差异"，和"两端完全一致"长得
-一模一样。接上战斗装配是 xl-1vu.7 的事。
+一模一样。**接上战斗装配是 M2（xl-82c）的事，xl-1vu 这个 SPEC 不做。**
 
 ## 菜单剧本与菜单真值（`driver` = `menu`）
 
@@ -476,6 +548,77 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 代价是这份真值**记不到那条 100ms 循环推的东西**：鼠标图标的循环帧固定在第 0 帧，
 奇术页的技能动画固定在 `code=1`。菜单里没有别的东西靠它。
 
+## 商店剧本与商店真值（`driver` = `shop`）
+
+第三支事件驱动的驱动器（xl-1vu.6），机制与菜单同源：**一步 = 一次输入事件**。
+两家店（`ShopPanel` 药店 / `EquipmentShopPanel` 装备自选超市）里唯一的时间驱动
+是那条 `while(true){ for(i=0..7){ 换鼠标帧与人物帧; Clock.sleep(120); repaint(); } }`
+线程，它推的只有鼠标图标与四个店内人物的循环动画；**可断言的状态变化**（切分类、
+加减交易量、买、卖、金钱、背包）全部由一次鼠标事件同步引起。
+
+### 剧本
+
+```json
+{
+  "driver": "shop",
+  "name": "shop-trade",
+  "setup": {
+    "party": ["zhang"],
+    "coins": 10000,
+    "seed": 1,
+    "drugs": [{ "name": "金创药", "count": 1 }],
+    "equipment": [{ "name": "皮靴", "count": 1 }]
+  },
+  "maxSteps": 200,
+  "steps": [
+    { "op": "open", "name": "drug" },
+    { "op": "hover", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "buy" }
+  ]
+}
+```
+
+| 指令 | 参数 | 展开成 | 语义 |
+|---|---|---|---|
+| `open` | `name` = `drug`/`equipment` | 无输入事件，但**算一步** | 切到哪家店（原版是靠场景里的选择事件 `GameLauncher.switchTo` 进店的，那一下同样是一次跳转） |
+| `category` | `name` = `weapon`/`helmet`/`armor`/`glove`/`shoe`/`decoration` | 按下 + 松开 | 只用于装备店 |
+| `hover` | `index` | 一次 `mouseMoved` | 鼠标移到商品列表第 index 行 |
+| `plus` / `minus` | `index` | 按下 + 松开 | 第 index 行的加 / 减按钮 |
+| `buy` / `sell` | — | 按下 + 松开 | 点"购买" / "卖出" |
+
+**没有 `back`。** 原版那个按钮直接调 `GameLauncher.switchTo("scene")`，而导出器
+里根本没有 GameLauncher 的窗口 —— 留个指令等于留一条只会崩的路。
+
+坐标一律不写在剧本里（与菜单同理）：驱动器从原版 `GameButton` 自己的
+x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclicked`、且**只有它**
+`isclicked`。
+
+### 真值
+
+每一步记：`shop`（哪家店）、`category`、`coins`、`cursor`（鼠标坐标 + 它落在第几
+行，`-1` = 不在任何一行的命中带上）、`list`（当前这一列商品，每行五个数 = 原版
+`drawIcon` 画在屏幕上的那五列：名字 / 单价 / 店里还剩几件 / 这一单要买卖几件 /
+背包里已有几件）、`icon`（图标框里那张图是哪一行）、`message`（店主那句话）、
+`pressed`、`pack`。
+
+### 两个"失败长得和成功一样"的坑
+
+- **存货是掷出来的。** 两个面板的构造函数逐件
+  `setNumber((int)(Math.random()*10))` —— 药店 6 件、装备店 56 件，共 62 次。
+  剧本里的 `seed` 必填，播种走的是与战斗同一条路（反射
+  `java.lang.Math$RandomNumberGeneratorHolder`，要 `--add-opens`）。
+  **两个面板必须按固定顺序建**：顺序一换，62 次掷骰的分配就变了。
+- **鼠标动画线程在睡下之前会先走一次赋值**（`mouse = mouses[0]` 与四个
+  `animation.image = images.get(0)`），这一下与主线程竞态。状态真值不记这几个
+  字段，所以 `--check` 两遍照样逐字节一致 —— **而 `snapshotImage()` 交出去的
+  位图是时对时错的**，也就是说 `export-trace.sh --check` 对它是瞎的。
+  `ShopDriver` 因此建完面板后自旋等这次赋值落地，并且先验一遍"第 0 张与第 7 张
+  确实是不同对象"—— 否则那是个永远为真的等待条件，和真的等到了长得一样。
+
+顺带一处原版的写法差异：`ShopPanel` 的买 / 卖循环写死 `i<6`（`drug.txt` 恰好
+6 行），`EquipmentShopPanel` 那边才是按 `listTable(equipment).size()` 走的。
+
 ## 现有的剧本
 
 | 剧本 | 场景 | 覆盖 |
@@ -486,3 +629,6 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 | `dorm-exit` | `宿舍.txt` → `大地图.txt` → `脚本1.txt` | 出口切换的两条分支：走到 `宿舍` 门口进 `大地图`（`isScript` 置假），再从 `大地图` 走回来 —— 回的是 `currentScript[2]`（`脚本1`）而不是 `宿舍`，`isScript` 重新为真、旁白被 `narratageOver` 压掉、主线对话的进度按 `dialogueOrder` 还原。三次背景音乐切换、两个入口坐标 |
 | `milestone` | `脚本1.txt` → `脚本2` → `大活夜` → `大地图夜` | M1 里程碑：开场从头走一遍 —— 旁白 + 23 句主线对话 + 跟曾书书搭话，出门进大地图夜，那边的旁白与 27 句对话也走完，进大活夜再出来。覆盖出口切换的三条分支与两次背景音乐切换 |
 | `menu-equip` | 菜单（`driver` = `menu`） | 四个子面板各自进入与退出；装备页一整条换装：拒绝（已装备）→ 弃用（敏捷 11→10、武力 12→10、精气 11→10）→ 拒绝（藏璎环是陆雪琪专属）→ 换回武器 → 穿上铁甲（体力 10→15、血上限 700→1050、防御 50→75）→ 物品页喝药（生命 700→1000，金创药 2→1） |
+| `battle-min` | 战斗（`driver` = `battle`） | `剧情1.txt` 的那场固定遭遇（三人对三怪），从开场动画打到分出胜负。第一回合的两步写成显式指令，之后 `autoAttack` 打完 |
+| `battle-em3-box` | 战斗（`driver` = `battle`） | 让 xl-1dv.8（`EnemySlector` 判 em3 用了 `height1`）在真值里露头的那一场：`脚本20.txt` 第 3 行的 Fight 数据，em1 的图 188×220 而 em3 的图 124×172 |
+| `shop-trade` | 商店（`driver` = `shop`） | 药店与装备超市各走一条完整的买卖：买 2 份金创药 → 钱不够被拒（金钱与背包一个数都没动） → 卖回 1 份 → 装备超市买月苗刀 → 切到鞋子那栏卖掉皮靴 → 切回武器栏确认刚买的还在。加减按钮的两端也都走到了 |
