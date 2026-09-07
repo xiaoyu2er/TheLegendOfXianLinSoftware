@@ -185,6 +185,44 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: 'web 侧还画不出药品菜单 / 技能菜单 / 提示图 / 战斗状态图标，drawList 当场抛',
     issue: 'xl-rh9.12',
   },
+  // ===== xl-rh9.14 的六条：剩下那些技能与秘术 =====
+  //
+  // 六条都是 `unpainted`，而且**不是同一层拦下来的**：前三条一开技能菜单就撞上
+  // 第 13 层（归 xl-rh9.12），两条秘术撞上第 17 层的战斗状态图标（也归
+  // xl-rh9.12），陆雪琪那条撞上第 11 层的小精灵（归 xl-rh9.15 —— 那一层在
+  // xl-rh9.14 之前是结构性缺席，世界里连字段都没有）。
+  //
+  // 一样都不写 maxRatio / gaps：一帧都没比过，写任何数都是编的。
+  'battle-zhang-skills': {
+    status: 'unpainted',
+    why: 'web 侧还画不出技能菜单（第 13 层），一点「技」就抛',
+    issue: 'xl-rh9.12',
+  },
+  'battle-yu-skills': {
+    status: 'unpainted',
+    why: 'web 侧还画不出技能菜单（第 13 层），一点「技」就抛',
+    issue: 'xl-rh9.12',
+  },
+  'battle-lu-skills': {
+    status: 'unpainted',
+    why: 'web 侧还画不出技能菜单（第 13 层），一点「技」就抛',
+    issue: 'xl-rh9.12',
+  },
+  'battle-mishu-zhang': {
+    status: 'unpainted',
+    why: 'web 侧还画不出战斗状态图标（第 17 层）—— 金钟罩一挂上就抛',
+    issue: 'xl-rh9.12',
+  },
+  'battle-mishu-yu': {
+    status: 'unpainted',
+    why: 'web 侧还画不出战斗状态图标（第 17 层）—— 潜能爆发一挂上就抛',
+    issue: 'xl-rh9.12',
+  },
+  'battle-mishu-lu': {
+    status: 'unpainted',
+    why: 'web 侧还画不出小精灵（第 11 层）—— 陆雪琪的秘术把它召出来就抛',
+    issue: 'xl-rh9.15',
+  },
   'battle-em3-box': {
     status: 'gap',
     // em3 命中框那一场（xl-rh9.8 补齐状态层，xl-rh9.9 接上画面）。实测

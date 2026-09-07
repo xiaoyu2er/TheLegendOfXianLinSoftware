@@ -168,9 +168,11 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 10 怪物走图（顺序是 `bp.enemies`：em2 → em1 → em3，原版靠它解决遮掩）
   for (const e of w.enemies) enemyOps(w, e, push)
   // 11 小精灵
-  // `BattleWorld` 里根本没有这个字段 —— 原版 `initial()` 把 `pet` 置 null，
-  // 只有陆雪琪的秘术召得出来，而秘术归 xl-rh9.14（六份真值一次都没召过）。
-  // 没有字段可读就没有"画错"的可能，所以这一层今天是结构性缺席，不是静默跳过。
+  // xl-rh9.14 把陆雪琪的秘术做出来了，`BattleWorld` 从此有了 `pet` 这个字段
+  // ——在那之前这一层是**结构性缺席**（没有字段可读就没有"画错"的可能）。
+  // 现在有得读了，于是改成走到就抛并点名：`battle-mishu-lu` 那份真值里第 855
+  // 拍召出小精灵，此后它一直在场上。
+  if (w.pet) unimplemented('pet', '小精灵（陆雪琪的秘术召出来的）', 'xl-rh9.15')
 
   // 12 行动条
   progressBarOps(w, push)

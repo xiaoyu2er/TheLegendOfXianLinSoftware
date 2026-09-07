@@ -50,6 +50,11 @@ export interface BattleTraceScript {
   readonly background: string
   readonly party: readonly ('zhang' | 'yu' | 'lu')[]
   readonly level: Readonly<Partial<Record<'zhang' | 'yu' | 'lu', number>>>
+  /**
+   * 技能菜单上有几颗按钮（xl-rh9.14）。**剧本整个不写时这一项不回显**，
+   * 于是老真值逐字节不变 —— 所以这里是可选的，缺席就是「用原版初值」。
+   */
+  readonly skillNumber?: Readonly<Partial<Record<'zhang' | 'yu' | 'lu', number>>>
   readonly enemies: readonly (string | null)[]
   readonly seed: number
   readonly tickMs: number

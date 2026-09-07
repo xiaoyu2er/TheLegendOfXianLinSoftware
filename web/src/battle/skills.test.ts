@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
-import { SKILLS, SKILL_MENU, SKILL_NUMBER } from './skills'
+import { SKILLS, SKILL_MENU, SKILL_NUMBER, skillMpUse } from './skills'
 import type { PartyKey } from './units'
 
 /**
@@ -65,7 +65,6 @@ describe('技能表对回原版源码', () => {
       expect(calls.length, `${key} 解出来的 skillAttack 条数`).toBe(5)
       // 原版那五段 if 是按 currentPattern 2..6 顺序写的。
       const mine = SKILLS[key as PartyKey]
-      if (Object.keys(mine).length === 0) continue // 陆雪琪那一份还没抄（见 skills.ts）
       expect(
         calls.map((c, i) => [i + 2, ...c]),
         `${key} 的 mpUse / reminderCode / skillCode`,
@@ -75,19 +74,28 @@ describe('技能表对回原版源码', () => {
           return [i + 2, c[0] === null ? null : e.mpUse, e.reminderCode, e.skillCode]
         }),
       )
-      // 反方向：抄进表里的 mpUse 必须真的是字面量那几条 —— 不然一个算出来的
-      // 耗蓝会被当成常数抄下来，而它随等级走。
+      // 反方向：源码里是算出来的那几条，表里也必须是**函数**，不能是常数 ——
+      // 抄成常数的表现是换个等级才错，而那一场看上去完全正常。
       for (const [i, c] of calls.entries()) {
         if (c[0] !== null) continue
-        expect(mine[i + 2], `${key} pattern ${i + 2} 的 mpUse 是算出来的，不该出现在表里`).toBeUndefined()
+        expect(
+          typeof mine[i + 2]!.mpUse,
+          `${key} pattern ${i + 2} 的 mpUse 在源码里是算出来的`,
+        ).toBe('function')
       }
     }
   })
 
   it('每个人 skill(i) 里那几发 backgroundAnimation.set(名字, 帧数) 逐位对上', () => {
-    for (const key of ['zhang', 'yu'] as const) {
+    for (const key of ['zhang', 'yu', 'lu'] as const) {
       const src = javaSource(`src/battle/${JAVA_CLASS[key]}.java`)
-      const body = src.slice(src.indexOf('public void skill(int i)'))
+      // ⚠️ 形参名三个人不一样：张小凡与文敏写的是 `skill(int i)`，陆雪琪写的是
+      // `skill(int skillCode)`。按 `skill(int ` 切，切不到就抛 —— 切不到时
+      // `indexOf` 返回 -1，`slice(-1)` 会给出**最后一个字符**，于是下面解出
+      // 零条，而"零条"与"原版少写了几条"长得一样。
+      const at = src.indexOf('public void skill(int ')
+      expect(at, `${JAVA_CLASS[key]}.java 里找不到 skill(int …)`).toBeGreaterThan(0)
+      const body = src.slice(at)
       const sets = [
         ...body.matchAll(/backgroundAnimation\.set\("([^"]+)"\s*,\s*(\d+)\)/g),
       ].map((m) => [m[1]!, Number(m[2])] as [string, number])
@@ -107,28 +115,32 @@ describe('技能表对回原版源码', () => {
       SKILL_MENU[key].forEach((e, i) => {
         expect(e.pattern, `${key} 第 ${i + 1} 颗按钮的 pattern`).toBe(i + 2)
       })
-      // 菜单上画得出来的那几颗，SKILLS 里必须都有条目（哪怕 damage 是 null）。
-      const listed = Object.keys(SKILLS[key])
-      if (listed.length === 0) continue
+      // 菜单上画得出来的那几颗，SKILLS 里必须都有条目。
       for (let i = 0; i < SKILL_NUMBER[key]; i++) {
         expect(SKILLS[key][i + 2], `${key} 第 ${i + 1} 颗按钮在 SKILLS 里没有条目`).toBeDefined()
       }
     }
   })
 
-  it('移植了的那几条各自写明了伤害参数，没移植的一律是 null', () => {
-    // 反方向：不许出现"写了一半"的条目 —— 那种条目会让 step.ts 走进一条
-    // 半真半假的路，而它算出来的伤害看着完全正常。
-    const ported: string[] = []
+  it('三个人各五条都在表里，且只有陆雪琪的技能2 是算出来的耗蓝', () => {
+    // 分母是原版那三个 calDamage 的 switch 各有 5 个 case（上面那条
+    // skillAttack 的 `toBe(5)` 已经把它数过了），这里核的是表这一侧写全了。
+    const computed: string[] = []
     for (const key of ['zhang', 'yu', 'lu'] as const) {
+      expect(Object.keys(SKILLS[key]).map(Number).sort((a, b) => a - b), `${key} 的招式号`).toEqual([
+        2, 3, 4, 5, 6,
+      ])
       for (const [pattern, e] of Object.entries(SKILLS[key])) {
-        if (e.damage === null) continue
-        ported.push(`${key}/${pattern}`)
-        expect(e.damage.mpUse, `${key} pattern ${pattern}`).toBe(e.mpUse)
-        expect(e.damage.baseHurt).toBeGreaterThan(0)
+        if (typeof e.mpUse === 'function') computed.push(`${key}/${pattern}`)
+        expect(e.skillCode, `${key} pattern ${pattern} 的 skillCode`).toBe(Number(pattern) - 1)
       }
     }
-    // 至少有两条移植了，否则 battle-menus 那条真值根本走不通。
-    expect(ported.sort()).toEqual(['yu/3', 'zhang/3'])
+    // 反方向：算出来的耗蓝**有且只有一条**。写成常数的表现是换个等级才错，
+    // 而那一场看上去完全正常。
+    expect(computed).toEqual(['lu/3'])
+    // 那一条算出来的数就是灵力上限的六成，向零截尾。
+    const lu3 = SKILLS.lu[3]!
+    expect(skillMpUse(lu3, 1710)).toBe(1026)
+    expect(skillMpUse(lu3, 1711)).toBe(1026)
   })
 })

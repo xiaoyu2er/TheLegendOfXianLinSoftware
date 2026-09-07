@@ -58,6 +58,13 @@ const IMPLEMENTED: readonly string[] = [
   'battle-defeat-start',
   'battle-defeat-slot2',
   'battle-menus',
+  // xl-rh9.14：剩下那些技能与秘术。
+  'battle-zhang-skills',
+  'battle-yu-skills',
+  'battle-lu-skills',
+  'battle-mishu-zhang',
+  'battle-mishu-yu',
+  'battle-mishu-lu',
 ]
 
 /**
@@ -299,51 +306,50 @@ describe('战斗状态层对齐行为真值', () => {
     })
 
     /**
-     * ⚠️ **第二处登记在案的观测不到**（xl-rh9.11 篡改验证 T18）。
-     *
-     * 状态被退回有**两条路**，而今天只有一条走得到：
+     * 状态被退回有**两条路**，两条都要有真值走到：
      *
      * 1. **打赢那一刻**统一清（`Check.checkEnemyDead` 里那个
      *    `for(Hero hero:bp.heroes){ if(isUsable){ returnFromState(); clear(); } }`）；
      * 2. **回合数走完**（`BattleState.check()` 里 `roundNum<=0` 那一支）。
      *
      * `battle-menus` 走的是第 1 条：文敏那个 2 回合的敏捷提升在打赢那一拍
-     * （t=460）被清掉，speed 11→10。第 2 条一次都没走到 —— 实测把
-     * `checkStateCommon` 里 `returnFrom()` 后面那句 `clearState(s)` **整个删掉**，
-     * 逐字段比对全绿。
-     *
-     * 判别法写在这里：第 2 条走到的样子是「状态被清掉那一拍，胜负还没分」。
-     * 哪天有真值满足它，这一条就红，那时候上面的逐字段比对自己盖得住第 2 条，
-     * 这条登记该撤掉。
+     * （t=460）被清掉，speed 11→10。第 2 条 xl-rh9.11 那会儿一次都没走到（登记
+     * 在案：把 `clearState(s)` 整个删掉，逐字段比对全绿），**xl-rh9.14 之后
+     * 走得到了** —— `battle-zhang-skills` 里武力上升那 2 回合在胜负未分时到期。
+     * 于是这条登记换成了正面比对：两条路各自至少有一份真值。
      */
-    it('回合数走完那一条清除路径，今天还观测不到 —— 登记在案', () => {
+    it('两条清除路径各有真值走到 —— 打赢时统一清，与回合数走完', () => {
       const midBattle: string[] = []
+      const atDecided: string[] = []
       for (const name of withState) {
         const ticks = traceOf(name).ticks
         for (const i of clearedTicks(name)) {
-          if (ticks[i]!.outcome === 'undecided') midBattle.push(`${name}@${ticks[i]!.t}`)
+          const where = `${name}@${ticks[i]!.t}`
+          if (ticks[i]!.outcome === 'undecided') midBattle.push(where)
+          else atDecided.push(where)
         }
       }
       expect(
-        midBattle,
-        '有真值在胜负未分时清掉了战斗状态 —— `BattleState.check()` 里 roundNum 用完' +
-          '那一支现在走得到了，把这条登记换成正面比对。',
-      ).toEqual([])
+        midBattle.length,
+        '没有一份真值在胜负未分时清掉战斗状态 —— `BattleState.check()` 里 roundNum ' +
+          '用完那一支又没人走了，把 `clearState(s)` 整个删掉也不会红。',
+      ).toBeGreaterThan(0)
+      expect(
+        atDecided.length,
+        '没有一份真值在分出胜负那一刻清掉战斗状态 —— `Check.checkEnemyDead` 里' +
+          '那个统一清的 for 又没人走了。',
+      ).toBeGreaterThan(0)
     })
 
     /**
-     * ⚠️ **一处登记在案的观测不到**（xl-rh9.11 篡改验证 T7）。
+     * 怪物身上那几个加成的**数值**要真的进过伤害公式。
      *
-     * 怪物那一侧的 type 8 是「体力下降」，加成是 `defense -= 40`。而
-     * `battle-menus` 里挂上它的那一击**同时把那只怪打死了**（300 → −26，
-     * 状态在伤害算完之后才挂），此后它再没挨过打 —— 那 40 点防御一次都没有
-     * 进过伤害公式。实测：把 `e.defense -= 40` 改成 `-= 0`，逐字段比对全绿。
-     *
-     * 所以把它登记成一条判据：哪天有一条真值里被挂状态的怪**活了下来**并且
-     * 又挨了一次打，这一条就红 —— 那时候上面的逐字段比对自己就盖得住它，
-     * 这条登记该撤掉换成正面比对。
+     * xl-rh9.11 那会儿进不去：`battle-menus` 里挂上 type 8 的那一击**同时把那只
+     * 怪打死了**（300 → −26），此后它再没挨过打 —— 把 `e.defense -= 40` 改成
+     * `-= 0`，逐字段比对全绿。xl-rh9.14 的几份真值里怪物挨了状态之后还活着并且
+     * 继续挨打，所以这条登记换成了正面比对。
      */
-    it('怪物身上那个加成的数值，今天还观测不到 —— 登记在案', () => {
+    it('挂了状态之后还活着并且又挨了打的怪，至少有一只', () => {
       const survivors: string[] = []
       for (const name of withState) {
         const ticks = traceOf(name).ticks
@@ -356,10 +362,62 @@ describe('战斗状态层对齐行为真值', () => {
         }
       }
       expect(
-        survivors,
-        '有怪物在被挂上战斗状态之后又挨了打 —— 那个加成（type 8 的 defense −40）' +
-          '现在进得了伤害公式了，把这条登记换成正面比对。',
-      ).toEqual([])
+        survivors.length,
+        '没有一只怪在挂上战斗状态之后又挨过打 —— 那几个加成（speed ±1 / hurt ±40 / ' +
+          'skillHurt ±30 / defense ±40）一个都没进过伤害公式，抄错了不会红。',
+      ).toBeGreaterThan(0)
+    })
+
+    /**
+     * 战斗状态一共有十二种 type，而**这一层实现了哪几种、真值又走到了哪几种**，
+     * 是两件事。下面两条把它们对上（xl-rh9.14）。
+     *
+     * 挂上（`checkState`）与退回（`returnFromState`）分开数：一个 type 挂过而
+     * 从没退回过，说明它的退回那一段抄错了也不会红。
+     */
+    function typesSeen(pick: (t: BattleTrace['ticks'][number]) => (number | null)[]) {
+      const applied = new Set<number>()
+      const returned = new Set<number>()
+      for (const name of IMPLEMENTED) {
+        const ticks = traceOf(name).ticks
+        let prev: (number | null)[] = pick(ticks[0]!).map(() => null)
+        for (const t of ticks) {
+          const now = pick(t)
+          now.forEach((type, k) => {
+            if (type !== null) applied.add(type)
+            // 退回被调用的那两种形状：状态整个没了，或者被另一个 type 顶掉。
+            const was = prev[k] ?? null
+            if (was !== null && was !== type) returned.add(was)
+          })
+          prev = now
+        }
+      }
+      return { applied: [...applied].sort((a, b) => a - b), returned: [...returned].sort((a, b) => a - b) }
+    }
+
+    it('我方那六种 type 都挂上过，也都退回过', () => {
+      const { applied, returned } = typesSeen((t) =>
+        t.heroes.map((h) => (h.state.usable ? h.state.type : null)),
+      )
+      // 我方拿得到的就这六种：1..4 由陆雪琪技能5 现掷（技能1 只掷 1、文敏技能2
+      // 掷 1、张小凡技能3 与文敏技能5 掷 2），11 是张小凡的秘术，12 是文敏的。
+      // 5..8 与 10 全游戏没有一招挂给我方 —— `heroApplyState` 走到就抛。
+      expect(applied).toEqual([1, 2, 3, 4, 11, 12])
+      expect(returned).toEqual([1, 2, 3, 4, 11, 12])
+    })
+
+    it('怪物那六种 type 都挂上过；type 8 的退回今天还观测不到 —— 登记在案', () => {
+      const { applied, returned } = typesSeen((t) =>
+        t.enemies.map((e) => (e && e.state.usable ? e.state.type : null)),
+      )
+      // 怪物拿得到的就这六种（1..4 是增益，全游戏没有一招给怪物挂）。
+      expect(applied).toEqual([5, 6, 7, 8, 9, 10])
+      // ⚠️ **8 不在退回那一列里**：`battle-menus` 里挂上它的那只怪当场就死了，
+      // 而 `battle-lu-skills` 里掷到 8 的那一只是**最后一个**状态，剧本收工时
+      // 还挂着。也就是说 `returnEnemyState` 的 `case 8`（defense += 40）今天
+      // 一次都没被调用 —— 抄成别的数不会红。
+      // 哪天有真值让它退回，这一条会红：那时候把 8 挪到上面那个 toEqual 里。
+      expect(returned).toEqual([5, 6, 7, 9, 10])
     })
   })
 

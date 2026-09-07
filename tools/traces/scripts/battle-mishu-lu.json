@@ -1,0 +1,89 @@
+{
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "enemies": [
+    "物理阁大弟子/5",
+    "物理阁大弟子/6",
+    "物理阁大弟子/7"
+  ],
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "name": "battle-mishu-lu",
+  "description": "陆雪琪的秘术：召小精灵（xl-rh9.14）。它是整场战斗里唯一一个**中途诞生的单位** —— 在此之前 bp.pet 是 null，ProgressBar 里那句 petX+=pet.speed 与 currentRound==4 那一整支都恒不执行。小精灵的速度与攻击力是**三个人静态字段的平均值**，所以三个人都得出战：张小凡与文敏带一级上场，几下就躺下（死了不影响那两个静态字段），此后怪物只打得到陆雪琪，怒气也就攒得快。小精灵召出来之后自己排队行动：轮到它就现掷目标（拒绝采样，消耗不定次数随机数）、打一发不带随机偏移的 power-defense，而 Pet.calDamage 里那句 currentEnemy.hp-=currentDamage **写了两遍** —— 实际掉的血是伤害数字的两倍，照抄。",
+  "party": [
+    "zhang",
+    "yu",
+    "lu"
+  ],
+  "level": {
+    "zhang": 1,
+    "yu": 1,
+    "lu": 41
+  },
+  "steps": [
+    {
+      "op": "autoUntilAngry",
+      "round": 3,
+      "max": 2000,
+      "budget": 2100
+    },
+    {
+      "op": "command",
+      "button": "defend",
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "autoUntilRound",
+      "round": 3,
+      "max": 900,
+      "budget": 1000
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 50
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "wait",
+      "ticks": 120
+    }
+  ],
+  "seed": 20260950
+}

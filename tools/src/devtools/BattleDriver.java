@@ -223,6 +223,16 @@ public final class BattleDriver implements TraceDriver {
                 default: throw new IllegalStateException(e.getKey());
             }
         }
+        // 技能菜单上有几颗按钮。剧本没写就一个字都不碰（原版初值 2 / 3 / 2）——
+        // 构造函数从不写这三个字段，等级再高菜单上也还是那几颗。
+        for (Map.Entry<String, Integer> e : script.skillNumbers.entrySet()) {
+            switch (e.getKey()) {
+                case "zhang": ZhangXiaoFan.skillNumber = e.getValue(); break;
+                case "yu":    YuJie.skillNumber        = e.getValue(); break;
+                case "lu":    LuXueQi.skillNumber      = e.getValue(); break;
+                default: throw new IllegalStateException(e.getKey());
+            }
+        }
         // 出场坐标就是 GameLauncher 里那三行写死的值。
         if (script.party.contains("zhang")) zxf = new ZhangXiaoFan(560, 160, bp);
         if (script.party.contains("yu"))    yj  = new YuJie(750, 150, bp);
@@ -320,7 +330,8 @@ public final class BattleDriver implements TraceDriver {
                 spent = 0;
                 left = in.op.equals("wait") ? in.ticks
                         : in.op.equals("autoAttack") || in.op.equals("awaitExit")
-                                || in.op.equals("autoUntilRound") ? in.max : 0;
+                                || in.op.equals("autoUntilRound")
+                                || in.op.equals("autoUntilAngry") ? in.max : 0;
             }
             if (exec(in)) { ip++; entered = false; continue; }
             if (++spent > in.budget) {
@@ -359,7 +370,9 @@ public final class BattleDriver implements TraceDriver {
             case "autoAttack":
                 return autoAttack(in);
             case "autoUntilRound":
-                return autoUntilRound(in);
+                return autoUntilRound(in, false);
+            case "autoUntilAngry":
+                return autoUntilRound(in, true);
             case "awaitExit":
                 return awaitExit(in);
             default:
@@ -406,14 +419,25 @@ public final class BattleDriver implements TraceDriver {
      * 而赌错了导出的是一份"点了另一个人的技能"的真值：它有头有尾、退出码 0。
      *
      * 到了那个回合就**停手**（这一拍不点任何东西），下一条指令接着点。
+     *
+     * <p>{@code needAngry} 为真时（{@code autoUntilAngry}）还要那个人的怒气攒满。
+     * 秘术那条路是 {@code Command.checkReleased} 里
+     * {@code if(bp.zxf.isAngry){…}else{bp.reminder.show(21)}} —— 没攒满就只弹一张
+     * 提示图，控制台还开着，而"点了防、什么都没发生"与"放了秘术"在剧本里长得
+     * 一模一样。怒气攒满要挨几下由伤害掷出来多少决定，写不成固定的回合数。
      */
-    private boolean autoUntilRound(TraceScript.Instruction in) {
+    private boolean autoUntilRound(TraceScript.Instruction in, boolean needAngry) {
         if (!outcome().equals("undecided")) {
             fail("等的是第 " + in.round + " 号的回合，可这一场已经打成了 " + outcome());
         }
-        if (commandDrawn() && getInt(bp, "currentRound") == in.round) return true;
+        if (commandDrawn() && getInt(bp, "currentRound") == in.round
+                && (!needAngry || angryOf(in.round))) {
+            return true;
+        }
         if (left <= 0) {
             fail("跑满 " + in.max + " 步，控制台一次都没出现在第 " + in.round + " 号的回合上"
+                    + (needAngry ? "（且怒气攒满，当前 " + angryValueOf(in.round) + "/"
+                            + angryGoalOf(in.round) + "）" : "")
                     + "（当前回合 " + getInt(bp, "currentRound") + "）");
         }
         left--;
@@ -620,6 +644,19 @@ public final class BattleDriver implements TraceDriver {
     // ================= 状态读取 =================
 
     private boolean commandDrawn() { return getBool(get(bp, "command"), "isDraw"); }
+
+    /** 第 {@code round} 号（1 张 / 2 文 / 3 陆）那个人。没出战就硬失败。 */
+    private Hero heroOfRound(int round) {
+        for (Hero h : party) if (h.getRoleCode() == round) return h;
+        fail("第 " + round + " 号没有出战");
+        return null;
+    }
+
+    private boolean angryOf(int round)      { return heroOfRound(round).wheatherAngry(); }
+    private int angryValueOf(int round)     { return heroOfRound(round).getAngryValue(); }
+    /** {@code Enemy.calDamage} 里那句 {@code angryValue>=(int)(hpMax*0.8)}。 */
+    private int angryGoalOf(int round)      { return (int) (heroOfRound(round).getHpMax() * 0.8); }
+
     private boolean selectable()   { return getBool(get(bp, "enemySlector"), "isSlectable"); }
 
     /**
