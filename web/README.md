@@ -30,7 +30,13 @@ pnpm preview      # 本地预览 dist/
 "逻辑 ID → 文件"的映射表。产物在 `src/generated/`，**全部入库**：
 
 - CI 与 `pnpm build` 因此不需要 Java、不需要 cwebp、不需要仓库外的原始素材；
-- 代价是产物可能陈旧，`src/data/scenes.test.ts` 会现场重烘一遍来判定。
+- 代价是产物可能陈旧，两层判据各管一段：场景 JSON 由 `src/data/scenes.test.ts`
+  现场重烘一遍比对；资源那一层（WebP / m4a / 映射表）重烘不了——`cwebp` 要
+  另装、`afconvert` 是 macOS 自带而 CI 是 ubuntu，且它的产物每次都不同——改由
+  `src/assets/bakeStamp.test.ts` 核烘焙时写下的指纹：烘焙器自己的源码闭包
+  （顺着 import 现爬）与它读过的 693 个输入文件，跑测试时重算 sha256 比对。
+  改了 `scripts/bake.ts` 却不重烘，那条红；`roleSpriteSize.test.ts` 这类核
+  产物的用例照绿（实测），这正是它要补的洞（xl-23y）。
 
 判据不是"跑通了"，是**与原版解析器自己导出的冻结真值逐字段相等**：
 `tools/ground-truth/*.json` 由 `tools/export-truth.sh` 从 `tools.Reader` 导出，

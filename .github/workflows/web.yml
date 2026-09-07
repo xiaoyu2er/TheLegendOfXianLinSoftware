@@ -7,9 +7,20 @@ on:
     # 出处 Reader.java。它们变了而这条流水线不跑，等于唯一那条客观判据在最该
     # 响的时候是哑的。两处名单一样，是抄的：YAML 锚点更短，但 Actions 认不认
     # 锚点这里没实测过，不在 CI 触发条件上冒这个险。
-    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java']
+    #
+    # 后面那几个素材目录是烘焙器的输入（xl-23y）：`bakeStamp.test.ts` 核的是
+    # 「入库的产物是不是这批输入烘出来的」，素材换了而这条流水线不跑，那条
+    # 判据就是哑的 —— 而且哑得不声不响：不触发的工作流在 PR 上没有红叉，
+    # 跟跑过并通过长得一样。名单漏一个目录同样是这种哑法，所以它不靠人记：
+    # `bakeStamp.test.ts` 拿指纹里的 703 个输入逐条问「这两行有没有 glob 罩得
+    # 住它」。`tools/traces/out/**` 也在里面：走到过哪些场景决定烘哪几首 BGM。
+    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java',
+            'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
+            'dialogue/**', 'tools/traces/out/**']
   pull_request:
-    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java']
+    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java',
+            'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
+            'dialogue/**', 'tools/traces/out/**']
 
 # 只在 web/、黄金测试的输入、或本工作流自身变动时跑：Java 侧的其余改动
 # 与这条流水线无关。
