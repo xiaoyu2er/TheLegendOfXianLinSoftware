@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
+import { parseEnemySource } from './enemySource'
+import type { EnemySpec } from './units'
 import { BGM_BY_BACKGROUND, ENEMIES, battleBgm, derive, expToLevelUp, refreshValue } from './units'
 
 /**
@@ -89,60 +91,171 @@ describe('属性公式', () => {
 })
 
 /**
- * `skillHurt` 是怪物表里**唯一一列没有真值读得到的数**：状态层还没有实现怪物
- * 出技能那条伤害路（xl-rh9.9），所以五份 driver=battle 的真值里，它抄错了和
- * 抄对了推出来的每一个字段都相同 —— 实测把罹年居士分身的 600 改成 590，
- * `battleTrace.test.ts` 全绿（xl-rh9.8 的篡改验证 T16）。
+ * 怪物出厂表**每一列**对回 `src/battle/Enemy.java`。
  *
- * 于是把它对回原版源码。解析器**只认两个字段赋值**，窄到解不出来就抛：
- * 下面第一条用例的分母是"源码里有几个 case"，编码错了或写法变了都会是 0，
- * 而 0 行的逐行对比是一条恒真的检查。
+ * ## 为什么不能只靠行为真值
+ *
+ * 表里大多数列被五份 driver=battle 的真值逐字段盖着（xl-rh9.8 实测：把
+ * 武林高手2 的 hp 500 改成 5000、把商塔护法的 skill.attackCode 17 改成 18，
+ * `battle-em3-box` 都红）。但有几列**一个读者都没有**：`skillHurt` 与
+ * `money`，以及经由它们写进 `world.ts` 的 `hurtMax` / `skillHurtMax` /
+ * `defenseMax` —— 写进去之后再没人读。没有读者的列，抄错了和抄对了在测试里
+ * 长得一模一样（实测把罹年居士分身的 skillHurt 600 改成 590，逐字段比对全绿）。
+ *
+ * ## 这条判据的形状
+ *
+ * 解析器（`enemySource.ts`）把源码那两个 switch 解成一张表，然后**整行
+ * `toEqual`**。用 `toEqual` 而不是逐字段挑，是为了让"漏核了一列"也响：
+ * 哪天有人往 `EnemySpec` 加一列而不去源码里找它的出处，这里立刻多出一个键。
+ *
+ * 分母是**我们表里有几行**（`Object.keys(ENEMIES).length`），不是源码的 25 行
+ * —— 那张表只抄跑得到真值的那几只，还会随别人的票一起长。
  */
-describe('怪物的 skillHurt 对回原版源码', () => {
-  /** `Enemy.initial()` 里按名字分的那个 switch，每个 case 的 hurt / skillHurt。 */
-  const rows = (() => {
-    const src = javaSource('src/battle/Enemy.java')
-    const from = src.indexOf('public void initial(String name,int roleCode){')
-    const to = src.indexOf('//载入图片')
-    if (from < 0 || to < 0 || to <= from) {
-      throw new Error('在 Enemy.java 里找不到 initial(...) 那一段 —— 解析器该改了')
+describe('怪物出厂表逐列对回原版源码', () => {
+  const source = parseEnemySource()
+
+  /** 我们表里 `speed` 是 `number | (zhangSpeed) => number`，两种形状要分得开。 */
+  function normaliseSpeed(speed: EnemySpec['speed']): unknown {
+    if (typeof speed !== 'function') return { kind: 'const', value: speed }
+    // 两个点定一条斜率为 1 的线：只对一个点会让 `() => 6` 冒充 `z => z + 6`。
+    return { kind: 'zhangSpeedPlus', atZero: speed(0), atHundred: speed(100) }
+  }
+
+  function fromSource(name: string): unknown {
+    const s = source.get(name)
+    if (!s) throw new Error(`原版的 Enemy.initial() 里没有「${name}」`)
+    return {
+      length: s.length,
+      beAttackedFrames: s.beAttackedLength,
+      speed:
+        s.speed.kind === 'const'
+          ? { kind: 'const', value: s.speed.value }
+          : { kind: 'zhangSpeedPlus', atZero: s.speed.delta, atHundred: 100 + s.speed.delta },
+      hurt: s.hurt,
+      skillHurt: s.skillHurt.kind === 'sameAsHurt' ? s.hurt : s.skillHurt.value,
+      defense: s.defense,
+      hp: s.hp,
+      exp: s.exp,
+      money: s.money,
+      skillNum: s.skillNum,
+      beAttackedOffsetX: s.beAttackedOffsetX,
+      beAttackedOffsetY: s.beAttackedOffsetY,
+      skill: { ...s.skill },
     }
-    const body = src.slice(from, to)
-    const out = new Map<string, { hurt: string; skillHurt: string }>()
-    for (const m of body.matchAll(/case "([^"]+)":([\s\S]*?)break;/g)) {
-      const name = m[1]!
-      const block = m[2]!
-      const pick = (field: string): string => {
-        const hit = block.match(new RegExp('this\\.' + field + '=([^;]+);'))
-        if (!hit) throw new Error(`case "${name}" 里没解出 ${field} —— 解析器该改了`)
-        return hit[1]!.trim()
-      }
-      out.set(name, { hurt: pick('hurt'), skillHurt: pick('skillHurt') })
-    }
-    return out
-  })()
+  }
 
   it('从源码里真的解出了那些 case —— 解析器空转要响', () => {
-    expect(rows.size).toBeGreaterThan(0)
     // 这个数是解出来的，不是抄的；它随原版源码走，而原版源码在迁移期间不动。
-    expect(rows.size, '`Enemy.initial()` 的 case 数变了 —— 原版源码不该动').toBe(25)
+    expect(source.size, '`Enemy.initial()` 的 case 数变了 —— 原版源码不该动').toBe(25)
   })
 
-  it('原版每一行的 skillHurt 都不与 hurt 分开 —— 所以这一列没有独立信息', () => {
-    const split = [...rows].filter(([, v]) => v.skillHurt !== 'hurt' && v.skillHurt !== v.hurt)
+  it('我们表里的每一行都在原版的两个 switch 里', () => {
+    // 分母是我们抄了几行。它今天是 7，明天别人加真值时会变，所以不写死。
+    expect(Object.keys(ENEMIES).length).toBeGreaterThan(0)
+    for (const name of Object.keys(ENEMIES)) {
+      expect(source.has(name), `${name} 不在原版的 Enemy.java 里`).toBe(true)
+    }
+  })
+
+  it('逐行逐列相等，多一列少一列都要响', () => {
+    for (const [name, spec] of Object.entries(ENEMIES)) {
+      const actual = { ...spec, speed: normaliseSpeed(spec.speed) }
+      expect(actual, `怪物「${name}」`).toEqual(fromSource(name))
+    }
+  })
+
+  /**
+   * 上面那条 `toEqual` 已经把 `skillHurt` 的数值盖住了，但盖不住**它为什么是
+   * 那个数**：原版 25 行里 23 行写的是 `skillHurt=hurt`，另外两行写的是恰好
+   * 等于 `hurt` 的字面量 —— 也就是说这一列从来没有独立信息。`units.ts` 仍然把
+   * 它分成两个字段，所以这条盯着的是"哪天原版分开了"（那时 `EnemySpec` 的
+   * 注释就该改）。
+   */
+  it('原版每一行的 skillHurt 都不与 hurt 分开', () => {
+    const split = [...source].filter(
+      ([, v]) => v.skillHurt.kind === 'const' && v.skillHurt.value !== v.hurt,
+    )
     expect(
       split.map(([name]) => name),
-      '原版有怪物的 skillHurt 与 hurt 不是同一个数了 —— 下面那条判据立刻失效，' +
-        '这一列要么找一条真值判据，要么把它逐行对回源码。',
+      '原版有怪物的 skillHurt 与 hurt 不是同一个数了 —— `EnemySpec.skillHurt` 上那段注释要改',
     ).toEqual([])
   })
+})
 
-  it('我们表里每一行的 skillHurt 都等于它的 hurt', () => {
-    // 分母是**我们抄了几行**（源码 25 行里今天只抄了跑得到真值的那几只）。
-    expect(Object.keys(ENEMIES).length).toBeGreaterThan(0)
-    for (const [name, spec] of Object.entries(ENEMIES)) {
-      expect(rows.has(name), `${name} 不在原版的 Enemy.initial() 里`).toBe(true)
-      expect(spec.skillHurt, `${name} 的 skillHurt`).toBe(spec.hurt)
-    }
+/**
+ * 解析器**解不出来要当场抛**，不许安静地返回空表 —— 空表的逐行对比是一条恒真
+ * 的检查，而"恒真地通过"与"真的对上了"长得一模一样。这一节把改坏的源码文本
+ * 喂给**真正的那个** `parseEnemySource`（它收一个可选的源码参数就是为了这个），
+ * 一道门一条用例。
+ */
+describe('源码解析器解不出来就抛', () => {
+  const raw = readFileSync(repoPath('src/battle/Enemy.java'))
+  const gbk = new TextDecoder('gbk').decode(raw)
+
+  /** 篡改必须真的写进去了才算数（`sed` 没匹配到照样 exit 0，见 dispatch.md）。 */
+  function tamper(from: string | RegExp, to: string): string {
+    const out = gbk.replace(from, to)
+    if (out === gbk) throw new Error(`篡改点没匹配到：${from}`)
+    return out
+  }
+
+  it('方法签名变了 → 抛', () => {
+    expect(() => parseEnemySource(tamper('public void initial(String name,int roleCode){', 'public void initial2(String name,int roleCode){'))).toThrow(
+      '找不到 initial(…) 的开头',
+    )
+  })
+
+  it('一个 case 都没解出来 → 抛，而不是返回空表', () => {
+    expect(() => parseEnemySource(tamper(/case "[^"]+":[\s\S]*?break;/g, ''))).toThrow(
+      'initial(…) 里一个 case 都没解出来',
+    )
+  })
+
+  it('某个 case 少了一个字段 → 抛，并点名是哪一个', () => {
+    expect(() => parseEnemySource(tamper('money=1000;', ''))).toThrow(
+      'initial 的 case "怪物1" 里没有 money=',
+    )
+  })
+
+  it('表达式换成不认得的形状 → 抛，并把原文带出来', () => {
+    expect(() => parseEnemySource(tamper('this.speed=11;', 'this.speed=hurt/2;'))).toThrow(
+      '"hurt/2"',
+    )
+    expect(() => parseEnemySource(tamper('this.beAttackedX=x-125;', 'this.beAttackedX=x*2;'))).toThrow(
+      '期望 x±N 的形状',
+    )
+  })
+
+  it('setSkill 的参数个数变了 → 抛', () => {
+    expect(() =>
+      parseEnemySource(tamper('setSkill("怪物/怪物1攻击", 16,', 'setSkill("怪物/怪物1攻击", 16, 0,')),
+    ).toThrow('13 个参数')
+  })
+
+  it('同一个字段被赋值两次 → 抛，而不是取第一个', () => {
+    expect(() => parseEnemySource(tamper('this.hp=250;', 'this.hp=250;\r\n\t\tthis.hp=1;'))).toThrow(
+      '被赋值了 2 次',
+    )
+  })
+
+  it('两个 switch 的 case 名单对不上 → 抛', () => {
+    expect(() => parseEnemySource(tamper(/case "怪物2":\s*\r?\n\s*setSkill[\s\S]*?break;/, ''))).toThrow(
+      '名单对不上',
+    )
+  })
+
+  /**
+   * 用 UTF-8 读 GBK 源码是这一类里最阴的一种：中文全变乱码，而
+   * `case "([^"]+)"` 照样匹配得上（引号与数字都是 ASCII），于是解析器很容易
+   * 解出 25 个名字全是乱码的 case，然后逐行对比一条都跑不到 —— 空转着通过。
+   *
+   * 这里拦住它的是**切段用的那两个界标本身就是中文注释**（`//载入图片` /
+   * `//做出动作`）：乱码之后找不到结尾，当场抛。实测的报错就是下面这句 ——
+   * 头一版这条用例写的是"解得出来但名字对不上"，跑出来才发现更早一道门就拦住了。
+   */
+  it('UTF-8 读 GBK 源码 → 抛，而不是解出一表乱码名字', () => {
+    expect(() => parseEnemySource(new TextDecoder('utf-8').decode(raw))).toThrow(
+      '找不到 initial(…) 的结尾',
+    )
   })
 })
