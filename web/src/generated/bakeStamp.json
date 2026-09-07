@@ -1,11 +1,12 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "0f7466679d8652db73ff61477df388d37eddc7e05bf6f00235477077cb7cd7da",
+    "web/scripts/bake.ts": "157cdb510c785b573fd8b99b95f67741cc28e403fdcbbf5a948426c0cbead256",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
-    "web/src/assets/battleAssets.ts": "5fa8c288d4ec38912da448ca8b1e6cfe461351bdbd62bd4272f1a6fb16039fe0",
+    "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
     "web/src/assets/ids.ts": "e9702cab8c44023cb95a7a6d090aa037c81cce84fdb14ec7e4b5d32f1db6b9a7",
     "web/src/assets/knownMissing.ts": "38e78118acacd0c676a82b159b3410e6698ffab10d88155257dc9a3d087ca3f5",
+    "web/src/assets/listFiles.ts": "fb1c2ddfb2d2834afbcd527b014bdb42e8e246182aa39f6b66b99a93b0698dec",
     "web/src/assets/path.ts": "fd7bca3604aa4326356af9dce184108035bfef2606238377ebe498c440229077",
     "web/src/assets/sceneAssets.ts": "39b03006ebf09d27b466217cf26f089baee67ecc554e5f4a49b16de480c79952",
     "web/src/data/bakeScript.ts": "5a01d7beb3fbfa131b8f028345d403649eb191571a4ef45adcb4efee110dced4",

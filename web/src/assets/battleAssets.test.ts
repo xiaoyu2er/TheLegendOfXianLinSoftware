@@ -1,11 +1,13 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import manifest from '../generated/assets.json'
 import deferred from '../generated/battleAnimations.json'
 import { bakeScript } from '../data/bakeScript'
 import { scanSceneAssets } from './sceneAssets'
+import { listFiles } from './listFiles'
+import { resetDeferredBattleCache, resolveDeferredBattleAsset } from './deferredBattle'
 import {
   BUNDLED_DIR,
   DEFERRED_PUBLIC_DIR,
@@ -154,6 +156,25 @@ describe('打包边界', () => {
     )
   })
 
+  it('两个包合起来没有两张图落到同一个产物路径上', () => {
+    // `battleProductPath` 把 `.png` 与 `.jpg` 一律换成 `.webp`，所以同一个
+    // 目录下的 `1.png` 与 `1.jpg` 会写到同一个 `1.webp` 上，**后写的静静盖掉
+    // 前一张**。今天仓库里一对都没有，所以烘焙器里那条守卫平时不响 —— 而
+    // "不响"和"撞了却没查"长得一样。这一条从素材源头把分母摆出来：
+    // 2405 个源文件必须对应 2405 个互异的产物路径。
+    const products = imageFiles().map((r) => battleProductPath(r))
+    expect(products.length).toBeGreaterThan(0)
+    const seen = new Map<string, string>()
+    const clashes: string[] = []
+    imageFiles().forEach((relative, i) => {
+      const product = products[i] as string
+      const owner = seen.get(product)
+      if (owner !== undefined) clashes.push(`${owner} 与 ${relative} 都写到 ${product}`)
+      else seen.set(product, relative)
+    })
+    expect(clashes).toEqual([])
+  })
+
   it('版本号跟着产物走，URL 拼出来是可以直接取的', () => {
     expect(DEFERRED.version).toMatch(/^[0-9a-f]{16}$/)
     const [id, product] = Object.entries(DEFERRED.files)[0] as [string, string]
@@ -165,6 +186,34 @@ describe('打包边界', () => {
     expect(decodeURI(url.slice(2).split('?')[0] as string)).toBe(product)
     expect(existsSync(resolve(PUBLIC_ROOT, product))).toBe(true)
     expect(id.startsWith('battle:')).toBe(true)
+  })
+})
+
+describe('运行时取图', () => {
+  beforeEach(() => {
+    // 名单缓存的是 Promise，跨用例留着会让"第二次调用其实没重新加载"这件事
+    // 藏起来。
+    resetDeferredBattleCache()
+  })
+
+  it('按需素材查得出 URL，且指向真有产物的那个文件', async () => {
+    const [id, product] = Object.entries(DEFERRED.files)[0] as [string, string]
+    const url = await resolveDeferredBattleAsset(id)
+    expect(url).toContain(encodeURI(product))
+    expect(url).toContain(`?v=${DEFERRED.version}`)
+    expect(existsSync(resolve(PUBLIC_ROOT, product))).toBe(true)
+  })
+
+  it('名单外的 ID 是抛，不是静静返回一个取不到的 URL', async () => {
+    // "查不到就不画"会让一次真正的烘焙遗漏表现成"某个技能偶尔没有动画"。
+    await expect(resolveDeferredBattleAsset('battle:技能动画/不存在的技能/1.png')).rejects.toThrow(
+      /按需战斗素材名单里没有/,
+    )
+  })
+
+  it('名单只加载一次，两次调用拿到同一份', async () => {
+    const [id] = Object.entries(DEFERRED.files)[0] as [string, string]
+    expect(await resolveDeferredBattleAsset(id)).toBe(await resolveDeferredBattleAsset(id))
   })
 })
 
@@ -222,14 +271,3 @@ describe('路径规范化', () => {
     expect(battleProductPath('按钮图/击1.png')).toBe(`${BUNDLED_DIR}/按钮图/击1.webp`)
   })
 })
-
-/** 目录下的全部文件，相对 `root` 的正斜杠路径。 */
-function listFiles(root: string, prefix = ''): string[] {
-  const out: string[] = []
-  for (const name of readdirSync(resolve(root, prefix))) {
-    const relative = prefix === '' ? name : `${prefix}/${name}`
-    if (statSync(resolve(root, relative)).isDirectory()) out.push(...listFiles(root, relative))
-    else out.push(relative)
-  }
-  return out
-}

@@ -43,6 +43,7 @@ import {
   roleAssetId,
 } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
+import { listFiles } from '../src/assets/listFiles'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
@@ -359,13 +360,13 @@ function main(): void {
 function bakeBattleImages(
   scenes: readonly SceneScript[],
   manifest: Record<string, string>,
-): { bundled: number; bundledBytes: number; deferred: number; deferredBytes: number } {
+): { bundled: number; bundledBytes: number } {
   // 每次全量重来，与 ASSETS_OUT 同一个理由：留着上一轮的产物会让"删掉一个
   // 素材"表现为"什么都没发生"。
   const publicDeferred = resolve(PUBLIC_OUT, DEFERRED_PUBLIC_DIR)
   rmSync(publicDeferred, { recursive: true, force: true })
 
-  const relatives = listFilesRecursively(IMAGES).sort()
+  const relatives = listFiles(IMAGES).sort()
   if (relatives.length === 0) {
     // "一个文件都没扫到"与"全烘完了"在产物上长得一模一样：两边都是零个差异。
     console.error(`${IMAGES} 下一个文件都没有 —— 战斗素材的分母是从这里现扫的`)
@@ -383,10 +384,32 @@ function bakeBattleImages(
   let deferred = 0
   let deferredBytes = 0
 
+  // **两个包共用一张"谁占了哪个产物路径"的表**，用来查撞车。
+  //
+  // 撞车是真会发生的：源里既有 `.png` 也有 `.jpg`（`背景动画` 那 753 张全是
+  // jpg），而产物一律是 `.webp` —— 同一个目录下的 `x.png` 与 `x.jpg` 会写到
+  // 同一个 `x.webp` 上，后写的那张**静静盖掉**前一张。今天仓库里一对都没有
+  // （实测），所以这条守卫平时不响；但它不响的样子和"撞了却没查"一模一样，
+  // 而后者的表现是画面上某一帧换了张图。
+  //
+  // 判撞车不能只看 `manifest`：按需那一半根本不进 `manifest`，只看它等于对
+  // 1770 张里的撞车视而不见。也不再逐条 `Object.entries().find` —— 那是
+  // 2000 多次 O(n) 扫描。
+  const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+  const claim = (product: string, id: string): void => {
+    const owner = claimed.get(product)
+    if (owner !== undefined) {
+      console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
+      process.exit(1)
+    }
+    claimed.set(product, id)
+  }
+
   for (const relative of relatives) {
     const id = battleAssetId(`${IMAGE_ROOT}/${relative}`)
     const product = battleProductPath(relative)
     const source = resolve(IMAGES, relative)
+    claim(product, id)
     if (isDeferredBattleAsset(relative)) {
       const destination = resolve(publicDeferred, product.slice(DEFERRED_PUBLIC_DIR.length + 1))
       deferredBytes += toWebp(source, destination)
@@ -394,13 +417,6 @@ function bakeBattleImages(
       version.update(product).update('\0').update(readFileSync(destination))
       deferred++
       continue
-    }
-    // 与 NPC 那一层同一条守卫：两个 ID 落到同一个产物上，说明 ID 的拼法把两条
-    // 素材压成了一条 —— 画错图的成因，而且悄无声息。
-    const clash = Object.entries(manifest).find(([, r]) => r === product)
-    if (clash) {
-      console.error(`资产 ${id} 与 ${clash[0]} 都要写到 ${product}`)
-      process.exit(1)
     }
     manifest[id] = product
     bundledBytes += toWebp(source, resolve(ASSETS_OUT, product))
@@ -436,19 +452,7 @@ function bakeBattleImages(
     `战斗素材 ${relatives.length} 张 → 常用 ${bundled} 张进 ${BUNDLED_DIR}/（${kb(bundledBytes)}）` +
       `、${DEFERRED_TOP_DIRS.join(' / ')} 共 ${deferred} 张按需加载进 public/${DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
   )
-  return { bundled, bundledBytes, deferred, deferredBytes }
-}
-
-/** 目录下的全部文件，相对 `root` 的正斜杠路径。 */
-function listFilesRecursively(root: string, prefix = ''): string[] {
-  const out: string[] = []
-  for (const name of readdirSync(resolve(root, prefix))) {
-    const relative = prefix === '' ? name : `${prefix}/${name}`
-    if (statSync(resolve(root, relative)).isDirectory()) {
-      out.push(...listFilesRecursively(root, relative))
-    } else out.push(relative)
-  }
-  return out
+  return { bundled, bundledBytes }
 }
 
 /**

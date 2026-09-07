@@ -84,18 +84,13 @@ export function battleAssetId(imagePath: string): AssetId {
 }
 
 /** 同上，但返回**相对 `image/` 的路径**（正斜杠）。 */
-export function battleRelativePath(imagePath: string): string {
+function battleRelativePath(imagePath: string): string {
   const normalized = normalizePath(imagePath)
   const prefix = `${IMAGE_ROOT}/`
   if (!normalized.startsWith(prefix)) {
     throw new Error(`战斗素材路径要以 ${prefix} 开头，收到的是 ${JSON.stringify(imagePath)}`)
   }
   return normalized.slice(prefix.length)
-}
-
-/** 逻辑 ID → 相对 `image/` 的路径；不是战斗素材的 ID 返回 `null`。 */
-export function battleIdToRelativePath(id: AssetId): string | null {
-  return id.startsWith(ID_PREFIX) ? id.slice(ID_PREFIX.length) : null
 }
 
 /**

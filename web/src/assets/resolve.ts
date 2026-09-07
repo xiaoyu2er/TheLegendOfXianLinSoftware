@@ -26,8 +26,12 @@ export function resolveAsset(id: AssetId): string {
   if (relative === undefined) {
     // 报同前缀的那几条，不是整张表：战斗素材进来之后表里有两千多条，全喷出来
     // 的报错没人读得完，而读不完的报错等于没有报错。
-    const prefix = id.slice(0, id.indexOf(':') + 1)
-    const siblings = Object.keys(manifest).filter((k) => k.startsWith(prefix))
+    // 没有冒号就没有前缀可比 —— 那时 `slice(0, 0)` 是空串，`startsWith('')`
+    // 对每一条都为真，"同前缀的有 1232 条"会把整张表当成兄弟报出来，看起来
+    // 像"这一类烘了一大堆"，而真相是这个 ID 根本不合规。
+    const colon = id.indexOf(':')
+    const siblings =
+      colon < 0 ? [] : Object.keys(manifest).filter((k) => k.startsWith(id.slice(0, colon + 1)))
     throw new Error(
       `映射表里没有资产 ${id}；同前缀的有 ${siblings.length} 条` +
         `（如 ${siblings.slice(0, 5).join('、') || '一条都没有'}），全表 ${Object.keys(manifest).length} 条。` +
