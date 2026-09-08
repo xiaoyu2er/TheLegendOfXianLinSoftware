@@ -232,7 +232,11 @@ public final class ExportTrace {
      * 而回放端要到几步之后才在别的地方失败 —— 又是一次"失败长得像成功"。
      * 这里只校形状，不校名单：名单维护在实现方，导出器不替它记。
      */
-    private static String requireKind(TraceDriver driver) {
+    // 包内可见（不是 private）：tools/test 下的 RequireKindProbe 要够得着它。
+    // 这个校验今天在真实导出里一次都走不到 —— 四支驱动器的 kind() 全是写死的
+    // 合法字面量 —— 所以它的红只可能来自测试，而它守的正是「将来新增一支驱动器
+    // 报了个坏名字」。见 docs/java-side-test-gap.md 缺口表第 10 行。
+    static String requireKind(TraceDriver driver) {
         String kind = driver.kind();
         if (kind == null || !kind.matches("[a-z][a-z0-9-]*")) {
             die(driver.getClass().getSimpleName() + ".kind() 返回了 "
