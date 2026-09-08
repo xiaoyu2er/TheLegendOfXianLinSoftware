@@ -20,6 +20,15 @@ import {
   toNarratageDraft,
 } from './narratage'
 import { exitTableOf } from './exit'
+import {
+  advancesScript,
+  checkBattle0,
+  createFight,
+  fromFightDraft,
+  startBattle1,
+  toFightDraft,
+} from './fight'
+import type { BattleInfo, FightDraft } from './fight'
 import { checkNpcStop, createNpcs, fromNpcDraft, tickNpcTimers, toNpcDraft } from './npc'
 import {
   ROLE_TIMER_MS,
@@ -123,6 +132,12 @@ export function initiate(prev: World | null, scene: SceneScript): World {
     nextScript: scene.nextScript ?? prev?.nextScript ?? null,
     // ExitEvent 跟着 initiation 一起重建，它记的那个进度也就跟着回到 0。
     savedOrder: 0,
+    // FightEvent 同样是 initiation 里 new 出来的，所以 battle1Over 与
+    // countOfBattle1 每换一个场景都回到起点（xl-rh9.17）。
+    fight: createFight(scene),
+    // 只亮一拍的输出，任何一个新建的世界里都是空的。
+    battleRequest: null,
+    showing: prev?.showing ?? true,
   }
 }
 
@@ -178,24 +193,55 @@ function carryDialogue(prev: World | null, script: DialogueScript): DialogueStat
  * `walk.stop()`），钉死次序只是不留"万一"。
  *
  * `input` 是本 tick 收到的输入事件，按到达顺序（见 `applyInput`）。
+ *
+ * `random` 是 `Math.random()` 的替身，**只有计步战斗挑场次那一处**读它
+ * （`FightEvent.startBattle0`）。做成入参是为了让"走到第 30 格起战斗"这件事
+ * 能被断言：默认值就是 `Math.random`，所以生产路径一个字都不变。
  */
 export function step(
   world: World,
   input: readonly InputEvent[],
   dtMs: number,
   scenes: SceneSource = missingSceneSource,
+  random: () => number = Math.random,
 ): World {
   const now = world.timeMs
   const d = toDraft(world.role)
-  // NPC 的格子坐标在主角的定时器跑完之前是冻住的：它们这一 tick 还没动。
-  const tiles: readonly TilePos[] = world.npcs
   let npcs = world.npcs.map(toNpcDraft)
   let dlg = toDialogueDraft(world.dialogue)
   let nar = toNarratageDraft(world.narratage)
+  let fight = toFightDraft(world.fight)
   let base = world
-  const script = world.script
+  /** 这一拍起的那场战斗（`World.battleRequest`）。一拍最多起一场。 */
+  let battleRequest: BattleInfo | null = null
 
-  for (const event of input) applyInput(world, d, dlg, event, now)
+  /**
+   * `FightEvent.fight()` 开头那两句跨世界的动作：**打赢会推进剧情的那几场**
+   * 先 `exitEvent.nextScript()` 把整个场景换掉，然后 `role.setEvent(true)`。
+   * 换场景之后四份草稿全部作废，跟第 4 步走出门那一处是同一套。
+   */
+  const requestBattle = (info: BattleInfo): void => {
+    battleRequest = info
+    if (advancesScript(info)) {
+      base = nextScriptAdvance(base, scenes)
+      Object.assign(d, toDraft(base.role))
+      npcs = base.npcs.map(toNpcDraft)
+      dlg = toDialogueDraft(base.dialogue)
+      nar = toNarratageDraft(base.narratage)
+      fight = toFightDraft(base.fight)
+    }
+    // `scene.role.setEvent(true)` —— 起战斗就松手，回来时主角不会接着走。
+    d.canStop = true
+  }
+
+  for (const event of input) {
+    const info = applyInput(base, d, dlg, fight, event, now)
+    if (info !== null) requestBattle(info)
+  }
+
+  const script = base.script
+  // NPC 的格子坐标在主角的定时器跑完之前是冻住的：它们这一 tick 还没动。
+  const tiles: readonly TilePos[] = base.npcs
 
   fireDue(d.run, now, ROLE_TIMER_MS, () => tickRun(d, world.collision, tiles), '跑步定时器')
   fireDue(d.walk, now, ROLE_TIMER_MS, () => tickWalk(d, world.collision, tiles), '走路定时器')
@@ -210,9 +256,11 @@ export function step(
   let ry = roleTile(d.py)
   // 1. 检查旁白。它在第 2/3/5 步之前，所以**起旁白的那一 tick 就已经把后面
   //    三道门关上了**——真值第 0 tick 记的就是 active。
-  checkNarratage(nar, world.isScript, now)
+  // 第 1 步比第 2/3/5 步多一个条件：`currentPanel.equals(scenePanel)`。
+  // 战斗期间场景那条线程照跑，但旁白不查（xl-rh9.17）。
+  checkNarratage(nar, base.showing && base.isScript, now)
   // 2. 检查自动的对话（进场就播的那一段，触发码写着 -1）
-  if (storyGateOpen(world, dlg, nar) && checkAutoDialogue(dlg, script, now)) {
+  if (storyGateOpen(base, dlg, nar) && checkAutoDialogue(dlg, script, now)) {
     // `startSpeak` 里那句 `scene.role.setEvent(true)`：开口就松手。
     d.canStop = true
   }
@@ -222,13 +270,14 @@ export function step(
   //    第 5 步之后的每一件事都已经发生在新场景里了。所以这里换掉 `base` 与四份
   //    草稿，下面第 5 步读的就是新世界 —— 不换的话，"走出门的那一 tick"会拿旧
   //    场景的对话数据再判一次，而那一 tick 在真值里看得见。
-  const exited = checkExit(base, rx, ry, dlg, scenes)
+  const exited = checkExit(base, fight, rx, ry, dlg, scenes)
   if (exited !== null) {
     base = exited
     Object.assign(d, toDraft(base.role))
     npcs = base.npcs.map(toNpcDraft)
     dlg = toDialogueDraft(base.dialogue)
     nar = toNarratageDraft(base.narratage)
+    fight = toFightDraft(base.fight)
     // 第 5 步读的是**换过场景之后**的主角坐标：原版 `checkLocationDialogue`
     // 现问 `scene.role.getX()`，而那时 role 已经是新场景里站在入口上的那一个。
     rx = roleTile(d.px)
@@ -239,6 +288,17 @@ export function step(
     d.canStop = true
   }
 
+  // 6. 检查宝箱 —— 另一张票（M3 的装备）。
+  // 7. 检查计步战斗（xl-rh9.17）。**这一拍已经起过一场就不再查**：原版一拍
+  //    里 `startBattle1()` 与 `checkBattle0()` 确实都可能跑到，但两者都调
+  //    `battlePanel.initial(...)`，后一场会把前一场整个盖掉，而面板只切一次。
+  //    今天到不了（有 `@` 的 12 个脚本与有 `battle0` 的 4 个场景不相交），
+  //    所以这不是"照抄"，是**一条明写出来的取舍**：起两场只能留一场。
+  if (fight.battle0 !== null && battleRequest === null) {
+    const info = checkBattle0(fight, rx, ry, random)
+    if (info !== null) requestBattle(info)
+  }
+
   return {
     ...base,
     timeMs: now + dtMs,
@@ -246,7 +306,31 @@ export function step(
     npcs: npcs.map(fromNpcDraft),
     dialogue: fromDialogueDraft(dlg),
     narratage: fromNarratageDraft(nar),
+    fight: fromFightDraft(fight),
+    battleRequest,
   }
+}
+
+/**
+ * `ExitEvent.nextScript()`：剧情往前推一段。
+ *
+ * 四句照抄：`currentScript = nextScript` → `initiation(nextScript[2])` →
+ * `isScript = true` → 主角站到 `currentScript[0]`（`"66/15"` 那种写法）。
+ *
+ * 出口那一路（`applyExit` 的分支 1）做的是同一件事，但它是**先换场景再赋
+ * currentScript**，落点也一样。两处没有合并：原版是两个方法，而合并之后
+ * 「哪一处先赋值」这个差别就再也读不出来了。
+ */
+function nextScriptAdvance(world: World, scenes: SceneSource): World {
+  const ns = world.nextScript
+  if (ns === null) {
+    throw new Error(
+      `${world.scene} 里这一场要推进剧情（FightEvent.fight 那串一号位判断），` +
+        '可 nextScript 是空的 —— 原版这里是空指针。',
+    )
+  }
+  const next = { ...enter(world, ns[2], scenes, 'NextScript'), currentScript: ns, isScript: true }
+  return atTile(next, parseEntrance(ns[0], world, 'NextScript'))
 }
 
 /**
@@ -289,13 +373,17 @@ const missingSceneSource: SceneSource = () => undefined
  */
 function checkExit(
   world: World,
+  fight: FightDraft,
   x: number,
   y: number,
   dlg: ReturnType<typeof toDialogueDraft>,
   scenes: SceneSource,
 ): World | null {
   const table = world.exit
-  if (table === null || table.blockedByBattle) return null
+  // 剧情固定战不止一场的场景，要全打完（`battle1Over`）才轮到查出口。
+  // 读的是**这一拍的草稿**：同一拍里刚按完最后一段对话把它置真的话，
+  // 出口这一拍就已经开了 —— 原版的 `startBattle1()` 也在第 4 步之前。
+  if (table === null || (table.needsBattle1Over && !fight.battle1Over)) return null
   for (let i = 0; i < table.exits.length; i++) {
     for (const tile of table.exits[i]!) {
       if (tile.x === x && tile.y === y) return applyExit(world, i, dlg, scenes)
@@ -346,11 +434,16 @@ function applyExit(
 const EMPTY_SCRIPT: readonly string[] = [];
 
 /** 取下一个场景的数据并 `initiation` 进去。取不到是硬失败，理由见 `SceneSource`。 */
-function enter(world: World, file: string | undefined, scenes: SceneSource, i: number): World {
+function enter(
+  world: World,
+  file: string | undefined,
+  scenes: SceneSource,
+  where: number | string,
+): World {
   const scene = file === undefined ? undefined : scenes(file)
   if (scene === undefined) {
     throw new Error(
-      `${world.scene} 的第 ${i} 个出口要进 ${String(file)}，但这个场景没准备好；` +
+      `${world.scene} 的第 ${where} 个出口要进 ${String(file)}，但这个场景没准备好；` +
         `调用方要先把本场景所有出口的目标取到（见 state/step.ts 的 SceneSource）。`,
     )
   }
@@ -363,13 +456,13 @@ function atTile(world: World, tile: TilePos): World {
 }
 
 /** `currentScript[0]` 是 `"66/15"` 这种写法（`ExitEvent` 里那两句 `split("/")`）。 */
-function parseEntrance(spec: string | undefined, world: World, i: number): TilePos {
+function parseEntrance(spec: string | undefined, world: World, where: number | string): TilePos {
   const parts = (spec ?? '').split('/')
   const x = Number(parts[0])
   const y = Number(parts[1])
   if (parts.length !== 2 || !Number.isInteger(x) || !Number.isInteger(y)) {
     throw new Error(
-      `${world.scene} 的第 ${i} 个出口要按剧情推进，但 currentScript[0] 不是 "x/y"：${String(spec)}`,
+      `${world.scene} 的第 ${where} 个出口要按剧情推进，但 currentScript[0] 不是 "x/y"：${String(spec)}`,
     )
   }
   return { x, y }
@@ -427,26 +520,38 @@ function applyInput(
   world: World,
   d: ReturnType<typeof toDraft>,
   dlg: ReturnType<typeof toDialogueDraft>,
+  fight: FightDraft,
   event: InputEvent,
   now: number,
-): void {
+): BattleInfo | null {
   if (event.e === 'release') {
     // `ScenePanel.keyReleased` 的 switch 只有四个方向键的分支。
     if (isArrowKey(event.k)) d.canStop = true
-    return
+    return null
   }
-  if (world.narratage.active) return
+  if (world.narratage.active) return null
 
   // 跳过逐字打印。**原版没有这个键**，见 `dialogue.ts` 的 `skipPrinting`。
   if (event.k === 'skip') {
     skipPrinting(dlg, now)
-    return
+    return null
   }
 
   const space = event.k === 'space'
   if (dlg.speaking) {
     if (space) pressSpace(dlg, world.script, world.npcs, now)
-    return
+    // `DialogueEvent.keyPressed` 那三句：**这一按把一段对话按完了**
+    // （`isSpeaking` 由真转假）而正文里有过 `@`（`dialogueFight`），
+    // 就在这里起剧情固定战，并把标志清掉。
+    //
+    // 判据是"speaking 由真转假"，不是"groupOver 为真" —— `groupOver` 在
+    // 最后一句打完的那一按之前就已经是真的了，拿它当条件会**早一按**起战斗，
+    // 而早的那一按画面上什么都看不出来（对话框还开着）。
+    if (dlg.fight && !dlg.speaking) {
+      dlg.fight = false
+      return startBattle1(fight)
+    }
+    return null
   }
 
   // 空格先试主线对话。`reader.getDialogueCode() != null` 那道门 = `code` 非空。
@@ -470,7 +575,7 @@ function applyInput(
 
   if (dlg.oral) {
     if (space) pressSpace(dlg, world.script, world.npcs, now)
-    return
+    return null
   }
   if (isArrowKey(event.k)) {
     // 原版 `ScenePanel.keyPressed`：先 `checkRun()`（只做 setRun(true)），
@@ -478,9 +583,10 @@ function applyInput(
     // 松开控制键什么也不做——跑步是在跑步定时器停下时自己清掉的。
     if (event.ctrl) d.running = true
     pressDirection(d, event.k, now)
-    return
+    return null
   }
   if (space && !started) {
     checkNpcOral(dlg, world.script, world.npcs, roleTile(d.px), roleTile(d.py), now)
   }
+  return null
 }

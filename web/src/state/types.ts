@@ -15,6 +15,7 @@
 
 import type { DialogueScript, DialogueState } from './dialogue'
 import type { ExitTable } from './exit'
+import type { BattleInfo, FightState } from './fight'
 import type { NarratageState } from './narratage'
 import type { NpcState } from './npc'
 
@@ -187,6 +188,34 @@ export interface World {
    * 所以它的初值恒为 0。
    */
   readonly savedOrder: number
+  /**
+   * `ScenePanel.fightEvent`（xl-rh9.17）：计步战斗与剧情固定战的触发器。
+   * 跟 `ExitEvent` 一样**每次 `initiation` 都重建**，所以 `battle1Over` 与
+   * `countOfBattle1` 是每个场景各一份的。
+   */
+  readonly fight: FightState
+  /**
+   * **这一拍要起一场战斗**（xl-rh9.17）。`null` = 这一拍不起。
+   *
+   * 它是 `step()` 的一个**输出**，不是常驻状态：起战斗的那一拍是哪一拍在
+   * 原版里看得见（`switchTo("battle")` 就发生在那一拍里），所以把它做成一个
+   * 只亮一拍的字段，而不是让调用方去比较前后两个世界猜出来。
+   *
+   * 元组是 `Fight` 段那一行，原样递出去 —— 解它、建怪、切面板都在
+   * `game/session.ts`。
+   */
+  readonly battleRequest: BattleInfo | null
+  /**
+   * `GameLauncher.currentPanel == scenePanel`（xl-rh9.17）。
+   *
+   * **场景那条线程在战斗期间照跑不误**：`ScenePanel.run()` 是个
+   * `while(true)`，切到战斗面板并不会停下它。唯一读这件事的是第 1 步
+   * 检查旁白那道 `if`，所以这一层也只在那里读。
+   *
+   * 默认 `true`（原版开机后 `switchTo("scene")` 一进场就是它）；回放真值时
+   * 也恒为 `true` —— 导出器驱动的就是场景面板本身。
+   */
+  readonly showing: boolean
 }
 
 /** 世界声明此刻该放的背景音乐。见 `World.audio`。 */

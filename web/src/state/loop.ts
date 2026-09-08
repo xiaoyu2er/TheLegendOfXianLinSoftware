@@ -64,6 +64,7 @@ export function advance(
   arriving: readonly InputEvent[],
   elapsedMs: number,
   scenes?: SceneSource,
+  random?: () => number,
 ): Ticker {
   const queue = arriving.length === 0 ? ticker.pending : [...ticker.pending, ...arriving]
   const budget = ticker.carryMs + Math.max(0, elapsedMs) * ticker.timeScale
@@ -73,10 +74,20 @@ export function advance(
   }
 
   let world = ticker.world
+  let ran = 0
   for (let i = 0; i < ticks; i++) {
-    world = step(world, i === 0 ? queue : EMPTY, TICK_MS, scenes)
+    world = step(world, i === 0 ? queue : EMPTY, TICK_MS, scenes, random)
+    ran++
+    // **起战斗的那一拍就停下这一批**（xl-rh9.17）。`battleRequest` 只亮一拍，
+    // 而一次 pump 常常要补跑好几拍 —— 不停的话，第 3 拍起的那场架会被第 4 拍
+    // 的世界（`battleRequest: null`）覆盖掉，表现是"走到第 30 格什么也没发生"，
+    // 和"还没走够"长得一模一样。
+    //
+    // 没跑的那几拍**留在 carryMs 里**，下一次 pump 接着跑，所以
+    // `loop.test.ts` 那条"切成几段喂进来结果都一样"的不变量照旧成立。
+    if (world.battleRequest !== null) break
   }
-  return { ...ticker, world, carryMs: budget - ticks * TICK_MS, pending: [] }
+  return { ...ticker, world, carryMs: budget - ran * TICK_MS, pending: [] }
 }
 
 const EMPTY: readonly InputEvent[] = []

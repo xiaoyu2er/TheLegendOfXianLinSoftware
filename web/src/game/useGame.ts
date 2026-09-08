@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { createBgmPlayer } from '../audio/bgmPlayer'
+import { battleTextureIds } from '../battle/render/assets'
+import type { BattleRenderer } from '../battle/render/battleRenderer'
+import { battleDrawList } from '../battle/render/drawList'
+import type { BattleInput } from '../battle/step'
+import type { BattleWorld } from '../battle/types'
 import { exitsReady, loadedSceneSource, prepareExits, rememberScene } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
 import type { SceneRenderer } from '../scene/sceneRenderer'
-import { advance, createTicker } from '../state/loop'
-import type { Ticker } from '../state/loop'
 import { TICK_MS, createWorld } from '../state/step'
 import type { DialogueState } from '../state/dialogue'
 import type { InputEvent, World } from '../state/types'
+import { battleClick } from './battleInput'
+import { enemyNamesOf, enemySpriteSize, prepareEnemySprites, spritesReady } from './enemySprites'
 import { toInputEvent } from './keyboard'
+import { advanceSession, createSession, currentBgm } from './session'
+import type { Panel, Session } from './session'
 
 /**
  * 把状态层接到键盘与渲染器上。**这里没有一行游戏逻辑**——它只做三件事：
@@ -39,6 +46,18 @@ import { toInputEvent } from './keyboard'
 export interface GameView {
   /** 对话框那一层的状态，`null` = 此刻没有对话。 */
   readonly dialogue: DialogueState | null
+  /** 现在显示的是哪个面板（xl-rh9.17）。 */
+  readonly panel: Panel
+  /** 战斗贴图还在载入 —— 这几十毫秒里战斗那张画布是空的。 */
+  readonly battleLoading: boolean
+  /**
+   * 舞台**逻辑坐标**里的一次点击。战斗面板才用得到；别的面板收下就丢掉。
+   *
+   * 换算（客户端坐标 → 1024×640）由调用方做：只有它知道画布被缩放了多少
+   * （见 `stage/Stage.tsx`）。这一层收的一律是逻辑坐标，与真值里的坐标同一
+   * 套 —— 中间多一次换算，就多一处"点得中点不中"说不清的地方。
+   */
+  readonly click: (x: number, y: number) => void
   /**
    * 世界此刻在哪个场景（注册表名，如 `大地图`）。
    *
@@ -49,13 +68,24 @@ export interface GameView {
   readonly scene: string | null
 }
 
-export function useGame(renderer: SceneRenderer | null, sceneName: string): GameView {
-  const tickerRef = useRef<Ticker | null>(null)
+export function useGame(
+  renderer: SceneRenderer | null,
+  sceneName: string,
+  battleRenderer: BattleRenderer | null = null,
+): GameView {
+  const sessionRef = useRef<Session | null>(null)
   const queueRef = useRef<InputEvent[]>([])
+  const clicksRef = useRef<BattleInput[]>([])
   const [dialogue, setDialogue] = useState<DialogueState | null>(null)
   const [scene, setScene] = useState<string | null>(null)
+  const [panel, setPanel] = useState<Panel>('scene')
+  const [battleLoading, setBattleLoading] = useState(false)
   const signatureRef = useRef<string | null>(null)
   const sceneRef = useRef<string | null>(null)
+  const panelRef = useRef<Panel>('scene')
+  /** 已经载过贴图的那个战斗世界（按引用比）。换一场就要重载。 */
+  const loadedBattleRef = useRef<BattleWorld | null>(null)
+  const battleLoadingRef = useRef(false)
 
   // 换场景 = 换一个世界。主角回到脚本里的出生格。
   //
@@ -64,20 +94,33 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): Game
   // 必须当场清掉——留着它，切场景的这几十毫秒里主角会在旧地图上继续走。
   useEffect(() => {
     let disposed = false
-    tickerRef.current = null
+    sessionRef.current = null
     queueRef.current = []
+    clicksRef.current = []
     signatureRef.current = null
     sceneRef.current = null
+    panelRef.current = 'scene'
+    loadedBattleRef.current = null
+    battleLoadingRef.current = false
     setDialogue(null)
     setScene(null)
+    setPanel('scene')
+    setBattleLoading(false)
     void loadScene(sceneName).then(async (loaded) => {
       if (disposed) return
       rememberScene(sceneName, loaded)
       const world = createWorld(loaded)
       // 先把这个场景出口的目标取到手，走到门口才切得动（见 data/loadedScenes.ts）。
       await prepareExits(world)
+      // 怪物的出场图也要先量 —— `createBattle` 是同步的，见 `enemySprites.ts`。
+      await prepareEnemySprites(enemyNamesOf(loaded))
       if (disposed) return
-      tickerRef.current = createTicker(world)
+      sessionRef.current = createSession(world, {
+        scenes: loadedSceneSource,
+        sprite: enemySpriteSize,
+        // 原版 `FightEvent.startBattle0` 与 `calDamage` 用的就是它。
+        random: Math.random,
+      })
       sceneRef.current = sceneName
       setScene(sceneName)
     })
@@ -122,26 +165,55 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): Game
   useEffect(() => {
     if (!renderer) return
     let last = performance.now()
+    /** 一个场景要量哪几只怪 —— 按场景名记一份，不必每拍重扫脚本。 */
+    const nameCache = new Map<string, readonly string[]>()
+    const enemyNamesFor = (file: string): readonly string[] => {
+      const cached = nameCache.get(file)
+      if (cached) return cached
+      const scene = loadedSceneSource(file)
+      // 场景还没进过那张表就先当作"没有怪要量"：世界本身就是从那张表建的，
+      // 所以这个分支只在走出门的那一瞬间出现，下一拍就有了。
+      const names = scene === undefined ? EMPTY_NAMES : enemyNamesOf(scene)
+      if (scene !== undefined) nameCache.set(file, names)
+      return names
+    }
     const pump = () => {
-      const ticker = tickerRef.current
-      if (!ticker) return
+      const session = sessionRef.current
+      if (!session) return
       const now = performance.now()
       // 邻居还没取到手就先停一拍：出口切换是同步的，切不动只能是抛
       // （见 `state/step.ts` 的 `SceneSource`）。这里停的是几十毫秒，
       // 原版在 `initiation` 里读盘时停的也是这个。
-      if (!exitsReady(ticker.world)) {
-        void prepareExits(ticker.world)
+      if (!exitsReady(session.scene.world)) {
+        void prepareExits(session.scene.world)
+        last = now
+        return
+      }
+      // 怪物的出场图同理：`createBattle` 是同步的，量不到就只能抛。走出门
+      // 进了新场景之后要重量一批，所以这道门每一拍都在。
+      const names = enemyNamesFor(session.scene.world.scene)
+      if (!spritesReady(names)) {
+        void prepareEnemySprites(names)
         last = now
         return
       }
       const elapsed = now - last
       last = now
-      const input = queueRef.current
+      const input = { scene: queueRef.current, battle: clicksRef.current }
       queueRef.current = []
-      const next = advance(ticker, input, elapsed, loadedSceneSource)
-      tickerRef.current = next
-      bgmRef.current?.sync(next.world.audio.bgm)
-      const entered = next.world.scene.replace(/\.txt$/, '')
+      clicksRef.current = []
+      const next = advanceSession(session, input, elapsed)
+      sessionRef.current = next
+      bgmRef.current?.sync(currentBgm(next))
+      if (next.panel !== panelRef.current) {
+        panelRef.current = next.panel
+        setPanel(next.panel)
+      }
+      drawBattle(next)
+      // 战斗面板显示的时候场景那张画布看不见，画它是白费；而**世界照样在推**
+      // （原版那条线程没停），所以这里跳的只有绘制。
+      if (next.panel !== 'scene') return
+      const entered = next.scene.world.scene.replace(/\.txt$/, '')
       if (entered !== sceneRef.current) {
         // 走出门了。**这一帧不画**：渲染器手上还是上一个场景的地图与精灵，
         // 硬画会撞上它那道"这一帧有 13 个 NPC，而渲染器建了 2 个精灵"的校验。
@@ -149,18 +221,48 @@ export function useGame(renderer: SceneRenderer | null, sceneName: string): Game
         setScene(entered)
         return
       }
-      renderer.showWorld(next.world)
-      const signature = dialogueSignature(next.world)
+      renderer.showWorld(next.scene.world)
+      const signature = dialogueSignature(next.scene.world)
       if (signature !== signatureRef.current) {
         signatureRef.current = signature
-        setDialogue(next.world.dialogue)
+        setDialogue(next.scene.world.dialogue)
       }
     }
+
+    /**
+     * 战斗那张画布。**贴图要先载齐才画得动**（`BattleRenderer.load` 的合同），
+     * 而战斗世界是同步建出来的，所以有几十毫秒的空窗。空窗里不画 ——
+     * 画一半贴图的那一帧看起来像"素材掉了"，而它其实只是还没到。
+     */
+    function drawBattle(next: Session): void {
+      if (!battleRenderer || next.panel !== 'battle' || next.battle === null) return
+      const world = next.battle.world
+      if (loadedBattleRef.current !== world) {
+        loadedBattleRef.current = world
+        battleLoadingRef.current = true
+        setBattleLoading(true)
+        void battleRenderer.load(battleTextureIds(world)).then(() => {
+          if (loadedBattleRef.current !== world) return
+          battleLoadingRef.current = false
+          setBattleLoading(false)
+        })
+        return
+      }
+      if (battleLoadingRef.current) return
+      battleRenderer.draw(battleDrawList(world, next.battle.paint))
+    }
+
     const id = window.setInterval(pump, TICK_MS)
     return () => window.clearInterval(id)
-  }, [renderer])
+  }, [renderer, battleRenderer])
 
-  return { dialogue, scene }
+  const click = (x: number, y: number): void => {
+    const world = sessionRef.current?.battle?.world
+    if (!world || sessionRef.current?.panel !== 'battle') return
+    clicksRef.current.push(battleClick(world, x, y))
+  }
+
+  return { dialogue, scene, panel, battleLoading, click }
 }
 
 /**
@@ -192,3 +294,6 @@ function dialogueSignature(world: World): string {
     d.text.map((row) => row.map((c) => c ?? ' ').join('')).join('|'),
   ].join('\u0000')
 }
+
+/** 空名单的常量，省得每拍新建一个数组。 */
+const EMPTY_NAMES: readonly string[] = []

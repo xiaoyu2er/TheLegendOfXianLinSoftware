@@ -56,6 +56,13 @@ body {
   height: 100%;
 }
 
+/* 一个面板一张画布，同一时刻只显示一张（xl-rh9.17）。两张一起显示会上下
+   摞着——`.stage-canvas` 是 100% 高，第二张被推出视口。切换靠 `hidden`。 */
+.stage-panel {
+  width: 100%;
+  height: 100%;
+}
+
 /* 渲染器建的那张 canvas。位图恒为 1024×640，CSS 尺寸铺满舞台。 */
 .stage-canvas {
   display: block;

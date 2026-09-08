@@ -1,6 +1,15 @@
+import { normalizePath } from '../assets/path'
 import { JavaRandom } from '../game/javaRandom'
 import { victoryInformation } from './victory'
-import { ENEMY_SLOT_POS, HEROES, battleBgm, derive, enemySpec, expToLevelUp } from './units'
+import {
+  ENEMY_SLOT_POS,
+  HEROES,
+  battleBgm,
+  derive,
+  enemySpec,
+  expToLevelUp,
+  refreshValue,
+} from './units'
 import type { PartyKey } from './units'
 import { DRUGS } from './drugs'
 import {
@@ -53,7 +62,57 @@ export interface BattleConfig {
    * 2 颗变成 4 颗 —— 而多出来的那两颗一颗都点不到，看上去完全正常。
    */
   skillNumbers?: Readonly<Partial<Record<PartyKey, number>>> | undefined
+  /**
+   * **上一场留下的那几样**（xl-rh9.17）。不给就是"这是开机以来的第一场"，
+   * 也就是每一份行为真值的处境 —— 所以**不传它时这个函数一个字节都不变**。
+   *
+   * 原版没有这个参数，因为它根本不需要：`GameLauncher.zhangXiaoFan` 那三个
+   * 对象从开机活到关机，`BattlePanel.initial()` 只在末尾做一次"死过的人
+   * 复活、血是 0 的回到 10%"。这一层每场新建对象，于是那件事变成了显式的
+   * 一次搬运，见 `applyCarry`。
+   */
+  carry?: Readonly<Partial<Record<PartyKey, HeroCarry>>> | undefined
 }
+
+/**
+ * 跨战斗活着的那几样。
+ *
+ * **这是唯一一份清单**：`fakes/party.ts` 的 `PartyMemberState` 直接
+ * `extends` 它，只多一个 `level`。往这里加一样东西，那边跟着有。
+ */
+export interface HeroCarry {
+  exp: number
+  hp: number
+  mp: number
+  isDead: boolean
+  angryValue: number
+}
+
+/**
+ * 把上一场的结果搬到刚建好的这个人身上，然后跑 `BattlePanel.initial()`
+ * 末尾那个复活循环。
+ *
+ * 顺序要紧：先搬血再 `refreshValue()`（它会把 hp/mp 夹回上限 —— 升过级的人
+ * 上限涨了，夹不住；而没升级的人正好等于原值），最后才判复活。倒过来做的话
+ * 一个"上一场满血打赢"的人会被 10% 那一句改掉，而画面上只是"回合开始血少了
+ * 一大截"。
+ */
+function applyCarry(h: Hero, c: HeroCarry): void {
+  h.exp = c.exp
+  h.hp = c.hp
+  h.mp = c.mp
+  h.angryValue = c.angryValue
+  refreshValue(h)
+  // `for(Hero hero:heroes){ if(hero.wheatherDead()){ hero.setDead(false);
+  //   if(hero.getHp()==0) hero.setHp((int)(hero.getHpMax()*0.1)); } }`
+  if (c.isDead) {
+    h.isDead = false
+    if (h.hp === 0) h.hp = Math.trunc(h.hpMax * REVIVE_HP_RATIO)
+  }
+}
+
+/** `(int)(hero.getHpMax()*0.1)` —— 上一场死掉的人这一场从这里起。 */
+export const REVIVE_HP_RATIO = 0.1
 
 function state(): BattleState {
   return {
@@ -233,6 +292,11 @@ function makeEnemy(
 }
 
 export function createBattle(config: BattleConfig): BattleWorld {
+  // `BattlePanel.initial()` 的**第一句**：`s = Reader.normalizePath(s)`。
+  // `script/` 里有 3 行 Fight 数据写的是反斜杠（迷宫1 与剧情1，是烘焙管线
+  // 路径规范化的测试夹具，CLAUDE.md 明写不许"修"）。不规范化的表现是
+  // 背景图查不到、BGM 也查不到 —— 而查不到在这一层是**静悄悄的 null**。
+  const background = normalizePath(config.background)
   if (config.enemies.length !== 3) {
     throw new Error(`怪物槽位一律三个（空的写 null），实际 ${config.enemies.length} 个`)
   }
@@ -245,7 +309,10 @@ export function createBattle(config: BattleConfig): BattleWorld {
       // 出来的。默认一个值等于悄悄换一场仗打。
       throw new Error(`剧本没给 ${key} 的等级 —— 等级没有默认值（见 docs/trace-format.md）`)
     }
-    return makeHero(key, level)
+    const hero = makeHero(key, level)
+    const carry = config.carry?.[key]
+    if (carry !== undefined) applyCarry(hero, carry)
+    return hero
   }
   const zxf = build('zhang')
   const yj = build('yu')
@@ -285,8 +352,8 @@ export function createBattle(config: BattleConfig): BattleWorld {
     tick: 0,
     exitPanel: null,
     random: new JavaRandom(config.seed),
-    background: config.background,
-    bgm: battleBgm(config.background),
+    background,
+    bgm: battleBgm(background),
     currentRound: 0,
     currentPattern: 0,
     currentBeAttacked: 0,

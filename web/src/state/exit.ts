@@ -17,11 +17,15 @@ export interface ExitTable {
    * `ScenePanel.step()` 第 4 步那道门：`fightEvent.battle1` 不止一场时，
    * 要 `battle1Over` 才轮到查出口 —— 剧情固定战没打完就出不去。
    *
-   * **战斗是另一张票**，今天 `battle1Over` 恒为假，所以这里为真就等于这个
-   * 场景的出口全部关着。这是原版在同一时刻的状态（进场没打过），不是省略：
-   * 换成"照常放行"，那几个场景就会比原版多一条走得通的路。
+   * 这里只记**这道门存不存在**（`battle1 != null && size() > 1`，一个场景的
+   * 静态属性）；门开没开是 `world.fight.battle1Over`，逐拍会变，由
+   * `step.ts` 的第 4 步现读。
+   *
+   * ⚠️ xl-rh9.17 之前这个字段叫 `blockedByBattle`，而且**恒等于"关着"**——
+   * 那时没有任何东西能把 `battle1Over` 置真。两者的区别只有在剧情固定战真的
+   * 打完之后才看得见，所以改名是为了让"门存在"与"门关着"在读代码时分得开。
    */
-  readonly blockedByBattle: boolean
+  readonly needsBattle1Over: boolean
 }
 
 /**
@@ -43,7 +47,7 @@ export function exitTableOf(scene: SceneScript): ExitTable | null {
     )
   }
   return {
-    blockedByBattle: scene.battle1 !== null && scene.battle1.length > 1,
+    needsBattle1Over: scene.battle1 !== null && scene.battle1.length > 1,
     exits: scene.exits.map((group, i) => group.map((tile) => parseTile(tile, scene.script, i))),
     nextScene: [...nextScene],
     entrance: entrance.map((pair, i) => {

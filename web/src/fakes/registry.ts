@@ -45,6 +45,22 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
       '没有 Equipment 的属性加成与部位。',
     exports: ['addEqupment', 'equipmentCount', 'equipmentEntries', 'resetEquipmentPack'],
   },
+  party: {
+    owner: 'xl-6lo.1',
+    original: 'battle.ZhangXiaoFan / YuJie / LuXueQi 那三组静态字段',
+    fakeBecause:
+      '不读也不写 save/，初值是三个类的静态字段初值（1 / 3 / 1 级），刷新页面就回到开局；' +
+      '跨战斗只记等级 / 经验 / 血 / 灵力 / 死没死 / 怒气六样，' +
+      'isGetSkill、skillNumber、装备加成那些今天在 web 端还没有来源（M3 / M4）。',
+    exports: [
+      'getParty',
+      'partyLevels',
+      'rememberParty',
+      'expToNextLevel',
+      'resetParty',
+      'initialMember',
+    ],
+  },
   wallet: {
     owner: 'xl-knp.1',
     original: 'shop.Money',
