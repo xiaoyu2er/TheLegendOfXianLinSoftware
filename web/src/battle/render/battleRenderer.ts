@@ -6,7 +6,8 @@ import { resolveAsset } from '../../assets/resolve'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
 import { TEXT_FONT_STACK } from '../../textFont'
 import type { DrawOp, Rect } from './drawList'
-import { nearestBlitRuns } from './scaledBlit'
+import type { BlitRect } from './scaledBlit'
+import { scaledBlitPasses } from './scaledBlit'
 
 /**
  * 战斗层渲染器（Pixi）。**执行 `drawList` 那份清单，自己不做任何决定。**
@@ -184,13 +185,36 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   const scaledCache = new Map<string, Texture>()
 
   /**
+   * 开一张 canvas，把这些矩形逐个 `drawImage` 上去。
+   *
+   * `imageSmoothingEnabled=false` 是必须的：搬的段落要么是 1:1 的整段拷贝，
+   * 要么是"一个源像素铺满 length 个目标像素"，开着插值后者会被抹匀。
+   */
+  function blitOnto(
+    source: CanvasImageSource,
+    width: number,
+    height: number,
+    rects: readonly BlitRect[],
+  ): HTMLCanvasElement {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('取不到缩放贴图的 2D context')
+    ctx.imageSmoothingEnabled = false
+    for (const r of rects) {
+      ctx.drawImage(source, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
+    }
+    return canvas
+  }
+
+  /**
    * 按原版的采样表把一块源区域拼成目标尺寸的位图。**不经过 GPU 采样**，
    * 理由见文件头第 1 条与 `scaledBlit.ts`。
    *
-   * 两趟搬：先横着把每一列搬到位（源高不变），再竖着把每一行搬到位。两趟都是
-   * 整段拷贝或整段复制，`imageSmoothingEnabled=false` 之下不经过任何插值。
-   * 一趟一次 `drawImage` 的写法要 `dw*dh` 次调用（120×24 = 2880），两趟只要
-   * `dw+dh` 次。
+   * **搬哪些矩形由 `scaledBlitPasses` 说了算**，这里只负责把它们交给
+   * `drawImage`：几何进得了 `pnpm test`（那边拿一个软件 blitter 逐像素核），
+   * 而"开一张 canvas、关掉插值"这件只有浏览器做得成的事留在这里。
    */
   function scaledTexture(id: AssetId, tex: Texture, src: Rect, dest: Rect): Texture {
     const key = `${id}|${src.x},${src.y},${src.width},${src.height}|${dest.width}x${dest.height}`
@@ -214,36 +238,14 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     const resource = tex.source.resource as CanvasImageSource | undefined
     if (!resource) throw new Error(`缩放贴图取不到 ${id} 的位图源`)
 
-    const sx = tex.frame.x + src.x
-    const sy = tex.frame.y + src.y
+    // 源在图集里的偏移：`scaledBlitPasses` 只知道逻辑坐标，加偏移是这里的事。
+    const passes = scaledBlitPasses(
+      { x: tex.frame.x + src.x, y: tex.frame.y + src.y, width: src.width, height: src.height },
+      dest,
+    )
 
-    const mid = document.createElement('canvas')
-    mid.width = dest.width
-    mid.height = src.height
-    const midCtx = mid.getContext('2d')
-    if (!midCtx) throw new Error('取不到缩放贴图的 2D context')
-    midCtx.imageSmoothingEnabled = false
-    for (const run of nearestBlitRuns(src.width, dest.width)) {
-      midCtx.drawImage(
-        resource,
-        sx + run.srcIndex, sy, 1, src.height,
-        run.destStart, 0, run.length, src.height,
-      )
-    }
-
-    const out = document.createElement('canvas')
-    out.width = dest.width
-    out.height = dest.height
-    const outCtx = out.getContext('2d')
-    if (!outCtx) throw new Error('取不到缩放贴图的 2D context')
-    outCtx.imageSmoothingEnabled = false
-    for (const run of nearestBlitRuns(src.height, dest.height)) {
-      outCtx.drawImage(
-        mid,
-        0, run.srcIndex, dest.width, 1,
-        0, run.destStart, dest.width, run.length,
-      )
-    }
+    const mid = blitOnto(resource, dest.width, src.height, passes.horizontal)
+    const out = blitOnto(mid, dest.width, dest.height, passes.vertical)
 
     const made = Texture.from(out)
     made.source.scaleMode = 'nearest'

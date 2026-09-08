@@ -35,11 +35,14 @@
  * ```
  *
  * ⚠️ **它只对「源图带透明」的那条 blit 循环成立。** 源图全不透明时 Java2D 走的
- * 是另一条，定点设置也不一样（实测是 23 位、半步向上取整），两张表在 X 的
- * 3/7/9/11/12/20/21/31/33/48/56/60/63/77/93/99/116 与 Y 的 9/10 等档上不同。
- * 提示图那 22 张 PNG 全都带透明（导出器逐张核过，见 `ExportScaledBlit`），所以
- * 这里用的是带透明那一份。**这条不是推出来的，是撞出来的**：头一版拿全不透明
- * 的梯度图量，20×4 那一档（`battle-menus` 的 t=200 那一帧）就差两个像素。
+ * 是另一条，定点设置也不一样（实测是 23 位、半步向上取整）。提示图那 22 张 PNG
+ * 全都带透明（导出器逐张核过），所以这里用的是带透明那一份。**这条不是推出来
+ * 的，是撞出来的**：头一版拿全不透明的梯度图量，20×4 那一档（`battle-menus`
+ * 的 t=200 那一帧）就差两个像素。
+ *
+ * 两张表具体差在哪几档**不抄在这里** —— 那是黄金数据自己说了算的事，
+ * `scaledBlit.test.ts` 的「两条 blit 循环」现推现比；这份测量的来龙去脉在
+ * `ExportScaledBlit` 的头注释里，那份是权威。
  *
  * ⚠️ **16 这个位数不是被数据钉死的**：实测 16..31 里**任何一个**配上「半步截尾」
  * 都给出同一张表（表在 16 位上就已经稳定了，再多的位数改不动它）。所以把它改成
@@ -63,6 +66,14 @@ const ONE = 2 ** SHIFT
 const MAX_SRC_LEN = 255
 
 /**
+ * 目标长相对源长的上界。黄金数据只扫到源长的两倍，超过就是外推。
+ *
+ * 与 {@link MAX_SRC_LEN} 同一条理由：没量过的地方要响，不要悄悄给一个答案。
+ * 提示图缩放时目标恒小于源（最大 120×24），离这条线远得很。
+ */
+const MAX_DEST_RATIO = 2
+
+/**
  * 目标第 i 个像素取的源下标，i = 0..destLen-1。**源图必须带透明**，理由见文件头。
  *
  * `srcLen` / `destLen` 都要是正整数。
@@ -73,6 +84,12 @@ export function nearestSourceIndexes(srcLen: number, destLen: number): number[] 
   if (srcLen > MAX_SRC_LEN) {
     throw new Error(
       `缩放采样只在源长 ≤ ${MAX_SRC_LEN} 上量过（见 tools/scaled-blit-golden/），收到 ${srcLen}`,
+    )
+  }
+  if (destLen > srcLen * MAX_DEST_RATIO) {
+    throw new Error(
+      `缩放采样只扫到源长的 ${MAX_DEST_RATIO} 倍（见 tools/scaled-blit-golden/），` +
+        `源长 ${srcLen} 配目标长 ${destLen} 是外推`,
     )
   }
   const inc = Math.floor((srcLen * ONE) / destLen)
@@ -109,6 +126,67 @@ export function nearestBlitRuns(srcLen: number, destLen: number): BlitRun[] {
     }
   }
   return runs
+}
+
+/** 一次 `drawImage`：从源的一块矩形搬到目标的一块矩形，不插值。 */
+export interface BlitRect {
+  readonly sx: number
+  readonly sy: number
+  readonly sw: number
+  readonly sh: number
+  readonly dx: number
+  readonly dy: number
+  readonly dw: number
+  readonly dh: number
+}
+
+/** 两趟搬法。中间位图的尺寸是 `目标宽 × 源高`。 */
+export interface ScaledBlitPasses {
+  /** 第一趟：源图 -> 中间位图，只动横轴。 */
+  readonly horizontal: readonly BlitRect[]
+  /** 第二趟：中间位图 -> 目标位图，只动纵轴。 */
+  readonly vertical: readonly BlitRect[]
+}
+
+/**
+ * **把一块源区域拼成目标尺寸要搬哪些矩形。**
+ *
+ * 分两趟：先横着把每一列搬到位（源高不变），再竖着把每一行搬到位。两趟都是
+ * 整段拷贝（缩小）或整段复制（放大），不经过任何插值。一趟一次 `drawImage`
+ * 的写法要 `dw*dh` 次调用（120×24 = 2880），两趟只要 `dw+dh` 次。
+ *
+ * 几何在这里而不在渲染器里，是因为**轴搞反、源偏移漏加这类错，画面上看起来
+ * 只是"提示图有点糊"**，而在这里它可以被逐像素核（`scaledBlit.test.ts` 拿一个
+ * 十行的软件 blitter 把这两趟跑一遍，结果必须等于采样表的外积）。
+ *
+ * `src` 是源图里那块区域的位置与大小（提示图恒为整张图）；`dest` 只要尺寸，
+ * 落点由调用方摆。
+ */
+export function scaledBlitPasses(
+  src: { x: number; y: number; width: number; height: number },
+  dest: { width: number; height: number },
+): ScaledBlitPasses {
+  const horizontal = nearestBlitRuns(src.width, dest.width).map((run) => ({
+    sx: src.x + run.srcIndex,
+    sy: src.y,
+    sw: 1,
+    sh: src.height,
+    dx: run.destStart,
+    dy: 0,
+    dw: run.length,
+    dh: src.height,
+  }))
+  const vertical = nearestBlitRuns(src.height, dest.height).map((run) => ({
+    sx: 0,
+    sy: run.srcIndex,
+    sw: dest.width,
+    sh: 1,
+    dx: 0,
+    dy: run.destStart,
+    dw: dest.width,
+    dh: run.length,
+  }))
+  return { horizontal, vertical }
 }
 
 function requirePositiveInt(v: number, name: string): void {
