@@ -1,6 +1,9 @@
 name: java
 
 on:
+  # 手动触发。留着它有一个具体用途：这条工作流合并时**从没在真的 runner 上
+  # 跑过**，而没有它就只能靠去改 paths 名单上的某个文件来验一次。
+  workflow_dispatch:
   push:
     branches: [master]
     # 三样判据各自的输入都要在这张名单上，否则它们在最该响的时候是哑的 ——
@@ -17,6 +20,9 @@ on:
     paths: ['src/**', 'tools/src/**', 'tools/test/**', 'tools/build.sh', 'tools/test.sh',
             'tools/export-truth.sh', 'tools/ground-truth/**', 'script/**',
             'image/**', 'sources/**', '*.jar', '.github/workflows/java.yml']
+  # 下面这份名单和上面那份逐字相同，是抄的，不是忘了去重。web.yml 里记了理由：
+  # YAML 锚点更短，但 Actions 认不认锚点这个仓库没实测过，不在 CI 触发条件上
+  # 冒这个险。两份漂移是静默的，改一份时另一份也要改。
   pull_request:
     paths: ['src/**', 'tools/src/**', 'tools/test/**', 'tools/build.sh', 'tools/test.sh',
             'tools/export-truth.sh', 'tools/ground-truth/**', 'script/**',

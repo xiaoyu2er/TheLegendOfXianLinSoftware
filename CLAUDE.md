@@ -89,6 +89,13 @@ only the second is the check. `tools/export-trace.sh --check` is deliberately
 (the battle driver wants real Swing components), which has never been tried on
 a runner. Tracked in `xl-u7b`.
 
+⚠️ **`java.yml` itself is unverified on a real runner** — every step's command
+was run locally (`tools/test.sh` forces `-Djava.awt.headless=true` precisely so
+local runs sit in CI's conditions), and both its red paths were provoked on
+purpose, but as of 2026-09-08 the workflow had never been triggered on GitHub.
+It carries `workflow_dispatch` so it can be run by hand without touching its
+`paths` list.
+
 **Run every Java-side command from the repo root** — the game resolves
 `script/`, `sources/`, `image/` as relative paths. `web/`'s commands run from
 `web/`.

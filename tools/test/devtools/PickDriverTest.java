@@ -15,10 +15,11 @@ import java.nio.file.Files;
  *
  * 测法是子进程，理由见 {@link Subprocess} 的类注释。
  *
- * <p>这里**只测拒绝那一半**：四个合法名字各自会真的把面板建起来
- * （battle 那条要 Swing 组件、要 {@code --add-opens}），那是重导对比每天在跑的事，
- * 不是这套单测该承担的。合法名字走得通，由 {@code tools/traces/out/} 下每一份
- * 真值的 {@code driver} 字段作证。
+ * <p>这里**只测拒绝那一半**：每个合法名字都会真的把面板建起来（battle 那条要
+ * Swing 组件、要 {@code --add-opens}），那是重导对比每天在跑的事，不是这套单测
+ * 该承担的。合法名字走得通，由 {@code tools/traces/out/} 下每一份真值的
+ * {@code driver} 字段作证 —— 合法名字有几个不写在这里，读
+ * {@code ExportTrace.pickDriver} 的 case 标签。
  */
 public final class PickDriverTest {
 
@@ -52,8 +53,10 @@ public final class PickDriverTest {
                 !noField.err.contains("的 driver 是"));
         Checks.check("缺 driver 字段时确实走进了 scene 那一支（" + noField + "）",
                 noField.err.contains("缺少字符串字段 scene"));
-        Checks.check("而且不是走的硬失败那条路（退出码不是 2）",
-                noField.exit != 2);
+        // 写死 1 而不是「不等于 2」：「不等于某个值」是个弱形状，一堆别的
+        // 出错方式都能满足它。1 是实测值（未捕获异常从 main 里冒出去，JVM 退 1）。
+        Checks.eq("退出码是异常冒泡的 1，不是硬失败的 2（" + noField + "）",
+                1, noField.exit);
     }
 
     /** 写一份最小剧本到临时文件，driver 为 null 表示整个字段都不写。 */

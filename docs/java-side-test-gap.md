@@ -256,7 +256,9 @@ truth 层（96 份解析真值）与 trace 层（逐步行为真值）盯着，�
 跑矩阵的脚本是 `/tmp` 下的一次性产物，**没有入库**：它不是一条要长期跑的门禁
 （长期跑的那条是 `tools/test.sh`），入库反而会多一样没人维护、坏了也没人知道
 的东西。要复现的话下面这张表就够 —— 每一行是「在哪个文件里，把 A 换成 B」，
-逐字可搜，10 行在 2026-09-08 各自核过一遍确认还对得上。
+逐字可搜（第 7 行给的是那个 `default:` 分支里**唯一**的那句 —— 光写
+`default:` 在这个文件里到处都是，搜不出东西来），10 行在 2026-09-08 各自核过
+一遍确认还对得上。
 
 | # | 文件 | 把这个 | 换成这个 |
 |---|---|---|---|
@@ -266,7 +268,7 @@ truth 层（96 份解析真值）与 trace 层（逐步行为真值）盯着，�
 | 4 | `src/tools/Reader.java` | `return path == null ? null : path.replace('\\', '/');` | `return path;` |
 | 5 | `src/tools/Reader.java` | `Role` 段里 `Integer.parseInt(ss[1]) == 1` 那一支 | `ss[0]` |
 | 6 | `tools/src/devtools/Json.java` | `case '\n': b.append("\\n");` | `case '\n': b.append("N");` |
-| 7 | `tools/src/devtools/ExportTrace.java` | `pickDriver()` 的 `default:` 分支（`die(...)`） | 整段换成 `case "scene"` 的装载 + `return new SceneDriver(s);` |
+| 7 | `tools/src/devtools/ExportTrace.java` | `+ "\"，导出器只认 scene / battle / menu / shop");` 那一句所在的整个 `default:` 分支（三行 `die(...)` 加 `return null;`） | 整段换成 `case "scene"` 的装载 + `return new SceneDriver(s);` |
 | 8 | `src/tools/Clock.java` | `return Math.max(1L, (long) (millis / factor));` | `return (long) (millis / factor);` |
 | 9 | `src/tools/Reader.java` | `System.err.println("[readImage] 图片缺失: " + path` | 前面加 `if (false) ` |
 | 10 | `tools/src/devtools/ExportTrace.java` | `if (kind == null \|\| !kind.matches("[a-z][a-z0-9-]*")) {` | `if (false) {` |

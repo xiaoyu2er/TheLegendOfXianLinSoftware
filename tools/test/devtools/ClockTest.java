@@ -23,10 +23,10 @@ public final class ClockTest {
         try {
             body();
         } finally {
+            // 只还原，不断言。「刚 set 完就 get 出来比一比」是恒真的 ——
+            // 它永远不会红，却会把断言条数抬高两条，让分母看起来比实际厚。
             Clock.freezeTimers(b0);
             Clock.setFactor(f0);
-            Checks.eq("跑完还原了 factor", f0, Clock.getFactor());
-            Checks.eq("跑完还原了 freezeBase", b0, Clock.getFreezeBase());
         }
     }
 

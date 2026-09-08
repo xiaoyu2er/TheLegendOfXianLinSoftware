@@ -79,7 +79,15 @@ public final class RoleSectionTest {
                         + new java.io.File(".").getAbsolutePath());
         java.util.Arrays.sort(fs);
         for (java.io.File f : fs) {
-            if (f.getName().endsWith(".txt")) return new Reader(f.getName());
+            if (f.getName().endsWith(".txt")) {
+                // 静音：建 Reader 会加载 NPC 素材，而仓库里确实有几十帧从未交付
+                // （xl-1dv.1），原版会逐条打 [readImage] 图片缺失。让它们打到终端上，
+                // 一次全绿的运行看起来就像出了错。见 Stderr 的类注释。
+                final String name = f.getName();
+                final Reader[] box = new Reader[1];
+                Stderr.mute(() -> box[0] = new Reader(name));
+                return box[0];
+            }
         }
         throw new IllegalStateException("script/ 下一个 .txt 都没有");
     }

@@ -18,7 +18,11 @@ public final class RequireKindTest {
 
     private RequireKindTest() {}
 
-    /** 正例：这些形状必须被放行。四支真驱动器报的名字都在这一族里。 */
+    /**
+     * 正例：这些**形状**必须被放行。前几个恰好是今天真驱动器报的名字，
+     * 但这里测的是形状而不是名单 —— 名单维护在实现方，导出器不替它记
+     * （{@code requireKind} 的注释原话）。所以新增一支驱动器不该让这里变红。
+     */
     private static final String[] GOOD = {"scene", "battle", "menu", "shop", "a", "a-b", "a0", "x-1-y"};
 
     /** 反例：这些形状必须硬失败。每一条对应一种「写进 JSON 也合法」的坏名字。 */

@@ -1,9 +1,5 @@
 package devtools;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.io.UnsupportedEncodingException;
-
 import tools.Reader;
 
 /**
@@ -27,21 +23,8 @@ public final class ReadImageWarningTest {
         // MISSING_WARNED 是进程级的静态集合，复用路径会读到「第二次」的行为。
         String missing = "image/xl-f8y-不存在的图-" + System.nanoTime() + ".png";
 
-        PrintStream saved = System.err;
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        String first;
-        String second;
-        try {
-            System.setErr(new PrintStream(buf, true, "UTF-8"));
-            Reader.readImage(missing);
-            first = drain(buf);
-            Reader.readImage(missing);
-            second = drain(buf);
-        } catch (UnsupportedEncodingException e) {
-            throw new AssertionError("UTF-8 一定存在", e);
-        } finally {
-            System.setErr(saved);
-        }
+        String first = Stderr.capture(() -> Reader.readImage(missing));
+        String second = Stderr.capture(() -> Reader.readImage(missing));
 
         Checks.check("缺图时 stderr 有警告", first.contains("[readImage] 图片缺失"));
         Checks.check("警告里点名了那个路径", first.contains(missing));
@@ -52,16 +35,7 @@ public final class ReadImageWarningTest {
         // 否则拿着报出来的路径去 ls，会 ls 到一个和代码里不一样的东西。
         String win = "image\\xl-f8y-不存在-" + System.nanoTime() + "\\a.png";
         String norm = Reader.normalizePath(win);
-        String warn;
-        try {
-            System.setErr(new PrintStream(buf, true, "UTF-8"));
-            Reader.readImage(win);
-            warn = drain(buf);
-        } catch (UnsupportedEncodingException e) {
-            throw new AssertionError("UTF-8 一定存在", e);
-        } finally {
-            System.setErr(saved);
-        }
+        String warn = Stderr.capture(() -> Reader.readImage(win));
         Checks.check("反斜杠路径报的是归一化之后的路径", warn.contains(norm));
         Checks.check("并且带上了原始路径", warn.contains("原始路径: " + win));
 
@@ -72,17 +46,7 @@ public final class ReadImageWarningTest {
         String real = anyExistingPng();
         Checks.check("前提：image/ 下扫得到至少一张 png", real != null);
         if (real == null) return;
-        String quiet;
-        try {
-            System.setErr(new PrintStream(buf, true, "UTF-8"));
-            Reader.readImage(real);
-            quiet = drain(buf);
-        } catch (UnsupportedEncodingException e) {
-            throw new AssertionError("UTF-8 一定存在", e);
-        } finally {
-            System.setErr(saved);
-        }
-        Checks.eq("图存在时一声不吭", "", quiet);
+        Checks.eq("图存在时一声不吭", "", Stderr.capture(() -> Reader.readImage(real)));
 
         // readImage 从不返回 null —— 这正是那个警告存在的理由，
         // 顺手钉住，免得将来有人「顺便」改成返回 null。
@@ -106,14 +70,4 @@ public final class ReadImageWarningTest {
         return null;
     }
 
-    private static String drain(ByteArrayOutputStream buf) {
-        String s;
-        try {
-            s = buf.toString("UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            throw new AssertionError("UTF-8 一定存在", e);
-        }
-        buf.reset();
-        return s;
-    }
 }

@@ -9,7 +9,7 @@ import java.util.List;
  * 名字里**故意不带 {@code Test}**：{@link TestMain} 用「文件名以 Test.java 结尾」
  * 现扫出测试类的分母，一个需要手写例外的扫描，例外迟早会长第二条。
  *
- * 为什么不是 JUnit：这一套要钉的七项里五项是纯函数断言，JUnit 的参数化、
+ * 为什么不是 JUnit：这一套钉的东西以纯函数断言为主，JUnit 的参数化、
  * 生命周期、类路径发现一样都用不上，而引它意味着仓库里多一个 2.7 MiB 的二进制、
  * 一个版本号要跟、以及 tools/build.sh 的 classpath 再长一截。仓库里已有先例：
  * {@link Json} 与 {@link JsonIn} 的类注释都写着「不引第三方依赖」。
