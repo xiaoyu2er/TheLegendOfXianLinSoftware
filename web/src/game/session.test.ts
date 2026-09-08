@@ -26,6 +26,7 @@ import {
   currentBgm,
 } from './session'
 import type { Session, SessionDeps } from './session'
+import { NEXT_SCRIPT_ENEMIES } from '../state/fight'
 import type { InputEvent } from '../state/types'
 
 /**
@@ -162,7 +163,7 @@ function autoAttackInput(w: BattleWorld): BattleInput[] {
  * 走法：按住一个方向，格子不再变就换一个方向（迷宫里会撞墙）。这是玩家会做
  * 的事，也是唯一不作弊的走法 —— 直接改 `role.px` 就等于跳过了被测的那一层。
  */
-function walkUntilBattle(session: Session, maxPumps = 20000): Walk {
+function walkUntilBattle(session: Session, maxPumps = 20000, pumpMs = SCENE_PUMP_MS): Walk {
   const dirs = ['right', 'left', 'down', 'up'] as const
   let dir = 0
   let tiles = 0
@@ -171,7 +172,7 @@ function walkUntilBattle(session: Session, maxPumps = 20000): Walk {
   let s = session
   for (let pumps = 1; pumps <= maxPumps; pumps++) {
     const key = dirs[dir % dirs.length]!
-    s = advanceSession(s, { scene: [press(key)], battle: [] }, SCENE_PUMP_MS)
+    s = advanceSession(s, { scene: [press(key)], battle: [] }, pumpMs)
     // **先数格子再看面板**：起战斗的那一拍主角正好换了一格，漏掉它这个
     // 计数就恒比 `FightEvent.count` 少 1，而少 1 与"门槛写成 29"长得一样。
     const now = { x: roleTileX(s.scene.world.role), y: roleTileY(s.scene.world.role) }
@@ -183,7 +184,7 @@ function walkUntilBattle(session: Session, maxPumps = 20000): Walk {
     if (s.panel !== 'scene') return { session: s, tiles, pumps }
     if (now.x === at.x && now.y === at.y && ++stuck > 60) {
       // 撞墙了：松手换一个方向。松手是真的松（`keyReleased` 那一路）。
-      s = advanceSession(s, { scene: [release(key)], battle: [] }, SCENE_PUMP_MS)
+      s = advanceSession(s, { scene: [release(key)], battle: [] }, pumpMs)
       dir++
       stuck = 0
     }
@@ -333,6 +334,72 @@ describe('场景 → 战斗 → 场景', () => {
       expect(party[h.spec.key].level).toBe(h.level)
       expect(party[h.spec.key].hp).toBe(h.hp)
     }
+  })
+
+  it('剧情固定战：把带 @ 的那段对话按完就开打，而且剧情往前推了一段', () => {
+    // 脚本22 的 Dialogue 触发码是 -1（进场自动播），正文里有 @，battle1 只有
+    // 一场，一号位是罹年居士 —— 也就是 `NEXT_SCRIPT_ENEMIES` 里那八个之一，
+    // 所以开打之前原版还要 `exitEvent.nextScript()` 把剧情推到脚本23。
+    const scene = getScene('脚本22')
+    expect(scene.dialogueCode).toEqual(['-1'])
+    const row = scene.battle1![0]!
+    expect(NEXT_SCRIPT_ENEMIES).toContain(row[4])
+
+    let s = createSession(createWorld(scene), deps())
+    // 自动对话弹出 + 逐字打印，然后一路空格按到底。判据是"开打了"，不是拍数。
+    for (let i = 0; i < 4000 && s.panel === 'scene'; i++) {
+      const key = i % 20 === 19 ? [press('space'), release('space')] : []
+      s = advanceSession(s, { scene: key, battle: [] }, SCENE_PUMP_MS)
+    }
+    expect(s.panel).toBe('battle')
+    const w = battleWorldOf(s)!
+    expect(w.em1!.name).toBe(row[4]!.split('/')[0])
+    expect(w.background).toBe(row[0])
+    // `ExitEvent.nextScript()`：场景整个换掉，主角站到 currentScript[0]。
+    const next = scene.nextScript!
+    expect(s.scene.world.scene).toBe(next[2])
+    expect(s.scene.world.currentScript).toEqual(next)
+    const [ex, ey] = next[0]!.split('/').map(Number)
+    expect([s.scene.world.role.px / 32, s.scene.world.role.py / 32]).toEqual([ex, ey])
+    // 这一场之后 battle1Over 该是真的（只有一场）。注意 fight 已经跟着
+    // nextScript 换成新场景那一份了，所以读的是**换之前**那一份留下的结果 ——
+    // 换句话说这里读到的是新场景的，恒为 false。断言的是新场景的事实。
+    expect(s.scene.world.fight.battle1Over).toBe(false)
+  })
+
+  it('一次 pump 补跑很多拍，起战斗那一拍不会被吞掉', () => {
+    levelParty(20)
+    // 一拍 10 ms，这里一次喂 250 ms —— 也就是一次 pump 补跑 25 拍。
+    // `state/loop.ts` 里那个"起战斗就断批"去掉之后，这一条会跑成
+    // "走了 20000 拍还没起战斗"：`battleRequest` 只亮一拍，被同一批的下一拍
+    // 覆盖掉了。
+    const session = createSession(createWorld(getScene('迷宫1')), deps())
+    const walked = walkUntilBattle(session, 4000, 250)
+    expect(walked.session.panel).toBe('battle')
+    expect(battleWorldOf(walked.session)).not.toBeNull()
+  })
+
+  it('第二场接着第一场：血、经验、等级都带过去了', () => {
+    // **12 级不是随手挑的**：20 级打这一场毫发无伤（实测 3360/3360），
+    // 于是"血带过去了"与"血是满的"长得一模一样，`carry` 拆掉也不会红。
+    // 12 级打赢还剩 2139/2240 —— 差 101，这条才分得开。
+    levelParty(12)
+    const session = createSession(createWorld(getScene('迷宫1')), deps())
+    const first = runBattleToExit(walkUntilBattle(session).session).session
+    expect(first.panel).toBe('scene')
+    const after = { ...getParty().zhang }
+    expect(after.exp).toBeGreaterThan(0)
+
+    // 再走 30 格，第二场。开场的血与经验要等于上一场收工时的那份 ——
+    // `createBattle` 的 `carry` 不接上的话，这里会是满血、经验 0。
+    const second = walkUntilBattle(first).session
+    expect(second.panel).toBe('battle')
+    const zxf = battleWorldOf(second)!.zxf!
+    expect(zxf.level).toBe(after.level)
+    expect(zxf.exp).toBe(after.exp)
+    expect(zxf.hp).toBe(after.hp)
+    // 上一场是打赢的，所以血没满 —— 这条保证上面那三条不是"正好等于开局值"。
+    expect(after.hp).toBeLessThan(zxf.hpMax)
   })
 
   it('configFor：7 元组逐位解开，"null" 是空槽位、别的词是没出战', () => {
