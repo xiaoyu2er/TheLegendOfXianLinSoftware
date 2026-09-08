@@ -69,6 +69,13 @@ export interface StartSequence {
    *
    * 产物那一端由 `scrollQuality.test.ts` 核：入库的每一帧的 WebP 编码方式
    * 必须跟这一列对得上，两边不一致立刻红。
+   *
+   * **走别名的那一段没有自己的产物**（xl-l6h），所以这一列在它身上说的是
+   * 「它读到的那份字节是什么档位」，也就是必须跟被指向那一段的这一列相等。
+   * 烘焙器落别名之前核这一条 —— 不核的话，`backScroll: lossy: false` 与
+   * `scroll: lossy: true` 可以同时写着，而 `scrollQuality.test.ts` 拿
+   * backScroll 的 ID 读到的正是 scroll 那份有损字节，于是那条声明与产物的
+   * 对账**报的是别人的账**。
    */
   readonly lossy: boolean
 }
@@ -142,13 +149,11 @@ export interface StartSequence {
  *   而降质把问题从根上消掉了。
  * - **就这样**：9.3 MB 在这两段上是纯浪费，见上面的实测。
  *
- * ### 还剩一笔没在这张票里花掉
+ * ### 那笔剩下的账，xl-l6h 花掉了
  *
- * `反向卷轴` 的 10 帧与 `卷轴` 的 10 帧**逐像素相同、只是次序相反**
- * （2026-09-08 实测：两边解成 RGBA 后 `cmp` 10/10 全同；入库的无损 WebP 产物
- * 也是 md5 两两相等）。把 `backScroll` 的第 f 帧指到 `scroll` 的第 9−f 帧
- * 能再省一半、并让第二次过场全部命中缓存 —— 但那要在烘焙期立一条恒等判据，
- * 跟「降不降质」是两件事，登记在 xl-l6h。
+ * `反向卷轴` 的 10 帧与 `卷轴` 的 10 帧**逐像素相同、只是次序相反**，所以
+ * `backScroll` 不再单独烘产物，逐帧指向 `scroll` 的逆序帧。见下面的
+ * `START_SEQUENCE_ALIASES`。
  */
 export const START_SEQUENCES: Readonly<Record<StartSequenceName, StartSequence>> = {
   buttonGlow: { dir: '按钮动画', count: 4, lossy: false },
@@ -157,6 +162,93 @@ export const START_SEQUENCES: Readonly<Record<StartSequenceName, StartSequence>>
   backScroll: { dir: '反向卷轴', count: 10, lossy: true },
   loading: { dir: '载入', count: 10, lossy: false },
   loading2: { dir: '载入2', count: 3, lossy: false },
+}
+
+/** 一段动画整段指向另一段：第 `f` 帧就是 `of` 那一段的第 `count−1−f` 帧。 */
+export interface StartSequenceAlias {
+  /** 被指向的那一段。它自己不许再是别名（烘焙器硬失败）。 */
+  readonly of: StartSequenceName
+  /**
+   * 帧序关系。今天只有 `reverse` 一种；写成一个具名字段而不是隐含在
+   * "别名"二字里，是因为**同序**的别名将来一样可能出现，而两者搞反的表现是
+   * 「画面上放的是倒着的那一段」—— 一秒钟的过场，没人看得出来。
+   */
+  readonly order: 'reverse'
+}
+
+/**
+ * **整段重复的动画：谁指向谁（xl-l6h）。**
+ *
+ * `sources/StartPanel/反向卷轴/` 的 10 帧与 `sources/StartPanel/卷轴/` 的
+ * 10 帧**逐像素相同，只是次序相反**（2026-09-08 实测两条独立证据：两边
+ * `magick … RGBA:-` 解成原始 RGBA 再 `cmp`，10 对全同；两边分别做**无损**
+ * WebP 编码再 `cmp`，同样 10 对全同）。所以 `backScroll` 不再单独烘一套
+ * 产物，映射表里它的第 `f` 帧直接指向 `scroll` 的第 `9−f` 帧。
+ *
+ * 收益（在 xl-bbs 降到 q80 的基数上）：产物 414 KB → 0，入库体积同减；
+ * 且**第二次过场全部命中缓存** —— 在这之前「进关于我们再回来」要重新下
+ * 414 KB。
+ *
+ * ⚠️ **PNG 文件本身的 md5 是不同的**（容器与滤波器选择不一样），所以按文件
+ * 摘要去重看不见这件事，必须解到像素。
+ *
+ * ## 这份登记真正的重量在那条恒等判据上
+ *
+ * 别名一旦立下，源素材哪天换了一批（比如美术只替换了 `反向卷轴/`），表现是
+ * **画面上放的是另一段动画**，而且悄无声息 —— 别的检查一条都拦不住：
+ * `bakeStamp.test.ts` 只核输入指纹变没变（它会红，但它说的是"该重烘了"，
+ * 重烘之后照样静静走别名），`resolve.test.ts` 只数 ID 的条数，
+ * `scrollQuality.test.ts` 那三条量的全是 `scroll` 那一份字节。
+ *
+ * 所以 `scripts/bake.ts` 在落别名之前逐帧核一遍：两边各自做**无损** WebP
+ * 编码，逐字节比，10 对全同才落，任何一对不同就**硬失败并点名是哪一帧**。
+ * 三处口径都是故意的：
+ *
+ * - **拿无损编码比，不能拿 q80 的产物比。** 有损编码不是单射，「产物相同」
+ *   推不出「源相同」；无损可逆，`encode(a) == encode(b) ⇒ a == b`，推得出。
+ * - **不许回退到"那就分别烘"。** 回退会让「素材换了」读起来像「一切正常」，
+ *   而这正是这条判据存在的唯一理由。
+ * - **不用 PNG 文件的 md5**（见上，两边本来就不同）。
+ *
+ * 这是一份**登记**，不是分母（dispatch.md 纪律 3）：从别处现推「哪两段是
+ * 一样的」等于让被守的东西自己给自己签字。`scrollQuality.test.ts` 里
+ * 「有别名的恰好是 backScroll」那条钉的就是这份手写。
+ */
+export const START_SEQUENCE_ALIASES: Readonly<
+  Partial<Record<StartSequenceName, StartSequenceAlias>>
+> = {
+  backScroll: { of: 'scroll', order: 'reverse' },
+}
+
+/**
+ * 这一段是不是整段指向了别人（也就是它自己不出产物）。
+ *
+ * 收口成一个函数，是这个文件里 `aliasSourceFrame` 那条理由的同一条：查表
+ * 这件事散在烘焙器与测试里三处，三处都要把 `string` 断言成
+ * `StartSequenceName`，而断言错了的表现是**某一段被静静当成没有别名**——
+ * 于是它照常烘一套产物，判据一条都不响。
+ *
+ * 收 `string` 不收 `StartSequenceName`：调用处全是 `Object.entries()` 出来的
+ * `string`，那个断言收在这里一处。
+ */
+export function isAliasedStartSequence(name: string): boolean {
+  return START_SEQUENCE_ALIASES[name as StartSequenceName] !== undefined
+}
+
+/**
+ * 别名的第 `frame` 帧对应被指向那一段的第几帧。
+ *
+ * 烘焙器与测试共用这一处，不各写一遍：两边各写一个 `count − 1 − frame`，
+ * 写反了的表现是**判据核的正是它自己算错的那一对**，于是全绿。
+ *
+ * 写成 `switch` 而不是一句 `count − 1 − frame`：`order` 将来多一种取值时，
+ * 少一个分支的函数**没有返回值**，`pnpm typecheck` 当场红。
+ */
+export function aliasSourceFrame(alias: StartSequenceAlias, frame: number, count: number): number {
+  switch (alias.order) {
+    case 'reverse':
+      return count - 1 - frame
+  }
 }
 
 /**

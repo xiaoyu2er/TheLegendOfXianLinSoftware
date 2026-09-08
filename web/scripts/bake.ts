@@ -22,6 +22,7 @@ import {
   closeSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readSync,
@@ -31,6 +32,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, relative as relativePath, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { checkSceneAssets, formatReport, isClean } from '../src/assets/checkAssets'
@@ -63,8 +65,15 @@ import { DRUGS } from '../src/battle/drugs'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
-import { START_IMAGES, START_SEQUENCES, TITLE_BGM } from '../src/start/assets'
-import type { StartImageName } from '../src/start/assets'
+import {
+  START_IMAGES,
+  START_SEQUENCES,
+  START_SEQUENCE_ALIASES,
+  TITLE_BGM,
+  aliasSourceFrame,
+  isAliasedStartSequence,
+} from '../src/start/assets'
+import type { StartImageName, StartSequenceAlias } from '../src/start/assets'
 import type { StartSequenceName } from '../src/assets/ids'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../src/stage/constants'
 
@@ -384,11 +393,16 @@ function main(): void {
   }
   // 六段逐帧动画（xl-4si）。帧数是原版 `new StartAnimation(n, "目录", …)` 里的
   // 那个 `n`，不是扫目录 —— 理由见 `src/start/assets.ts` 的 `START_SEQUENCES`。
+  //
+  // **分两趟**（xl-l6h）：先烘自己有产物的那几段，再落别名。靠 `START_SEQUENCES`
+  // 的声明次序（今天 `scroll` 恰好排在 `backScroll` 前面）等于把一件要紧事
+  // 押在一个可以随手调换的字面量上，而调换之后的表现是别名指向一条还没写进
+  // 映射表的路径 —— 那时报的是"查不到"，读起来像烘焙漏了一帧。
   let startFrames = 0
   for (const [name, sequence] of Object.entries(START_SEQUENCES)) {
+    if (isAliasedStartSequence(name)) continue
     for (let frame = 0; frame < sequence.count; frame++) {
-      // 文件从 1 起编号，下标从 0 起。这个差 1 只出现在这里。
-      const source = `sources/StartPanel/${sequence.dir}/${frame + 1}.png`
+      const source = startFrameSource(sequence.dir, frame)
       const absolute = resolve(REPO, source)
       if (!existsSync(absolute)) {
         missing.push(`开始界面动画 ${source}`)
@@ -413,8 +427,19 @@ function main(): void {
       startFrames++
     }
   }
+  // 第二趟：整段重复的动画不单独烘产物，逐帧指向被指向的那一段（xl-l6h）。
+  // 落之前逐帧核一遍恒等，任何一对不同就硬失败并点名 —— 判据与它的三处口径
+  // 见 `START_SEQUENCE_ALIASES` 的头注。
+  let aliasFrames = 0
+  for (const [name, alias] of Object.entries(START_SEQUENCE_ALIASES) as [
+    StartSequenceName,
+    StartSequenceAlias,
+  ][]) {
+    aliasFrames += bakeStartAlias(name, alias, manifest, missing)
+  }
   console.log(
-    `开始界面素材 ${Object.keys(START_IMAGES).length} 张 + 动画 ${startFrames} 帧 → start/*.webp`,
+    `开始界面素材 ${Object.keys(START_IMAGES).length} 张 + 动画 ${startFrames} 帧 → start/*.webp` +
+      (aliasFrames > 0 ? `（另有 ${aliasFrames} 帧走别名，不出产物）` : ''),
   )
 
   if (missing.length > 0) {
@@ -884,6 +909,117 @@ function backgroundAnimCrop(relative: string, source: string): SourceRect | unde
  */
 function battleWebp(source: string, destination: string, crop?: SourceRect): number {
   return toWebp(source, destination, crop, BATTLE_LOSSY_QUALITY, BATTLE_LOSSY_SNS)
+}
+
+/**
+ * 一段开始界面动画的第 `frame` 帧在仓库里的路径（仓库相对）。
+ *
+ * 原版 `start.StartAnimation` 是 `"sources/StartPanel/" + s + "/" + (i+1) + ".png"`：
+ * **文件从 1 起编号，下标从 0 起**。这个差 1 只出现在这一个函数里 —— 烘焙那趟
+ * 与别名那趟共用它，各写一遍的话，两边一起偏移一位仍然逐帧对得上，恒等判据
+ * 会一路全绿。
+ */
+function startFrameSource(dir: string, frame: number): string {
+  return `sources/StartPanel/${dir}/${frame + 1}.png`
+}
+
+/**
+ * 落一段**别名**动画：它不出自己的产物，逐帧指向被指向那一段的对应帧
+ * （xl-l6h）。返回落了几帧。
+ *
+ * 落之前先立恒等判据：两边的源 PNG 各自做一次**无损** WebP 编码，逐字节比，
+ * 全同才落。为什么是这个口径、为什么不许回退到"那就分别烘"，见
+ * `src/start/assets.ts` 的 `START_SEQUENCE_ALIASES` 头注。
+ *
+ * 判据攒够一整段再一次报全，不是撞见第一帧就退：只报一帧的话，美术换掉了
+ * 三帧你要跑三遍才知道。
+ */
+function bakeStartAlias(
+  name: StartSequenceName,
+  alias: StartSequenceAlias,
+  manifest: Record<string, string>,
+  missing: string[],
+): number {
+  const sequence = START_SEQUENCES[name]
+  const target = START_SEQUENCES[alias.of]
+  // ⚠️ 下面那三条 `fail`（接力别名 / 帧数不等 / lossy 不等）**今天一条都红不了**：
+  // `START_SEQUENCE_ALIASES` 只有一条，三个分支都不可达。它们是给"第二条别名
+  // 进来的那天"准备的，没有篡改验证撑着 —— 别把它们读成已经验过的判据。真正
+  // 验过的是下面那条恒等判据（见提交信息里的篡改矩阵）。
+  // 显式标注成 `=> never`，TypeScript 才肯拿它做控制流收窄（少了这个标注，
+  // 下面 `relative` 在 `fail` 之后仍然是 `string | undefined`）。
+  const fail: (why: string) => never = (why) => {
+    console.error(`开始界面动画别名 ${name} → ${alias.of}：${why}`)
+    process.exit(1)
+  }
+  // 接力别名（a → b → c）今天没有，也不打算有：`manifest` 里 b 那条是不是
+  // 已经落好，取决于两个别名谁先被遍历到，而排错的那一头看到的是"查不到"。
+  if (isAliasedStartSequence(alias.of)) fail(`${alias.of} 自己也是别名，不许接力`)
+  // 帧数不等时 `aliasSourceFrame` 会算出一个越界的下标。越界的表现是
+  // "映射表里没有那一帧"，读起来像烘焙漏了 —— 在这里点名说清楚。
+  if (target.count !== sequence.count) {
+    fail(`帧数不等：${name} 有 ${sequence.count} 帧，${alias.of} 有 ${target.count} 帧`)
+  }
+  // 别名段没有自己的产物，`lossy` 说的是"它读到的那份字节是什么档位"，
+  // 所以必须跟被指向那一段相等。不等的话 `scrollQuality.test.ts` 那条声明与
+  // 产物的对账**报的是别人的账**（理由见 `StartSequence.lossy` 的头注）。
+  if (target.lossy !== sequence.lossy) {
+    fail(`lossy 声明不等：${name} 是 ${sequence.lossy}，${alias.of} 是 ${target.lossy}`)
+  }
+
+  const temporary = mkdtempSync(resolve(tmpdir(), 'xl-start-alias-'))
+  const mismatches: string[] = []
+  let frames = 0
+  try {
+    for (let frame = 0; frame < sequence.count; frame++) {
+      const targetFrame = aliasSourceFrame(alias, frame, sequence.count)
+      const mine = startFrameSource(sequence.dir, frame)
+      const theirs = startFrameSource(target.dir, targetFrame)
+      const mineAbsolute = resolve(REPO, mine)
+      const theirsAbsolute = resolve(REPO, theirs)
+      // 源缺失走跟别处同一条路（攒进 `missing` 一次报全），不在这里退：
+      // "文件不在"与"两帧对不上"是两回事，混在一起报会让前者读成后者。
+      if (!existsSync(mineAbsolute)) {
+        missing.push(`开始界面动画 ${mine}`)
+        continue
+      }
+      if (!existsSync(theirsAbsolute)) {
+        missing.push(`开始界面动画 ${theirs}`)
+        continue
+      }
+      const relative = manifest[startFrameAssetId(alias.of, targetFrame)]
+      if (relative === undefined) fail(`${alias.of} 的第 ${targetFrame} 帧还没进映射表`)
+
+      // 恒等判据。`toWebp` 对 `.png` 且不传 `forceLossy` 走的正是 `-lossless`，
+      // 所以这两行拿到的是可逆编码：字节相同 ⇒ 像素相同。
+      const a = resolve(temporary, `${frame}-a.webp`)
+      const b = resolve(temporary, `${frame}-b.webp`)
+      toWebp(mineAbsolute, a)
+      toWebp(theirsAbsolute, b)
+      if (!readFileSync(a).equals(readFileSync(b))) mismatches.push(`${mine} ≠ ${theirs}`)
+
+      manifest[startFrameAssetId(name, frame)] = relative
+      frames++
+    }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
+
+  if (mismatches.length > 0) {
+    console.error(
+      `开始界面动画别名 ${name} → ${alias.of}（${alias.order}）的恒等判据不成立，` +
+        `${sequence.count} 帧里有 ${mismatches.length} 帧对不上：`,
+    )
+    for (const line of mismatches) console.error(`  ${line}`)
+    console.error(
+      '别名成立的前提是这两段逐像素相同（见 src/start/assets.ts 的 START_SEQUENCE_ALIASES）。',
+    )
+    console.error(
+      '这里不回退到"那就分别烘一套"：回退会让"素材换了一批"读起来像"一切正常"。',
+    )
+    process.exit(1)
+  }
+  return frames
 }
 
 /**
