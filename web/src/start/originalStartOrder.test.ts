@@ -50,9 +50,17 @@ describe('原版点「起」：先换面板，后读盘（xl-w16）', () => {
     const switchTo = case0.indexOf('GameLauncher.switchTo("scene")')
     const initiation = case0.indexOf('initiation("脚本1.txt")')
 
-    // 三个界标各自都要真的找到 —— 少了这三句，下面那两个不等式在全 `-1`
-    // 的情况下依然成立（`-1 < -1` 为假，但 `-1 <= -1` 之类的写法会放行，
-    // 而"界标写错了"与"顺序对"本就该分得开）。
+    // 三个界标各自都要真的找到。**这三句是承重的，不是仪式**，而承重的
+    // 只是其中一部分，值得说准：
+    //
+    // - `switchTo` 或 `initiation` 写错（`-1`）时，下面的不等式自己就会假 ——
+    //   这两个即便没有上面三句也拦得住；
+    // - 但 `timer` 写错时，`-1 < switchTo` 与 `switchTo < initiation` **两条
+    //   都成立**，整条用例静静通过。也就是说"界标写错了"与"顺序真的对"在
+    //   那两个不等式下长得一模一样，而分开它们的正是这三句。
+    //
+    // 两边都篡改验证过（xl-w16）：把 `loadTimer.stop()` 写成
+    // `loadTimer.halt()`，留着这三句退出码 1，拿掉这三句退出码 0。
     expect(timer).toBeGreaterThanOrEqual(0)
     expect(switchTo).toBeGreaterThanOrEqual(0)
     expect(initiation).toBeGreaterThanOrEqual(0)

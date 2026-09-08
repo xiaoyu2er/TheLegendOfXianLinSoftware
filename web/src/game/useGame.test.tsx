@@ -324,12 +324,9 @@ describe('useGame 接线', () => {
     expect(afterLate).toBeDefined()
     late.unmount()
 
-    // 乙局：渲染器从头就在，同样三拍。
+    // 乙局：渲染器从头就在，同样三拍。这一局就是 `mount()` 本身。
     seen = []
-    renderHook(() => useGame(renderer, '宿舍'))
-    await act(async () => {
-      await loadScene('宿舍')
-    })
+    await mount('宿舍')
     press('ArrowRight')
     act(() => {
       vi.advanceTimersByTime(TICK_MS * 3)

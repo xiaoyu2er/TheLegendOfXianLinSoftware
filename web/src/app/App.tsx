@@ -66,13 +66,14 @@ export function App() {
    *
    * ⚠️ **它曾经还兼着标题那一屏的曲子，现在不了**（xl-w16）。`useGame` 那条
    * pump 原先起手一句 `if (!renderer) return`，于是主题曲要等这里预热的脚本1
-   * 整个载完才响 —— 实测哑 0.26–0.52 秒（改后 −8～−11 ms），而被自动播放
-   * 挡下来时代价更大
-   * （第一次手势会被浪费掉）。数字、测法与理由都在 `game/useGame.ts` 那条
-   * pump 的注释里，判据在 `game/useGameBgm.test.tsx`。
+   * 整个载完才响 —— 实测是**零点几秒的哑场**，而被自动播放挡下来时代价更大
+   * （第一次手势会被浪费掉）。**读数只有一份，不在这里抄**：数字与理由在
+   * `game/useGame.ts` 那条 pump 的注释里，测法在
+   * `scripts/measure-title-bgm.md`，判据在 `game/useGameBgm.test.tsx`。
    *
    * 所以这一句现在**只**为预热而存在：改掉它标题照样有声音，只是点完「起」
-   * 要多盯一会儿"正在载入 脚本1…"。
+   * 要多盯一会儿"正在载入 脚本1…"。而"照样有声音"这件事一旦成立，预热就
+   * 没有侧证了 —— 所以它自己那条判据在 `app/appPrewarm.test.tsx`。
    */
   const shownScene = game.scene ?? sceneName ?? START_SCENE
   const { status, renderer } = useSceneRenderer(sceneHostRef, shownScene)
