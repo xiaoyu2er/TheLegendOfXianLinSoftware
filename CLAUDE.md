@@ -99,8 +99,11 @@ re-export-and-diff regression checks, both of which must come back empty:
   reproducible — a *stable* wrong answer looks identical to a right one, and the
   empty `git diff` is what catches that. See `docs/trace-format.md`.
 
-`web/` has vitest (`pnpm test`). Building the real Java-side suite is tracked in
-beads (`xl-9bd.5`).
+`web/` has vitest (`pnpm test`). **The Java side has no unit tests at all**
+(`find . -path ./web -prune -o -name '*Test*.java' -print` is empty, measured
+2026-09-07). Whether to build one — and the fact that this sentence used to
+point at `xl-9bd.5`, a *closed* ticket about the golden tests rather than about
+a Java suite — is tracked in `xl-f8y`.
 
 ## Architecture Overview
 
