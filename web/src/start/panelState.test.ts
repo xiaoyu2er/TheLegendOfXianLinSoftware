@@ -156,6 +156,30 @@ describe('按钮高亮', () => {
     )
   })
 
+  it('⚠️ 按下之后，鼠标不出框只要再动一下，高亮当场续播', () => {
+    // 原版 `mouseMoved` 是每动一个像素就把 `isMoveIn` 对每颗按钮重跑一遍，
+    // 而 `isMoveIn` 里那句 `animation.startAnimation()` 是无条件的。所以
+    // `isPressedButton` 停掉的高亮，下一次鼠标微动就续上了。
+    let state = hoverStartButton(createStartPanelState(), 'newGame')
+    state = run(state, 2).state
+    state = pressStartButton(state, 'newGame')
+    // 按住之后不动：五拍都不转（上一条用例已经钉过）。
+    expect(new Set(run(state, 5).views.map((v) => v.buttons[0]!.glowFrame))).toEqual(new Set([0]))
+    // 框里再动一下 —— 同一颗按钮，进的还是它。
+    const moved = hoverStartButton(state, 'newGame')
+    // **状态必须真的变了**：什么都不变的话下面那条就是在验上一行的空操作。
+    expect(moved).not.toBe(state)
+    expect(run(moved, 1).views[0]!.buttons[0]!.glowFrame).not.toBe(0)
+  })
+
+  it('鼠标在同一颗按钮上一直动，状态原样返回 —— 不然每个鼠标事件都要重渲染', () => {
+    const inside = hoverStartButton(createStartPanelState(), 'newGame')
+    // 第二次进同一颗，什么都没变，返回的必须是同一个对象。
+    expect(hoverStartButton(inside, 'newGame')).toBe(inside)
+    // 而"没变就返回原对象"不能退化成"key 没变就返回原对象" —— 上一条用例
+    // 里按下之后 key 也没变，那次必须返回新状态。
+  })
+
   it('悬停换的是图，而且只画一张 —— 原版 buttonImage 就是一个字段', () => {
     const view = startView(hoverStartButton(createStartPanelState(), 'newGame'))
     expect(view.buttons.map((b) => b.hover)).toEqual([true, false, false, false])

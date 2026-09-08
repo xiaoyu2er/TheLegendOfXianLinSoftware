@@ -123,33 +123,41 @@ export function startButtonHitBox(button: StartButtonSpec): {
 }
 
 /**
- * 五颗按钮里**哪几颗真的接上了东西** —— 一份**手写的登记**，不是从别处推出
- * 来的（`docs/agents/dispatch.md` 纪律 3：登记必须由人签，推导出来的登记
- * 等于让被守的东西自己给自己签字）。
+ * 五颗按钮各自的**接线**：活没活、不活的话为什么 —— 一份**手写的登记**，
+ * 不是从别处推出来的（`docs/agents/dispatch.md` 纪律 3：登记必须由人签，
+ * 推导出来的登记等于让被守的东西自己给自己签字）。
  *
- * `false` 的那两颗在 UI 上是 `disabled`（不是不画 —— 不画的话"这一版还没做"
- * 与"原版本来就只有三颗按钮"在画面上分不开，而后者是错的），理由在下面的
- * `DISABLED_REASON` 里。
+ * 两件事合在一条里，是因为它们**必须一起改**：`enabled: false` 而没有理由，
+ * 与"忘了接线"长得一模一样；有理由却是 `true`，那句理由永远没人看得见。
+ * 分成两张表（原本正是两张）就要靠人记得同时改两处。
  *
- * ⚠️ **不要把这份名单改成从别处推出来的**（比如"有 handler 的就是活的"）：
- * 那样它就成了自己给自己签字，而这份名单要守的恰恰是"有没有人悄悄画了一颗
- * 点了没反应的按钮"。
+ * `false` 的那两颗在 UI 上是 `disabled`，**不是不画** —— 不画的话"这一版还没
+ * 做"与"原版本来就只有三颗按钮"在画面上分不开，而后者是错的。
+ *
+ * ⚠️ **不要把 `enabled` 改成从别处推出来的**（比如"有 handler 的就是活的"）：
+ * 那样它就成了自己给自己签字，而这份登记要守的恰恰是"有没有人悄悄画了一颗
+ * 点了没反应的按钮"。真正把这件事验出来的是 `StartPanel.test.tsx` 里那对
+ * 「点下去屏幕得真的变 / 得纹丝不动」—— 把这里任何一颗翻个面，两条都红
+ * （实测：`end` 翻成 `true`，三条用例当场红）。
  */
-export const START_BUTTON_ENABLED: Readonly<Record<StartButtonKey, boolean>> = {
-  newGame: true,
-  // 「转」与「回」是活的，但它们**不换面板** —— 走的是卷轴过场加
-  // 「关于我们」那一屏，全在状态机里，所以 `START_ACTIONS` 里没有它们。
-  about: true,
-  goBack: true,
-  load: false,
-  end: false,
+export interface StartButtonWiring {
+  /** `false` = 这一版明写不做，UI 上 `disabled`。 */
+  readonly enabled: boolean
+  /** 禁用理由，会写进按钮的 `title`。**活着的那几颗必须是 `null`**。 */
+  readonly disabledReason: string | null
 }
 
-/** 禁用的那两颗，鼠标停上去看得到理由。活的那三颗没有 `title`。 */
-export const DISABLED_REASON: Readonly<Record<StartButtonKey, string | null>> = {
-  newGame: null,
-  load: '读取存档要等 M6 存档（xl-i06.1）',
-  about: null,
-  end: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-4si）',
-  goBack: null,
+export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWiring>> = {
+  newGame: { enabled: true, disabledReason: null },
+  // 「转」与「回」是活的，但它们**不换面板** —— 走的是卷轴过场加「关于我们」
+  // 那一屏，全在状态机里（`panelState.ts`），所以组件那边没有它们的 handler。
+  about: { enabled: true, disabledReason: null },
+  goBack: { enabled: true, disabledReason: null },
+  load: { enabled: false, disabledReason: '读取存档要等 M6 存档（xl-i06.1）' },
+  end: {
+    enabled: false,
+    // 原版是 `System.exit(0)`。浏览器里没有对应物：`window.close()` 只对脚本
+    // 自己开的窗口有效，玩家从地址栏进来的页面调它一声不吭。
+    disabledReason: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-4si）',
+  },
 }

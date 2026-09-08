@@ -14,7 +14,7 @@
     "web/src/data/javaSplit.ts": "7ab857e7be637d3d89033009959d915ddbb5881c9c42e506b6919eb2f03472d5",
     "web/src/data/types.ts": "8d659392b947586e5b77e922e198e54d1506508414501393676bf4dac575d072",
     "web/src/stage/constants.ts": "5e67338cf7b79f3e2a01b01403f2f6d1927f746e8357e33564c00228d928c481",
-    "web/src/start/assets.ts": "728d89f11c9eec6c42fb85464da9a682a2c1c16a529b227796f504482ac35171",
+    "web/src/start/assets.ts": "4e859d1b931b5fa2e7a6ae65d3627980db675a750d0cd3ac6ce7bbb48e06de49",
     "web/src/state/dialogue.ts": "314abf6abadbf594fc30cd3dc9698ea1bcac6c51e93e1ad018cc9c414ffbc41b",
     "web/src/state/exit.ts": "ea688ea78d3d4a3b8819ca9b9aa304e82b188fd0645ba650d083a6f1d0e0abbc",
     "web/src/state/fight.ts": "3863f5a19b2018fc080309d6429932141cddfaef640e19d5b427e27b6799b047",

@@ -11,14 +11,7 @@ import {
   updateImage,
 } from './animation'
 import type { CloudDrift } from './animation'
-import {
-  CLOUD_FLOOR,
-  CLOUD_HIGH_Y,
-  CLOUD_IMAGE_HEIGHT,
-  CLOUD_LOW_Y,
-  CLOUD_MOVE,
-  CLOUD_START_Y,
-} from './layout'
+import { CLOUD_HIGH_Y, CLOUD_LOW_Y, CLOUD_START_Y } from './layout'
 
 /**
  * `StartAnimation` / `CloudAnimation` / `StartTimer` 三个类的移植。
@@ -122,18 +115,11 @@ describe('StartAnimation', () => {
   })
 })
 
-const CLOUD_OPTIONS = {
-  move: CLOUD_MOVE,
-  imageHeight: CLOUD_IMAGE_HEIGHT,
-  floor: CLOUD_FLOOR,
-  startY: CLOUD_START_Y,
-}
-
 function drift(ticks: number): CloudDrift[] {
   let cloud: CloudDrift = { y: CLOUD_START_Y, isChange: false }
   const path: CloudDrift[] = []
   for (let i = 0; i < ticks; i++) {
-    cloud = updateCloud(cloud, CLOUD_OPTIONS)
+    cloud = updateCloud(cloud)
     path.push(cloud)
   }
   return path

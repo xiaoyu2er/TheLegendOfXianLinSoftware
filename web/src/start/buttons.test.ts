@@ -7,12 +7,11 @@ import { repoPath } from '../test/repoPath'
 import { START_IMAGES } from './assets'
 import type { StartImageName } from './assets'
 import {
-  DISABLED_REASON,
   HIT_OFFSET_X,
   HIT_OFFSET_Y,
   INITIAL_START_BUTTONS,
   START_BUTTONS,
-  START_BUTTON_ENABLED,
+  START_BUTTON_WIRING,
   startButtonHitBox,
 } from './buttons'
 
@@ -81,22 +80,21 @@ describe('开始界面的按钮', () => {
   })
 
   it('五颗里有两颗是**明写不做**的，理由逐字签在这里', () => {
-    // 这是一份手写的登记（见 `START_BUTTON_ENABLED` 的头注）。把它改成
-    // 从别处推出来的，"有没有人悄悄画了一颗点了没反应的按钮"就没人问了。
-    expect(START_BUTTON_ENABLED).toEqual({
-      newGame: true,
-      about: true,
-      goBack: true,
-      load: false,
-      end: false,
-    })
+    // 这是一份手写的登记（见 `START_BUTTON_WIRING` 的头注）。在这里签一次字：
+    // 改成从别处推出来的，"有没有人悄悄画了一颗点了没反应的按钮"就没人问了。
+    //
+    // ⚠️ 这条**只是签字，不是判据** —— 它拿登记跟同一份登记的手抄本比，
+    // 两边一起改就照绿。真正验这件事的是 `StartPanel.test.tsx` 里那条
+    // 「每一颗活着的按钮，点下去屏幕都得真的变」。
+    expect(Object.fromEntries(START_BUTTONS.map((b) => [b.key, START_BUTTON_WIRING[b.key].enabled])))
+      .toEqual({ newGame: true, about: true, goBack: true, load: false, end: false })
     // 禁用的那两颗必须各自带一句理由，活的那三颗必须没有 —— 一颗按钮"禁用
     // 了但没说为什么"与"忘了接线"长得一模一样。
     for (const button of START_BUTTONS) {
-      expect(
-        DISABLED_REASON[button.key] === null,
-        `${button.key} 的 title 与它的启用状态对不上`,
-      ).toBe(START_BUTTON_ENABLED[button.key])
+      const wiring = START_BUTTON_WIRING[button.key]
+      expect(wiring.disabledReason === null, `${button.key} 的理由与它的启用状态对不上`).toBe(
+        wiring.enabled,
+      )
     }
     // 分母：真的检查了五颗，而不是循环一次都没进。
     expect(START_BUTTONS).toHaveLength(5)

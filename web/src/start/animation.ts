@@ -1,3 +1,5 @@
+import { CLOUD_FLOOR, CLOUD_IMAGE_HEIGHT, CLOUD_MOVE, CLOUD_START_Y } from './layout'
+
 /**
  * `start.StartAnimation` / `start.CloudAnimation` / `start.StartTimer` 三个类的
  * 纯函数移植（xl-4si）。
@@ -81,7 +83,10 @@ export function startAnimation(a: FrameAnimation): FrameAnimation {
  * 但 `next` 不动（怪癖，见 `FrameAnimation` 的头注）。
  */
 export function stopButtonAnimation(a: FrameAnimation): FrameAnimation {
-  return { ...a, isStop: true, frame: 0 }
+  // 已经停在第 0 帧就原样返回。**这不是优化**：原版 `mouseMoved` 每动一个
+  // 像素就把没进的每一颗都停一遍，web 端照抄（`hoverStartButton`），要是每次
+  // 都造新对象，"状态变没变"就永远为真，每个鼠标事件都要重渲染整屏。
+  return a.isStop && a.frame === 0 ? a : { ...a, isStop: true, frame: 0 }
 }
 
 /**
@@ -112,21 +117,13 @@ export interface CloudDrift {
  * −390 与 370，不是 −384 与 360（见 `layout.ts` 的 `CLOUD_LOW_Y` /
  * `CLOUD_HIGH_Y`）。第一程比此后每一程短一拍，因为它是从 360 起步而不是 370。
  */
-export function updateCloud(
-  cloud: CloudDrift,
-  options: {
-    readonly move: number
-    readonly imageHeight: number
-    readonly floor: number
-    readonly startY: number
-  },
-): CloudDrift {
+export function updateCloud(cloud: CloudDrift): CloudDrift {
   if (!cloud.isChange) {
-    const y = cloud.y - options.move
-    return { y, isChange: y + options.imageHeight < options.floor }
+    const y = cloud.y - CLOUD_MOVE
+    return { y, isChange: y + CLOUD_IMAGE_HEIGHT < CLOUD_FLOOR }
   }
-  const y = cloud.y + options.move
-  return { y, isChange: !(y > options.startY) }
+  const y = cloud.y + CLOUD_MOVE
+  return { y, isChange: !(y > CLOUD_START_Y) }
 }
 
 /** 对应 `StartTimer` 的三个字段。 */

@@ -68,7 +68,7 @@ export interface StartSequence {
  * 目录，原版一张都没读过。扫目录会把它们一起烘进来，而多烘几张图在画面上
  * 完全看不出来。
  *
- * 那这个数字谁来守？`assets.test.ts` 把 `initialAnimations()` 里那七句
+ * 那这个数字谁来守？`layout.test.ts` 把 `initialAnimations()` 里那七句
  * `new StartAnimation(n, "目录名", …)` 从 GBK 源码里现读出来逐条比 ——
  * 分母是「七句」，少一句立刻红。烘焙器那边再核一次文件在不在
  * （`scripts/bake.ts`，缺了攒进 `missing` 一次报全）。

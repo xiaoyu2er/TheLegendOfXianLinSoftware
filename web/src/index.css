@@ -276,7 +276,7 @@ body {
 
 .start-button:disabled {
   /* 同上，禁用也不放系统光标出来。点不点得动由 `disabled` 与那颗按钮的
-     `title` 表达（见 StartPanel.tsx 的 DISABLED_REASON）。 */
+     `title` 表达（见 buttons.ts 的 START_BUTTON_WIRING）。 */
   cursor: inherit;
 }
 

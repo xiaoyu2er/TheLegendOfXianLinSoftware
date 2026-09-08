@@ -4,11 +4,10 @@ import type { StartSequenceName } from '../assets/ids'
 import { resolveAsset } from '../assets/resolve'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import {
-  DISABLED_REASON,
   HIT_OFFSET_X,
   HIT_OFFSET_Y,
   START_BUTTONS,
-  START_BUTTON_ENABLED,
+  START_BUTTON_WIRING,
   startButtonHitBox,
 } from './buttons'
 import type { StartButtonKey, StartButtonSpec } from './buttons'
@@ -40,7 +39,8 @@ import { useStartPanel } from './useStartPanel'
  *
  * ## 五颗按钮里有两颗是**明写不做**的（登记，不是遗漏）
  *
- * 见下面的 `START_ACTIONS`。禁用而不是不画：不画的话"这一版还没做"与
+ * 见 `buttons.ts` 的 `START_BUTTON_WIRING`（登记与理由）与下面的 `actions`
+ * （哪个动作接到了什么）。禁用而不是不画：不画的话"这一版还没做"与
  * "原版本来就只有三颗按钮"在画面上分不开，而后者是错的。
  *
  * ## 自绘鼠标：`cursor: none` 而不是一个透明光标
@@ -56,6 +56,9 @@ export interface StartPanelProps {
   readonly onNewGame: () => void
 }
 
+/** 逻辑名 → 那颗按钮的摆位。`START_BUTTONS` 是模块常量，这张表也就不必每渲染重建。 */
+const SPECS = new Map<StartButtonKey, StartButtonSpec>(START_BUTTONS.map((b) => [b.key, b]))
+
 /** 一段逐帧动画的第几帧 → URL。 */
 const frameSrc = (name: StartSequenceName, frame: number): string =>
   resolveAsset(startFrameAssetId(name, frame))
@@ -64,24 +67,19 @@ export function StartPanel({ onNewGame }: StartPanelProps) {
   /**
    * 状态机推出来的三种动作，各自接到什么上。
    *
-   * `null` = **这一版明写不做**，而对应的那颗按钮在下面是 `disabled` 的，
-   * 所以这条路走不到（`StartPanel.test.tsx` 里有一条用例钉着"两颗都禁用"）。
-   * 两条各自的理由：
-   *
-   * - `loadPanel`（「承」）—— 原版进 `LoadAndSavePanel`，而 web 端的存档要等
-   *   M6（`xl-i06.1`）。
-   * - `exit`（「结」）—— 原版是 `System.exit(0)`。**浏览器里没有对应物**：
-   *   `window.close()` 只对脚本自己开的窗口有效，玩家从地址栏进来的页面调它
-   *   一声不吭。做一颗点了没反应的按钮，与"做完了"长得一模一样，所以这里
-   *   禁用它并把理由写在 `title` 上。登记在 `xl-4si`，缺陷本身另开票。
+   * `null` 的那两个对应 `START_BUTTON_WIRING` 里 `enabled: false` 的两颗按钮
+   * （「承」/ `loadPanel`、「结」/ `exit`），理由逐字写在那张表上。两处必须
+   * 一致，而**验它的不是一条比对而是行为**：`StartPanel.test.tsx` 里那条
+   * 「每一颗活着的按钮，点下去屏幕都得真的变」—— 把某颗按钮放开却不在这里
+   * 接线，那条立刻红，因为点了它屏幕上什么都不会变。
    */
-  const START_ACTIONS: Readonly<Record<StartEffect, (() => void) | null>> = {
+  const actions: Readonly<Record<StartEffect, (() => void) | null>> = {
     newGame: onNewGame,
     loadPanel: null,
     exit: null,
   }
 
-  const panel = useStartPanel((effect) => START_ACTIONS[effect]?.())
+  const panel = useStartPanel((effect) => actions[effect]?.())
   const view = panel.view
 
   /**
@@ -100,12 +98,10 @@ export function StartPanel({ onNewGame }: StartPanelProps) {
     )
   }
 
-  const specs = new Map<StartButtonKey, StartButtonSpec>(START_BUTTONS.map((b) => [b.key, b]))
-
   const renderButton = (button: StartButtonView) => {
-    const spec = specs.get(button.key)!
+    const spec = SPECS.get(button.key)!
     const hit = startButtonHitBox(spec)
-    const enabled = START_BUTTON_ENABLED[button.key]
+    const wiring = START_BUTTON_WIRING[button.key]
     // 把图从**命中框**的左上角推回原版的绘制位置 (x, y)。数字不写进 CSS：
     // 那样它就和 `buttons.ts` 里那对偏移各说各话了。
     const face = { left: `${-HIT_OFFSET_X}px`, top: `${-HIT_OFFSET_Y}px` }
@@ -124,9 +120,18 @@ export function StartPanel({ onNewGame }: StartPanelProps) {
           height: `${hit.height}px`,
         }}
         aria-label={spec.label}
-        disabled={!enabled}
-        title={DISABLED_REASON[button.key] ?? undefined}
+        disabled={!wiring.enabled}
+        title={wiring.disabledReason ?? undefined}
         data-hover={button.hover ? 'true' : 'false'}
+        // ⚠️ `onMouseMove` 与 `onMouseEnter` **两个都要**。原版
+        // `mouseMoved` 是每动一个像素就把 `isMoveIn` 对每颗按钮重跑一遍，
+        // 而 `isPressedButton` 会把高亮停掉 —— 于是"点一下、鼠标不出框、
+        // 稍微动一动"，高亮当场续播。只挂 `onMouseEnter` 的话必须移出去再
+        // 移回来才转，而"点完之后那圈不转了"在截图上完全看不出来。
+        //
+        // 命中判定仍然归 DOM（按钮元素占的就是那个命中框，见 `buttons.ts`），
+        // 这里不自己算坐标。
+        onMouseMove={() => panel.hover(button.key)}
         onMouseEnter={() => panel.hover(button.key)}
         onMouseLeave={() => panel.hover(null)}
         // 键盘走到这颗上等于"鼠标移进来"：原版没有这一条（它只认坐标），

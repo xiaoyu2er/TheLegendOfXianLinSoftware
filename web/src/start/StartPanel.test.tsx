@@ -5,12 +5,11 @@ import { resolveAsset } from '../assets/resolve'
 import { StartPanel } from './StartPanel'
 import { START_SEQUENCES } from './assets'
 import {
-  DISABLED_REASON,
   HIT_OFFSET_X,
   HIT_OFFSET_Y,
   INITIAL_START_BUTTONS,
   START_BUTTONS,
-  START_BUTTON_ENABLED,
+  START_BUTTON_WIRING,
   startButtonHitBox,
 } from './buttons'
 import { ABOUT_TICKS, ABOUT_WIDTH, LOAD_TICKS, START_TICK_MS } from './layout'
@@ -72,9 +71,9 @@ describe('开始界面', () => {
     for (const spec of initial) {
       const element = screen.getByRole('button', { name: spec.label })
       expect(element.hasAttribute('disabled'), `${spec.key} 的启用状态`).toBe(
-        !START_BUTTON_ENABLED[spec.key],
+        !START_BUTTON_WIRING[spec.key].enabled,
       )
-      expect(element.getAttribute('title')).toBe(DISABLED_REASON[spec.key])
+      expect(element.getAttribute('title')).toBe(START_BUTTON_WIRING[spec.key].disabledReason)
     }
     // **禁用而不是不画**：不画的话「这一版还没做」与「原版就只有三颗按钮」
     // 分不开，而后者是错的。
@@ -139,6 +138,25 @@ describe('开始界面', () => {
     fireEvent.mouseLeave(el)
     expect(face()).toContain(resolveAsset(startAssetId('newGame')))
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
+  })
+
+  it('⚠️ 点完之后鼠标在框里动一下，高亮续播 —— 组件挂了 onMouseMove', () => {
+    render(<StartPanel onNewGame={() => {}} />)
+    const el = screen.getByRole('button', { name: '关于我们' })
+    const glow = () => (el.querySelector('.start-button-glow') as HTMLImageElement).src
+
+    fireEvent.mouseEnter(el)
+    tick(2)
+    expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 1)))
+    // 按一下 —— 原版 isPressedButton 把高亮停了。
+    fireEvent.mouseDown(el)
+    fireEvent.click(el)
+    tick(3)
+    expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
+    // 鼠标没出框，只是动了一下。只挂 onMouseEnter 的话这里还是第 0 帧。
+    fireEvent.mouseMove(el)
+    tick(1)
+    expect(glow()).not.toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
   })
 
   it('键盘 Tab 过来也换图、也转高亮 —— 原版没有这条，是这里补的无障碍', () => {
@@ -229,6 +247,66 @@ describe('开始界面', () => {
       ['650px', '480px'],
       ['700px', '200px'],
     ])
+  })
+
+  /**
+   * **登记与行为的对撞**（ADR-0005 那条「两个方向都会红」在这一屏的落点）。
+   *
+   * `START_BUTTON_WIRING` 说某颗按钮是活的，而组件那边没给它接线（或者状态机
+   * 那条路根本不通），表现就是"点了没反应" —— 而那与"做完了"在截图上一模一样，
+   * 正是票面 § Further notes 点名要避免的那件事。
+   *
+   * 判据是**屏幕签名**：屏幕上有哪几颗按钮、关于我们在不在、onNewGame 被调了
+   * 几次。不拿整段 innerHTML 比，因为云和鼠标每一拍都在动，那样"什么都没发生"
+   * 也会看起来变了 —— 那种检查的失败和成功长得一样。
+   *
+   * 两个方向：
+   * - 把 `end`（或 `load`）翻成 `enabled: true` → 它成了可点的，点下去签名不变 → 红。
+   * - 把某颗真活着的按钮的接线拆掉 → 同样红。
+   */
+  it('每一颗活着的按钮，点下去屏幕都得真的变', () => {
+    const enabled = START_BUTTONS.filter(
+      (b) => START_BUTTON_WIRING[b.key].enabled && INITIAL_START_BUTTONS.includes(b.key),
+    )
+    // 分母：开机那四颗里活着的有几颗。零颗的循环跑完看起来跟全过了一样。
+    expect(enabled.map((b) => b.key)).toEqual(['newGame', 'about'])
+
+    for (const spec of enabled) {
+      const onNewGame = vi.fn()
+      const signature = () => ({
+        buttons: screen.getAllByRole('button').map((b) => b.getAttribute('aria-label')),
+        about: screen.queryByTestId('start-about') !== null,
+        newGame: onNewGame.mock.calls.length,
+      })
+      const view = render(<StartPanel onNewGame={onNewGame} />)
+      const before = signature()
+      fireEvent.click(screen.getByRole('button', { name: spec.label }))
+      // 卷轴 10 拍 + 载入表 30 拍，够走完最长的那条路。
+      tick(10 + LOAD_TICKS)
+      expect(signature(), `点「${spec.label}」之后屏幕没有任何变化`).not.toEqual(before)
+      view.unmount()
+    }
+  })
+
+  it('禁用的那两颗点下去屏幕纹丝不动 —— 与上一条同一个签名', () => {
+    const disabled = START_BUTTONS.filter(
+      (b) => !START_BUTTON_WIRING[b.key].enabled && INITIAL_START_BUTTONS.includes(b.key),
+    )
+    expect(disabled.map((b) => b.key)).toEqual(['load', 'end'])
+    for (const spec of disabled) {
+      const onNewGame = vi.fn()
+      const signature = () => ({
+        buttons: screen.getAllByRole('button').map((b) => b.getAttribute('aria-label')),
+        about: screen.queryByTestId('start-about') !== null,
+        newGame: onNewGame.mock.calls.length,
+      })
+      const view = render(<StartPanel onNewGame={onNewGame} />)
+      const before = signature()
+      fireEvent.click(screen.getByRole('button', { name: spec.label }))
+      tick(10 + LOAD_TICKS)
+      expect(signature(), `禁用的「${spec.label}」竟然有反应`).toEqual(before)
+      view.unmount()
+    }
   })
 
   it('点禁用的「承」什么都不发生', () => {

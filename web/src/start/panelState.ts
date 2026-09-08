@@ -19,9 +19,6 @@ import {
   ABOUT_REVEAL_STEP,
   ABOUT_TICKS,
   ABOUT_WIDTH,
-  CLOUD_FLOOR,
-  CLOUD_IMAGE_HEIGHT,
-  CLOUD_MOVE,
   CLOUD_START_Y,
   LOAD_TICKS,
 } from './layout'
@@ -170,7 +167,14 @@ export function hoverStartButton(
       i === at ? (inside ? startAnimation(a) : stopButtonAnimation(a)) : a,
     )
   }
-  return { ...state, hover, glow }
+  // 什么都没变就原样返回。**这不是优化，是必需的**：原版 `mouseMoved` 每动
+  // 一个像素就重跑一遍，而 web 端 `onMouseMove` 也是 —— 每次都造新对象的话
+  // 就是每个鼠标事件一次重渲染。判据是"逐个字段都没变"，不是"key 没变"：
+  // 按下之后 key 没变而高亮该续播，那一次必须真的返回新状态。
+  const same =
+    state.buttons.every((k) => hover[k] === state.hover[k]) &&
+    glow.every((a, i) => a === state.glow[i])
+  return same ? state : { ...state, hover, glow }
 }
 
 /** 原版 `mousePressed`：按住的那颗换成按下图、`isclicked = true`、**高亮停掉**。 */
@@ -248,12 +252,7 @@ function updatePhase(state: StartPanelState): StartPanelState {
     glow: state.glow.map(updateImage),
     scroll: updateImage(state.scroll),
     backScroll: updateImage(state.backScroll),
-    cloud: updateCloud(state.cloud, {
-      move: CLOUD_MOVE,
-      imageHeight: CLOUD_IMAGE_HEIGHT,
-      floor: CLOUD_FLOOR,
-      startY: CLOUD_START_Y,
-    }),
+    cloud: updateCloud(state.cloud),
     loading: updateImage(state.loading),
     loading2: updateImage(state.loading2),
     aboutTimer: updateCountdown(state.aboutTimer),
