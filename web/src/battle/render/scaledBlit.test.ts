@@ -293,4 +293,11 @@ describe('说不清楚的输入要响', () => {
   it('源长超出量过的范围要响，而不是编一个答案', () => {
     expect(() => nearestSourceIndexes(256, 100)).toThrow(/量过/)
   })
+
+  it('目标长超出扫过的范围（源长的两倍）同样要响', () => {
+    const srcLen = TRANSPARENT.y.srcLen
+    // 边界上那一档是扫过的，必须照常给答案；再多一个就是外推。
+    expect(nearestSourceIndexes(srcLen, srcLen * 2)).toHaveLength(srcLen * 2)
+    expect(() => nearestSourceIndexes(srcLen, srcLen * 2 + 1)).toThrow(/外推/)
+  })
 })
