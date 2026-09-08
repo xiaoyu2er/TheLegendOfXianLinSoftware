@@ -2,7 +2,7 @@ import { expToLevelUp, refreshValue } from './units'
 import { updateVictoryReminder } from './victory'
 import type { PartyKey, SkillSpec } from './units'
 import { DRUGS, drugIntroText } from './drugs'
-import { MISHU_ANIM, SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
+import { MISHU_ANIM, PET_ATTACK, SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
 import type { SkillEntry } from './skills'
 import {
   MENU_BUTTON_H,
@@ -1403,23 +1403,20 @@ function makePet(w: BattleWorld): Pet {
   return { x: 700, y: 400, speed, power, isDraw: true, isStop: false, code: 0 }
 }
 
-/** `Pet.attack()` 那一发 `skillAnimation.set(...)`。 */
-const PET_ATTACK: SkillSpec = {
-  name: '小精灵攻击',
-  length: 22,
-  x: 120,
-  y: 135,
-  beAttackedCode: 8,
-  beAttackedTimes: 1,
-  runCode: 6,
-  attackCode: 16,
-  withdrawCode: 22,
-  offsetTo1: 90,
-  offsetTo2: 210,
-  offsetTo3: 0,
-}
-
-/** `Pet.update()`：上浮五拍、下沉五拍，第十拍归零。只动 `y`。 */
+/**
+ * `Pet.update()`。只动 `y`。
+ *
+ * ⚠️ **原版的注释说「上浮五拍、下沉五拍」，而它的代码不是那样**（xl-rh9.15
+ * 实测）：三个 `if` 是并列的，`code==4` 那一拍先 `y--`（code 变 5），紧接着
+ * 第二支立刻成立又 `y++`（code 变 6，5 被跳过）。同一拍一上一下净位移 0，
+ * 于是一轮是 **9 拍**：−1 四拍、平一拍、+1 四拍，振幅 4。下面的实现是照抄
+ * 那两个顺序 `if` 的，形状由 `render/drawList.test.ts` 那条判据钉着 ——
+ * `pet.y` 不在行为真值里，只有它验得到。
+ *
+ * **这段说明只在这里写一份**，`render/drawList.ts` 与 `compare/expected.ts`
+ * 都指回这里：xl-rh9.15 的评审里，同一段话抄了三份而改的时候漏掉一份，
+ * 于是仓库里同时留着"9 拍"和"十拍"两种说法。
+ */
 function updatePet(pet: Pet): void {
   if (pet.isStop) return
   if (pet.code < 5) {

@@ -495,6 +495,9 @@ describe('全部战斗真值合起来画到了哪几层', () => {
     'hurt-value',
     'instruct',
     'mouse',
+    // xl-rh9.15 之前这一层在 UNCOVERED 里：先是结构性缺席（世界里没有 pet
+    // 这个字段），xl-rh9.14 之后是走到就抛。battle-mishu-lu 第 864 拍起画到它。
+    'pet',
     'progress-bar',
     'reminder',
     'skill-anim',
@@ -505,12 +508,15 @@ describe('全部战斗真值合起来画到了哪几层', () => {
     'victory-reminder',
   ]
 
-  /** 一次都没画到的层，各自写明为什么。**没有第三种。** */
-  const UNCOVERED: Readonly<Record<string, string>> = {
-    pet:
-      'xl-rh9.14 把陆雪琪的秘术做出来之后，世界里有了 pet 字段（battle-mishu-lu ' +
-      '第 855 拍召出它）—— 这一层因此从"结构性缺席"变成了抛，归 xl-rh9.15'
-  }
+  /**
+   * 一次都没画到的层，各自写明为什么。**没有第三种。**
+   *
+   * xl-rh9.15 把小精灵画出来之后这里空了 —— 25 层全部被至少一条真值走到过。
+   * **空不等于这张表没用**：上面那条「不许有第三种」拿它当分母，谁新加一层
+   * 却不写判据，`unaccounted` 立刻红；而下面「登记说盖不到，实际画到了」
+   * 那一支现在恒真，它只在这张表重新长出条目时才有对象。
+   */
+  const UNCOVERED: Readonly<Record<string, string>> = {}
 
   /** 每一条真值各跑一遍，收下它画到的层。抛了就停在那一拍（那也是结论）。 */
   const covered = (() => {
@@ -585,6 +591,187 @@ describe('伤害数字的位数', () => {
   })
 })
 
+describe('battle-mishu-lu：第 11 层小精灵与行动条上那一颗（xl-rh9.15）', () => {
+  /**
+   * 这一层的像素归跨端逐帧比对（`expected.ts` 的 `battle-mishu-lu`，硬比区
+   * 44 帧逐像素相等）。这里补的是**那 44 帧看不见、而它一坏就悄悄坏**的三样：
+   *
+   * 1. **z 序**。小精灵在 (700,396..400)，行动条在 y=50 —— 两层压根不重叠，
+   *    所以把 `petOps` 挪到行动条之后，逐帧比对**一个像素都不变**。实测过：
+   *    位置差 3 个像素、y 钉死不浮动、不看 `isDraw`、行动条那一颗改看
+   *    `pet.isDraw`，四种篡改比对全红，唯独换序是绿的。次序就是 z 序，而
+   *    「抄错一层」的表现是某个精灵被别的盖住 —— 这一场看不见，换一场
+   *    （小精灵飘到行动条上）就看得见了。
+   * 2. **浮动的形状**。`pet.y` 一个字段都不在行为真值里 —— 逐步的 `toEqual`
+   *    验不到它。这里不手写坐标（CLAUDE.md 明令禁止手写状态层的期望值，而
+   *    这个数没有真值可读），验的是**形状**，见下面那条。
+   * 3. **两层各自的开关不是同一个**：本体看 `pet.isDraw`，行动条那一颗看
+   *    `bp.pet!=null`。后者的横坐标 `bar.pet` 在真值里，所以对得上真值。
+   *
+   * 拍号先**从真值里现找**（`anim.skill` 变成哪一发、`bar.pet` 什么时候动），
+   * 再把找出来的那个数**签一次**（`expect(summonTick).toBe(855)`）。两步都要：
+   * 现找的那一步保证判据的意思跟着真值走，签名的那一步保证真值重导之后
+   * **这里会响**而不是悄悄换一组拍号继续绿。
+   */
+  const PET_BODY = 'battle:小精灵/小精灵.png'
+  const PET_HEAD = 'battle:小精灵/头像.png'
+
+  const trace = readBattleTrace('battle-mishu-lu')
+  const frames = (() => {
+    const world = replayBattle(trace, spriteSize)
+    const paint = createPaintState(world)
+    const out = new Map<number, DrawOp[]>()
+    for (const tick of trace.ticks) {
+      stepBattleWithPaint(world, paint, tick.input)
+      out.set(tick.t, battleDrawList(world, paint))
+    }
+    return out
+  })()
+  const at = (t: number, layer: LayerName): DrawOp[] => {
+    const ops = frames.get(t)
+    expect(ops, `第 ${t} 拍没收到清单`).toBeDefined()
+    return ops!.filter((op) => op.layer === layer)
+  }
+  /** 小精灵本体这一拍画在哪；没画是 null。 */
+  const bodyAt = (t: number): [number, number] | null => {
+    const ops = at(t, 'pet')
+    if (ops.length === 0) return null
+    expect(ops.length, `第 ${t} 拍小精灵画了 ${ops.length} 次`).toBe(1)
+    const op = ops[0]!
+    if (op.kind !== 'image') throw new Error('小精灵那一层只该有 image')
+    expect(op.id).toBe(PET_BODY)
+    return [op.x, op.y]
+  }
+  /** 行动条上小精灵那一颗的横坐标（七颗里只挑它）；没画是 null。 */
+  const headXAt = (t: number): number | null => {
+    const ops = at(t, 'progress-bar').filter((op) => op.kind === 'image' && op.id === PET_HEAD)
+    if (ops.length === 0) return null
+    expect(ops.length, `第 ${t} 拍小精灵的头像画了 ${ops.length} 次`).toBe(1)
+    const op = ops[0]!
+    // ⚠️ 这里**不能**写 `op.kind === 'image' ? op.x : null` —— 那个 null 与
+    // 「这一拍没画头像」是同一个返回值，而后者正是好几条断言的通过态。
+    // 「失败的样子和成功一样」的现成形状（xl-rh9.15 评审收的一条）。
+    if (op.kind !== 'image') throw new Error(`第 ${t} 拍头像那一条不是 image`)
+    return op.x
+  }
+  const tickAt = (t: number) => {
+    const tick = trace.ticks.find((x) => x.t === t)
+    expect(tick, `真值里没有第 ${t} 拍`).toBeDefined()
+    return tick!
+  }
+
+  /** 秘术动画起的那一拍 —— `heroMishu` 里 `new Pet(bp)` 与 `setSkillAnimation` 同一句话。 */
+  const summonTick = trace.ticks.find((x) => x.anim.skill === '陆雪琪秘术')!.t
+  /** `bar.pet` 第一次离开初值的那一拍。 */
+  const initialBarPet = trace.ticks[0]!.bar.pet
+  const barMoveTick = trace.ticks.find((x) => x.bar.pet !== initialBarPet)!.t
+
+  it('召出来那一拍是秘术动画起的那一拍，比 bar.pet 动早 9 拍', () => {
+    // ⚠️ **这两个数不是同一件事**，票面原先把它们当成了同一件事。
+    // `new Pet(bp)` 在秘术动画起的那一拍（真值第 855 拍，`anim.skill` 变成
+    // 「陆雪琪秘术」），而 `bar.pet` 要到第 864 拍才动 —— 中间那 9 拍行动条
+    // 是停的（`progressBar.isStop`），小精灵却已经在场上浮动了。
+    //
+    // 判据由此有了分辨力：把「召出来」写成「bar.pet 动了」，这 9 拍的小精灵
+    // 就会整个消失，而跨端比对的采样点是 25 的倍数、这一段一帧都不采
+    // （850 与 875 各在两头），**像素比对看不见**。
+    expect(summonTick).toBe(855)
+    expect(barMoveTick).toBe(864)
+    expect(barMoveTick - summonTick).toBe(9)
+
+    // 之前：两层一张图都没有。分母是真值自己的拍数。
+    for (const tick of trace.ticks) {
+      if (tick.t >= summonTick) break
+      expect(bodyAt(tick.t), `第 ${tick.t} 拍不该有小精灵`).toBeNull()
+      expect(headXAt(tick.t), `第 ${tick.t} 拍不该有小精灵的头像`).toBeNull()
+    }
+    // 召出来那一拍起：两层都在，头像的横坐标一直等于真值里的 `bar.pet`
+    // ——包括它还没开始动的那 9 拍（恒是初值）。
+    for (let t = summonTick; t < barMoveTick; t++) {
+      expect(bodyAt(t), `第 ${t} 拍该有小精灵`).not.toBeNull()
+      expect(headXAt(t), `第 ${t} 拍头像的 x`).toBe(initialBarPet)
+    }
+    expect(headXAt(barMoveTick)).toBe(tickAt(barMoveTick).bar.pet)
+  })
+
+  it('小精灵出手那一段：本体消失，行动条上那一颗照画', () => {
+    // 原版 `Pet.attack()` 把 `isDraw` 关掉（本体让位给技能动画），而
+    // `ProgressBar.drawProgressBar` 判的是 `bp.pet!=null` —— 两个判据写成
+    // 同一个，那一颗头像会在攻击动画期间闪一下。实测这条篡改在跨端比对里
+    // 也红（第 950 帧 924 个像素 @ (717,54)-(752,84)），两处互为旁证。
+    //
+    // 这一段的两头都从真值里现找：起点是 `anim.skill` 第一次变成
+    // 「小精灵攻击」，终点是 `bar.pet` 被打回起跑线那一拍
+    // （`checkPetTurn` 收尾的 `progressBar.petX = barX`，与 `isDraw=true`
+    // 同一句话）。⚠️ **不能拿「`anim.skill` 还是不是小精灵攻击」当终点**：
+    // 原版 `SkillAnimation.set()` 不清名字，那一发放完之后名字还挂着，
+    // 一直挂到下一发（真值里是第 960 拍）—— 拿它当终点，第 956..959 这四拍
+    // 会被错判成「本体不该画」。
+    const attackStart = trace.ticks.find((x) => x.anim.skill === '小精灵攻击')!.t
+    expect(attackStart).toBe(935)
+    const back = trace.ticks.find((x) => x.t > attackStart && x.bar.pet === initialBarPet)!
+    expect(back.t).toBe(956)
+
+    for (let t = attackStart; t < back.t; t++) {
+      expect(bodyAt(t), `第 ${t} 拍小精灵在放招，本体不该画`).toBeNull()
+      expect(headXAt(t), `第 ${t} 拍头像的 x`).toBe(tickAt(t).bar.pet)
+    }
+    // 收尾那一拍：本体回来，行动条那一颗回到起跑线。
+    expect(bodyAt(back.t), '放完招本体该回来').not.toBeNull()
+    expect(headXAt(back.t)).toBe(initialBarPet)
+  })
+
+  it('z 序：小精灵夹在怪物走图与行动条之间', () => {
+    // 逐帧比对看不见这一条（两层不重叠），所以在这里钉。
+    const rank = new Map(BATTLE_LAYERS.map((l, i) => [l, i]))
+    const t = summonTick + 20
+    const seq = [...new Set(frames.get(t)!.map((op) => op.layer))]
+    const three = seq.filter((l) => ['enemy', 'pet', 'progress-bar'].includes(l))
+    expect(three).toEqual(['enemy', 'pet', 'progress-bar'])
+    // ⚠️ 这里原先还跟着一句「这三层的 `rank` 是递增的」。它接近恒真：
+    // 上一行已经把次序钉死，而 `rank` 来自 `BATTLE_LAYERS`，那份名单另有
+    // 一组判据从 `BattlePanel.java` 解出来对。换成两句真的在说话的
+    // （xl-rh9.15 评审收的一条）。
+    expect(rank.get('pet')!).toBeGreaterThan(rank.get('enemy')!)
+    expect(rank.get('pet')!).toBeLessThan(rank.get('progress-bar')!)
+  })
+
+  it('浮动的形状：x 恒定，y 是「−1 四拍、平一拍、+1 四拍」，周期 9', () => {
+    /**
+     * 形状的**来历与那句错注释的账**写在 `battle/step.ts` 的 `updatePet` 上，
+     * 只有那一份；这里是把它钉成判据的地方。一句话：原版三个 `if` 是并列的，
+     * `code==4` 那一拍一上一下净位移 0，于是一轮 **9 拍**而不是注释说的十拍。
+     *
+     * 这个形状**一个字都不在行为真值里**（`snapshotState` 没取 `bp.pet`），
+     * 所以它只能在这里钉。y 钉死不浮动的篡改在这里立刻红。
+     */
+    const PERIOD = 9
+    const ONE_CYCLE = [-1, -1, -1, -1, 0, 1, 1, 1, 1]
+    // 从召出来那一拍起连着取四轮多一点，中途不许断（断了说明本体没画，
+    // 那是另一条判据的事，这里要的是连续的一段）。
+    const span = PERIOD * 4 + 1
+    const ys: number[] = []
+    let x: number | null = null
+    for (let t = summonTick; t < summonTick + span; t++) {
+      const body = bodyAt(t)
+      expect(body, `第 ${t} 拍本体断了，这一段该是连着的`).not.toBeNull()
+      if (x === null) x = body![0]
+      expect(body![0], '小精灵的 x 不该变').toBe(x)
+      ys.push(body![1])
+    }
+    const deltas = ys.slice(1).map((y, i) => y - ys[i]!)
+    expect(deltas.length).toBe(PERIOD * 4)
+    // 四轮逐轮相等，且每一轮就是上面那九个数。
+    for (let k = 0; k < 4; k++) {
+      expect(deltas.slice(k * PERIOD, (k + 1) * PERIOD), `第 ${k + 1} 轮`).toEqual(ONE_CYCLE)
+    }
+    // 一轮净位移 0：召出来那一拍的 y 与九拍之后相等，四轮都回得来。
+    for (let k = 0; k <= 4; k++) expect(ys[k * PERIOD]).toBe(ys[0])
+    // 振幅 4（−1 走了四拍），不是注释说的 5。
+    expect(ys[0]! - Math.min(...ys)).toBe(4)
+  })
+})
+
 describe('哪条剧本在末拍之前抛，与它的表态对得上（xl-rh9.11）', () => {
   /**
    * `expected.ts` 的 `unpainted` 说的是：驱动器装得出，可**这条剧本**会走进一层
@@ -650,18 +837,23 @@ describe('哪条剧本在末拍之前抛，与它的表态对得上（xl-rh9.11�
   })
 
   it('表 unpainted 的就是这一条 —— 这是一份登记，不是自动推导', () => {
-    // **两头都会红**：谁新表一条 unpainted，这一行红；谁把小精灵画出来了
+    // **两头都会红**：谁新表一条 unpainted，这一行红；谁把最后一层画出来了
     // 却没改表，也红。写成 `filter` 现扫出来的就是对的，这两件事都不会响
     // （纪律 3 那条误用的形状）。
     //
     // 历史：xl-rh9.12 之前有一批 unpainted，四层画出来之后一条都不剩，这里
     // 曾经签的是一个空数组。xl-rh9.14 又添了六条，xl-rh9.18 把其中五条换成
-    // 真量出来的 gap —— 剩下的这一条撞的是第 11 层小精灵（xl-rh9.15）。
+    // 真量出来的 gap，最后一条 `battle-mishu-lu` 撞第 11 层小精灵 ——
+    // xl-rh9.15 把它画出来了，于是这里**第二次**签回空数组。
+    //
+    // ⚠️ 空数组这一侧是真的会红的那一侧：下面 `for (const a of attempts)`
+    // 里每条剧本都走 else 那一支「不许在末拍之前抛」，一条剧本抛了却没表
+    // unpainted 就红。反过来"这份登记恒真"要靠有人新表 unpainted 才有对象。
     const unpainted = attempts.filter((a) => expectationOf(a.name).status === 'unpainted')
     expect(
       unpainted.map((a) => a.name),
       '表 unpainted 的剧本变了？改这份登记，下面那一支会跟着验它',
-    ).toEqual(['battle-mishu-lu'])
+    ).toEqual([])
   })
 
   it('这些剧本撞上的层，正是登记在案还没画的那几层', () => {
@@ -673,7 +865,12 @@ describe('哪条剧本在末拍之前抛，与它的表态对得上（xl-rh9.11�
     // 换成对撞一份**手写的**未实现层名单：多撞一层红（有别的东西炸了），
     // 少撞一层也红（那一层画出来了，表该改了）。分辨力从"不止一层"换成了
     // "恰好是这几层"，比原先还硬。
-    const UNIMPLEMENTED_LAYERS = ['pet']
+    //
+    // xl-rh9.15 之后这份名单是空的（25 层一层不缺），于是这一条只剩"多撞
+    // 一层红"那半边 —— 而那半边现在也够不着，因为上面那条已经钉死了没有
+    // 剧本表 unpainted、这个循环一次都进不去。**它是留着的脚手架**：再有
+    // 一层画不出来时，往这里签一个名字，它立刻恢复双向。
+    const UNIMPLEMENTED_LAYERS: string[] = []
     const hit = new Set<string>()
     for (const a of attempts) {
       if (expectationOf(a.name).status !== 'unpainted') continue

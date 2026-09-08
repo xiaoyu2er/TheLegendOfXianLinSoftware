@@ -3,7 +3,7 @@ import type { AssetId } from '../../assets/ids'
 import { drugPictureAssetId } from '../../assets/ids'
 import { normalizePath } from '../../assets/path'
 import { DRUGS } from '../drugs'
-import { MISHU_ANIM, SKILLS, SKILL_MENU } from '../skills'
+import { MISHU_ANIM, PET_ATTACK, SKILLS, SKILL_MENU } from '../skills'
 import type { BattleWorld } from '../types'
 import type { PartyKey } from '../units'
 
@@ -66,6 +66,17 @@ export const HP_BAR_ID = battleId('状态栏/生命值.png')
 export const MP_BAR_ID = battleId('状态栏/灵力.png')
 export const ANGRY_BACK_ID = battleId('怒气槽/底.png')
 export const PROGRESS_BAR_ID = battleId('进度条/进度条.png')
+/**
+ * 小精灵那两张（`Pet.loadImage()`）。
+ *
+ * 两张图分属**两层**：`PET_ID` 是第 11 层的本体（`drawPet` 画在 `pet.x/y`），
+ * `PET_HEAD_ID` 是第 12 层行动条上那一颗。⚠️ 头像那张**不是** `Pet.headImage`
+ * 画出去的 —— `drawPet` 只画本体，行动条那一颗由 `ProgressBar` 自己
+ * `Reader.readImage("image/小精灵/头像.png")` 读一份来画。原版因此把同一个
+ * 文件读了两遍（`Pet.headImage` 从头到尾没人用）。
+ */
+export const PET_ID = battleId('小精灵/小精灵.png')
+export const PET_HEAD_ID = battleId('小精灵/头像.png')
 export const CLOUD_ID = battleId('其他/云雾.png')
 export const GAME_OVER_LEFT_ID = battleId('全灭图/全灭图1.png')
 export const GAME_OVER_RIGHT_ID = battleId('全灭图/全灭图2.png')
@@ -328,6 +339,12 @@ export function battleTextureIds(
   ids.add(MP_BAR_ID)
   ids.add(ANGRY_BACK_ID)
   ids.add(PROGRESS_BAR_ID)
+  // 行动条上小精灵那一颗：原版 `ProgressBar.getImage()` 里这一句**没有 if**
+  // （三个人与三只怪那六句各自套着 `if(bp.xx!=null)`，唯独它是裸的），所以
+  // 一场没有陆雪琪的仗照样把它读进内存。小精灵本体那张则在 `Pet` 的构造函数
+  // 里，也就是召出来那一刻才读 —— 但载图名单是**开打前**定死的，见下面
+  // party 那个循环里的那一支。
+  ids.add(PET_HEAD_ID)
   ids.add(GAME_OVER_LEFT_ID)
   ids.add(GAME_OVER_RIGHT_ID)
   for (let i = 0; i < 4; i++) ids.add(angryId(i))
@@ -401,6 +418,15 @@ export function battleTextureIds(
     // 秘术**没有背景动画** —— `heroMishu` 一句 `backgroundAnimation.set` 都
     // 没有，所以这里也只推动画那一半。
     for (let f = 1; f <= MISHU_ANIM[key].length; f++) ids.add(skillAnimId(MISHU_ANIM[key].name, f))
+    // 小精灵那两批（xl-rh9.15）：本体一张 + 它出手时那 22 帧动画。
+    //
+    // **挂在陆雪琪身上**，因为 `bp.pet` 只由 `checkLu` 的 pattern 7 那一支
+    // new 得出来 —— 她不出战，这一场就永远没有小精灵。和秘术动画同一个理由
+    // 无条件推：出战了就按得到「防」。
+    if (key === 'lu') {
+      ids.add(PET_ID)
+      for (let f = 1; f <= PET_ATTACK.length; f++) ids.add(skillAnimId(PET_ATTACK.name, f))
+    }
   }
 
   for (const h of w.party) {

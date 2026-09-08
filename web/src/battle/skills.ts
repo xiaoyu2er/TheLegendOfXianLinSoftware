@@ -303,6 +303,30 @@ export const MISHU_ANIM: Readonly<Record<PartyKey, SkillSpec>> = {
   lu: mishuAnim('陆雪琪秘术', 8, 620, 300),
 }
 
+/**
+ * `Pet.attack()` 那一发 `skillAnimation.set(...)` —— 小精灵出手时放的动画。
+ *
+ * **它不在技能菜单上，也不在 `SKILLS` 里**：小精灵不是我方三人，它自己的回合
+ * （`currentRound==4`）到了就直接放这一发。放在这里而不是 `step.ts` 里，是因为
+ * `render/assets.ts` 也要它 —— 载图名单得知道这 22 帧。两处各写一份的表现是
+ * 「战斗渲染要 技能动画/小精灵攻击/12.png，但这一场没有载入它」，而且只在
+ * 小精灵真的出手那一拍才炸（xl-rh9.15）。
+ */
+export const PET_ATTACK: SkillSpec = {
+  name: '小精灵攻击',
+  length: 22,
+  x: 120,
+  y: 135,
+  beAttackedCode: 8,
+  beAttackedTimes: 1,
+  runCode: 6,
+  attackCode: 16,
+  withdrawCode: 22,
+  offsetTo1: 90,
+  offsetTo2: 210,
+  offsetTo3: 0,
+}
+
 function mishuAnim(name: string, length: number, x: number, y: number): SkillSpec {
   return {
     name,
