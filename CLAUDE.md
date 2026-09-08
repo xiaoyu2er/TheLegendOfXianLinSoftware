@@ -91,15 +91,19 @@ re-export-and-diff regression checks, both of which must come back empty:
 - `tools/export-truth.sh` — data layer. Re-run it and `git diff
   tools/ground-truth` must be empty (96 scripts × 26 fields).
 - `tools/export-trace.sh --check` — behaviour layer, **all four drivers**
-  (scene / battle / menu / shop, 12 scripts). Re-run it and `git diff
-  tools/traces/out` must be empty; `--check` additionally exports each script
-  twice in separate JVMs and `cmp`s them, which is what makes the traces usable
+  (scene / battle / menu / shop; how many scripts that is, is whatever
+  `tools/traces/scripts/*.json` holds — count it, don't trust a number written
+  here). Re-run it and `git diff tools/traces/out` must be empty; `--check`
+  additionally exports each script twice in separate JVMs and `cmp`s them, which is what makes the traces usable
   as truth at all. **Both halves are needed**: `--check` only proves this run is
   reproducible — a *stable* wrong answer looks identical to a right one, and the
   empty `git diff` is what catches that. See `docs/trace-format.md`.
 
-`web/` has vitest (`pnpm test`). Building the real Java-side suite is tracked in
-beads (`xl-9bd.5`).
+`web/` has vitest (`pnpm test`). **The Java side has no unit tests at all**
+(`find . -path ./web -prune -o -name '*Test*.java' -print` is empty, measured
+2026-09-07). Whether to build one — and the fact that this sentence used to
+point at `xl-9bd.5`, a *closed* ticket about the golden tests rather than about
+a Java suite — is tracked in `xl-f8y`.
 
 ## Architecture Overview
 
@@ -151,21 +155,33 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   Declarative scripts in `traces/scripts/`, exported traces in `traces/out/` —
   both committed, and any diff in `out/` is a signal. One exporter
   (`tools/export-trace.sh`, one command for all four) dispatches on the script's
-  own `driver` field to `scene` (5 scripts, a step = one tick), `battle`
-  (4 scripts — one victory, one for the em3 hit-box defect, and one per defeat
-  exit; a step = one `BattlePanel.run()` loop body + one `paint()`),
-  `menu` and `shop` (1 script each, a step = one input event). An unrecognised
+  own `driver` field: `scene` (a step = one tick), `battle` (a step = one
+  `BattlePanel.run()` loop body + one `paint()`), `menu` and `shop` (a step =
+  one input event). **How many scripts each driver has is not written down
+  here** — that number has already gone stale twice in one day; read it off
+  disk:
+
+  ```bash
+  for f in tools/traces/scripts/*.json; do
+    python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('driver','scene'))" "$f"
+  done | sort | uniq -c
+  ```
+
+  (2026-09-07 on this branch that printed 13 battle / 5 scene / 2 menu /
+  1 shop = 21 — a reading, not a spec.) An unrecognised
   name is a hard failure, never a guess — but a **missing** `driver` field
-  defaults to `scene`, the exporter's one and only leniency (the five scene
+  defaults to `scene`, the exporter's one and only leniency (the scene
   scripts predate the field; giving them one would change the script echo and
   force a re-export). A new script that omits it gets `scene` silently, so
   write it. Do not hand-write expected values for
   the state or viewport layers; read them out of a trace. Overview table,
   per-driver formats and pitfalls: `docs/trace-format.md`.
-- **Cross-end frame comparison is only wired up for `scene`.**
+- **Cross-end frame comparison is not wired up for every driver.**
   `tools/compare-frames.sh` runs the original side for all four, but the capture
-  page assembles `scene` only; battle / menu / shop wait for **M2 (xl-82c) /
-  M3 (xl-6lo) / M4 (xl-knp)** to build those panels in `web/`. Until then those
+  page only assembles the drivers listed in `web/src/replay/implemented.ts`
+  (`IMPLEMENTED_DRIVERS` — that array is the single source of truth; as of
+  2026-09-07 it is `scene` and `battle`). The rest wait for **M3 (xl-6lo) /
+  M4 (xl-knp)** to build those panels in `web/`. Until then those
   scripts make the pipeline **exit non-zero and name the driver plus its owning
   issue** — a script that was never assembled compares as "zero frames differ",
   which looks exactly like "the two sides agree". See
