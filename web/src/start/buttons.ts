@@ -158,6 +158,6 @@ export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWir
     enabled: false,
     // 原版是 `System.exit(0)`。浏览器里没有对应物：`window.close()` 只对脚本
     // 自己开的窗口有效，玩家从地址栏进来的页面调它一声不吭。
-    disabledReason: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-4si）',
+    disabledReason: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-u23）',
   },
 }

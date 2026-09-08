@@ -85,7 +85,7 @@ export interface StartSequence {
  * 代价是**过场第一次播的时候会卡**：10 帧在 1 秒内依次首取，慢网上补不齐。
  * 没有在这里开有损的例外 —— `scripts/bake.ts` 的 `toWebp` 头注里写着
  * 「PNG 一律无损，不给任何一张开例外」，那是 xl-9bd.14 拿眼睛看过之后的裁定，
- * 不该由这张票顺手推翻。要预取还是要降质，登记在 `xl-4si` 的收尾里。
+ * 不该由这张票顺手推翻。要预取还是要降质，登记在 `xl-bbs`。
  */
 export const START_SEQUENCES: Readonly<Record<StartSequenceName, StartSequence>> = {
   buttonGlow: { dir: '按钮动画', count: 4 },
