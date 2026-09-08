@@ -777,6 +777,11 @@ const BATTLE_LOSSY_QUALITY = 95
  * 持平**。最坏的一张是 `神剑傲州/10`，6791 → 18890 —— 它不是裁出来的
  * （不裁也是 18420），是 `-sns 0` 在这张图上自己就更差。四条剧本的上界因此
  * 必须**重量**，不能拿合计推。上界见 `src/compare/expected.ts`。
+ *
+ * ⚠️ **这个数与 `backgroundAnimCrop` 的「越界就裁」是捆在一起的一个决定，
+ * 不是两个。** 那条裁剪之所以敢不设面积门槛，全靠 `-sns 0` 把「裁」这一步的
+ * 骰子从 +18032 压到 +2869；把这里改回默认 sns 而不动那边，等于把 xl-9do
+ * 花一整张票买到的保护拆掉。**要改这个数，先读 `backgroundAnimCrop` 的头注。**
  */
 const BATTLE_LOSSY_SNS = 0
 
@@ -843,9 +848,14 @@ function backgroundAnimCrop(relative: string, source: string): SourceRect | unde
   if (relative.split('/')[0] !== BACKGROUND_ANIM_DIR) return undefined
   const { width, height } = imageSize(source)
   const visible = { width: Math.min(width, STAGE_WIDTH), height: Math.min(height, STAGE_HEIGHT) }
-  // 「越界就裁」：两条边都没越界的素材整张都画得出来，`-crop` 就是个空操作，
-  // 但它仍会让 cwebp 重编码一遍同样的内容 —— 返回 `undefined` 让调用方连
-  // `-crop` 都不传，产物路径与「本来就不该裁」那批（技能动画）保持同一条。
+  // 「越界就裁」。两条边都没越界时返回 `undefined`，让调用方连 `-crop` 都不传：
+  // 这**不是**为了产物 —— 实测过，传一个全尺寸的 `-crop` 与不传，`cwebp` 出来的
+  // 字节**逐字节相同**（`神剑傲州/31` 1066×639 与 `亟电崩离/5` 1024×768 各 77432
+  // / 34130 字节，2026-09-08）。理由只是让「这张需要裁」在调用方那里是一个**能
+  // 判真假的值**，而不是一个永远为真、靠读参数才知道有没有生效的标志。
+  //
+  // ⚠️ 今天 753 张背景动画**没有一张**走这条 `undefined` 分支（三档全都越界），
+  // 所以这一支在这批素材上是死的。它守的是「明天进来一张 ≤1024×640 的背景动画」。
   if (visible.width === width && visible.height === height) return undefined
   return visible
 }

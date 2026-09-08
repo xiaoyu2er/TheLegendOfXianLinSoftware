@@ -40,6 +40,13 @@ import { listFiles } from './listFiles'
  * 第 4 条核的是**前提**：裁剪的合法性整个建立在「原版把它画在 (0,0) 且不缩放」
  * 上，那句话在 Java 源码里。源码哪天变了（迁移期它是规格，本不该变），裁剪就
  * 静静地开始裁掉画得出来的像素，而产物尺寸那三条**照样全绿**。
+ *
+ * **上面说「三条」「第 4 条」，文件里就恰好是四个 `it`，别再多一个。**
+ * xl-x6w 起初还加了第五条「越界的一张都没漏裁」，`/code-review` 规范轴指出它
+ * **被第 1 条完全蕴含**：第 1 条已经断言每张产物都等于 `min(源, 画布)`，越界的
+ * 那张必然 `产物 ≠ 源`，于是第五条只要第 1 条绿就恒绿 —— 它是个诊断，不是判据，
+ * 而**假判据和真判据长得一样**。已删。要加第五条，先说清它能红而这四条全绿的
+ * 那种坏法是什么。
  */
 
 /** 画布：`battle.BattlePanel` 的 `WIDTH=32*32` / `HEIGHT=20*32`。第 4 条核它。 */
@@ -109,25 +116,6 @@ describe('背景动画的烘焙裁剪', () => {
     expect(shapes.filter((s) => s.w && !s.h).length, '没有一张只越宽：削高那一半恒真').toBeGreaterThan(0)
     expect(shapes.filter((s) => !s.w && s.h).length, '没有一张只越高：削宽那一半恒真').toBeGreaterThan(0)
     expect(shapes.filter((s) => s.w && s.h).length, '没有一张两边都越：同时裁没被走到').toBeGreaterThan(0)
-  })
-
-  /**
-   * 「越界就裁」是**每一张**都成立的，不是「今天恰好这批都被裁了」——所以反过来
-   * 断言一次：不越界的那些一张都不许被裁。今天背景动画里没有这样的素材
-   * （753 张全越界），这条于是靠**技能动画**那一层拿到分母 —— 见下一条。
-   * 这里守的是另一半：背景动画里**没有**一张越了界却没被裁。
-   *
-   * 少了这一条，把 `backgroundAnimCrop` 改成「只裁 1240×744」之后，第 1 条会红
-   * 但错在哪要读 608 行 diff；这一条一句话就说清了。
-   */
-  it('越界的一张都没漏裁', () => {
-    const missed = sources(BACKGROUND_ANIM).filter((relative) => {
-      const src = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
-      const baked = webpSize(productOf(`${BACKGROUND_ANIM}/${relative}`))
-      const oversized = src.width > CANVAS.width || src.height > CANVAS.height
-      return oversized && baked.width === src.width && baked.height === src.height
-    })
-    expect(missed).toEqual([])
   })
 
   it('技能动画那一层一张都没被裁', () => {

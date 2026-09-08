@@ -483,6 +483,14 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
   // 与换编码之前 xl-rh9.18 记下的数**逐字相同**。它本就不该动（`heroMishu`
   // 一句 `backgroundAnimation.set` 都没有），所以「它动了」才是信号：那说明
   // 改到的不只是背景动画那 753 张。下面 `battle-mishu-yu` 同理。
+  //
+  // **xl-x6w（2026-09-08）第三次跑了同一条反向判据，仍逐字相同**：加 `-sns 0`
+  // 并把 753 张全裁之后，硬比区仍是 24 帧逐像素相等、`panel-text-zhang` 合计
+  // 仍是 44598、最差仍是 2128/4256。这一趟它尤其该跑：编码设置与裁剪范围**同时**
+  // 动了，「只波及背景动画」这句话比 xl-7ip 那趟更需要一个反证。
+  // 配套的正面读数是改动面本身 —— 那两个提交动的 753 个 `.webp` **全部**在
+  // `web/public/battle-anim/背景动画/` 下，技能动画那 1017 张与其余有损路径
+  // 一个字节没动（`git diff --name-only -z master...HEAD` 现数的）。
   'battle-mishu-yu': {
     status: 'gap',
     // 文敏的秘术潜能爆发（xl-rh9.14，775 步）。同样是**分区表态**：实测 31 帧，
@@ -493,6 +501,8 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     //
     // xl-7ip 的反向判据（2026-09-07 重跑）：换 q95 之后硬比区仍是 31 帧逐像素
     // 相等、`panel-text-yu` 合计 64463、最差 2202/4404，与换之前逐字相同。
+    // **xl-x6w（2026-09-08）第三次重跑，三个数仍逐字相同**：加 `-sns 0` 且
+    // 753 张全裁之后，硬比区 31 帧逐像素相等、合计 64463、最差 2202/4404。
     gaps: [
       {
         name: 'panel-text-yu',
