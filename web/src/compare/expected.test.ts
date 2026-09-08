@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CANVAS_HEIGHT, CANVAS_WIDTH, EXPECTED, expectationOf, scriptNames } from './expected'
 import { exactRectsOf } from './exactRegions'
-import type { ExactTraceTick } from './exactRegions'
+import type { ExactRectSource, ExactTraceTick } from './exactRegions'
 import { rectsOverlap } from './regions'
 import { repoPath } from '../test/repoPath'
 
@@ -11,6 +11,12 @@ import { repoPath } from '../test/repoPath'
  * 期望表本身的体检。跑得起来不需要 Java、不需要 Chrome，所以它在 CI 里，
  * 而整条比对流水线不在。
  */
+/**
+ * 这份体检**逐个来源**扫过的那些。手签的一份登记：加一个新来源而不加扫法，
+ * 上面那条判据会点名要求补上，而不是静静放行。
+ */
+const SCANNED_SOURCES: readonly ExactRectSource[] = ['reminder']
+
 describe('跨端比对的期望表', () => {
   it('磁盘上的每条剧本都表过态，表里也没有多余的条目', () => {
     // 分母从 tools/traces/scripts/ 现数，不写死数量：别人加一条剧本，
@@ -116,6 +122,20 @@ describe('跨端比对的期望表', () => {
         expect(x.why, `${name}/${x.name} 没写原因`).toBeTruthy()
         expect(x.issue, `${name}/${x.name} 没挂 issue`).toMatch(/^xl-/)
         expect(x.drawnTicks, `${name}/${x.name} 的登记拍数要是正整数`).toBeGreaterThan(0)
+        // 下面那条对撞是**逐个来源**扫的。表里冒出一个还没人扫的来源时，那条
+        // 判据会安安静静地不核它 —— 正是"选择器匹配不到即通过"那个形状。
+        // 所以来源名单在这里签一份，加来源就得同时加扫法。
+        expect(
+          SCANNED_SOURCES,
+          `${name}/${x.name} 的来源 ${x.source} 还没有人扫 —— ` +
+            `给它加一支扫法（exactRectsOf 与下面那条对撞），再把它写进 SCANNED_SOURCES`,
+        ).toContain(x.source)
+        // 同一条剧本上同一个来源只许有一块：下面那条对撞用 find 取，两块的话
+        // 第二块永远不会被核到。
+        expect(
+          e.exact.filter((y) => y.source === x.source).length,
+          `${name} 上来源 ${x.source} 声明了不止一块`,
+        ).toBe(1)
       }
     }
   })

@@ -120,6 +120,19 @@ export interface Expectation {
 export const CANVAS_WIDTH = 1024
 export const CANVAS_HEIGHT = 640
 
+/**
+ * 四条画提示图的战斗剧本共用的那块逐像素相等区（xl-aq0）—— 它们守的是**同一个
+ * 改动**（xl-ttu 的定点采样），所以理由与票号是同一份，只有从真值现数出来的
+ * `drawnTicks` 逐条不同 —— 那是整条真值里提示图画着且矩形非空的拍数，与取帧
+ * 密度（`--every`）无关。各自实测到的读数留在各条剧本自己的注释里。
+ */
+const REMINDER_EXACT = {
+  name: 'reminder',
+  source: 'reminder',
+  why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
+  issue: 'xl-ttu / xl-aq0',
+} as const
+
 export const EXPECTED: Readonly<Record<string, Expectation>> = {
   'battle-min': {
     status: 'gap',
@@ -322,16 +335,7 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 采样到的 19 帧里 **3 帧**画着提示图，t=125 的 80×16 是 0/1280、
     // t=200 的 20×4 是 0/80、t=300 的 30×6 是 0/180 —— 与 xl-ttu 记在上面那段
     // 里的读数逐字相同（那一趟是人工数的，这一趟是流水线数的）。
-    exact: [
-      {
-        name: 'reminder',
-        source: 'reminder',
-        // 整条真值里提示图画着且矩形非空的拍数，`--every` 调成什么都不影响它。
-        drawnTicks: 63,
-        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
-        issue: 'xl-ttu / xl-aq0',
-      },
-    ],
+    exact: [{ ...REMINDER_EXACT, drawnTicks: 63 }],
   },
   // ===== xl-rh9.14 的六条：剩下那些技能与秘术 =====
   //
@@ -452,15 +456,7 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // t=75 / t=175 / t=350 各是 120×24 的 0/2880、t=450 是 60×12 的 0/720。
     // 前三帧背景动画正放着（横剑摆渡 / 银鹰掠地 / 龙翔九天），那笔有损重编码的
     // 账在区外照旧记着，**区内一个像素都不差** —— 这条不会被 xl-7ip 那笔误伤。
-    exact: [
-      {
-        name: 'reminder',
-        source: 'reminder',
-        drawnTicks: 84,
-        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
-        issue: 'xl-ttu / xl-aq0',
-      },
-    ],
+    exact: [{ ...REMINDER_EXACT, drawnTicks: 84 }],
   },
   'battle-yu-skills': {
     status: 'gap',
@@ -512,15 +508,7 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 实测（`--every 25`，容差 8）：47 帧里 **3 帧**画着提示图，
     // t=50 是 110×22 的 0/2420、t=800 是 120×24 的 0/2880、t=850 是 40×8 的 0/320。
     // 三帧背景动画都放着（伏虎冲天 / 妙手回春 / 蝶影神灵），区内照样一个不差。
-    exact: [
-      {
-        name: 'reminder',
-        source: 'reminder',
-        drawnTicks: 84,
-        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
-        issue: 'xl-ttu / xl-aq0',
-      },
-    ],
+    exact: [{ ...REMINDER_EXACT, drawnTicks: 84 }],
   },
   'battle-lu-skills': {
     status: 'gap',
@@ -573,15 +561,7 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 实测（`--every 25`，容差 8）：44 帧里 **5 帧**画着提示图，
     // t=50 与 t=375 是 120×24 的 0/2880、t=100 是 30×6 的 0/180、
     // t=300 与 t=600 是 20×4 的 0/80。
-    exact: [
-      {
-        name: 'reminder',
-        source: 'reminder',
-        drawnTicks: 126,
-        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
-        issue: 'xl-ttu / xl-aq0',
-      },
-    ],
+    exact: [{ ...REMINDER_EXACT, drawnTicks: 126 }],
   },
   'battle-mishu-zhang': {
     status: 'gap',

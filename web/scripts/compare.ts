@@ -19,6 +19,7 @@ import { checkStanding, unassembledLine } from '../src/compare/unassembled'
 import type { DriverStanding } from '../src/compare/unassembled'
 import { IMPLEMENTED_DRIVERS } from '../src/replay/implemented'
 import { decodePng, encodePng } from '../src/compare/png'
+import type { Bitmap } from '../src/compare/png'
 import { judgeRegions, partitionedDiff } from '../src/compare/regions'
 import type { PartitionedFrame, RegionVerdict } from '../src/compare/regions'
 import { exactRectsOf, judgeExact, rectDiffering } from '../src/compare/exactRegions'
@@ -271,17 +272,22 @@ function compareOne(
   const sequence = summarize(results, threshold)
   const expectation = expectationOf(m.script)
 
+  const javaDir = join(root, m.script, 'java')
+  const webDir = join(root, m.script, 'web')
+  /** 这一帧的两端位图。**一次只留一对**：165 帧的剧本全缓存要几百 MB。 */
+  const pair = (t: number): [Bitmap, Bitmap] => [
+    decodePng(readFrame(javaDir, t, m.script, '原版')),
+    decodePng(readFrame(webDir, t, m.script, 'Web')),
+  ]
+
   // 分区表态的剧本走另一套判据（`src/compare/regions.ts`）：整屏的 ratio 与
   // threshold 仍然算出来给报告看，但**判通不通过的是分区那一套** —— 硬比区
   // 一个超容差的像素都不许有，每个缺口区各自双向红。
   let regions: RegionVerdict | undefined
   if (expectation.gaps) {
     const rects = expectation.gaps.map((g) => g.rect)
-    const javaDir0 = join(root, m.script, 'java')
-    const webDir0 = join(root, m.script, 'web')
     const frames: PartitionedFrame[] = m.ticks.map((t) => {
-      const a = decodePng(readFrame(javaDir0, t, m.script, '原版'))
-      const b = decodePng(readFrame(webDir0, t, m.script, 'Web'))
+      const [a, b] = pair(t)
       return { tick: t, ...partitionedDiff(a, b, rects, tolerance) }
     })
     regions = judgeRegions(frames, expectation.gaps)
@@ -291,27 +297,29 @@ function compareOne(
   // 有。它与上面那套分区表态互不相干，两套都可以挂在同一条剧本上。
   let exact: ExactVerdict[] | undefined
   if (expectation.exact) {
-    const javaDir1 = join(root, m.script, 'java')
-    const webDir1 = join(root, m.script, 'web')
     // 读的是本次导出的那份 trace（就在 java/ 旁边），与取图是同一次运行；
     // shell 那一步已经把它与入库真值 cmp 过。
     const ticks = (
-      JSON.parse(readFileSync(join(javaDir1, 'trace.json'), 'utf8')) as {
+      JSON.parse(readFileSync(join(javaDir, 'trace.json'), 'utf8')) as {
         ticks: ExactTraceTick[]
       }
     ).ticks
-    exact = expectation.exact.map((spec) => {
-      const rects = exactRectsOf(spec.source, ticks)
-      const frames: ExactFrame[] = []
-      for (const t of m.ticks) {
-        const rect = rects.get(t)
-        if (!rect) continue
-        const a = decodePng(readFrame(javaDir1, t, m.script, '原版'))
-        const b = decodePng(readFrame(webDir1, t, m.script, 'Web'))
-        frames.push({ tick: t, rect, differing: rectDiffering(a, b, rect, tolerance) })
+    const specs = expectation.exact.map((spec) => ({
+      spec,
+      rects: exactRectsOf(spec.source, ticks),
+      frames: [] as ExactFrame[],
+    }))
+    // 帧在外、区在内：一帧只解一次 PNG，多块区共用。
+    for (const t of m.ticks) {
+      const wanted = specs.filter((x) => x.rects.has(t))
+      if (wanted.length === 0) continue
+      const [a, b] = pair(t)
+      for (const x of wanted) {
+        const rect = x.rects.get(t)!
+        x.frames.push({ tick: t, rect, differing: rectDiffering(a, b, rect, tolerance) })
       }
-      return judgeExact(spec, rects.size, frames)
-    })
+    }
+    exact = specs.map((x) => judgeExact(x.spec, x.rects.size, x.frames))
   }
 
   // 判据本身在 `src/compare/`：整屏表态走 `verdict.ts`，分区表态走 `regions.ts`。
@@ -329,13 +337,10 @@ function compareOne(
   const highlights = new Set([sequence.worst.tick, sequence.firstDivergent].filter(
     (t): t is number => t !== null,
   ))
-  const javaDir = join(root, m.script, 'java')
-  const webDir = join(root, m.script, 'web')
   const diffDir = join(root, m.script, 'diff')
   resetDir(diffDir)
   for (const t of highlights) {
-    const a = decodePng(readFrame(javaDir, t, m.script, '原版'))
-    const b = decodePng(readFrame(webDir, t, m.script, 'Web'))
+    const [a, b] = pair(t)
     writeFileSync(join(diffDir, frameName(t)), encodePng(diffImage(a, b, tolerance)))
   }
 
