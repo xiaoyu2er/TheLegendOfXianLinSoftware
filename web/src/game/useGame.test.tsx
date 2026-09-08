@@ -8,7 +8,7 @@ import { getParty, initialMember, rememberParty, resetParty } from '../fakes/par
 import { getScene } from '../data/scenesEager'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { roleTileX, roleTileY } from '../state/role'
-import { createWorld } from '../state/step'
+import { TICK_MS, createWorld } from '../state/step'
 import type { RoleState, World } from '../state/types'
 import { useGame } from './useGame'
 
@@ -272,6 +272,69 @@ describe('useGame 接线', () => {
     expect(result.current.scene).toBeNull()
     // 回标题之后一帧都不再来 —— 世界丢掉了，不是藏起来了。
     expect(seen.length).toBe(drawn)
+  })
+
+  /**
+   * **渲染器还没就绪时世界不推进**（xl-w16 之后仍然成立的那半）。
+   *
+   * 那道守卫原先是 pump 起手的一句 `if (!renderer) return`，xl-w16 把它挪到
+   * `isRunning` 之后 —— 「还没开局」那一路不再受它管（标题要出声），
+   * 「开局了但渲染器还没到」这一路照旧。
+   *
+   * 这里验两件事：
+   *
+   * 1. 没有渲染器时一帧都不画；
+   * 2. 等了 5 秒再把渲染器交出来，跑三拍 —— 主角的位置与**从头就有渲染器、
+   *    只跑同样三拍**的那一局**逐字段相同**。那 5 秒是真的丢掉了，没有被
+   *    下一拍一次性补跑。（拿另一局当基准而不是手写坐标：走三拍走多远由步长
+   *    与动画决定，写死一个数只会在别处改了步长时红，且红得看不出因果。）
+   *
+   * ## ⚠️ 这两件里只有第一件有单点篡改能让它红，第二件是登记
+   *
+   * 篡改矩阵实测（xl-w16）：**把那道守卫整个删掉，这条红**（第一件）。
+   * 而"往前跳一大截"那一路**今天没有任何单点篡改观测得到** —— 追下去的结论
+   * 是：`renderer` 在 pump 那个 effect 的 deps 里，渲染器一到 effect 整个
+   * 重建，`let last = performance.now()` 自己就重置了。所以守卫里原本写的
+   * 那句 `last = now` 是死代码，已经删掉。
+   *
+   * 第二件仍然留着，因为它验的是**行为**而不是那一行：哪天有人把 `renderer`
+   * 改成从 ref 里读（effect 不再重建），补跑就会真的发生，而那时这条会红。
+   * 把它记成"结构性保证"而不是"判据"，是因为两者在绿的时候长得一样。
+   */
+  it('渲染器还没就绪：一帧不画，而且这段时间不会攒着一次性补跑', async () => {
+    await prepareExits(createWorld(await loadScene('宿舍')))
+
+    // 甲局：渲染器晚到 5 秒。
+    const late = renderHook(({ r }) => useGame(r, '宿舍'), {
+      initialProps: { r: null as SceneRenderer | null },
+    })
+    await act(async () => {
+      await loadScene('宿舍')
+    })
+    press('ArrowRight')
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(seen).toHaveLength(0)
+    late.rerender({ r: renderer })
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS * 3)
+    })
+    const afterLate = seen.at(-1)
+    expect(afterLate).toBeDefined()
+    late.unmount()
+
+    // 乙局：渲染器从头就在，同样三拍。这一局就是 `mount()` 本身。
+    seen = []
+    await mount('宿舍')
+    press('ArrowRight')
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS * 3)
+    })
+    const afterPrompt = seen.at(-1)
+    expect(afterPrompt).toBeDefined()
+
+    expect(afterLate).toEqual(afterPrompt)
   })
 
   it('卸载之后不再推进，也不再收键', async () => {
