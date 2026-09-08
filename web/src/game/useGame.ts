@@ -155,6 +155,9 @@ export function useGame(
     // 载入那几十毫秒里显示的是**场景**（"正在载入 X…"），不是标题：翻回标题
     // 会把 `StartPanel` 整个重挂一次，卷轴缩回去再展开一遍 —— 点完「起」
     // 画面倒着走一段，而两种写法都"最后进了脚本1"。
+    //
+    // 与原版的差别在这里：原版是 `initiation(...)` 返回之后才 `switchTo("scene")`，
+    // 没有这一屏载入提示。取舍登记在 `xl-w16`。
     const startingPanel: Panel = sceneName === null ? 'start' : 'scene'
     panelRef.current = startingPanel
     setPanel(startingPanel)

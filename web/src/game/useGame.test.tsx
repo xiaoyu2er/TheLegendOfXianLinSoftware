@@ -7,7 +7,7 @@ import { readTrace } from '../state/trace'
 import { getParty, initialMember, rememberParty, resetParty } from '../fakes/party'
 import { getScene } from '../data/scenesEager'
 import type { SceneRenderer } from '../scene/sceneRenderer'
-import { roleTileX } from '../state/role'
+import { roleTileX, roleTileY } from '../state/role'
 import { createWorld } from '../state/step'
 import type { RoleState, World } from '../state/types'
 import { useGame } from './useGame'
@@ -255,8 +255,13 @@ describe('useGame 接线', () => {
     })
     expect(result.current.panel).toBe('scene')
     expect(result.current.scene).toBe('宿舍')
-    // 世界真的在推：渲染器收到了帧，主角站在脚本里的出生格 (12,8) 上。
-    expect(seen.at(-1)!.px).toBe(12 * 32)
+    // 世界真的在推：渲染器收到了帧，主角站在**脚本里写的**出生格上。
+    // 那对数从脚本现读，不是手写的 —— 脚本改了这条要跟着响。
+    const spawn = getScene('宿舍')
+    expect([roleTileX(seen.at(-1)!), roleTileY(seen.at(-1)!)]).toEqual([
+      spawn.roleX,
+      spawn.roleY,
+    ])
     const drawn = seen.length
 
     rerender({ scene: null })

@@ -13,8 +13,13 @@ import { StartPanel } from '../start/StartPanel'
 import { DialogueBox } from '../ui/DialogueBox'
 import { devToolsEnabled } from './devTools'
 
-/** 场景选择器里「标题」那一项的值。空串 = `sceneName` 的 `null`。 */
-const TITLE_OPTION = ''
+/**
+ * 场景选择器里「标题」那一项的值。空串 = `sceneName` 的 `null`。
+ *
+ * 导出去，是为了让 `App.test.tsx` 断言的就是这一个值 —— 两边各写一个裸
+ * `''`，改掉其中一个，测试照样绿。
+ */
+export const TITLE_OPTION = ''
 
 export function App() {
   /**
@@ -36,8 +41,15 @@ export function App() {
    * 开发用的场景选择器改的也是它。**xl-q7f 之前它身兼两职**（"从哪儿开局"
    * 与"现在跳到哪儿"），开机不进场景之后这两件事分了家：选择器只说后者，
    * 「起」才是前者，而且「起」进的恒是 `START_SCENE`。选择器多出来的那个
-   * 「标题」项就是 `null` —— 有了它，选择器上的值与画面上显示的东西**永远
-   * 是同一件事**，不必再靠"值是脚本1 但其实在标题上"这种隐含状态。
+   * 「标题」项就是 `null`，于是**开机停在标题上这件事，选择器上说得出来**
+   * ——不必再靠"值是脚本1、其实在标题上"这种隐含状态。
+   *
+   * ⚠️ 但它**不是**"选择器上的值恒等于画面上那一屏"。全灭那条路上不成立：
+   * 面板是会话自己在内部翻成 `'start'` 的（`game/session.ts` 里读
+   * `exitPanel` 那一段），`sceneName` 还停在死掉的那个场景上，于是画面是
+   * 标题、选择器上写着「迷宫1」。这一层没打算把它拽回去 —— 那等于让一个
+   * 开发用的控件反过来去追世界的状态，而 `atTitle` 读的从来是 `view.panel`，
+   * 不是它。
    */
   const [sceneName, setSceneName] = useState<string | null>(null)
   const fullscreen = useFullscreen(shellRef)
@@ -51,6 +63,15 @@ export function App() {
    * 藏着的，先把「起」之后要用的那张地图**预热**上（原版也是先把
    * `ScenePanel` 造出来、再 `switchTo("start")`）。不预热的话点完「起」
    * 还要盯一会儿"正在载入 脚本1…"。
+   *
+   * ⚠️ 它还**顺带管着标题那一屏的曲子**：`useGame` 的那条 pump 只在渲染器
+   * 就绪时才起（下面那句 `status.kind === 'ready' ? renderer : null`），而
+   * 主题曲是 pump 里 `bgm.sync(currentBgm(...))` 放上去的。这里若不给一个
+   * 真场景名，渲染器永远不就绪 —— 标题就成了一屏哑的。两半都由
+   * `game/useGameBgm.test.tsx` 跑出来，不是读出来的。
+   *
+   * 代价是**主题曲要等脚本1 的地图载完才响**，而原版 `switchTo("start")`
+   * 是当场 `readBGM("主题曲.mp3")`。这处差别登记在 `xl-w16`，不是没看见。
    */
   const shownScene = game.scene ?? sceneName ?? START_SCENE
   const { status, renderer } = useSceneRenderer(sceneHostRef, shownScene)
@@ -139,7 +160,12 @@ export function App() {
         hostContent={
           <>
             {/* 一个面板一张画布，`hidden` 切换 —— 两张一起显示会上下摞着。 */}
-            <div className="stage-panel" ref={sceneHostRef} hidden={inBattle || atTitle} />
+            <div
+              className="stage-panel"
+              ref={sceneHostRef}
+              hidden={inBattle || atTitle}
+              data-testid="scene-host"
+            />
             <div
               className="stage-panel"
               ref={battleHostRef}

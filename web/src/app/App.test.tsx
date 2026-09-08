@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { App } from './App'
 import { SCENE_NAMES } from '../data/scenes'
+import { TITLE_OPTION } from './App'
 
 /**
  * jsdom 根本没有 `document.fullscreenEnabled` / `fullscreenElement` 这两个属性
@@ -61,14 +62,16 @@ describe('App', () => {
    * `useGame`。
    *
    * 两条断言分管两件事：少了第一条，"开机什么都不画"也能过；少了第二条，
-   * "标题贴在一张已经在跑的地图上面"也能过 —— 而后者正是这处差别最像"已经
-   * 做完了"的样子（画面上就是一张正常的标题图）。世界到底推没推是
-   * `game/useGame.test.tsx` 那条「还没开局」在验。
+   * "标题贴在一张已经在跑的地图上面"也能过。**世界到底推没推这里验不了**，
+   * 归 `game/useGame.test.tsx` 那条「还没开局」——"先建好世界、再把面板摆成
+   * start"为什么在画面上看不出来，理由写在那儿，不在这里再抄一遍。
    */
   it('打开网页看到的是标题画面，不是脚本1 的地图', () => {
     render(<App />)
     expect(screen.getByTestId('start-panel')).toBeInTheDocument()
-    expect(document.querySelectorAll('.stage-panel')[0]!).toHaveAttribute('hidden')
+    // 按 testid 取那张画布，不按 `.stage-panel` 的下标：两张画布的先后顺序
+    // 一变，下标写法会静默指到另一张上，而"指错了"和"通过"长得一样。
+    expect(screen.getByTestId('scene-host')).toHaveAttribute('hidden')
   })
 
   it('开发模式下能跳到另一个场景，两个方向都通', () => {
@@ -86,7 +89,7 @@ describe('App', () => {
     // 哪儿"；开机不进场景之后这两件事分了家，它只剩后者，也就是"现在在
     // 哪儿"，而开机在标题上。原先那条断言的事实由上面那条用例接手，
     // 断言的正好是相反的一面。
-    expect(picker).toHaveValue('')
+    expect(picker).toHaveValue(TITLE_OPTION)
     expect(screen.getByTestId('start-panel')).toBeInTheDocument()
 
     fireEvent.change(picker, { target: { value: '大地图' } })
@@ -96,7 +99,7 @@ describe('App', () => {
     expect(screen.queryByTestId('start-panel')).toBeNull()
 
     // 反过来也通，选择器才真的是"现在在哪儿"而不是单程票。
-    fireEvent.change(picker, { target: { value: '' } })
+    fireEvent.change(picker, { target: { value: TITLE_OPTION } })
     expect(screen.getByTestId('start-panel')).toBeInTheDocument()
   })
 

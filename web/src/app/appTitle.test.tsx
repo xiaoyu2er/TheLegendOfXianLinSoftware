@@ -62,8 +62,7 @@ describe('App 与开始界面', () => {
     expect(screen.getByTestId('start-panel')).toBeInTheDocument()
     // 场景那张画布也得藏：不藏的话标题图后面透着一张定住的地图。
     expect(screen.getByTestId('battle-host')).toHaveAttribute('hidden')
-    const sceneHost = document.querySelectorAll('.stage-panel')[0]!
-    expect(sceneHost).toHaveAttribute('hidden')
+    expect(screen.getByTestId('scene-host')).toHaveAttribute('hidden')
   })
 
   it('点「起」：调 restart，而且场景回到脚本1（不是死在哪儿就从哪儿重开）', () => {

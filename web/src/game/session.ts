@@ -149,15 +149,6 @@ export function createSession(deps: SessionDeps): Session {
 }
 
 /**
- * 开局：建世界、进场景 —— 原版「起」那一下的
- * `switchTo("scene")` + `scenePanel.initiation("脚本1.txt")` + 那条线程。
- *
- * 进哪个场景由调用方决定（`useGame` 那边是 `sceneName`），因为原版这三句
- * 里只有 `initiation` 认文件名，别的两句对进哪个场景一无所知。
- *
- * 战斗那一侧一并清掉：原版这一下 `new` 的是一整套面板。
- */
-/**
  * 开局了没有 —— `RunningSession` 的类型守卫。
  *
  * 要它而不是直接写 `session.scene !== null`，是因为后者只窄化那个属性，
@@ -168,6 +159,15 @@ export function isRunning(session: Session): session is RunningSession {
   return session.scene !== null
 }
 
+/**
+ * 开局：建世界、进场景 —— 原版「起」那一下的
+ * `switchTo("scene")` + `scenePanel.initiation("脚本1.txt")` + 那条线程。
+ *
+ * 进哪个场景由调用方决定（`useGame` 那边是 `sceneName`），因为原版这三句
+ * 里只有 `initiation` 认文件名，别的两句对进哪个场景一无所知。
+ *
+ * 战斗那一侧一并清掉：原版这一下 `new` 的是一整套面板。
+ */
 export function enterScene(session: Session, world: World): RunningSession {
   return { ...session, panel: 'scene', scene: createTicker(world), battle: null }
 }

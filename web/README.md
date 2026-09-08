@@ -1,9 +1,10 @@
 # web/ —— 浏览器版
 
-Vite + React + TypeScript + Pixi。现在能打开网页看到**宿舍**，用方向键走动、
-按住 Ctrl 或 Shift 跑动，撞到墙和家具会被挡住（xl-9bd.6）；开发模式下可以跳到
-**全部 96 个场景**里的任意一个（xl-9bd.3 / xl-9bd.4）。NPC、对话、镜头跟随
-还没有。
+Vite + React + TypeScript + Pixi。现在打开网页看到的是**标题画面**，点「起」
+进脚本1（xl-q7f，照抄原版 `GameLauncher` 构造函数末尾那句 `switchTo("start")`）；
+进去之后用方向键走动、按住 Ctrl 或 Shift 跑动，撞到墙和家具会被挡住
+（xl-9bd.6）。开发模式下的场景选择器可以跳到**全部 96 个场景**里的任意一个，
+也可以拨回「标题」（xl-9bd.3 / xl-9bd.4 / xl-q7f）。
 
 ## 命令
 
