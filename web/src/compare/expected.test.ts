@@ -1,6 +1,11 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CANVAS_HEIGHT, CANVAS_WIDTH, EXPECTED, expectationOf, scriptNames } from './expected'
+import { exactRectsOf } from './exactRegions'
+import type { ExactTraceTick } from './exactRegions'
 import { rectsOverlap } from './regions'
+import { repoPath } from '../test/repoPath'
 
 /**
  * 期望表本身的体检。跑得起来不需要 Java、不需要 Chrome，所以它在 CI 里，
@@ -98,6 +103,62 @@ describe('跨端比对的期望表', () => {
         )
       }
     }
+  })
+
+  it('逐像素相等区都写清楚了理由与票号，且一条剧本里不重名', () => {
+    for (const [name, e] of Object.entries(EXPECTED)) {
+      if (!e.exact) continue
+      expect(e.exact.length, `${name} 的 exact 是空数组`).toBeGreaterThan(0)
+      const seen = new Set<string>()
+      for (const x of e.exact) {
+        expect(seen.has(x.name), `${name} 的逐像素相等区 ${x.name} 重名`).toBe(false)
+        seen.add(x.name)
+        expect(x.why, `${name}/${x.name} 没写原因`).toBeTruthy()
+        expect(x.issue, `${name}/${x.name} 没挂 issue`).toMatch(/^xl-/)
+        expect(x.drawnTicks, `${name}/${x.name} 的登记拍数要是正整数`).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('逐像素相等区的登记与入库真值对撞 —— 两头都会红', () => {
+    // xl-aq0。这是这套判据在 CI 里唯一跑得到的一半（另一半要 Java 与 Chrome），
+    // 而且它是**双向**的：
+    //
+    // - 真值里有拍画着提示图、表里却没声明这块区 → 红（漏了一条剧本没守）；
+    // - 表里声明了、真值里一拍都没有 → 红（守着一块空地，判据恒真）；
+    // - 两边都有但拍数对不上 → 红（真值变了，分母得有人重新签）。
+    //
+    // 名单**不从 expected.ts 现扫**，是从 `tools/traces/out/` 那份行为真值扫的
+    // ——被守的东西不给自己签字（纪律 3）。
+    const names = scriptNames()
+    expect(names.length).toBeGreaterThan(0)
+    let declared = 0
+    for (const name of names) {
+      const file = join(repoPath('tools/traces/out'), `${name}.trace.json`)
+      expect(existsSync(file), `${name} 没有入库真值：${file}`).toBe(true)
+      const ticks = (JSON.parse(readFileSync(file, 'utf8')) as { ticks: ExactTraceTick[] }).ticks
+      const spec = EXPECTED[name]?.exact?.find((x) => x.source === 'reminder')
+      // 场景 / 菜单 / 商店那几条真值里根本没有提示图这一层，读它是硬失败，
+      // 所以先分流；分流之后「没有这一层」就等于「不许声明这块区」。
+      if (!ticks.some((t) => t.reminder !== undefined)) {
+        expect(spec, `${name} 的真值里没有提示图这一层，却声明了逐像素相等区`).toBeUndefined()
+        continue
+      }
+      const drawn = exactRectsOf('reminder', ticks).size
+      if (drawn === 0) {
+        expect(spec, `${name} 的真值里一拍都没画提示图，却声明了逐像素相等区`).toBeUndefined()
+        continue
+      }
+      expect(
+        spec,
+        `${name} 的真值里有 ${drawn} 拍画着提示图，却没声明逐像素相等区 —— ` +
+          `那条剧本上提示图的缩放采样没人守（xl-aq0）`,
+      ).toBeDefined()
+      expect(spec!.drawnTicks, `${name} 的登记拍数与真值对不上`).toBe(drawn)
+      declared++
+    }
+    // 「一条都没扫到」与「全都对上了」不许长得一样。
+    expect(declared, '一条剧本都没有逐像素相等区 —— 这套判据等于没挂上').toBeGreaterThan(0)
   })
 
   it('没表过态的剧本是硬失败，不是默认放行', () => {

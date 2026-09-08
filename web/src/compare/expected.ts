@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs'
 import { repoPath } from '../test/repoPath'
+import type { ExactRegionSpec } from './exactRegions'
 import type { GapRegion } from './regions'
 
 /**
@@ -99,6 +100,20 @@ export interface Expectation {
    * 缺口区**不许互相重叠**，也不许把整屏铺满（那就该老老实实写 `status: match`）。
    */
   readonly gaps?: readonly GapRegion[]
+  /**
+   * **逐像素相等区**（xl-aq0）。矩形不写在这里，**每一帧从行为真值现读**
+   * （`exactRegions.ts` 说了算），区里一个超容差的像素都不许有。
+   *
+   * 它与上面的 `gaps` 是两套东西，可以同时挂在一条剧本上：`gaps` 是**整屏
+   * 切分**（列出来的是缺口，其余全硬比），而放提示图的那几条战斗剧本还欠着
+   * 满屏的背景动画重编码（xl-7ip），切不成矩形；这一套反过来，**只声明极小的
+   * 几块「这里必须逐像素相等」**，屏幕其余部分照旧由 `maxRatio` 兜着。
+   *
+   * 为什么要它：`maxRatio` 挡不住小面积的回归。提示图的缩放采样（xl-ttu）改回
+   * GPU 那一版会让 111 个像素重新差起来，而 111/655360 = 0.017%，远在上界之下
+   * —— 全套检查一条都不红。见 `exactRegions.ts` 的文件头。
+   */
+  readonly exact?: readonly ExactRegionSpec[]
 }
 
 /** 逻辑画布的尺寸。缺口区的矩形必须落在里面。 */
@@ -287,6 +302,27 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 重编码归 xl-7ip。提示图那张（xl-ttu）已经关了，所以不再列在这里 ——
     // 它的账在上面的逐帧表里留了痕。上界现在由字形那笔定着。
     issue: 'xl-9bd.17 / xl-7ip',
+    // **逐像素相等区**（xl-aq0）：提示图那一层的目标矩形，每一帧从真值的
+    // `reminder.dx1..dy2` 现读，**区里一个超容差的像素都不许有**。守的是
+    // xl-ttu 那个改动 —— 缩放采样按原版的定点规律在 CPU 上做，而不是交给 GPU
+    // 的最近邻。把渲染器换回改前那一版，`pnpm test` 全绿、整屏的 maxRatio 也
+    // 照样过（111 个像素只占 0.017%），只有这条会红。理由与另外两条被否掉的
+    // 路见 `exactRegions.ts` 的文件头。
+    //
+    // 实测（`tools/compare-frames.sh battle-menus`，`--every 25`，容差 8）：
+    // 采样到的 19 帧里 **3 帧**画着提示图，t=125 的 80×16 是 0/1280、
+    // t=200 的 20×4 是 0/80、t=300 的 30×6 是 0/180 —— 与 xl-ttu 记在上面那段
+    // 里的读数逐字相同（那一趟是人工数的，这一趟是流水线数的）。
+    exact: [
+      {
+        name: 'reminder',
+        source: 'reminder',
+        // 整条真值里提示图画着且矩形非空的拍数，`--every` 调成什么都不影响它。
+        drawnTicks: 63,
+        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
+        issue: 'xl-ttu / xl-aq0',
+      },
+    ],
   },
   // ===== xl-rh9.14 的六条：剩下那些技能与秘术 =====
   //
@@ -396,6 +432,26 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     maxRatio: 0.006665,
     why: '状态栏那几行字（字形，这条上界现在由它定）；背景动画的有损重编码（JPG 源 → cwebp -q 95 -sns 0），只在放背景动画的 7 帧上、七帧合计 1307 个像素',
     issue: 'xl-9bd.17 / xl-7ip / xl-x6w',
+    // **逐像素相等区**（xl-aq0）：提示图那一层的目标矩形，每一帧从真值的
+    // `reminder.dx1..dy2` 现读，**区里一个超容差的像素都不许有**。守的是
+    // xl-ttu 那个改动 —— 缩放采样按原版的定点规律在 CPU 上做，而不是交给 GPU
+    // 的最近邻。把渲染器换回改前那一版，`pnpm test` 全绿、整屏的 maxRatio 也
+    // 照样过（111 个像素只占 0.017%），只有这条会红。理由与另外两条被否掉的
+    // 路见 `exactRegions.ts` 的文件头。
+    //
+    // 实测（`--every 25`，容差 8）：20 帧里 **4 帧**画着提示图，
+    // t=75 / t=175 / t=350 各是 120×24 的 0/2880、t=450 是 60×12 的 0/720。
+    // 前三帧背景动画正放着（横剑摆渡 / 银鹰掠地 / 龙翔九天），那笔有损重编码的
+    // 账在区外照旧记着，**区内一个像素都不差** —— 这条不会被 xl-7ip 那笔误伤。
+    exact: [
+      {
+        name: 'reminder',
+        source: 'reminder',
+        drawnTicks: 84,
+        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
+        issue: 'xl-ttu / xl-aq0',
+      },
+    ],
   },
   'battle-yu-skills': {
     status: 'gap',
@@ -437,6 +493,25 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     maxRatio: 0.013480,
     why: '状态栏那几行字（字形，这条上界现在由它定）；背景动画的有损重编码（JPG 源 → cwebp -q 95 -sns 0），只在放背景动画的 8 帧上、八帧合计 2522 个像素',
     issue: 'xl-9bd.17 / xl-7ip / xl-x6w',
+    // **逐像素相等区**（xl-aq0）：提示图那一层的目标矩形，每一帧从真值的
+    // `reminder.dx1..dy2` 现读，**区里一个超容差的像素都不许有**。守的是
+    // xl-ttu 那个改动 —— 缩放采样按原版的定点规律在 CPU 上做，而不是交给 GPU
+    // 的最近邻。把渲染器换回改前那一版，`pnpm test` 全绿、整屏的 maxRatio 也
+    // 照样过（111 个像素只占 0.017%），只有这条会红。理由与另外两条被否掉的
+    // 路见 `exactRegions.ts` 的文件头。
+    //
+    // 实测（`--every 25`，容差 8）：47 帧里 **3 帧**画着提示图，
+    // t=50 是 110×22 的 0/2420、t=800 是 120×24 的 0/2880、t=850 是 40×8 的 0/320。
+    // 三帧背景动画都放着（伏虎冲天 / 妙手回春 / 蝶影神灵），区内照样一个不差。
+    exact: [
+      {
+        name: 'reminder',
+        source: 'reminder',
+        drawnTicks: 84,
+        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
+        issue: 'xl-ttu / xl-aq0',
+      },
+    ],
   },
   'battle-lu-skills': {
     status: 'gap',
@@ -479,6 +554,25 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     maxRatio: 0.012579,
     why: '状态栏那几行字（字形，这条上界现在由它定）；背景动画的有损重编码（JPG 源 → cwebp -q 95 -sns 0），只在放背景动画的 14 帧上、十四帧合计 1284 个像素',
     issue: 'xl-9bd.17 / xl-7ip / xl-x6w',
+    // **逐像素相等区**（xl-aq0）：提示图那一层的目标矩形，每一帧从真值的
+    // `reminder.dx1..dy2` 现读，**区里一个超容差的像素都不许有**。守的是
+    // xl-ttu 那个改动 —— 缩放采样按原版的定点规律在 CPU 上做，而不是交给 GPU
+    // 的最近邻。把渲染器换回改前那一版，`pnpm test` 全绿、整屏的 maxRatio 也
+    // 照样过（111 个像素只占 0.017%），只有这条会红。理由与另外两条被否掉的
+    // 路见 `exactRegions.ts` 的文件头。
+    //
+    // 实测（`--every 25`，容差 8）：44 帧里 **5 帧**画着提示图，
+    // t=50 与 t=375 是 120×24 的 0/2880、t=100 是 30×6 的 0/180、
+    // t=300 与 t=600 是 20×4 的 0/80。
+    exact: [
+      {
+        name: 'reminder',
+        source: 'reminder',
+        drawnTicks: 126,
+        why: '提示图的缩放采样按原版的定点规律在 CPU 上做（scaledBlit.ts），不走 GPU 的最近邻',
+        issue: 'xl-ttu / xl-aq0',
+      },
+    ],
   },
   'battle-mishu-zhang': {
     status: 'gap',

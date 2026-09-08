@@ -21,6 +21,8 @@ import { IMPLEMENTED_DRIVERS } from '../src/replay/implemented'
 import { decodePng, encodePng } from '../src/compare/png'
 import { judgeRegions, partitionedDiff } from '../src/compare/regions'
 import type { PartitionedFrame, RegionVerdict } from '../src/compare/regions'
+import { exactRectsOf, judgeExact, rectDiffering } from '../src/compare/exactRegions'
+import type { ExactFrame, ExactTraceTick, ExactVerdict } from '../src/compare/exactRegions'
 import { repoPath } from '../src/test/repoPath'
 import { judgeWhole } from '../src/compare/verdict'
 import { launch } from './cdp'
@@ -62,6 +64,8 @@ interface ScriptReport {
   readonly verdict: string
   /** 只有分区表态的剧本有：硬比区 / 每个缺口区各自的账。 */
   readonly regions?: RegionVerdict | undefined
+  /** 只有声明了逐像素相等区的剧本有（xl-aq0），一块一条。 */
+  readonly exact?: readonly ExactVerdict[] | undefined
 }
 
 async function main(): Promise<void> {
@@ -283,12 +287,42 @@ function compareOne(
     regions = judgeRegions(frames, expectation.gaps)
   }
 
+  // 逐像素相等区（xl-aq0）：矩形每帧从真值现读，区里一个超容差的像素都不许
+  // 有。它与上面那套分区表态互不相干，两套都可以挂在同一条剧本上。
+  let exact: ExactVerdict[] | undefined
+  if (expectation.exact) {
+    const javaDir1 = join(root, m.script, 'java')
+    const webDir1 = join(root, m.script, 'web')
+    // 读的是本次导出的那份 trace（就在 java/ 旁边），与取图是同一次运行；
+    // shell 那一步已经把它与入库真值 cmp 过。
+    const ticks = (
+      JSON.parse(readFileSync(join(javaDir1, 'trace.json'), 'utf8')) as {
+        ticks: ExactTraceTick[]
+      }
+    ).ticks
+    exact = expectation.exact.map((spec) => {
+      const rects = exactRectsOf(spec.source, ticks)
+      const frames: ExactFrame[] = []
+      for (const t of m.ticks) {
+        const rect = rects.get(t)
+        if (!rect) continue
+        const a = decodePng(readFrame(javaDir1, t, m.script, '原版'))
+        const b = decodePng(readFrame(webDir1, t, m.script, 'Web'))
+        frames.push({ tick: t, rect, differing: rectDiffering(a, b, rect, tolerance) })
+      }
+      return judgeExact(spec, rects.size, frames)
+    })
+  }
+
   // 判据本身在 `src/compare/`：整屏表态走 `verdict.ts`，分区表态走 `regions.ts`。
   // 这里只负责挑一边、把结论抄进报告 —— 判据留在 src/ 下才跟得上 CI 里的
   // vitest（这条流水线要 Java 与 Chrome，进不了 CI）。
   const whole = regions ? null : judgeWhole(sequence, expectation)
-  const ok = regions ? regions.ok : whole!.ok
-  const verdict = regions ? regions.verdict : whole!.verdict
+  // 逐像素相等区是**加在上面那一层之上**的，不是替代：整屏（或分区）那一套
+  // 照旧判，它再叠一条"这几块必须一个像素都不差"。任意一条不过，整条剧本不过。
+  const ok = (regions ? regions.ok : whole!.ok) && (exact ?? []).every((e) => e.ok)
+  const verdict = [regions ? regions.verdict : whole!.verdict, ...(exact ?? []).map((e) => e.verdict)]
+    .join(' ')
 
   // 差异图只出两张：第一个偏离帧（"从哪儿开始不对"）和最差帧（"最坏长什么样"）。
   // 每帧都出会得到几百张没人看的图。
@@ -305,7 +339,7 @@ function compareOne(
     writeFileSync(join(diffDir, frameName(t)), encodePng(diffImage(a, b, tolerance)))
   }
 
-  return { name: m.script, expectation, sequence, ok, verdict, regions }
+  return { name: m.script, expectation, sequence, ok, verdict, regions, exact }
 }
 
 /** 逐帧比原版与某一侧产物的差异。`side` 是 `<剧本>/` 下的子目录名。 */
