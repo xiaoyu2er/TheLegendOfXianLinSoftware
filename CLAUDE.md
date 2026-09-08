@@ -101,9 +101,9 @@ re-export-and-diff regression checks, both of which must come back empty:
 
 `web/` has vitest (`pnpm test`). **The Java side has no unit tests at all**
 (`find . -path ./web -prune -o -name '*Test*.java' -print` is empty, re-measured
-2026-09-08). The gap that leaves has been **measured, not argued**: ten
-mutations, three caught by the two re-export checks and **seven invisible to
-both** — including the two kinds of `src/` edit this repo actually sanctions
+2026-09-08). The gap that leaves has been **measured, not argued**
+(2026-09-08): ten mutations, three caught by the two re-export checks and
+**seven invisible to both** — including the two kinds of `src/` edit this repo actually sanctions
 (`fix(path)`'s path normalisation and `fix(diag)`'s missing-image warning),
 and `ExportTrace`'s promise that an unknown `driver` is a hard failure. The
 matrix, the three families it falls into, and the small suite proposed in
