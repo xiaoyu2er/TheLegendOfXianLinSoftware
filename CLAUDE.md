@@ -67,7 +67,8 @@ port: 1024×640 舞台 + 数据烘焙 + 宿舍与大地图两个场景).
 
 ```bash
 brew install openjdk@17          # source targets JavaSE-1.7; 17 compiles it
-tools/build.sh                   # game (GBK) + dev tools (UTF-8) -> tools/build/classes
+tools/build.sh                   # game (GBK) + dev tools + unit tests (UTF-8) -> tools/build/classes
+tools/test.sh                    # the Java-side unit tests (zero dependencies)
 tools/run-game.sh                # launch the original game
 tools/export-truth.sh            # re-export the 96 script ground-truth JSONs
 tools/export-trace.sh --check    # re-export the behaviour traces, twice, and cmp
@@ -78,15 +79,22 @@ pnpm typecheck && pnpm test && pnpm build
 pnpm bake                        # 重烘场景 JSON 与 WebP（产物入库，改了脚本/烘焙器才要跑）
 ```
 
-`web/`'s three commands run in CI (`.github/workflows/web.yml`); the Java side
-has no CI yet.
+`web/`'s three commands run in CI (`.github/workflows/web.yml`). The Java side
+has CI too (`.github/workflows/java.yml`): `tools/build.sh`, `tools/test.sh`,
+and `tools/export-truth.sh` followed by `git diff --exit-code -- tools/ground-truth`
+— that last pair is two separate steps on purpose, because "the exporter ran"
+and "what it produced matches what is committed" are different questions and
+only the second is the check. `tools/export-trace.sh --check` is deliberately
+**not** wired up: 2m34s measured, and it needs `-Djava.awt.headless=false`
+(the battle driver wants real Swing components), which has never been tried on
+a runner. Tracked in `xl-u7b`.
 
 **Run every Java-side command from the repo root** — the game resolves
 `script/`, `sources/`, `image/` as relative paths. `web/`'s commands run from
 `web/`.
 
-**The Java side has no unit-test suite yet.** What it has instead are two
-re-export-and-diff regression checks, both of which must come back empty:
+The Java side has **three** checks. Two are re-export-and-diff, and both must
+come back empty:
 
 - `tools/export-truth.sh` — data layer. Re-run it and `git diff
   tools/ground-truth` must be empty (96 scripts × 26 fields).
@@ -99,18 +107,32 @@ re-export-and-diff regression checks, both of which must come back empty:
   reproducible — a *stable* wrong answer looks identical to a right one, and the
   empty `git diff` is what catches that. See `docs/trace-format.md`.
 
-`web/` has vitest (`pnpm test`). **The Java side has no unit tests at all**
-(`find . -path ./web -prune -o -name '*Test*.java' -print` is empty, re-measured
-2026-09-08). The gap that leaves has been **measured, not argued**
-(2026-09-08): ten mutations, three caught by the two re-export checks and
-**seven invisible to both** — including the two kinds of `src/` edit this repo actually sanctions
-(`fix(path)`'s path normalisation and `fix(diag)`'s missing-image warning),
-and `ExportTrace`'s promise that an unknown `driver` is a hard failure. The
-matrix, the three families it falls into, and the small suite proposed in
-answer to it: `docs/java-side-test-gap.md`. Building that suite needs two
-repo-level calls (how a test dependency enters; whether the Java side gets
-CI) and is still open as `xl-f8y` — deliberately *not* "unit-test `src/`",
-which is frozen specification.
+The third is `tools/test.sh`, a unit-test suite that exists **only** to cover
+what those two cannot see. Which ones those are was measured, not argued
+(2026-09-08, `xl-f8y`): ten mutations, three caught by the re-export checks and
+**seven invisible to both** — among them the two kinds of `src/` edit this repo
+actually sanctions (`fix(path)`'s path normalisation, `fix(diag)`'s
+missing-image warning) and `ExportTrace`'s promise that an unknown `driver` is
+a hard failure, which would otherwise export a trace that is exit-0, valid JSON
+and byte-identical across two runs. Re-running that same matrix afterwards:
+**all seven now go red, and the three the re-export checks already caught still
+do.** The matrix, the three families it falls into, and every mutation verbatim:
+`docs/java-side-test-gap.md`.
+
+Two things about the suite are load-bearing, not incidental:
+
+- **It does not unit-test `src/`, on purpose.** The original is frozen
+  specification; a suite for code nobody may change buys nothing, and its
+  behaviour is already pinned where the port actually consumes it. Two of the
+  ten mutations stay green under `tools/test.sh` for exactly this reason —
+  they are the truth layer's and the trace layer's job. **One gap needs one
+  check, and every gap needs at least one.**
+- **Zero dependencies, no build system** (user's call, 2026-09-08). The runner
+  is `tools/test/devtools/TestMain.java`; `tools/build.sh` still just calls
+  `javac`, now in three stages instead of two. `TestMain` fails loudly when
+  **no assertion ran at all**, when a registered class contributed none, and
+  when its hand-written `SUITE` and the on-disk `*Test.java` scan disagree —
+  each of those verified by breaking it on purpose.
 
 ## Architecture Overview
 
