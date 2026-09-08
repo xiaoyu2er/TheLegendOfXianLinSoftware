@@ -445,14 +445,14 @@ function bakeBattleImages(
     claim(product, id)
     if (isDeferredBattleAsset(relative)) {
       const destination = resolve(publicDeferred, product.slice(DEFERRED_PUBLIC_DIR.length + 1))
-      deferredBytes += toWebp(source, destination)
+      deferredBytes += toWebp(source, destination, undefined, BATTLE_LOSSY_QUALITY)
       deferredFiles[id] = product
       version.update(product).update('\0').update(readFileSync(destination))
       deferred++
       continue
     }
     manifest[id] = product
-    bundledBytes += toWebp(source, resolve(ASSETS_OUT, product))
+    bundledBytes += toWebp(source, resolve(ASSETS_OUT, product), undefined, BATTLE_LOSSY_QUALITY)
     bundled++
   }
 
@@ -632,7 +632,58 @@ function format(value: unknown, indent: string): string {
 }
 
 /**
- * 转 WebP。**有损源用有损、无损源用无损**：JPG 走 q80，PNG 走无损。
+ * 有损档位的默认值。地图那批（`sources/` 下的 28 张底图与 28 张 JPG）用它，
+ * 理由与实测见下面 `toWebp` 的头注（xl-9bd.14）。
+ */
+const DEFAULT_LOSSY_QUALITY = 80
+
+/**
+ * 战斗素材里的有损档位（xl-7ip）。今天它只作用在 `image/背景动画/` 那 753 张
+ * JPG 上 —— `image/` 下其余 25 个目录 1652 个文件全是 PNG，走 `-lossless`，
+ * 这个数对它们无效。写成"整个战斗素材"而不是"背景动画那个目录"，是为了让
+ * 明天新加一张 JPG 战斗素材时不必再记得回来改一次。
+ *
+ * **为什么是 95，而不是无损。** 这四条剧本的跨端上界此前**完全由这一笔定着**：
+ * 最差帧（battle-menus #225 / zhang #75 / yu #875 / lu #425）满屏都是背景动画
+ * 的重编码差异，跟这条剧本画对了没有毫无关系。要还这笔账，档位是唯一的旋钮，
+ * 而它的代价 2026-09-07 全量量过（753 张合计，`cwebp` 1.6.0）：
+ *
+ *   档位            753 张合计   对 q80    最重的单个技能目录   四条剧本最差帧
+ *                                                              那张图里超容差(8)
+ *                                                              的像素数
+ *   q80（原）       18.32 MiB    —        伏虎冲天 2.9 M      1105/38325/51884/50953
+ *   q90             25.44 MiB    +39%     4.0 M                143/ 1061/ 5786/ 1814
+ *   **q95**         34.30 MiB    +87%     5.5 M                   6/  205/ 1405/  618
+ *   q100            46.82 MiB    +156%    —                       2/  100/  814/  416
+ *   near_lossless60 100.36 MiB   +448%    —                    0（最大单通道差 2）
+ *   无损            107.00 MiB   +484%    伏虎冲天 16.3 M      0
+ *
+ * 四张图是 `追星破月/2`、`横剑摆渡/14`、`蝶影神灵/29`、`劈风追月/63`，正是那
+ * 四个最差帧上当时在放的那一帧；分母是各自的源尺寸（1240×744 / 1066×639）。
+ *
+ * 三件事这张表钉住了，都不是推的：
+ *
+ * - **q100 到不了 0**（蝶影神灵那张还剩 814 个）。cwebp 的有损档一律做 YUV420
+ *   色度下采样，那一笔跟 `-q` 无关，只有 `-lossless` 归零。所以"把 q 拧到顶"
+ *   和"无损"之间没有连续过渡，中间是一道坎。
+ * - **near_lossless 60 归零，但要 100.36 MiB**，比真无损只便宜 6% —— 它不是
+ *   一个折中档，是无损的一个更慢的写法。
+ * - **`-z 9` 只再省 1%**，把画不出来的部分裁掉再省 3%（原版 `drawImage` 在
+ *   `x=0,y=0`，画布 1024×640，而 1240×744 那 115 张有 29% 的像素从没被画出来
+ *   过 —— 那是 xl-2ki，另一张票）。**两样都救不了这个量级。**
+ *
+ * 归零要给仓库永久加 89 MiB（产物入库，1770 个文件都在 git 里，现在 pack 是
+ * 208 MiB），单个技能的按需下载从 2.9 M 涨到 16.3 M。换来的是这四条能像两条
+ * 秘术剧本那样写**分区表态**。2026-09-07 裁定：不换，取 q95 —— 这笔账缩小
+ * 30~40 倍、退到状态栏字形那一笔（约 0.4% 满屏）之下，代价是 +16 MiB。
+ * 四条上界因此重量，见 `src/compare/expected.ts`。
+ */
+const BATTLE_LOSSY_QUALITY = 95
+
+/**
+ * 转 WebP。**有损源用有损、无损源用无损**：PNG 一律走无损，其余走 `-q`，
+ * 档位由调用方给（默认 `DEFAULT_LOSSY_QUALITY`，战斗素材那条路传
+ * `BATTLE_LOSSY_QUALITY`，两者的实测依据都在各自的头注里）。
  * JPG 本来就已经有损，再无损编码等于把 JPEG 的块效应一并存下来
  * （大地图.jpg 3200×2560 4.2 MB → q80 2.0 MB，实测）。
  *
@@ -663,11 +714,16 @@ function format(value: unknown, indent: string): string {
  *   dist/assets 下是一堆独立文件，只有真的走进大迷宫的玩家才下载它一次。
  *   「双份 + 按缩放选」与「渐进加载」两种方案反而会让仓库更大。
  */
-function toWebp(source: string, destination: string, crop?: SourceRect): number {
+function toWebp(
+  source: string,
+  destination: string,
+  crop?: SourceRect,
+  quality: number = DEFAULT_LOSSY_QUALITY,
+): number {
   useInput(source)
   mkdirSync(dirname(destination), { recursive: true })
   const lossless = source.toLowerCase().endsWith('.png')
-  const flags = lossless ? ['-lossless'] : ['-q', '80']
+  const flags = lossless ? ['-lossless'] : ['-q', String(quality)]
   const cropFlags = crop ? ['-crop', '0', '0', String(crop.width), String(crop.height)] : []
   execFileSync('cwebp', ['-quiet', ...cropFlags, ...flags, source, '-o', destination])
   return statSync(destination).size
