@@ -5,11 +5,11 @@ import type { BattleConfig } from '../battle/world'
 import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
 import type { PartyKey } from '../battle/units'
-import { partyLevels, rememberParty } from '../fakes/party'
-import { getParty } from '../fakes/party'
+import { getParty, rememberParty } from '../fakes/party'
 import { advance, createTicker } from '../state/loop'
 import type { Ticker } from '../state/loop'
 import type { SceneSource } from '../state/step'
+import { BATTLE_INFO_COLUMNS, COL_BACKGROUND, COL_PARTY, enemySlots } from '../state/fight'
 import type { BattleInfo } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 
@@ -44,8 +44,10 @@ import type { InputEvent, World } from '../state/types'
  *    喂方向键让主角**真的走**到第 30 格，看战斗是不是这一拍起的、起的是不是
  *    `battle0` 那两行之一；然后**一条输入都不喂**把战斗跑到全灭
  *    （怪自己会打），看它回到哪个面板。中间没有一个手写的状态字段。
- * 2. **回来之后场景那边逐字段没变**：主角像素坐标、当前脚本、NPC 名单与
- *    它们的格子、`audio.bgm` —— 拿进战斗那一刻的快照比。
+ * 2. **回来之后场景那边逐字段没变**：主角像素坐标、当前脚本、NPC **名单**、
+ *    `audio.bgm` —— 拿进战斗那一刻的快照比，而且**每一拍都比一遍**。
+ *    比的是名单不是坐标：NPC 在战斗期间照样在走（原版那条线程没停），
+ *    钉住坐标等于把一条与原版相反的不变量立成判据。
  * 3. **打赢那条路**用 `battle-victory` 那份真值的**剧本与输入**（不是它的
  *    状态）建一场战斗塞进会话里，跑到结算结束，看会话回没回场景、经验有没有
  *    记进队伍。
@@ -104,19 +106,22 @@ export function configFor(
   deps: SessionDeps,
   carry = getParty(),
 ): BattleConfig {
-  if (info.length !== 7) {
-    throw new Error(`Fight 段的一行应当是 7 列，实际 ${info.length} 列：${JSON.stringify(info)}`)
+  if (info.length !== BATTLE_INFO_COLUMNS) {
+    throw new Error(
+      `Fight 段的一行应当是 ${BATTLE_INFO_COLUMNS} 列，实际 ${info.length} 列：${JSON.stringify(info)}`,
+    )
   }
-  const present: PartyKey[] = []
-  if (info[1] === 'zhang') present.push('zhang')
-  if (info[2] === 'yu') present.push('yu')
-  if (info[3] === 'lu') present.push('lu')
+  // `if(zhang.equals("zhang"))` —— **逐字**相等才算出战，别的词一律不算。
+  const present = (Object.keys(COL_PARTY) as PartyKey[]).filter(
+    (key) => info[COL_PARTY[key]] === key,
+  )
   return {
-    background: info[0]!,
+    background: info[COL_BACKGROUND]!,
     party: present,
-    levels: partyLevels(),
-    // `if(!enemy1.equals("null"))` —— 逐字的 "null" 才是空槽位。
-    enemies: [info[4]!, info[5]!, info[6]!].map((e) => (e === 'null' ? null : e)),
+    // 等级与其余六样出自**同一份** `carry`：分开取会让显式传 carry 的调用方
+    // 拿到一份"等级是全局的、血是传进来的"的混合体。
+    levels: { zhang: carry.zhang.level, yu: carry.yu.level, lu: carry.lu.level },
+    enemies: enemySlots(info),
     // 原版这里没有种子（`Math.random()` 直调），见 `SessionDeps.random`。
     seed: Math.trunc(deps.random() * 0x7fffffff),
     sprite: deps.sprite,

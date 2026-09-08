@@ -15,7 +15,7 @@
     "web/src/data/types.ts": "8d659392b947586e5b77e922e198e54d1506508414501393676bf4dac575d072",
     "web/src/state/dialogue.ts": "314abf6abadbf594fc30cd3dc9698ea1bcac6c51e93e1ad018cc9c414ffbc41b",
     "web/src/state/exit.ts": "ea688ea78d3d4a3b8819ca9b9aa304e82b188fd0645ba650d083a6f1d0e0abbc",
-    "web/src/state/fight.ts": "95df936e367122e7ec9e94cac05e2fd594b7db445d6e9c82c390fc1c4e1fedd9",
+    "web/src/state/fight.ts": "3863f5a19b2018fc080309d6429932141cddfaef640e19d5b427e27b6799b047",
     "web/src/state/narratage.ts": "219ef613e81f9afa9dc89afbdb426e9544bc36c9edcc41a15be41fce56579240",
     "web/src/state/npc.ts": "9694fa399c2f44026ca018e8f7afe37a95185b9ea7d4ad0464ed9c44dd6b6553",
     "web/src/state/role.ts": "3b2ca2f6d64483d21639e1645f48b20879222a59ba563b5c821b1ec70fd23da3",

@@ -57,8 +57,47 @@ export const NEXT_SCRIPT_ENEMIES: readonly string[] = [
   '李洵/5',
 ]
 
-/** 一场战斗的 7 元组（`Fight` 段的一行），原样递出去，由会话层去解。 */
+/**
+ * 一场战斗的 7 元组（`Fight` 段的一行），原样递出去，由会话层去解。
+ *
+ * 保持成裸数组是**照抄**：原版 `FightEvent.fight(String[] battleInfo)` 收的
+ * 就是它，七个 `battleInfo[i]` 逐位取用。但**列号只许写在下面这几个常量与
+ * 取用函数里** —— 之前 `session.ts` / `enemySprites.ts` / `advancesScript`
+ * 三处各写各的下标与各自的 `'null'` 判断，而"某一处漏了一列"的表现是
+ * "打某几场时贴图没预取到"，跟"这一场本来就没那只怪"长得一样。
+ */
 export type BattleInfo = readonly string[]
+
+/** 7 元组的列号。`FightEvent.fight()` 开头那七行 `String x = battleInfo[i]`。 */
+export const BATTLE_INFO_COLUMNS = 7
+/** 第 0 列：背景图。 */
+export const COL_BACKGROUND = 0
+/** 第 1/2/3 列：三个人出没出战，值是 `zhang` / `yu` / `lu`，别的词一律没出战。 */
+export const COL_PARTY: Readonly<Record<'zhang' | 'yu' | 'lu', number>> = { zhang: 1, yu: 2, lu: 3 }
+/** 第 4/5/6 列：三个怪物槽位，空槽位逐字写作 `null`。 */
+export const COL_ENEMIES: readonly number[] = [4, 5, 6]
+
+/**
+ * 三个槽位，空的是 `null`。**`"null"` 是逐字的那四个字母**
+ * （原版 `if(!enemy1.equals("null"))`），不是缺列，也不是空串。
+ */
+export function enemySlots(info: BattleInfo): readonly (string | null)[] {
+  return COL_ENEMIES.map((i) => {
+    const spec = info[i]
+    return spec === undefined || spec === 'null' ? null : spec
+  })
+}
+
+/** 三个槽位里那几只怪的名字（去掉 `/编号`），空槽位跳过。 */
+export function enemyNames(info: BattleInfo): readonly string[] {
+  const out: string[] = []
+  for (const spec of enemySlots(info)) {
+    if (spec === null) continue
+    const slash = spec.lastIndexOf('/')
+    if (slash > 0) out.push(spec.slice(0, slash))
+  }
+  return out
+}
 
 /** `FightEvent` 的字段。**跟着 `initiation` 一起重建**，见 `step.ts`。 */
 export interface FightState {
@@ -182,5 +221,5 @@ export function startBattle1(f: FightDraft): BattleInfo | null {
  * 原版那串 `equals` 判的是 `battleInfo[4]`，也就是**一号位**那只怪。
  */
 export function advancesScript(info: BattleInfo): boolean {
-  return NEXT_SCRIPT_ENEMIES.includes(info[4] ?? '')
+  return NEXT_SCRIPT_ENEMIES.includes(info[COL_ENEMIES[0]!] ?? '')
 }

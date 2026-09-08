@@ -74,13 +74,18 @@ export interface BattleConfig {
   carry?: Readonly<Partial<Record<PartyKey, HeroCarry>>> | undefined
 }
 
-/** 跨战斗活着的那几样。与 `fakes/party.ts` 的 `PartyMemberState` 同形。 */
+/**
+ * 跨战斗活着的那几样。
+ *
+ * **这是唯一一份清单**：`fakes/party.ts` 的 `PartyMemberState` 直接
+ * `extends` 它，只多一个 `level`。往这里加一样东西，那边跟着有。
+ */
 export interface HeroCarry {
-  readonly exp: number
-  readonly hp: number
-  readonly mp: number
-  readonly isDead: boolean
-  readonly angryValue: number
+  exp: number
+  hp: number
+  mp: number
+  isDead: boolean
+  angryValue: number
 }
 
 /**

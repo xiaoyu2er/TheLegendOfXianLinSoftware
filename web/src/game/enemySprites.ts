@@ -1,5 +1,6 @@
 import { resolveAsset } from '../assets/resolve'
 import { enemyWalkId } from '../battle/render/assets'
+import { enemyNames } from '../state/fight'
 import type { SceneScript } from '../data/types'
 
 /**
@@ -23,14 +24,11 @@ const sizes = new Map<string, { width: number; height: number }>()
 /** 这个场景可能打到的所有怪物名字（三个 battle 段的第 5/6/7 列）。 */
 export function enemyNamesOf(scene: SceneScript): readonly string[] {
   const out = new Set<string>()
+  // **三段都要扫**。大地图正是只有 `battle2`（选择式战斗，归 M4）的场景 ——
+  // 只扫 0/1 的话它数出零只怪，而玩家随时会在那儿撞进一场。
   for (const list of [scene.battle0, scene.battle1, scene.battle2]) {
     for (const row of list ?? []) {
-      for (const spec of row.slice(4, 7)) {
-        // `if(!enemy1.equals("null"))` —— 逐字的 "null" 是空槽位。
-        if (spec === undefined || spec === 'null') continue
-        const slash = spec.lastIndexOf('/')
-        if (slash > 0) out.add(spec.slice(0, slash))
-      }
+      for (const name of enemyNames(row)) out.add(name)
     }
   }
   return [...out]

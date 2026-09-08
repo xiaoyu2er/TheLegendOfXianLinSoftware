@@ -4,6 +4,7 @@ import { battleTextureIds } from '../battle/render/assets'
 import type { BattleRenderer } from '../battle/render/battleRenderer'
 import { battleDrawList } from '../battle/render/drawList'
 import type { BattleInput } from '../battle/step'
+import type { BattleWorld } from '../battle/types'
 import { exitsReady, loadedSceneSource, prepareExits, rememberScene } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
 import type { SceneRenderer } from '../scene/sceneRenderer'
@@ -82,8 +83,8 @@ export function useGame(
   const signatureRef = useRef<string | null>(null)
   const sceneRef = useRef<string | null>(null)
   const panelRef = useRef<Panel>('scene')
-  /** 已经载过贴图的那个战斗世界。换一场就要重载。 */
-  const loadedBattleRef = useRef<unknown>(null)
+  /** 已经载过贴图的那个战斗世界（按引用比）。换一场就要重载。 */
+  const loadedBattleRef = useRef<BattleWorld | null>(null)
   const battleLoadingRef = useRef(false)
 
   // 换场景 = 换一个世界。主角回到脚本里的出生格。

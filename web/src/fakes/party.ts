@@ -1,6 +1,7 @@
 import { declareFake } from './fake'
 import { HEROES, derive, expToLevelUp } from '../battle/units'
 import type { PartyKey } from '../battle/units'
+import type { HeroCarry } from '../battle/world'
 
 /**
  * **假的队伍**（`battle.ZhangXiaoFan` / `YuJie` / `LuXueQi` 那三组静态字段）。
@@ -33,16 +34,18 @@ import type { PartyKey } from '../battle/units'
 export const FAKE = declareFake('party')
 
 /**
- * 跨战斗活着的那几样。字段名与 `Hero` 一致，`createBattle` 的 `carry` 直接
- * 收它。
+ * 跨战斗活着的那几样。
+ *
+ * **六个字段里有五个直接就是 `battle/world.ts` 的 `HeroCarry`** ——
+ * `createBattle` 的 `carry` 收的就是那个类型，所以这里 `extends` 它而不是
+ * 再抄一份：抄一份的话，将来往 `HeroCarry` 里加一样东西，这边不加也编得过，
+ * 而表现是"那一样跨不过战斗"，画面上完全正常。
+ *
+ * 多出来的那一个是 `level`：它不在 `HeroCarry` 里，因为 `createBattle` 是从
+ * `levels` 那个参数拿等级的（真值回放时剧本自己写等级，与队伍无关）。
  */
-export interface PartyMemberState {
+export interface PartyMemberState extends HeroCarry {
   level: number
-  exp: number
-  hp: number
-  mp: number
-  isDead: boolean
-  angryValue: number
 }
 
 /**
@@ -91,15 +94,7 @@ export function partyLevels(): Readonly<Record<PartyKey, number>> {
  * 只记**出战的人**：没出战的那一位原版的静态字段一个字都没被动过。
  */
 export function rememberParty(
-  heroes: readonly {
-    spec: { key: PartyKey }
-    level: number
-    exp: number
-    hp: number
-    mp: number
-    isDead: boolean
-    angryValue: number
-  }[],
+  heroes: readonly ({ spec: { key: PartyKey } } & PartyMemberState)[],
 ): void {
   for (const h of heroes) {
     party[h.spec.key] = {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import { exitTableOf } from './exit'
 import {
@@ -33,11 +34,10 @@ describe('FightEvent', () => {
   const scenes = sceneSourceOf(getScene)
 
   it('count_battle0 由行数定：>20 行是 50，否则 30', () => {
-    // 分母现数：有 battle0 的场景全部扫一遍，两档各至少有一个样本 ——
-    // 否则这条门槛就有一半没被看见过。
-    const withBattle0 = ['脚本6', '脚本10', '脚本20', '迷宫1']
-      .map((name) => getScene(name))
-      .filter((s) => s.battle0 !== null)
+    // **分母从磁盘现扫**：96 份烘焙产物里有 battle0 的全部过一遍。
+    // 写死一份名单（哪怕再 filter 一次）等于让"名单缩水"静默通过，
+    // 而那正是 dispatch.md 纪律 3 点名的写法。
+    const withBattle0 = SCENE_NAMES.map(getScene).filter((s) => s.battle0 !== null)
     expect(withBattle0.length).toBeGreaterThan(0)
     const buckets = new Set<number>()
     for (const scene of withBattle0) {
@@ -47,7 +47,8 @@ describe('FightEvent', () => {
       expect(f.stepsToBattle, `${scene.script} 的门槛`).toBe(expected)
       buckets.add(f.stepsToBattle)
     }
-    // 脚本20 是 21 行（走 50 格），其余三个是 20 行（走 30 格）—— 两档都有样本。
+    // **两档都要有样本**，否则这条门槛就有一半从没被看见过。
+    // （实测这一批里 脚本20 是 21 行走 50 格，其余的 20 行走 30 格。）
     expect([...buckets].sort((a, b) => a - b)).toEqual([BATTLE0_STEPS_SMALL, BATTLE0_STEPS_BIG])
   })
 

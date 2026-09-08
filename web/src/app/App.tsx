@@ -43,6 +43,14 @@ export function App() {
   const dialogue = view.dialogue
   if (view.scene !== game.scene) setGame({ scene: view.scene })
   const inBattle = view.panel === 'battle'
+  /**
+   * 全灭之后回标题那条路（`GameOver` 里 em1 不是「罹年居士」的那一支）。
+   *
+   * **web 端还没有 `StartPanel`**（`src/start/StartPanel.java`，归 xl-kaa）。
+   * 没有它的时候唯一诚实的做法是**说出来**：不说的话玩家看到的是一张定住的
+   * 地图，而"游戏卡住了"与"这里本来就没做"长得一模一样。
+   */
+  const gameOver = view.panel === 'start'
 
   /**
    * 一次鼠标点击 → 舞台**逻辑坐标**（1024×640）。
@@ -69,7 +77,7 @@ export function App() {
         hostContent={
           <>
             {/* 一个面板一张画布，`hidden` 切换 —— 两张一起显示会上下摞着。 */}
-            <div className="stage-panel" ref={sceneHostRef} hidden={inBattle} />
+            <div className="stage-panel" ref={sceneHostRef} hidden={inBattle || gameOver} />
             <div
               className="stage-panel"
               ref={battleHostRef}
@@ -81,11 +89,17 @@ export function App() {
         }
         overlay={
           <>
-            {status.kind === 'ready' || inBattle ? null : (
+            {status.kind === 'ready' || inBattle || gameOver ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
+            {gameOver ? (
+              <p className="stage-notice stage-notice--loading" role="status">
+                全灭 —— 原版这时回开始界面，而 web 端的开始界面还没做（xl-kaa）。
+                刷新页面重开一局。
+              </p>
+            ) : null}
             {inBattle && view.battleLoading ? (
               <p className="stage-notice stage-notice--loading" role="status">
                 正在载入战斗…
@@ -109,9 +123,11 @@ export function App() {
           </label>
         ) : null}
         <p className="toolbar-hint">
-          {inBattle
-            ? '战斗中：点「击」再点怪物；技、防、物同理'
-            : '方向键走动，按住 Ctrl 或 Shift 跑动，空格搭话／推进对话，回车跳过逐字打印'}
+          {gameOver
+            ? '全灭。开始界面归 xl-kaa，今天只能刷新页面重开。'
+            : inBattle
+              ? '战斗中：点「击」再点怪物；技、防、物同理'
+              : '方向键走动，按住 Ctrl 或 Shift 跑动，空格搭话／推进对话，回车跳过逐字打印'}
         </p>
         <button
           type="button"

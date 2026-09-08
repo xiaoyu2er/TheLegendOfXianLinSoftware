@@ -49,7 +49,7 @@ import type { InputEvent } from '../state/types'
  *    走到第 30 格看战斗是不是这一拍起的、打的是不是 `battle0` 那两行之一；
  *    然后**一条输入都不喂**把战斗跑到全灭（怪自己会打），看它落到哪个面板。
  *    从头到尾没有一个手写的状态字段。
- * 2. **回来之后场景那边逐字段没变。** 主角像素坐标、脚本名、NPC 名单与格子、
+ * 2. **回来之后场景那边逐字段没变。** 主角像素坐标、脚本名、NPC **名单**、
  *    `audio.bgm` —— 拿进战斗那一刻的快照比。这条挡的是"打完回来主角站到
  *    别处去了"，而那在画面上只是"咦怎么在这儿"。
  * 3. **打赢那条路**拿 `battle-victory` 那份真值的**剧本与输入**（不是它的
@@ -467,6 +467,9 @@ function snapshotScene(s: Session) {
     dir: w.role.dir,
     bgm: w.audio.bgm,
     currentScript: w.currentScript,
+    // 只有名单与条数，**没有坐标**：NPC 在战斗期间照样在走（原版
+    // `ScenePanel.run()` 那条线程没停），钉住坐标会立成一条与原版相反的
+    // 不变量 —— 它会红，而红的是对的那一侧。
     npcs: w.npcs.map((n) => n.name),
     npcCount: w.npcs.length,
   }
