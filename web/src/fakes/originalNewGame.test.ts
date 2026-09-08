@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { PartyKey } from '../battle/units'
 import { javaSource } from '../test/javaSource'
+import { javaStaticInt } from '../test/javaStaticInt'
 import { repoPath } from '../test/repoPath'
 
 /**
@@ -120,9 +121,20 @@ describe('原版点「起」不重置队伍（xl-lly）', () => {
     (className) => {
       const source = javaSource(`src/battle/${className}.java`)
       // 三个字段都是 static，才谈得上"new 一个新对象也带着上一局的值"。
+      // 找不到（或找到两处）由 `javaStaticInt` 抛 —— 这里要的就是"恰好一处
+      // static 初值"这件事本身，值是多少下面用不上。
+      //
+      // ⚠️ **这一条的分辨力整个寄存在 `javaStaticInt` 的抛上**，所以断言写成
+      // `not.toThrow()` —— 直说被验的是"抛不抛"。原先写的是
+      // `expect(javaStaticInt(...)).toBeGreaterThanOrEqual(0)`，那是**恒真**的
+      // （正则只吃 `\d+`，解出来必 ≥ 0），一条永远绿的 expect 冒充判据，正是
+      // 这个仓库最怕的形状。
+      //
+      // 实测过这条判据的边界：把源码里 `angryValue=0;` 的初值去掉，它立刻红；
+      // 但同时把 helper 改成"抓不到就返回 0"，它就绿了 —— 那一步红的是
+      // `javaStaticInt.test.ts`。真正的判据是 helper 自己那 7 条。
       for (const field of ['level', 'exp', 'angryValue']) {
-        const declared = [...source.matchAll(new RegExp(`public\\s+static\\s+int\\s+${field}\\s*=`, 'g'))]
-        expect(declared, `${className}.java 里 public static int ${field}= 的行数`).toHaveLength(1)
+        expect(() => javaStaticInt(source, field, `${className}.java`)).not.toThrow()
       }
 
       const body = methodBody(source, `public ${className}(int x,int y,BattlePanel bp){`)
