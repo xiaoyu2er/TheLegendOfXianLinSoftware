@@ -28,10 +28,11 @@ import {
   configFor,
   createSession,
   currentBgm,
+  enterScene,
 } from './session'
-import type { Session, SessionDeps } from './session'
+import type { RunningSession, SessionDeps } from './session'
 import { NEXT_SCRIPT_ENEMIES } from '../state/fight'
-import type { InputEvent } from '../state/types'
+import type { InputEvent, World } from '../state/types'
 
 /**
  * 「从地图走进战斗、打完回到该回的地方」这一整条环路。
@@ -96,6 +97,17 @@ function levelParty(level: number): void {
   }
 }
 
+/**
+ * 一个**已经开局**的会话 —— `createSession` 交出来的那个停在标题上、没有
+ * 世界（xl-q7f），下面每条用例要的都是进了场景之后的那个。
+ *
+ * 这两步合起来正是原版「起」那一下：`switchTo("scene")` 加
+ * `scenePanel.initiation(...)`。开机停在标题上那一条由本文件末尾单独验。
+ */
+function openSession(world: World, d: SessionDeps): RunningSession {
+  return enterScene(createSession(d), world)
+}
+
 const press = (k: string): InputEvent => ({ e: 'press', k, ctrl: false })
 const release = (k: string): InputEvent => ({ e: 'release', k })
 
@@ -105,7 +117,7 @@ const SCENE_PUMP_MS = 10
 const BATTLE_PUMP_MS = 100
 
 interface Walk {
-  session: Session
+  session: RunningSession
   /** 主角一共换过几格 —— **独立数一遍**，不读 `FightEvent.count`。 */
   tiles: number
   pumps: number
@@ -168,11 +180,11 @@ function autoAttackInput(w: BattleWorld): BattleInput[] {
  * 的事，也是唯一不作弊的走法 —— 直接改 `role.px` 就等于跳过了被测的那一层。
  */
 function walkUntilBattle(
-  session: Session,
+  session: RunningSession,
   maxPumps = 20000,
   pumpMs = SCENE_PUMP_MS,
   /** 提前收手的条件。默认一直走到开打。 */
-  stop: (s: Session) => boolean = (s) => s.panel !== 'scene',
+  stop: (s: RunningSession) => boolean = (s) => s.panel !== 'scene',
 ): Walk {
   const dirs = ['right', 'left', 'down', 'up'] as const
   let dir = 0
@@ -204,10 +216,10 @@ function walkUntilBattle(
 
 /** 自动攻打，直到战斗自己切面板为止。`each` 每一拍跑一次，用来立不变量。 */
 function runBattleToExit(
-  session: Session,
+  session: RunningSession,
   maxPumps = 20000,
-  each?: (s: Session) => void,
-): { session: Session; pumps: number } {
+  each?: (s: RunningSession) => void,
+): { session: RunningSession; pumps: number } {
   let s = session
   for (let pumps = 1; pumps <= maxPumps; pumps++) {
     const w = battleWorldOf(s)
@@ -228,7 +240,7 @@ describe('场景 → 战斗 → 场景', () => {
     // 分母从数据现读：`count_battle0` 是 `mapSet.length > 20 ? 50 : 30`。
     expect(scene.mapSet.length).toBe(20)
     expect(scene.battle0).not.toBeNull()
-    const session = createSession(createWorld(scene), deps())
+    const session = openSession(createWorld(scene), deps())
 
     const walked = walkUntilBattle(session)
     expect(walked.session.panel).toBe('battle')
@@ -258,7 +270,7 @@ describe('场景 → 战斗 → 场景', () => {
 
   it('整条环路：走进战斗、打完、回到原来那一格', () => {
     levelParty(20)
-    const session = createSession(createWorld(getScene('迷宫1')), deps())
+    const session = openSession(createWorld(getScene('迷宫1')), deps())
     const entered = walkUntilBattle(session).session
     expect(entered.panel).toBe('battle')
 
@@ -300,8 +312,8 @@ describe('场景 → 战斗 → 场景', () => {
     for (const name of ['battle-defeat-scene', 'battle-defeat-start'] as const) {
       resetParty()
       const trace = readBattleTrace(name)
-      const base = createSession(createWorld(getScene('迷宫1')), deps())
-      const s: Session = {
+      const base = openSession(createWorld(getScene('迷宫1')), deps())
+      const s: RunningSession = {
         ...base,
         panel: 'battle',
         battle: createBattleTicker(replayBattle(trace, spriteSize)),
@@ -328,8 +340,8 @@ describe('场景 → 战斗 → 场景', () => {
    */
   it('打输回标题：曲子换成主题曲，而且它真的烘出来了', () => {
     const trace = readBattleTrace('battle-defeat-start')
-    const base = createSession(createWorld(getScene('迷宫1')), deps())
-    const s: Session = {
+    const base = openSession(createWorld(getScene('迷宫1')), deps())
+    const s: RunningSession = {
       ...base,
       panel: 'battle',
       battle: createBattleTicker(replayBattle(trace, spriteSize)),
@@ -347,11 +359,11 @@ describe('场景 → 战斗 → 场景', () => {
 
   it('打赢：结算跑完回场景，经验记进队伍', () => {
     const trace = readBattleTrace('battle-victory')
-    const session = createSession(createWorld(getScene('迷宫1')), deps())
+    const session = openSession(createWorld(getScene('迷宫1')), deps())
     // 战斗那一侧整个换成这份真值的剧本（**只有剧本，没有状态**），因为
     // "这串点击真的能打赢"是真值负责的事。场景那一侧原样留着。
     const world = replayBattle(trace, spriteSize)
-    let s: Session = { ...session, panel: 'battle', battle: createBattleTicker(world) }
+    let s: RunningSession = { ...session, panel: 'battle', battle: createBattleTicker(world) }
 
     for (const tick of trace.ticks) {
       s = advanceSession(s, { scene: [], battle: tick.input }, BATTLE_PUMP_MS)
@@ -384,7 +396,7 @@ describe('场景 → 战斗 → 场景', () => {
     const row = scene.battle1![0]!
     expect(NEXT_SCRIPT_ENEMIES).toContain(row[4])
 
-    let s = createSession(createWorld(scene), deps())
+    let s = openSession(createWorld(scene), deps())
     // 自动对话弹出 + 逐字打印，然后一路空格按到底。判据是"开打了"，不是拍数。
     for (let i = 0; i < 4000 && s.panel === 'scene'; i++) {
       const key = i % 20 === 19 ? [press('space'), release('space')] : []
@@ -407,7 +419,7 @@ describe('场景 → 战斗 → 场景', () => {
   })
 
   it('一次 pump 补跑很多拍，起战斗那一拍不会被吞掉', () => {
-    const session = createSession(createWorld(getScene('迷宫1')), deps())
+    const session = openSession(createWorld(getScene('迷宫1')), deps())
     const threshold = session.scene.world.fight.stepsToBattle
 
     // 先一拍一拍地走到**再换一格就开打**为止，然后只喂一次 500 ms
@@ -461,7 +473,7 @@ describe('场景 → 战斗 → 场景', () => {
     // 于是"血带过去了"与"血是满的"长得一模一样，`carry` 拆掉也不会红。
     // 12 级打赢还剩 2139/2240 —— 差 101，这条才分得开。
     levelParty(12)
-    const session = createSession(createWorld(getScene('迷宫1')), deps())
+    const session = openSession(createWorld(getScene('迷宫1')), deps())
     const first = runBattleToExit(walkUntilBattle(session).session).session
     expect(first.panel).toBe('scene')
     const after = { ...getParty().zhang }
@@ -479,6 +491,49 @@ describe('场景 → 战斗 → 场景', () => {
     expect(after.hp).toBeLessThan(zxf.hpMax)
   })
 
+  /**
+   * 开机停在标题上（xl-q7f）—— 原版 `GameLauncher` 构造函数的最后一句
+   * `switchTo("start")`。
+   *
+   * **判据不是"panel 是 start"一条**：先建好一个世界、再把面板摆成 start，
+   * 那一条照样绿，而那正是这处差别最容易被做成的样子（画面上两者一模一样，
+   * 都是一张标题图）。所以还要验"世界根本不在"与"推它是空操作"。
+   */
+  it('起手就停在标题上：没有世界，推多少拍都原地不动', () => {
+    const session = createSession(deps())
+    expect(session.panel).toBe('start')
+    expect(session.scene).toBeNull()
+    expect(battleWorldOf(session)).toBeNull()
+    // 标题那一屏放主题曲 —— 原版 `switchTo("start")` 里那句
+    // `readBGM("主题曲.mp3")`。夹在它与 `openBGM()` 之间那个 `sleep(1000)`
+    // 是音频线程的同步补丁，不抄，理由写在 `createSession` 上。
+    expect(currentBgm(session)).toBe(TITLE_BGM)
+
+    // 推它是**空操作**：原样的那个对象回来。写成 `toBe` 而不是 `toEqual` ——
+    // 一个"每拍推一个空世界、只是恰好什么都没变"的实现 `toEqual` 也是绿的。
+    const later = advanceSession(session, { scene: [press('right')], battle: [] }, 5000)
+    expect(later).toBe(session)
+  })
+
+  /**
+   * 点「起」那一下：`switchTo("scene")` + `scenePanel.initiation(...)`。
+   *
+   * 进哪个场景由调用方给（原版那三句里只有 `initiation` 认文件名），所以
+   * 这里验的是"给什么进什么"，"「起」给的恒是脚本1"归 `app/App.tsx`。
+   */
+  it('开局才建世界：进的是给的那个场景，主角在脚本写的出生格上', () => {
+    const scene = getScene('脚本1')
+    const started = enterScene(createSession(deps()), createWorld(scene))
+    expect(started.panel).toBe('scene')
+    expect(battleWorldOf(started)).toBeNull()
+    // 曲子从主题曲换成这个场景的（`initiation` 末尾那句 `readBGM`）。
+    expect(currentBgm(started)).toBe(scene.sceneMusic)
+    expect(currentBgm(started)).not.toBe(TITLE_BGM)
+    // 出生格从脚本现读，不是手写的一对数。
+    const role = started.scene.world.role
+    expect([roleTileX(role), roleTileY(role)]).toEqual([scene.roleX, scene.roleY])
+  })
+
   it('configFor：7 元组逐位解开，"null" 是空槽位、别的词是没出战', () => {
     const d = deps()
     const c = configFor(['image/背景图/仙二迷宫.png', 'zhang', 'no', 'lu', '怪物1/5', 'null', '怪物2/7'], d)
@@ -490,7 +545,7 @@ describe('场景 → 战斗 → 场景', () => {
 })
 
 /** 场景那一侧**不许因为打了一架而变**的东西。 */
-function snapshotScene(s: Session) {
+function snapshotScene(s: RunningSession) {
   const w = s.scene.world
   return {
     scene: w.scene,

@@ -15,8 +15,8 @@ import type { InputEvent, World } from '../state/types'
 import { battleClick } from './battleInput'
 import { enemyNamesOf, enemySpriteSize, prepareEnemySprites, spritesReady } from './enemySprites'
 import { toInputEvent } from './keyboard'
-import { advanceSession, createSession, currentBgm } from './session'
-import type { Panel, Session } from './session'
+import { advanceSession, createSession, currentBgm, enterScene, isRunning } from './session'
+import type { Panel, Session, SessionDeps } from './session'
 
 /**
  * 把状态层接到键盘与渲染器上。**这里没有一行游戏逻辑**——它只做三件事：
@@ -63,8 +63,9 @@ export interface GameView {
    * 世界此刻在哪个场景（注册表名，如 `大地图`）。
    *
    * **场景归世界管，不归调用方管**（xl-9bd.12）：走到出口是世界自己换的场景，
-   * 画面只能跟着它走。调用方给的那个 `sceneName` 只决定从哪儿开局
-   * （开发用的场景选择器）。世界还没建好时是 `null`。
+   * 画面只能跟着它走。调用方给的那个 `sceneName` 只说"**现在该在哪儿**"
+   * （`null` = 还没开局，停在标题上；开发用的场景选择器改的也是它）。
+   * 还没开局、或者世界还没建好时，这里是 `null`。
    */
   readonly scene: string | null
   /**
@@ -90,13 +91,28 @@ export interface GameView {
    * `START_SCENE`，而这个钩子的场景来自 `sceneName` 这个入参（开发用的场景
    * 选择器也在改它）。`app/App.tsx` 那边一起改，`app/appTitle.test.tsx` 里
    * 有一条用例钉着"从别的场景死了之后重开，进的是脚本1"。
+   *
+   * **开机那一次不走这里**：开机的 `sceneName` 就是 `null`，会话起手就停在
+   * 标题上（xl-q7f），没有"先建一局再退回标题"这回事。
    */
   readonly restart: () => void
 }
 
+/**
+ * 会话跟外界打交道的那三样。全是模块级的东西，所以这份可以是常量 ——
+ * 每次建会话现造一份的话，"deps 换没换"就成了一个没人看得见的变量。
+ */
+const SESSION_DEPS: SessionDeps = {
+  scenes: loadedSceneSource,
+  sprite: enemySpriteSize,
+  // 原版 `FightEvent.startBattle0` 与 `calDamage` 用的就是它。
+  random: Math.random,
+}
+
 export function useGame(
   renderer: SceneRenderer | null,
-  sceneName: string,
+  /** 现在该在哪个场景。`null` = 还没开局，停在标题上（xl-q7f）。 */
+  sceneName: string | null,
   battleRenderer: BattleRenderer | null = null,
 ): GameView {
   const sessionRef = useRef<Session | null>(null)
@@ -104,54 +120,63 @@ export function useGame(
   const clicksRef = useRef<BattleInput[]>([])
   const [dialogue, setDialogue] = useState<DialogueState | null>(null)
   const [scene, setScene] = useState<string | null>(null)
-  const [panel, setPanel] = useState<Panel>('scene')
+  const [panel, setPanel] = useState<Panel>('start')
   const [battleLoading, setBattleLoading] = useState(false)
   /** 第几局。`restart()` 让它涨一，建会话的 effect 就整个重来。 */
   const [generation, setGeneration] = useState(0)
   const signatureRef = useRef<string | null>(null)
   const sceneRef = useRef<string | null>(null)
-  const panelRef = useRef<Panel>('scene')
+  const panelRef = useRef<Panel>('start')
   /** 已经载过贴图的那个战斗世界（按引用比）。换一场就要重载。 */
   const loadedBattleRef = useRef<BattleWorld | null>(null)
   const battleLoadingRef = useRef(false)
 
-  // 换场景 = 换一个世界。主角回到脚本里的出生格。
+  // 换场景 = 换一个世界。主角回到脚本里的出生格。**`sceneName` 是 `null` 就
+  // 一个世界都不建**（xl-q7f）：开机、以及开发用选择器拨回「标题」那一项，
+  // 走的都是这条 —— 会话停在起手态上，标题那一屏归 `app/App.tsx` 画。
   //
   // 场景 JSON 是按需取的（见 `data/scenes.ts`），所以这里有一段"世界还没建好"
-  // 的时间：`tickerRef` 先清空，下面的 pump 认得 `null` 并跳过这一拍。旧世界
-  // 必须当场清掉——留着它，切场景的这几十毫秒里主角会在旧地图上继续走。
+  // 的时间：会话先换成起手态，下面的 pump 认得它并跳过这一拍。旧世界必须当场
+  // 清掉——留着它，切场景的这几十毫秒里主角会在旧地图上继续走。
   useEffect(() => {
     let disposed = false
-    sessionRef.current = null
+    // 会话**当场就有**，只是还没开局（`scene: null`，见 `session.ts`）：
+    // 有它才有"标题这一屏该放主题曲"这句话可说，pump 也才有东西可读。
+    sessionRef.current = createSession(SESSION_DEPS)
     queueRef.current = []
     clicksRef.current = []
     signatureRef.current = null
     sceneRef.current = null
-    panelRef.current = 'scene'
     loadedBattleRef.current = null
     battleLoadingRef.current = false
     setDialogue(null)
     setScene(null)
-    setPanel('scene')
     setBattleLoading(false)
-    void loadScene(sceneName).then(async (loaded) => {
-      if (disposed) return
-      rememberScene(sceneName, loaded)
-      const world = createWorld(loaded)
-      // 先把这个场景出口的目标取到手，走到门口才切得动（见 data/loadedScenes.ts）。
-      await prepareExits(world)
-      // 怪物的出场图也要先量 —— `createBattle` 是同步的，见 `enemySprites.ts`。
-      await prepareEnemySprites(enemyNamesOf(loaded))
-      if (disposed) return
-      sessionRef.current = createSession(world, {
-        scenes: loadedSceneSource,
-        sprite: enemySpriteSize,
-        // 原版 `FightEvent.startBattle0` 与 `calDamage` 用的就是它。
-        random: Math.random,
+    // 载入那几十毫秒里显示的是**场景**（"正在载入 X…"），不是标题：翻回标题
+    // 会把 `StartPanel` 整个重挂一次，卷轴缩回去再展开一遍 —— 点完「起」
+    // 画面倒着走一段，而两种写法都"最后进了脚本1"。
+    //
+    // 与原版的差别在这里：原版是 `initiation(...)` 返回之后才 `switchTo("scene")`，
+    // 没有这一屏载入提示。取舍登记在 `xl-w16`。
+    const startingPanel: Panel = sceneName === null ? 'start' : 'scene'
+    panelRef.current = startingPanel
+    setPanel(startingPanel)
+    if (sceneName !== null) {
+      void loadScene(sceneName).then(async (loaded) => {
+        if (disposed) return
+        rememberScene(sceneName, loaded)
+        const world = createWorld(loaded)
+        // 先把这个场景出口的目标取到手，走到门口才切得动（见 data/loadedScenes.ts）。
+        await prepareExits(world)
+        // 怪物的出场图也要先量 —— `createBattle` 是同步的，见 `enemySprites.ts`。
+        await prepareEnemySprites(enemyNamesOf(loaded))
+        const idle = sessionRef.current
+        if (disposed || idle === null) return
+        sessionRef.current = enterScene(idle, world)
+        sceneRef.current = sceneName
+        setScene(sceneName)
       })
-      sceneRef.current = sceneName
-      setScene(sceneName)
-    })
+    }
     return () => {
       disposed = true
     }
@@ -215,6 +240,13 @@ export function useGame(
       const session = sessionRef.current
       if (!session) return
       const now = performance.now()
+      // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，一拍
+      // 都不推。曲子照放 —— 标题那一屏放主题曲，也是会话说了算。
+      if (!isRunning(session)) {
+        last = now
+        bgmRef.current?.sync(currentBgm(session))
+        return
+      }
       // 邻居还没取到手就先停一拍：出口切换是同步的，切不动只能是抛
       // （见 `state/step.ts` 的 `SceneSource`）。这里停的是几十毫秒，
       // 原版在 `initiation` 里读盘时停的也是这个。

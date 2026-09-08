@@ -23,6 +23,10 @@ import type { InputEvent, World } from '../state/types'
  * overlay 层里（`start/StartPanel.tsx`，xl-kaa）—— 这一层只负责说"现在该
  * 显示它了"，以及它该放哪首曲子（`currentBgm` 里那句 `TITLE_BGM`）。
  *
+ * **开机停在标题上**（xl-q7f）：`createSession(deps)` 交出来的会话
+ * `panel: 'start'`、`scene: null`，点「起」走 `enterScene(session, world)`
+ * 才建世界。两处与原版的对应行写在那两个函数上。
+ *
  * ## 为什么场景在战斗期间**照跑不误**
  *
  * `ScenePanel.run()` 是 `while(true){ step(); sleep(10); }`，一个线程，
@@ -75,11 +79,37 @@ export interface SessionDeps {
 
 export interface Session {
   readonly panel: Panel
-  /** 场景那一侧。**任何时候都不为空**，战斗期间也在推。 */
-  readonly scene: Ticker
+  /**
+   * 场景那一侧。`null` = **这一局还没开始**（xl-q7f）—— 开机就是这个样子。
+   *
+   * 原版没有"空场景"这回事，它是**根本还没建**：`ScenePanel` 的构造函数只
+   * 摆了三个字段（`currentScript`），`reader` / `map` / `role` 全是 null；
+   * 建世界的是 `initiation(fileName)`，而唯一的调用点是「起」那一下
+   * （`StartPanel.startLoadAction()` 的 case 0），推场景的那条线程也是在
+   * 那一句的前后 `new Thread(...).start()` 起来的。也就是说**开机到点「起」
+   * 之间，场景那一侧一个对象都没有、一拍都没推**。
+   *
+   * 所以这里是 `null` 而不是"一个空世界"：空世界推得动，而它推的是一份
+   * 谁都没在看的状态 —— 那跟原版分家，且画面上完全看不出来。
+   *
+   * 开局之后它再也不会变回 `null`（`RunningSession`），全灭回标题也不会：
+   * 原版那条线程从此再没停过。
+   */
+  readonly scene: Ticker | null
   /** 战斗那一侧。`null` = 这一局还没打过架，或者上一场已经收了。 */
   readonly battle: BattleTicker | null
   readonly deps: SessionDeps
+}
+
+/**
+ * 已经开局的会话 —— 场景那一侧一定在。
+ *
+ * 有它是为了让"开局之后 `scene` 不再为空"这件事由类型来说，而不是靠一串
+ * `!`：`enterScene` 交出它，`advanceSession` 收下它就还它一个（下面那对
+ * 重载），于是调用方一路 `session.scene.world` 都不必断言。
+ */
+export interface RunningSession extends Session {
+  readonly scene: Ticker
 }
 
 /** 一拍里到达的输入，按面板分开投递 —— 原版的 `keyPressed` 也是按面板分派的。 */
@@ -90,8 +120,56 @@ export interface SessionInput {
 
 export const NO_INPUT: SessionInput = { scene: [], battle: [] }
 
-export function createSession(world: World, deps: SessionDeps): Session {
-  return { panel: 'scene', scene: createTicker(world), battle: null, deps }
+/**
+ * 起手态：**停在标题上，还没开局**（xl-q7f）。
+ *
+ * 原版 `GameLauncher` 构造函数的最后一句就是 `switchTo("start")` —— 开机
+ * 进的是标题画面，不是脚本1。这里照抄那一句。
+ *
+ * ## `switchTo("start")` 里那句 `Clock.sleep(1000)` 不抄，它不是一秒卡顿
+ *
+ * 原版那一支是三句：`readBGM("主题曲.mp3")` → `sleep(1000)` → `openBGM()`。
+ * 中间那一秒是**音频播放器的线程同步补丁**，不是给玩家看的停顿：
+ *
+ * - `MusicPlayer.play()` 起手 `isStop = true` 再 `while(!hasStop) sleep(10)`，
+ *   等的是上一条 `PlayThread` 收工；
+ * - 构造函数第一句是 `closeBGM()`（`CAN_PLAY_BGM = NO`），所以 `readBGM`
+ *   起的那条播放线程一进循环就 `isStop = true` 当场 break，随后才把
+ *   `hasStop` 置回 true；
+ * - `openBGM()` 又调一次 `play()`。这一秒是留给上面那条线程跑完的 ——
+ *   没有它，`play()` 可能在 `hasStop` 还是 true（线程尚未启动）时就往下走，
+ *   于是两条播放线程、两条输出线抢同一个设备。
+ *
+ * 浏览器这边没有那对标志位：`audio/bgmPlayer.ts` 收到的是"该放哪首"，
+ * 换曲子由它自己收尾。照抄成一秒延迟，等于把一个别人家的竞态修补，变成
+ * 我们自己的一秒黑屏。
+ */
+export function createSession(deps: SessionDeps): Session {
+  return { panel: 'start', scene: null, battle: null, deps }
+}
+
+/**
+ * 开局了没有 —— `RunningSession` 的类型守卫。
+ *
+ * 要它而不是直接写 `session.scene !== null`，是因为后者只窄化那个属性，
+ * **不窄化会话本身**，于是 `advanceSession` 挑不到还回 `RunningSession`
+ * 的那条重载，调用方又得一路 `!`。
+ */
+export function isRunning(session: Session): session is RunningSession {
+  return session.scene !== null
+}
+
+/**
+ * 开局：建世界、进场景 —— 原版「起」那一下的
+ * `switchTo("scene")` + `scenePanel.initiation("脚本1.txt")` + 那条线程。
+ *
+ * 进哪个场景由调用方决定（`useGame` 那边是 `sceneName`），因为原版这三句
+ * 里只有 `initiation` 认文件名，别的两句对进哪个场景一无所知。
+ *
+ * 战斗那一侧一并清掉：原版这一下 `new` 的是一整套面板。
+ */
+export function enterScene(session: Session, world: World): RunningSession {
+  return { ...session, panel: 'scene', scene: createTicker(world), battle: null }
 }
 
 /**
@@ -139,11 +217,24 @@ export function configFor(
  * 起战斗的那一拍战斗世界会晚一整拍才开始动，而画面上看不出来。
  */
 export function advanceSession(
+  session: RunningSession,
+  input: SessionInput,
+  elapsedMs: number,
+): RunningSession
+export function advanceSession(
+  session: Session,
+  input: SessionInput,
+  elapsedMs: number,
+): Session
+export function advanceSession(
   session: Session,
   input: SessionInput,
   elapsedMs: number,
 ): Session {
   const { deps } = session
+  // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，没有世界
+  // 可推。**原样交回去**，而不是推一个空世界 —— 见 `Session.scene`。
+  if (session.scene === null) return session
   let panel = session.panel
   let battle = session.battle
 
@@ -198,7 +289,13 @@ export function advanceSession(
  */
 export function currentBgm(session: Session): string | null {
   if (session.panel === 'battle' && session.battle !== null) return session.battle.world.bgm
-  if (session.panel === 'start') return TITLE_BGM
+  // 标题那一屏放主题曲。**还没开局与全灭回标题走的是同一句**，原版也是同一句
+  // （`switchTo("start")` 里那个 `readBGM("主题曲.mp3")`），两条路都到得了它。
+  //
+  // 后半个 `scene === null` 是**给类型看的**，不是第二条路：没开局蕴含
+  // `panel === 'start'`，前半个已经拦住了；但 `panel` 不窄化 `scene`，
+  // 少了它下面那句就得写 `!`。
+  if (session.panel === 'start' || session.scene === null) return TITLE_BGM
   return session.scene.world.audio.bgm
 }
 
