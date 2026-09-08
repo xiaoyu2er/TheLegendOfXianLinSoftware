@@ -218,7 +218,11 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why:
       '状态栏那九行字 + 药品菜单的存货与介绍文字（同一笔字形账）；' +
       '背景动画的有损重编码（JPG 源 → cwebp -q 80）；提示图缩放时的取整平局 111 个像素',
-    issue: 'xl-9bd.17',
+    // **三笔账三张票**，不是一张：字形归 xl-9bd.17（已裁定不打包字体），背景
+    // 动画的有损重编码归 xl-7ip（它是最差帧、也就是这条上界的唯一成因），
+    // 提示图那 111 个像素归 xl-ttu。只挂字形那张的话，8.41% 这个上界就挂在
+    // 一笔无人认领的账上了。
+    issue: 'xl-9bd.17 / xl-7ip / xl-ttu',
   },
   'battle-em3-box': {
     status: 'gap',

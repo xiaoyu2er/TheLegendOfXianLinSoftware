@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { decodePng } from '../../compare/png'
 import { knownAssetIds, resolveAsset } from '../../assets/resolve'
+import { javaSource } from '../../test/javaSource'
 import { repoPath } from '../../test/repoPath'
 import { DRUGS } from '../drugs'
 import { replayBattle } from '../replay'
@@ -39,10 +40,6 @@ import {
  * 2. **拿烘焙映射表对撞**，对付"拼错一个字"。每一条 ID 都要真的查得出产物 URL
  *    —— 查不到就抛，而不是"这张图没画出来"。
  */
-
-function javaSource(path: string): string {
-  return new TextDecoder('gbk').decode(readFileSync(repoPath(path)))
-}
 
 describe('战斗状态图标那 12 条，从 BattleState.getImage() 现解', () => {
   /** `case N: stateImage=Reader.readImage("image/状态/<名>.png");` 逐条解出来。 */
@@ -120,9 +117,15 @@ describe('菜单那几批 ID 逐条查得出产物 —— 拼错一个字就红'
   }
 
   it('条数数得出来，且互不重复', () => {
-    // 2 背板 + 22 提示图 + 12 图标 + 3 返回 + 21 药品按钮 + 6 介绍图
-    //   + (2+3+2) 人技能 ×(3 贴图 + 1 说明图) = 66 + 28
-    expect(ids.length).toBe(2 + REMINDER_COUNT + STATE_ICON_TYPES.length + 3 + (DRUGS.length + 1) * 3 + DRUGS.length + 7 * 4)
+    // 分母全部从数据源头推：两张背板、`REMINDER_COUNT` 张提示图、
+    // `STATE_ICON_TYPES` 个图标、三档返回、(六种药 + 返回)×三档、六张介绍图，
+    // 再加**三个人各自的 `SKILL_NUMBER`** 颗按钮 ×(三档贴图 + 一张说明图)。
+    // 最后那一项写死成"7 招"就是纪律 3 拦的那种：谁给陆雪琪补上第 3 招，
+    // 这里会莫名其妙地红在一个跟他无关的地方。
+    const skills = Object.values(SKILL_NUMBER).reduce((n, k) => n + k, 0)
+    expect(ids.length).toBe(
+      2 + REMINDER_COUNT + STATE_ICON_TYPES.length + 3 + (DRUGS.length + 1) * 3 + DRUGS.length + skills * 4,
+    )
     expect(new Set(ids).size).toBe(ids.length)
   })
 
@@ -137,7 +140,9 @@ describe('菜单那几批 ID 逐条查得出产物 —— 拼错一个字就红'
     expect(drugButtonId(0, 1)).toBe('battle:药品菜单/药品1按钮1.png')
     expect(drugButtonId(5, 3)).toBe('battle:药品菜单/药品6按钮3.png')
     expect(drugButtonId(DRUGS.length, 2)).toBe('battle:药品菜单/返回2.png')
-    expect(() => drugButtonId(DRUGS.length + 1, 1)).toThrow(/只有 7 颗按钮/)
+    expect(() => drugButtonId(DRUGS.length + 1, 1)).toThrow(
+      new RegExp(`只有 ${DRUGS.length + 1} 颗按钮`),
+    )
   })
 
   it('药品介绍图走 drug: 前缀 —— 它不在 image/ 下', () => {
@@ -184,10 +189,12 @@ describe('battleTextureIds 推的名单，盖得住每一条真值真的画到�
     return { name, loaded, used }
   })
 
-  it('分母是磁盘上的战斗真值份数', () => {
-    expect(drawn.length).toBe(BATTLE_TRACE_NAMES.length)
+  it('每一条真值都真的画出了东西 —— 空集合会让下面那几条恒真', () => {
+    // `drawn.length === BATTLE_TRACE_NAMES.length` 这种断言写了也白写：`drawn`
+    // 就是那张表 `map` 出来的，长度当然相等。真正拦得住"空转"的是下面这句 ——
+    // 一条剧本一张图都没画（回放在第 0 拍就抛了、真值是空的），它的那条
+    // "画到的每一张都在名单里"就是拿空集合去减，恒过。
     expect(drawn.length).toBeGreaterThan(0)
-    // 每一条都真的画出了东西 —— 空集合会让下面那条恒真。
     for (const d of drawn) expect(d.used.size, `${d.name} 一张图都没画`).toBeGreaterThan(0)
   })
 

@@ -661,19 +661,15 @@ describe('哪条剧本在末拍之前抛，与它的表态对得上（xl-rh9.11�
     // 这一行立刻红，他得回来把这句话改掉，顺带就读到了下面那两支各自要求
     // 什么。留着 `toBeGreaterThan(0)` 反而是恒红，留空则是恒绿。
     //
-    // **另一支不是空转的**：五条 gap 剧本每一条都在跑「不许在末拍之前抛」。
+    // **另一支不是空转的**：下面按剧本各生成一条 `it`，每一条都在跑「不许在
+    // 末拍之前抛，且末拍真的抛了」。原先这里还跟着一条"剩下的每一条都真的
+    // 比得成"，那条是**恒真**的：`attempts` 就是 `BATTLE_TRACE_NAMES.map` 出来
+    // 的，减掉一个已经断言为空的子集，长度当然还是原来那个。删了。
     const unpainted = attempts.filter((a) => expectationOf(a.name).status === 'unpainted')
     expect(
       unpainted.map((a) => a.name),
       '有剧本表 unpainted 了？把这条登记改掉，下面那一支会开始验它',
     ).toEqual([])
-  })
-
-  it('剩下的每一条都真的比得成 —— 分母是全部战斗真值', () => {
-    // 上面那条签了 0 之后，「这个 describe 还在验东西吗」必须另有答案：
-    // 每一条剧本都要走到下面那一支去。
-    const checked = attempts.filter((a) => expectationOf(a.name).status !== 'unpainted')
-    expect(checked.length).toBe(BATTLE_TRACE_NAMES.length)
   })
 
   for (const a of attempts) {

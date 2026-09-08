@@ -231,6 +231,9 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   }
 }
 
+/** 药品菜单介绍图的 ID 前缀，见下面 `urlOf` 的注释。 */
+const DRUG_PREFIX = 'drug:'
+
 /**
  * 一个战斗素材的 URL。**边界判在这里，只判一次**：`技能动画` 与 `背景动画`
  * 走 `public/` 按需加载，其余走带指纹的主包产物（`assets/battleAssets.ts`）。
@@ -241,8 +244,6 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
  * 那个坐标系里。**前缀是白名单**：认不出来的一律抛，不猜；猜出来的 ID 要么
  * 查不到，要么恰好撞上别的素材（画错图，且悄无声息）。
  */
-const DRUG_PREFIX = 'drug:'
-
 async function urlOf(id: AssetId): Promise<string> {
   if (id.startsWith(DRUG_PREFIX)) return resolveAsset(id)
   const relative = id.startsWith('battle:') ? id.slice('battle:'.length) : null
