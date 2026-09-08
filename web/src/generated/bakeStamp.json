@@ -1,6 +1,6 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "4ff2fa497eccc39e1f00092e6ce413cb44d75dbdaa82a2793c12ae6d16585a2e",
+    "web/scripts/bake.ts": "947f884078bd95f9c21c231c217df2eb14e033352026f9504048be46f39f2fc7",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
     "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
@@ -13,6 +13,7 @@
     "web/src/data/bakeScript.ts": "5a01d7beb3fbfa131b8f028345d403649eb191571a4ef45adcb4efee110dced4",
     "web/src/data/javaSplit.ts": "7ab857e7be637d3d89033009959d915ddbb5881c9c42e506b6919eb2f03472d5",
     "web/src/data/types.ts": "8d659392b947586e5b77e922e198e54d1506508414501393676bf4dac575d072",
+    "web/src/stage/constants.ts": "5e67338cf7b79f3e2a01b01403f2f6d1927f746e8357e33564c00228d928c481",
     "web/src/start/assets.ts": "ca7cc2c7b094a4d8d25bafad6bc799f9ccf5187f9d9e64313bb3eca476e290b9",
     "web/src/state/dialogue.ts": "314abf6abadbf594fc30cd3dc9698ea1bcac6c51e93e1ad018cc9c414ffbc41b",
     "web/src/state/exit.ts": "ea688ea78d3d4a3b8819ca9b9aa304e82b188fd0645ba650d083a6f1d0e0abbc",

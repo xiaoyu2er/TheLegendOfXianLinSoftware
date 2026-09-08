@@ -18,7 +18,18 @@
  * 于是 27 帧素材缺了十三年没人发现 —— 把这类失败搬到构建时是唯一的办法。
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, relative as relativePath, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
@@ -53,6 +64,7 @@ import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
 import { START_IMAGES, TITLE_BGM } from '../src/start/assets'
 import type { StartImageName } from '../src/start/assets'
+import { STAGE_HEIGHT, STAGE_WIDTH } from '../src/stage/constants'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(WEB, '..')
@@ -461,16 +473,18 @@ function bakeBattleImages(
     const product = battleProductPath(relative)
     const source = resolve(IMAGES, relative)
     claim(product, id)
+    // **算一次、两个分支共用**：见 `battleWebp` 的头注。
+    const crop = backgroundAnimCrop(relative, source)
     if (isDeferredBattleAsset(relative)) {
       const destination = resolve(publicDeferred, product.slice(DEFERRED_PUBLIC_DIR.length + 1))
-      deferredBytes += battleWebp(source, destination)
+      deferredBytes += battleWebp(source, destination, crop)
       deferredFiles[id] = product
       version.update(product).update('\0').update(readFileSync(destination))
       deferred++
       continue
     }
     manifest[id] = product
-    bundledBytes += battleWebp(source, resolve(ASSETS_OUT, product))
+    bundledBytes += battleWebp(source, resolve(ASSETS_OUT, product), crop)
     bundled++
   }
 
@@ -710,13 +724,99 @@ const DEFAULT_LOSSY_QUALITY = 80
 const BATTLE_LOSSY_QUALITY = 95
 
 /**
- * 一张战斗素材转 WebP。存在的理由只有一个：让**两个**调用点（进主包的与按需
- * 的）不可能各自传一个档位。写成 `toWebp(src, dst, undefined, 95)` 的话，
- * 那个 `undefined` 占位符还得跟着 `crop` 参数的位置走，而两处传得不一样这件事
- * 的表现是「某一批素材悄悄比另一批糊」—— 没有任何检查看得见。
+ * 背景动画的顶层目录名。**不从 `DEFERRED_TOP_DIRS` 里取下标**：那份名单说的是
+ * 「按需加载」，跟「画在 (0,0) 不缩放」是两件不相干的事，哪天名单顺序变了或多
+ * 进来一个目录，按下标取会静静裁错一批素材。
  */
-function battleWebp(source: string, destination: string): number {
-  return toWebp(source, destination, undefined, BATTLE_LOSSY_QUALITY)
+const BACKGROUND_ANIM_DIR = '背景动画'
+
+/**
+ * 背景动画那一层**画得出来的矩形**（xl-9do）。返回 `undefined` 表示这张素材
+ * 整张都画得出来，不必裁。
+ *
+ * 原版 `battle.BackgroundAnimation.drawBackAnimation` 是
+ * `g.drawImage(currentImage, x, y, bp)` —— 四参数那一支，**不缩放**；而 `x` / `y`
+ * 在两个构造器里都写死 `0`，`set()` 只改 name 与 length，源码里没有第三个赋值点。
+ * 画布是 `BattlePanel` 的 `WIDTH=32*32` × `HEIGHT=20*32` = 1024×640。于是超出
+ * 这个矩形的像素**一个也没有被画出来过**，十三年里没有人看见过它们。
+ *
+ * ⚠️ 这里量的是 `BattlePanel` 的画布，而代码用的是 `STAGE_WIDTH/HEIGHT` ——
+ * 那个常量自述对齐的是 `ScenePanel` 的 `WIDTH/HEIGHT`。**今天两者同值**
+ * （两边都是 1024×640，`ScenePanel` 写的是字面量、`BattlePanel` 写的是 `32*32`
+ * 与 `20*32`），所以用哪个都一样；真分家的那天要用的是 `BattlePanel` 那一对。
+ * `backgroundAnimCrop.test.ts` 第 4 条正是从 `BattlePanel.java` 现读乘出来核的，
+ * 所以分家时它先红。
+ *
+ * Web 侧走的是 `drawList` 的 `kind: 'image'` + `setSize(tex.width, tex.height)`
+ * —— 同样是原尺寸、同样落在 (0,0)、同样被舞台裁掉。所以把源里画不出来的那部分
+ * 在烘焙时裁掉，屏幕上应当看不出区别。
+ *
+ * ⚠️ **「看不出区别」不等于「逐像素相同」，而这是这张票最贵的一课。**
+ * `cwebp` 的有损档先对**整张图**做分段分析（SNS）再定各段的量化参数，裁掉一部分
+ * 内容之后直方图变了、段划分跟着变，于是**可视区内的像素也跟着动**，而且是
+ * 抽签式的 —— 同一档尺寸里有的变好、有的变坏。所以裁不裁不能凭「反正画不出来」
+ * 推，得逐档量。
+ *
+ * **753 张全量实测**（`cwebp` 1.6.0 `-q 95`，2026-09-07；「超容差」= 可视区内
+ * 相对**源 JPEG** 单通道差 > 8 的像素合计，容差 8 正是跨端比对用的那个）：
+ *
+ *   源尺寸      张数  裁掉面积   不裁超容差   裁后超容差   不裁 MiB  裁后 MiB    省
+ *   1066×639    608     3.9%      125607      146281     26.09     25.54    2.1%
+ *   1024×768     30    16.7%        3301        3266      0.97      0.96    1.5%
+ *   1240×744    115    29.0%       49537       24680      7.24      5.64   22.1%
+ *
+ * 三档的结论完全不同，**只有 1240×744 那一档两头都赚**：字节省 22.1%，而且偏离
+ * 源 JPEG 的像素**减半**。另外两档字节几乎不省，却要为此重掷一次骰子 ——
+ * 1066×639 那档掷出来是 +16%，其中 `神剑傲州/31` 一张就从 107 涨到 18139，
+ * 足以把 `battle-zhang-skills` 的最差帧从 0.27% 顶到 2.50%（超上界 3.76 倍），
+ * 等于把上界重新交还给「素材编码」那笔账 —— 正是 xl-7ip 花 +16 MiB 要摆脱的
+ * 东西。**2026-09-07 用户裁定：只裁 1240×744 那一档。**
+ *
+ * 顺带量到但**没有采纳**的一条：`-sns 0` 关掉整图分段之后，裁与不裁逐张几乎
+ * 相同（`神剑傲州/31` 是 67 vs 68），全裁 + `-sns 0` 是 31.93 MiB / 超容差
+ * 142986，三档全赢 —— 它还会让下面 `CROP_MIN_AREA` 那条门槛整个变成不必要的。
+ * 它动的是 xl-7ip 拍板的编码设置，超出这张票的范围，同样由用户裁定不在这一趟里
+ * 做，另开了 **xl-x6w**（表与注意事项都在那张票上）。
+ *
+ * 票面两个数与实测口径也对不上，一并更正：「整体再省约 3%」是 xl-7ip 在 15 张
+ * 样本上按无损 `-z 9` 口径量的；「29%」是**面积**，1240×744 的字节只省 22.1%。
+ *
+ * **只作用在背景动画上。** 技能动画那 1017 张由 `battle.Animation` 画在**算出来
+ * 的**坐标上（随出招方与目标动），「画不出来的部分」不是一个跟素材绑定的常量；
+ * 而且它们全在 890×545 以内（实测），本来就没有一个像素出界。
+ */
+function backgroundAnimCrop(relative: string, source: string): SourceRect | undefined {
+  if (relative.split('/')[0] !== BACKGROUND_ANIM_DIR) return undefined
+  const { width, height } = imageSize(source)
+  const visible = { width: Math.min(width, STAGE_WIDTH), height: Math.min(height, STAGE_HEIGHT) }
+  const cut = 1 - (visible.width * visible.height) / (width * height)
+  return cut >= CROP_MIN_AREA ? visible : undefined
+}
+
+/**
+ * 裁剪的门槛：**画不出来的部分要占源面积这么多，才值得裁**。
+ *
+ * 这不是一个能从数据推出来的分母，是一条**登记**（dispatch.md 纪律 3 的那个
+ * 区分）：裁剪会重掷一次量化骰子，所以它必须买到点什么。上面那张表是它的依据 ——
+ * 今天这批素材落在门槛两侧的是 29.0%（裁）与 16.7% / 3.9%（不裁）。
+ *
+ * 取 0.25 而不是贴着 16.7% 或 29.0% 写：贴着任何一头，都会让「明天多进来一档
+ * 尺寸」这件事静静地按今天这批素材的边界裁决。哪天真有一档落在 25% 附近，该做的
+ * 是照上面那张表的口径把它量一遍，而不是挪这个数。
+ */
+const CROP_MIN_AREA = 0.25
+
+/**
+ * 一张战斗素材转 WebP。存在的理由只有一个：让**两个**调用点（进主包的与按需
+ * 的）不可能各自传一个档位。写成 `toWebp(src, dst, crop, 95)` 的话，两处传得
+ * 不一样这件事的表现是「某一批素材悄悄比另一批糊」—— 没有任何检查看得见。
+ *
+ * `crop` 由调用方算（`backgroundAnimCrop`）并且**只算一次**、两个分支共用同一个
+ * 变量：这里同样不能让两个分支各算一遍，否则「按需的裁了、进主包的没裁」在
+ * 产物上看不出来。
+ */
+function battleWebp(source: string, destination: string, crop?: SourceRect): number {
+  return toWebp(source, destination, crop, BATTLE_LOSSY_QUALITY)
 }
 
 /**
@@ -822,6 +922,60 @@ function pngSize(file: string): { width: number; height: number } {
     throw new Error(`${file} 不是 PNG，读不出宽高`)
   }
   return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) }
+}
+
+/**
+ * 读一张 PNG 或 JPEG 的宽高，**按魔数分派**、不按扩展名。认不出的格式一律抛：
+ * 猜出来的宽高会让 `backgroundAnimCrop` 裁出一个错的矩形，而那件事在产物上
+ * 表现为「某一批背景动画少了一条边」—— 没有任何人会去看它。
+ */
+function imageSize(file: string): { width: number; height: number } {
+  // 只为两个魔数字节把整个文件读进来是白读的（753 张 × 平均几十 KB），
+  // 而 `readFileSync` 没有"只读前 N 字节"的形式，所以走 fd。
+  const head = Buffer.alloc(2)
+  const fd = openSync(file, 'r')
+  try {
+    readSync(fd, head, 0, 2, 0)
+  } finally {
+    closeSync(fd)
+  }
+  if (head[0] === 0x89 && head[1] === 0x50) return pngSize(file)
+  if (head[0] === 0xff && head[1] === 0xd8) return jpegSize(file)
+  throw new Error(`${file} 既不是 PNG 也不是 JPEG，读不出宽高`)
+}
+
+/**
+ * 读一张 JPEG 的宽高：顺着段链走到 SOF（`0xC0..0xCF`，其中 `C4` 是霍夫曼表、
+ * `C8` 是 JPG 扩展、`CC` 是算术编码表，都不是 SOF），那一段第 5 字节起是
+ * 两个大端 16 位的 height、width。
+ *
+ * **不用 `sips` / `ffprobe` 这类外部命令**：这个函数的失败必须是抛异常，而
+ * 外部命令的失败会经过一层 `execFileSync`，把「读不出宽高」和「机器上没装」
+ * 混成同一个形状。
+ */
+function jpegSize(file: string): { width: number; height: number } {
+  const b = readFileSync(file)
+  if (b[0] !== 0xff || b[1] !== 0xd8) throw new Error(`${file} 不是 JPEG`)
+  let i = 2
+  while (i + 9 < b.length) {
+    if (b[i] !== 0xff) {
+      i++
+      continue
+    }
+    const marker = b[i + 1]!
+    // 无载荷的标记：SOI/EOI、RST0..7、TEM。
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) {
+      i += 2
+      continue
+    }
+    const length = b.readUInt16BE(i + 2)
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { height: b.readUInt16BE(i + 5), width: b.readUInt16BE(i + 7) }
+    }
+    if (length < 2) throw new Error(`${file} 的段长 ${length} 不合法`)
+    i += 2 + length
+  }
+  throw new Error(`${file} 里找不到 SOF 段，读不出宽高`)
 }
 
 function requireCwebp(): void {
