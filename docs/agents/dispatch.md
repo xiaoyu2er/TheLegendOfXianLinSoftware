@@ -112,6 +112,31 @@
 同一个文件里两种都有是正常的：`BATTLE_TRACE_NAMES` 是分母（现扫），
 `IMPLEMENTED` 与 `PENDING` 是登记（手写）。它们对撞，才有分辨力。
 
+⚠️ **另一族恒真判据：断言本身按构造成立。** 上面那种是「表取错了」，这一种跟
+表无关 —— 你断言的东西是你自己刚造出来的，或者已经被上一行钉死了。三个实测
+撞到的形状（2026-09-08 一天之内）：
+
+    // xl-l6h：pairs 用 { length: count } 造出来，长度按构造就等于 count
+    const pairs = Array.from({ length: count }, …)
+    expect(pairs).toHaveLength(count)          // 一次都不可能红
+
+    // xl-9c7：上一行已经把它钉成 1234，1234 < 30000 再也不会变
+    expect(ctx.task.timeout).toBe(1234)
+    expect(ctx.task.timeout).toBeLessThan(FLOOR_MS)
+
+    // xl-rh9.12 / xl-rh9.15：z 序那条 rank 排序断言，排完再断言有序
+
+**它们读起来都像在守分母**，而真正该守的洞常常就在旁边开着：`xl-l6h` 那两行
+里，`count` 为 0 时上一行的 `filter(…).toEqual([])` **也是恒真**，
+「一对都没核到」与「全都对」长得一模一样。
+
+**分辨法只有一个，而且很便宜：把被断言的量改坏，看它红不红。**
+
+⚠️ **只跑新写法红是不够的，要前后对照。** `xl-l6h` 的做法值得抄：把
+`backScroll.count` 改成 0，新写法红（`expected 0 to be greater than 0`）、
+**旧写法在同一条篡改下是绿的**。只跑新版的话，你证明不了改动有效 —— 说不定
+旧版本来也会红，你改的是另一回事。
+
 ### 4. 你在一个独立的 git worktree 里
 
 分支名见下面的命名约定。**不要动 master，不要推送，不要合并。**
