@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { SECTION_KEYWORDS, type SectionEvent, bakeScript } from './bakeScript'
 import { BASE_SECTION_FIELDS, SCENE_SCRIPT_FIELDS, STORY_SECTION_FIELDS } from './types'
@@ -157,7 +158,7 @@ describe('烘焙器的边角', () => {
  * 而没人知道。只截 `switchReader` 那一段，免得把别处的 `case` 也算进来。
  */
 function readerCaseLabels(): string[] {
-  const java = new TextDecoder('gbk').decode(readFileSync(repoPath('src/tools/Reader.java')))
+  const java = javaSource('src/tools/Reader.java')
   const from = java.indexOf('public void switchReader')
   const to = java.indexOf('public static String getType')
   expect(from, 'Reader.java 里找不到 switchReader').toBeGreaterThan(-1)

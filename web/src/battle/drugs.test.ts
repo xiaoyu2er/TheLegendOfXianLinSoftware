@@ -11,7 +11,13 @@ import { DRUGS, drugIntroText } from './drugs'
  * 介绍文字里那两个数，都直接来自这里）。
  */
 describe('六种回复类药品对回 sources/Shop/drug.txt', () => {
-  /** GBK + CRLF。`$` 锚点在这份文件上不加 `\r` 处理会静默匹配不到（CLAUDE.md）。 */
+  /**
+   * GBK + CRLF。`$` 锚点在这份文件上不加 `\r` 处理会静默匹配不到（CLAUDE.md）。
+   *
+   * ⚠️ **这一处故意不换成 `test/javaSource.ts`**（xl-xh3）：那个 helper 读的是
+   * 原版 **Java 源码**，这里读的是**游戏数据文件**，解码方式碰巧相同而已。
+   * 完整理由与豁免登记在 `test/javaSource.ts`，判据在 `javaSource.test.ts`。
+   */
   const rows = (() => {
     const text = new TextDecoder('gbk').decode(readFileSync(repoPath('sources/Shop/drug.txt')))
     return text
