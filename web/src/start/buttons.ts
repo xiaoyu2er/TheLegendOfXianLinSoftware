@@ -156,8 +156,20 @@ export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWir
   load: { enabled: false, disabledReason: '读取存档要等 M6 存档（xl-i06.1）' },
   end: {
     enabled: false,
-    // 原版是 `System.exit(0)`。浏览器里没有对应物：`window.close()` 只对脚本
-    // 自己开的窗口有效，玩家从地址栏进来的页面调它一声不吭。
-    disabledReason: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-u23）',
+    // 原版是 `System.exit(0)`（`src/start/StartPanel.java:233`）。浏览器里没有
+    // 对应物：`window.close()` 只对脚本自己开的窗口有效，玩家从地址栏进来的
+    // 页面调它一声不吭。
+    //
+    // **这不是「还没做」，是 xl-u23 量过三条路之后的定案**（用户 2026-09-08
+    // 裁定）。另外两条各自的代价：
+    //
+    // - 只在 `window.opener` 存在时才启用 —— 最接近原版语义，但同一颗按钮
+    //   在不同入口下行为不同，判据要分两组写；
+    // - 换一个说得清的行为（回标题 / 提示「请关掉这个标签页」）—— 那是在
+    //   复刻品里加一个原版没有的行为，与 ADR-0001 的方向相反。
+    //
+    // 所以留成禁用。**画出来而不是不画**也是有意的：不画的话「这一版还没做」
+    // 与「原版本来就只有三颗按钮」在画面上分不开。
+    disabledReason: '浏览器里没有 System.exit(0) 的对应物，定案不做（xl-u23）',
   },
 }
