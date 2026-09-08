@@ -191,8 +191,11 @@ herdr worktree create --cwd "$PWD" --branch <slug> --base master \
 herdr agent start <slug> --kind claude --pane <wN>:p1 -- --dangerously-skip-permissions
 
 # 一句话 prompt
-herdr agent prompt <slug> '你负责 bd issue <票号>。先跑 bd show <票号> 读票，
-再读 docs/agents/dispatch.md，然后用 /implement 完成它。'
+# ⚠️ prompt 必须**以斜杠命令开头**。这个示例本身曾经写成「……然后用 /implement
+# 完成它」，而那正是本文开头那张表实测「skill 一次都不生效」的写法 —— 照抄它
+# 等于派了一个不跑 skill 的 agent（2026-09-07 修）。
+herdr agent prompt <slug> '/implement bd issue <票号>。先跑 bd show <票号> 读票，
+再读 docs/agents/dispatch.md，两份都读完再动手。'
 
 # 哨兵：等的是 agent 的真实状态，不是票有没有被关
 herdr agent wait <slug> --until idle --until done --until blocked --timeout 7200000
