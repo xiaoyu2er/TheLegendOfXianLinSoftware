@@ -124,13 +124,17 @@ describe('原版点「起」不重置队伍（xl-lly）', () => {
       // 找不到（或找到两处）由 `javaStaticInt` 抛 —— 这里要的就是"恰好一处
       // static 初值"这件事本身，值是多少下面用不上。
       //
-      // ⚠️ **这一条的分辨力整个寄存在 `javaStaticInt` 的抛上**，实测过：
-      // 把源码里 `angryValue=0;` 的初值去掉，这条立刻红（抛）；但同时把
-      // helper 改成"抓不到就返回 0"，这条就变绿了 —— 而那一步
-      // `javaStaticInt.test.ts` 是红的。所以别把下面这句 `toBeGreaterThanOrEqual`
-      // 当判据看，真正的判据是 helper 自己那 7 条。
+      // ⚠️ **这一条的分辨力整个寄存在 `javaStaticInt` 的抛上**，所以断言写成
+      // `not.toThrow()` —— 直说被验的是"抛不抛"。原先写的是
+      // `expect(javaStaticInt(...)).toBeGreaterThanOrEqual(0)`，那是**恒真**的
+      // （正则只吃 `\d+`，解出来必 ≥ 0），一条永远绿的 expect 冒充判据，正是
+      // 这个仓库最怕的形状。
+      //
+      // 实测过这条判据的边界：把源码里 `angryValue=0;` 的初值去掉，它立刻红；
+      // 但同时把 helper 改成"抓不到就返回 0"，它就绿了 —— 那一步红的是
+      // `javaStaticInt.test.ts`。真正的判据是 helper 自己那 7 条。
       for (const field of ['level', 'exp', 'angryValue']) {
-        expect(javaStaticInt(source, field, `${className}.java`)).toBeGreaterThanOrEqual(0)
+        expect(() => javaStaticInt(source, field, `${className}.java`)).not.toThrow()
       }
 
       const body = methodBody(source, `public ${className}(int x,int y,BattlePanel bp){`)

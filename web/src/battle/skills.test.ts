@@ -16,6 +16,7 @@ import type { PartyKey } from './units'
  * 见 `docs/agents/dispatch.md`）。
  */
 
+/** 逻辑名 → 原版的类名。 */
 const JAVA_CLASS: Readonly<Record<PartyKey, string>> = {
   zhang: 'ZhangXiaoFan',
   yu: 'YuJie',
