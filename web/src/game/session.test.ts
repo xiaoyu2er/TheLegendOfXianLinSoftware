@@ -9,6 +9,7 @@ import type { PartyKey } from '../battle/units'
 import { readBattleTrace } from '../battle/trace'
 import { replayBattle } from '../battle/replay'
 import { createBattleTicker } from '../battle/loop'
+import { REVIVE_HP_RATIO, createBattle } from '../battle/world'
 import { hitsEnemy } from '../battle/render/hitBox'
 import { commandButtons } from '../battle/step'
 import { battleClick } from './battleInput'
@@ -163,7 +164,13 @@ function autoAttackInput(w: BattleWorld): BattleInput[] {
  * 走法：按住一个方向，格子不再变就换一个方向（迷宫里会撞墙）。这是玩家会做
  * 的事，也是唯一不作弊的走法 —— 直接改 `role.px` 就等于跳过了被测的那一层。
  */
-function walkUntilBattle(session: Session, maxPumps = 20000, pumpMs = SCENE_PUMP_MS): Walk {
+function walkUntilBattle(
+  session: Session,
+  maxPumps = 20000,
+  pumpMs = SCENE_PUMP_MS,
+  /** 提前收手的条件。默认一直走到开打。 */
+  stop: (s: Session) => boolean = (s) => s.panel !== 'scene',
+): Walk {
   const dirs = ['right', 'left', 'down', 'up'] as const
   let dir = 0
   let tiles = 0
@@ -181,7 +188,7 @@ function walkUntilBattle(session: Session, maxPumps = 20000, pumpMs = SCENE_PUMP
       at = now
       stuck = 0
     }
-    if (s.panel !== 'scene') return { session: s, tiles, pumps }
+    if (stop(s)) return { session: s, tiles, pumps }
     if (now.x === at.x && now.y === at.y && ++stuck > 60) {
       // 撞墙了：松手换一个方向。松手是真的松（`keyReleased` 那一路）。
       s = advanceSession(s, { scene: [release(key)], battle: [] }, pumpMs)
@@ -368,15 +375,53 @@ describe('场景 → 战斗 → 场景', () => {
   })
 
   it('一次 pump 补跑很多拍，起战斗那一拍不会被吞掉', () => {
-    levelParty(20)
-    // 一拍 10 ms，这里一次喂 250 ms —— 也就是一次 pump 补跑 25 拍。
-    // `state/loop.ts` 里那个"起战斗就断批"去掉之后，这一条会跑成
-    // "走了 20000 拍还没起战斗"：`battleRequest` 只亮一拍，被同一批的下一拍
-    // 覆盖掉了。
     const session = createSession(createWorld(getScene('迷宫1')), deps())
-    const walked = walkUntilBattle(session, 4000, 250)
-    expect(walked.session.panel).toBe('battle')
-    expect(battleWorldOf(walked.session)).not.toBeNull()
+    const threshold = session.scene.world.fight.stepsToBattle
+
+    // 先一拍一拍地走到**再换一格就开打**为止，然后只喂一次 500 ms
+    // （50 拍）—— 触发的那一拍一定落在这一批的中间。
+    //
+    // ⚠️ 这里必须是"停在门槛前一格再一次大 pump"，不能只是"整趟都用大 pump
+    // 走"。后者**分辨不出东西**（实测：`state/loop.ts` 那个 break 换成
+    // `if (false) break` 照样绿）—— 请求被同批的下一拍覆盖之后 `count` 归零，
+    // 走者只是再走 30 格，总有一趟的触发拍正好落在批尾。
+    const ready = walkUntilBattle(
+      session,
+      20000,
+      SCENE_PUMP_MS,
+      (s) => s.scene.world.fight.count === threshold - 1,
+    )
+    expect(ready.session.panel).toBe('scene')
+    expect(ready.session.scene.world.fight.count).toBe(threshold - 1)
+
+    const burst = advanceSession(ready.session, { scene: [press('right')], battle: [] }, 500)
+    expect(burst.panel, '起战斗那一拍被同一批的下一拍吞掉了').toBe('battle')
+    expect(battleWorldOf(burst)).not.toBeNull()
+    // 没跑完的那几拍留在 carryMs 里，一拍都没丢。
+    expect(burst.scene.carryMs).toBeGreaterThan(0)
+  })
+
+  it('上一场死掉的人，这一场从上限的 10% 起（BattlePanel.initial 末尾那个循环）', () => {
+    const d = deps()
+    const spec = ['image/背景图/仙二迷宫.png', 'zhang', 'null', 'null', '怪物1/5', 'null', 'null']
+    const dead = { level: 1, exp: 0, hp: 0, mp: 0, isDead: true, angryValue: 0 }
+    const world = createBattle({
+      ...configFor(spec, d),
+      carry: { zhang: dead },
+    })
+    const zxf = world.zxf!
+    expect(zxf.isDead).toBe(false)
+    expect(zxf.hp).toBe(Math.trunc(zxf.hpMax * REVIVE_HP_RATIO))
+    // 分辨得开：10% 与满血差得远，也与 0 差得远。
+    expect(zxf.hp).toBeGreaterThan(0)
+    expect(zxf.hp).toBeLessThan(zxf.hpMax)
+
+    // 没死但血低的人**不复位**：那个循环只在 `wheatherDead()` 为真时跑。
+    const hurt = createBattle({
+      ...configFor(spec, d),
+      carry: { zhang: { ...dead, isDead: false, hp: 7 } },
+    })
+    expect(hurt.zxf!.hp).toBe(7)
   })
 
   it('第二场接着第一场：血、经验、等级都带过去了', () => {

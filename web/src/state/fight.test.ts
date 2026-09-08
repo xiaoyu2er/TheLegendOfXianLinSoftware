@@ -92,6 +92,18 @@ describe('FightEvent', () => {
     expect(advancesScript(['bg', 'zhang', 'yu', 'lu', '怪物1/5', '李洵/6', 'null'])).toBe(false)
   })
 
+  it('showing：战斗面板显示的时候，场景那条线程照跑，但第 1 步不查旁白', () => {
+    // 脚本1 的旁白在第 0 拍就起来（真值 dorm-intro 记的就是这个），所以这条
+    // 分辨得开：`currentPanel.equals(scenePanel)` 那道门去掉的话，打架的时候
+    // 地图上会在放旁白，而那一屏根本没人看得见。
+    const world = createWorld(getScene('脚本1'))
+    expect(step(world, [], 10, scenes).narratage.active).toBe(true)
+    expect(step({ ...world, showing: false }, [], 10, scenes).narratage.active).toBe(false)
+    // **只有第 1 步读它**：世界照样在推（原版 `ScenePanel.run()` 没停）。
+    const hidden = step({ ...world, showing: false }, [], 10, scenes)
+    expect(hidden.timeMs).toBe(world.timeMs + 10)
+  })
+
   describe('出口那道门：battle1 不止一场时要打完才出得去', () => {
     /**
      * 把主角摆到某个出口格上。**这是布置初始条件，不是写期望值** ——
