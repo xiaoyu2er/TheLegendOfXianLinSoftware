@@ -46,7 +46,7 @@ import {
 } from './assets'
 import type { CommandButtonKey } from './assets'
 import { DRUGS } from '../drugs'
-import type { BattleState, BattleWorld, Enemy, Hero, MenuButton } from '../types'
+import type { BattleState, BattleWorld, Enemy, Hero, MenuButton, Pet } from '../types'
 import type { PartyKey } from '../units'
 import { SHOW_ATTR_START, SHOW_EXP_INDEX } from '../victory'
 
@@ -185,7 +185,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 10 怪物走图（顺序是 `bp.enemies`：em2 → em1 → em3，原版靠它解决遮掩）
   for (const e of w.enemies) enemyOps(w, e, push)
   // 11 小精灵
-  petOps(w, push)
+  petOps(w.pet, push)
 
   // 12 行动条
   progressBarOps(w, push)
@@ -614,17 +614,16 @@ function enemyOps(w: BattleWorld, e: Enemy, push: (op: DrawOp) => void): void {
  *
  * 原版那三行就是全部：`if(isDraw) g.drawImage(petImage, x, y, bp)` —— 一张
  * 静止的图，**没有帧号**（`loadAnimation()` 是个空方法）。会动的只有 `y`：
- * `update()` 一轮 **9 拍**：−1 四拍、平一拍、+1 四拍，振幅 4。原版的注释写的
- * 是「上浮五拍、下沉五拍」，而它那三个并列的 `if` 会在 code==4 那一拍一上一下
- * （见 `step.ts` 的 `updatePet`）。状态层已经把这个 y 推出来了。
+ * `update()` 让 y 上下浮动，状态层已经把它推出来了；**那一轮到底几拍、原版
+ * 那句注释为什么是错的，只在 `battle/step.ts` 的 `updatePet` 上写一份**
+ * （xl-rh9.15 的评审收的一条：同一段话抄了三份，改的时候漏了一份）。
  *
  * ⚠️ **`pet.x` / `pet.y` / `pet.isDraw` 三个字段一个都不在行为真值里** ——
  * 导出器的 `snapshotState` 从没取过 `bp.pet`（见 `types.ts` 的 `Pet`）。所以
  * 这一层的正确性不是靠逐步 `toEqual` 兜的，是靠 `battle-mishu-lu` 的跨端逐帧
  * 比对：画错了位置、画错了浮动相位、该消失时没消失，都会在硬比区里露出来。
  */
-function petOps(w: BattleWorld, push: (op: DrawOp) => void): void {
-  const pet = w.pet
+function petOps(pet: Pet | null, push: (op: DrawOp) => void): void {
   if (pet === null || !pet.isDraw) return
   push({ kind: 'image', layer: 'pet', id: PET_ID, x: pet.x, y: pet.y })
 }

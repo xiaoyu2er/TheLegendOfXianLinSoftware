@@ -1412,6 +1412,10 @@ function makePet(w: BattleWorld): Pet {
  * 于是一轮是 **9 拍**：−1 四拍、平一拍、+1 四拍，振幅 4。下面的实现是照抄
  * 那两个顺序 `if` 的，形状由 `render/drawList.test.ts` 那条判据钉着 ——
  * `pet.y` 不在行为真值里，只有它验得到。
+ *
+ * **这段说明只在这里写一份**，`render/drawList.ts` 与 `compare/expected.ts`
+ * 都指回这里：xl-rh9.15 的评审里，同一段话抄了三份而改的时候漏掉一份，
+ * 于是仓库里同时留着"9 拍"和"十拍"两种说法。
  */
 function updatePet(pet: Pet): void {
   if (pet.isStop) return

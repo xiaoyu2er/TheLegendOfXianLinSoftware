@@ -608,8 +608,10 @@ describe('battle-mishu-lu：第 11 层小精灵与行动条上那一颗（xl-rh9
    * 3. **两层各自的开关不是同一个**：本体看 `pet.isDraw`，行动条那一颗看
    *    `bp.pet!=null`。后者的横坐标 `bar.pet` 在真值里，所以对得上真值。
    *
-   * 拍号一律**从真值里现找**（`anim.skill` 变成哪一发、`bar.pet` 什么时候
-   * 动），不写死 —— 写死的拍号在真值重导之后不会响，只会错。
+   * 拍号先**从真值里现找**（`anim.skill` 变成哪一发、`bar.pet` 什么时候动），
+   * 再把找出来的那个数**签一次**（`expect(summonTick).toBe(855)`）。两步都要：
+   * 现找的那一步保证判据的意思跟着真值走，签名的那一步保证真值重导之后
+   * **这里会响**而不是悄悄换一组拍号继续绿。
    */
   const PET_BODY = 'battle:小精灵/小精灵.png'
   const PET_HEAD = 'battle:小精灵/头像.png'
@@ -646,7 +648,11 @@ describe('battle-mishu-lu：第 11 层小精灵与行动条上那一颗（xl-rh9
     if (ops.length === 0) return null
     expect(ops.length, `第 ${t} 拍小精灵的头像画了 ${ops.length} 次`).toBe(1)
     const op = ops[0]!
-    return op.kind === 'image' ? op.x : null
+    // ⚠️ 这里**不能**写 `op.kind === 'image' ? op.x : null` —— 那个 null 与
+    // 「这一拍没画头像」是同一个返回值，而后者正是好几条断言的通过态。
+    // 「失败的样子和成功一样」的现成形状（xl-rh9.15 评审收的一条）。
+    if (op.kind !== 'image') throw new Error(`第 ${t} 拍头像那一条不是 image`)
+    return op.x
   }
   const tickAt = (t: number) => {
     const tick = trace.ticks.find((x) => x.t === t)
@@ -722,28 +728,19 @@ describe('battle-mishu-lu：第 11 层小精灵与行动条上那一颗（xl-rh9
     const seq = [...new Set(frames.get(t)!.map((op) => op.layer))]
     const three = seq.filter((l) => ['enemy', 'pet', 'progress-bar'].includes(l))
     expect(three).toEqual(['enemy', 'pet', 'progress-bar'])
-    expect(three.map((l) => rank.get(l)!)).toEqual(
-      [...three.map((l) => rank.get(l)!)].sort((a, b) => a - b),
-    )
+    // ⚠️ 这里原先还跟着一句「这三层的 `rank` 是递增的」。它接近恒真：
+    // 上一行已经把次序钉死，而 `rank` 来自 `BATTLE_LAYERS`，那份名单另有
+    // 一组判据从 `BattlePanel.java` 解出来对。换成两句真的在说话的
+    // （xl-rh9.15 评审收的一条）。
+    expect(rank.get('pet')!).toBeGreaterThan(rank.get('enemy')!)
+    expect(rank.get('pet')!).toBeLessThan(rank.get('progress-bar')!)
   })
 
   it('浮动的形状：x 恒定，y 是「−1 四拍、平一拍、+1 四拍」，周期 9', () => {
     /**
-     * ⚠️ **原版的注释与它自己的代码对不上，这里以代码为准。**
-     * `Pet.update()` 写的是：
-     *
-     *     if(code<5){ y--; code++; }
-     *     if(code>=5&&code<10){ y++; code++; }
-     *     if(code==10){ code=0; }
-     *
-     * 三个 `if` **是顺着往下走的，不是 else-if**。`code==4` 那一拍先
-     * `y--`（code 变 5），紧接着第二个 `if` 立刻成立又 `y++`（code 变 6）——
-     * 同一拍里一上一下，净位移 0，而 `code` 从 4 跳到 6，5 被跳过了。
-     * 于是一轮是 **9 拍**不是 10 拍：−1 四拍、平一拍、+1 四拍。
-     *
-     * `step.ts` 里那行「上浮五拍、下沉五拍」的注释是照抄原版注释的说法，
-     * 而实测（本条判据）是 4/1/4。实现本身是逐字照抄的两个顺序 `if`，
-     * 没问题；错的是那句话。
+     * 形状的**来历与那句错注释的账**写在 `battle/step.ts` 的 `updatePet` 上，
+     * 只有那一份；这里是把它钉成判据的地方。一句话：原版三个 `if` 是并列的，
+     * `code==4` 那一拍一上一下净位移 0，于是一轮 **9 拍**而不是注释说的十拍。
      *
      * 这个形状**一个字都不在行为真值里**（`snapshotState` 没取 `bp.pet`），
      * 所以它只能在这里钉。y 钉死不浮动的篡改在这里立刻红。
