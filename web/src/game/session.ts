@@ -6,6 +6,7 @@ import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
 import type { PartyKey } from '../battle/units'
 import { getParty, rememberParty } from '../fakes/party'
+import { TITLE_BGM } from '../start/assets'
 import { advance, createTicker } from '../state/loop'
 import type { Ticker } from '../state/loop'
 import type { SceneSource } from '../state/step'
@@ -18,8 +19,9 @@ import type { InputEvent, World } from '../state/types'
  *
  * 原版的这一层是 `GameLauncher.switchTo(...)` 加一个 `CardLayout` —— 八个
  * 面板全都活着，只有一个显示。这里只做已经移植过来的那三个：
- * `scenePanel` / `battlePanel` / `startPanel`（标题今天只是一个终止态，
- * 真的开始界面归 M5）。
+ * `scenePanel` / `battlePanel` / `startPanel`。标题那一屏本身是 DOM，画在
+ * overlay 层里（`start/StartPanel.tsx`，xl-kaa）—— 这一层只负责说"现在该
+ * 显示它了"，以及它该放哪首曲子（`currentBgm` 里那句 `TITLE_BGM`）。
  *
  * ## 为什么场景在战斗期间**照跑不误**
  *
@@ -196,7 +198,7 @@ export function advanceSession(
  */
 export function currentBgm(session: Session): string | null {
   if (session.panel === 'battle' && session.battle !== null) return session.battle.world.bgm
-  if (session.panel === 'start') return '主题曲.mp3'
+  if (session.panel === 'start') return TITLE_BGM
   return session.scene.world.audio.bgm
 }
 

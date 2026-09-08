@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { decodePng } from '../compare/png'
+import { bgmAssetId } from '../assets/ids'
+import { resolveBgmOrNull } from '../assets/resolve'
+import { TITLE_BGM } from '../start/assets'
 import { repoPath } from '../test/repoPath'
 import { getScene } from '../data/scenesEager'
 import { getParty, rememberParty, resetParty } from '../fakes/party'
@@ -311,6 +314,35 @@ describe('场景 → 战斗 → 场景', () => {
       'battle-defeat-scene': 'scene',
       'battle-defeat-start': 'start',
     })
+  })
+
+  /**
+   * 回标题那一屏放的是主题曲（xl-kaa）。
+   *
+   * 判据**不是** `currentBgm` 返回了这个字符串 —— 那是拿一个常量去比它自己。
+   * 判的是播放器接下来那一步：它拿这个声明值去查 URL，而
+   * `resolveBgmOrNull` 对既不在映射表、也不在"故意没烘"名单里的 ID 是**抛**，
+   * 调用点在游戏循环里（`useGame` 的 pump），也就是每一拍抛一次、画面就此
+   * 定住。xl-rh9.17 落下 `panel === 'start'` 这个终止态之后，实测就是这个
+   * 下场 —— 而它跟"到了标题所以不动了"长得一模一样。
+   */
+  it('打输回标题：曲子换成主题曲，而且它真的烘出来了', () => {
+    const trace = readBattleTrace('battle-defeat-start')
+    const base = createSession(createWorld(getScene('迷宫1')), deps())
+    const s: Session = {
+      ...base,
+      panel: 'battle',
+      battle: createBattleTicker(replayBattle(trace, spriteSize)),
+    }
+    const done = runBattleToExit(s).session
+    expect(done.panel).toBe('start')
+    expect(currentBgm(done)).toBe(TITLE_BGM)
+    // 场景那一侧的曲子还挂着（世界照跑），所以这条真的换过了。
+    expect(currentBgm(done)).not.toBe(getScene('迷宫1').sceneMusic)
+
+    const url = resolveBgmOrNull(bgmAssetId(TITLE_BGM))
+    expect(url).not.toBeNull()
+    expect(decodeURIComponent(url!)).toContain('bgm/主题曲.m4a')
   })
 
   it('打赢：结算跑完回场景，经验记进队伍', () => {

@@ -6,6 +6,7 @@ import { battleDrawList } from '../battle/render/drawList'
 import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
 import { exitsReady, loadedSceneSource, prepareExits, rememberScene } from '../data/loadedScenes'
+import { resetParty } from '../fakes/party'
 import { loadScene } from '../data/scenes'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { TICK_MS, createWorld } from '../state/step'
@@ -66,6 +67,31 @@ export interface GameView {
    * （开发用的场景选择器）。世界还没建好时是 `null`。
    */
   readonly scene: string | null
+  /**
+   * **重开一局** —— 原版 `GameLauncher.init()`（xl-kaa）。
+   *
+   * 它做两件事，缺一件都会表现为"重开了，但上一局的什么东西还在"：
+   *
+   * 1. **队伍回出厂状态**（`fakes/party.ts` 的 `resetParty`）。原版那三个人是
+   *    进程级静态引用，`init()` 里 `new ZhangXiaoFan(...)` 三句把它们整个
+   *    换掉；这一层的对应物就是那个模块级单例。不做的话新一局开局就带着上
+   *    一局的等级、经验和残血 —— 而画面上完全正常。
+   *
+   *    ⚠️ **原版实际上没走这条路**：`init()` 是死代码，唯一的调用点被注释掉
+   *    了（`src/start/StartPanel.java:336`）。重置是这张票的验收标准要的，
+   *    不是照抄；原版那个缺陷登记在 `xl-lly`，详情见 `app/App.tsx` 的
+   *    `onNewGame`。
+   * 2. **世界重建**。`init()` 还 `new` 了战斗 / 菜单 / 商店三个面板，这一层
+   *    对应的是把整个会话（场景 ticker + 战斗 ticker）丢掉重来，也就是下面
+   *    那个 `generation` 一涨、建会话的 effect 重跑一遍。
+   *
+   * **进哪个场景由调用方决定**：原版「起」按钮走的是
+   * `scenePanel.initiation("脚本1.txt")`，也就是 `data/scenes.ts` 的
+   * `START_SCENE`，而这个钩子的场景来自 `sceneName` 这个入参（开发用的场景
+   * 选择器也在改它）。`app/App.tsx` 那边一起改，`app/appTitle.test.tsx` 里
+   * 有一条用例钉着"从别的场景死了之后重开，进的是脚本1"。
+   */
+  readonly restart: () => void
 }
 
 export function useGame(
@@ -80,6 +106,8 @@ export function useGame(
   const [scene, setScene] = useState<string | null>(null)
   const [panel, setPanel] = useState<Panel>('scene')
   const [battleLoading, setBattleLoading] = useState(false)
+  /** 第几局。`restart()` 让它涨一，建会话的 effect 就整个重来。 */
+  const [generation, setGeneration] = useState(0)
   const signatureRef = useRef<string | null>(null)
   const sceneRef = useRef<string | null>(null)
   const panelRef = useRef<Panel>('scene')
@@ -127,7 +155,13 @@ export function useGame(
     return () => {
       disposed = true
     }
-  }, [sceneName])
+    // `generation` 在 deps 里：`restart()` 之后即便场景名没变（在脚本1 里死掉
+    // 再重开就是这样），这个 effect 也得重跑一遍。只依赖 `sceneName` 的话
+    // 那一路"点了没反应"，而从别的场景重开却是好的 —— 两种表现分得开，
+    // 所以钉住它的用例（`useGame.test.tsx` 的「重开一局」）是**在同一个场景
+    // 里** restart 的：`app/appTitle.test.tsx` 那条先把选择器拨到大地图，
+    // 走的是 `sceneName` 变了那条路，`generation` 在那里观测不到。
+  }, [sceneName, generation])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -262,7 +296,12 @@ export function useGame(
     clicksRef.current.push(battleClick(world, x, y))
   }
 
-  return { dialogue, scene, panel, battleLoading, click }
+  const restart = (): void => {
+    resetParty()
+    setGeneration((n) => n + 1)
+  }
+
+  return { dialogue, scene, panel, battleLoading, click, restart }
 }
 
 /**

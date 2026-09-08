@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
+import { START_IMAGES, TITLE_BGM } from '../start/assets'
 import DEFERRED_BGM_IDS from '../generated/deferredBgm.json'
 import MISSING_IDS from '../generated/missingAssets.json'
 import { BG_COUNT } from '../state/narratage'
@@ -118,6 +119,11 @@ describe('资产逻辑 ID', () => {
     // 药品菜单的介绍图（xl-rh9.12）。它不在 `image/` 下，所以不归上面那个
     // 分母 —— 见 `assets/ids.ts` 的 `drugPictureAssetId`。
     expect(ids.filter((id) => id.startsWith('drug:'))).toHaveLength(drugPictureFilesInRepo())
+    // 开始界面（xl-kaa）。分母是 `START_IMAGES` 的键数，不是手写的 5 ——
+    // 那份表的类型是 `Record<StartImageName, string>`，少一条 typecheck 就红。
+    expect(ids.filter((id) => id.startsWith('start:'))).toHaveLength(
+      Object.keys(START_IMAGES).length,
+    )
     const known = [
       'map:',
       'role:walk:',
@@ -133,6 +139,8 @@ describe('资产逻辑 ID', () => {
       'battle:',
       // 药品菜单的介绍图（xl-rh9.12），在 `sources/Shop/` 下不在 `image/` 下。
       'drug:',
+      // 开始界面（xl-kaa），在 `sources/StartPanel/` 下。
+      'start:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })
@@ -158,7 +166,17 @@ describe('资产逻辑 ID', () => {
     expect([...declared].map(bgmAssetId).filter((id) => !baked.has(id) && !deferred.has(id))).toEqual(
       [],
     )
-    expect(baked.size + deferred.size).toBe(declared.size)
+    // **标题曲是场景数据之外的一首**：它写在 `GameLauncher.switchTo("start")`
+    // 那句 `MusicReader.readBGM("主题曲.mp3")` 上（见 `start/assets.ts` 的
+    // `TITLE_BGM`），96 个场景的 `Music` 段里一个字都没提。所以点名把它扣掉
+    // 再对账 —— 直接把等号放宽成 `>=` 的话，"多烘了一首"与"多的正是标题曲"
+    // 就分不开了。
+    const title = bgmAssetId(TITLE_BGM)
+    expect({ baked: baked.has(title), deferred: deferred.has(title) }).toEqual({
+      baked: true,
+      deferred: false,
+    })
+    expect([...baked].filter((id) => id !== title).length + deferred.size).toBe(declared.size)
     // 名单上的查出来是 null，映射表里的查出来是 URL，都不抛。
     for (const id of deferred) expect(resolveBgmOrNull(id)).toBeNull()
     for (const id of baked) expect(resolveBgmOrNull(id)).toContain('bgm/')

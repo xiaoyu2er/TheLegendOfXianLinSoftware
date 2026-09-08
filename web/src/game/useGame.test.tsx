@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { prepareExits } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
 import { readTrace } from '../state/trace'
+import { getParty, initialMember, rememberParty, resetParty } from '../fakes/party'
 import { getScene } from '../data/scenesEager'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { roleTileX } from '../state/role'
@@ -156,6 +157,57 @@ describe('useGame 接线', () => {
       })
     }
     expect(result.current.scene).toBe(trace.ticks[switchAt]!.scene.replace(/\.txt$/, ''))
+  })
+
+  /**
+   * 重开一局（xl-kaa）—— 原版 `GameLauncher.init()`。
+   *
+   * 两件事分开验，因为**少做哪一件都表现为"重开了，画面也回去了"**：
+   *
+   * - 队伍没回出厂状态：新一局带着上一局的等级、经验、残血开局，画面正常；
+   * - 会话没重建：主角还站在死之前那一格上，而队伍是新的。
+   *
+   * 所以先把两样都弄脏（走 `rememberParty` 那条正路记一份脏队伍，再真的按
+   * 方向键把主角走开），重开之后两样一起查。
+   */
+  it('重开一局：队伍回出厂状态，世界也整个重建', async () => {
+    resetParty()
+    const { result } = await mount()
+
+    // 弄脏（一）：队伍。走的是"打完一场记回去"那条路，不是直接改字段。
+    rememberParty([
+      { spec: { key: 'zhang' }, level: 9, exp: 123, hp: 1, mp: 2, isDead: true, angryValue: 5 },
+    ])
+    expect(getParty().zhang.level).toBe(9)
+
+    // 弄脏（二）：世界。真的按右方向键走出去几格。
+    press('ArrowRight')
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(roleTileX(seen.at(-1)!)).toBeGreaterThan(12)
+    const walked = seen.length
+
+    act(() => {
+      result.current.restart()
+    })
+    // 会话是从头建的：场景 JSON 要重新取（缓存命中，一个微任务）。
+    await act(async () => {
+      await loadScene('宿舍')
+    })
+    // 松开方向键，不然新世界一起手就在走 —— 那会把"回到出生格"糊掉。
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight' }))
+      vi.advanceTimersByTime(10)
+    })
+
+    expect(getParty().zhang).toEqual(initialMember('zhang'))
+    expect(getParty().yu).toEqual(initialMember('yu'))
+    expect(getParty().lu).toEqual(initialMember('lu'))
+    // 主角回到脚本里的出生格（12,8）—— 新世界，不是被挪回去的旧世界。
+    expect(seen.length).toBeGreaterThan(walked)
+    expect(seen.at(-1)!.px).toBe(12 * 32)
+    expect(roleTileX(seen.at(-1)!)).toBe(12)
   })
 
   it('卸载之后不再推进，也不再收键', async () => {

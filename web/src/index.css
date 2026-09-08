@@ -232,3 +232,66 @@ body {
 .dialogue-char--red {
   color: #f00;
 }
+
+/* ——— 开始界面（xl-kaa）———
+   overlay 已经是 1024×640 的逻辑坐标系并整体跟着舞台缩放（stage/Stage.tsx），
+   所以这一段里的数字就是原版的数字，一个都不用换算。 */
+.start-panel {
+  position: absolute;
+  inset: 0;
+  /* 原版 StartPanel 的构造函数：setBackground(new Color(0, 0, 0))。 */
+  background: #000;
+  /* back.png 实测是 1024×641，比舞台高一行。原版把它画进一张 1024×640 的
+     缓冲图，多出来那行就是被裁掉的 —— 这里照裁，不缩。缩一下整张图纵向差
+     半个像素，而画面上看起来完全正常。 */
+  overflow: hidden;
+}
+
+.start-back {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* 按原始尺寸画，与原版 drawImage(img, 0, 0, this) 一致。 */
+  image-rendering: inherit;
+}
+
+.start-button {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  /* 悬停那张图是 190×53，比 50×50 的命中框宽得多，要能溢出（原版按原始
+     尺寸画在同一个左上角，见 start/assets.ts）。 */
+  overflow: visible;
+}
+
+.start-button:disabled {
+  cursor: not-allowed;
+}
+
+.start-button-face {
+  position: absolute;
+  image-rendering: inherit;
+}
+
+/* 常态 / 悬停两张图叠着，换的是哪张显示。`:focus-visible` 跟 `:hover` 同步：
+   用键盘 Tab 过来的人也该看得见"选中的是哪一颗"。
+
+   **禁用的那颗也换**：原版 `StartButton.isMoveIn` 只看坐标，不看这颗按钮能
+   不能点 —— 它根本没有"禁用"这个概念。写成 `:not(:disabled):hover` 会让
+   「承」在鼠标移上去时一声不吭，而那跟原版不一样；点不点得动由 `disabled`
+   与 `cursor: not-allowed` 表达，不靠"装作没看见"。 */
+.start-button-face--hover {
+  display: none;
+}
+
+.start-button:hover .start-button-face--normal,
+.start-button:focus-visible .start-button-face--normal {
+  display: none;
+}
+
+.start-button:hover .start-button-face--hover,
+.start-button:focus-visible .start-button-face--hover {
+  display: block;
+}

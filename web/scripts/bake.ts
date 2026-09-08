@@ -42,6 +42,7 @@ import {
   narratageBgAssetId,
   npcAssetId,
   roleAssetId,
+  startAssetId,
 } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
 import { listFiles } from '../src/assets/listFiles'
@@ -50,6 +51,8 @@ import { DRUGS } from '../src/battle/drugs'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
+import { START_IMAGES, TITLE_BGM } from '../src/start/assets'
+import type { StartImageName } from '../src/start/assets'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = resolve(WEB, '..')
@@ -352,6 +355,21 @@ function main(): void {
   }
   console.log(`药品介绍图 ${drugPictures.length} 张 → drugs/*.webp`)
 
+  // 开始界面（xl-kaa）。跟主角精灵、对话框素材、旁白背景同一类：路径写死在
+  // 原版 `start.StartPanel` 里，脚本数据一个字都没提，所以缺了不由
+  // `checkSceneAssets` 管，攒进上面那份 `missing` 一次报全。
+  for (const [name, source] of Object.entries(START_IMAGES)) {
+    const absolute = resolve(REPO, source)
+    if (!existsSync(absolute)) {
+      missing.push(`开始界面素材 ${source}`)
+      continue
+    }
+    const relative = `start/${name}.webp`
+    manifest[startAssetId(name as StartImageName)] = relative
+    bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
+  }
+  console.log(`开始界面素材 ${Object.keys(START_IMAGES).length} 张 → start/*.webp`)
+
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)
     for (const m of missing) console.error(`  ${m}`)
@@ -365,7 +383,7 @@ function main(): void {
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 战斗常用 ${battle.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 战斗常用 ${battle.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes)}`,
   )
 
   writeStamp()
@@ -536,7 +554,11 @@ function bakeBgm(scenes: readonly SceneScript[], manifest: Record<string, string
     process.exit(1)
   }
 
-  const wanted = [...musicOf(traced)].sort()
+  // 标题曲得**显式**加一首：它不在任何一个场景的 `Music` 段里，写在
+  // `GameLauncher.switchTo("start")` 那句 `MusicReader.readBGM("主题曲.mp3")`
+  // 上，所以现扫的这两份名单谁都罩不住它。不加不是静音而是**抛** ——
+  // 理由见 `src/start/assets.ts` 的 `TITLE_BGM`。
+  const wanted = [...new Set([...musicOf(traced), TITLE_BGM])].sort()
   const all = musicOf(scenes.map((s) => stem(s.script)))
   const deferred = [...all].filter((m) => !wanted.includes(m)).sort()
 
