@@ -109,3 +109,18 @@ export function bgmAssetId(musicName: string): AssetId {
 export function drugPictureAssetId(picture: string): AssetId {
   return `drug:${normalizePath(picture)}`
 }
+
+/**
+ * 开始界面的一张图（xl-kaa）。`name` 是逻辑名，不是文件名 —— 文件名里有中文
+ * （`按钮/起2.png`），而且"常态图"与"悬停图"在原版里只差一个 `2`，
+ * 漏进渲染层就成了一条谁都不敢改的命名约定。映射见 `src/start/assets.ts` 的
+ * `START_IMAGES`，跟 `dialogueAssetId` 是同一个套路。
+ *
+ * 这里的联合类型是 `StartImageName` 的**另一半**：那边的 `START_IMAGES` 声明
+ * 成 `Record<StartImageName, string>`，两边对不上 `pnpm typecheck` 就红。
+ */
+export function startAssetId(
+  name: 'back' | 'newGame' | 'newGameHover' | 'load' | 'loadHover',
+): AssetId {
+  return `start:${name}`
+}

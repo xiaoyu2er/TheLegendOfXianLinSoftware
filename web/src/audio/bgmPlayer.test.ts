@@ -3,6 +3,7 @@ import { bgmAssetId } from '../assets/ids'
 import { resolveBgmOrNull } from '../assets/resolve'
 import { getScene } from '../data/scenesEager'
 import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
+import { TITLE_BGM } from '../start/assets'
 import { createBgmPlayer } from './bgmPlayer'
 import type { Sound } from './bgmPlayer'
 
@@ -150,6 +151,35 @@ describe('M1 用到的背景音乐', () => {
     const url = resolveBgmOrNull(bgmAssetId(bgm))
     expect(url).not.toBeNull()
     expect(decodeURIComponent(url!)).toContain(`bgm/${bgm.replace(/\.[^.]+$/, '')}.m4a`)
+  })
+
+  /**
+   * 切到标题那一屏，播放器**真的换曲子**（xl-kaa）。
+   *
+   * 走的是**真的映射表**，不是上面那些用例里的假 `resolve` —— 这一条要验的
+   * 正是"标题曲查得到"这件事本身。标题曲不在任何一个场景的 `Music` 段里
+   * （它写在 `GameLauncher.switchTo("start")` 那句上），所以烘焙器那两份现扫
+   * 的名单谁都罩不住它，得显式加一首；不加不是静音而是 `resolveAsset` 抛，
+   * 而抛的地方在游戏循环里。
+   */
+  it('从场景切到标题：换 src 并重新 play，URL 指向真的产物', () => {
+    const log: string[] = []
+    const player = createBgmPlayer({
+      create: () => fakeSound(log),
+      resolve: (bgm) => resolveBgmOrNull(bgmAssetId(bgm)),
+      gestures: null,
+    })
+    // 起手是一首**真烘过**的场景曲（大地图在真值里走到过），不然下面那句
+    // "换过了"就分不清是"从静音换过来"还是"从上一首换过来"。
+    const sceneBgm = getScene('大地图').sceneMusic!
+    expect(resolveBgmOrNull(bgmAssetId(sceneBgm))).not.toBeNull()
+    player.sync(sceneBgm)
+    player.sync(TITLE_BGM)
+
+    expect(player.playing()).toBe(TITLE_BGM)
+    // 两次 src + 两次 play：第二首真的送进播放器了，不是被 `null` 静音掉。
+    expect(log.filter((l) => l === 'play')).toHaveLength(2)
+    expect(decodeURIComponent(log.at(-2)!)).toContain('bgm/主题曲.m4a')
   })
 
   it('每一份 trace 的起手音乐就是那个场景 Music 段里写的那首', () => {

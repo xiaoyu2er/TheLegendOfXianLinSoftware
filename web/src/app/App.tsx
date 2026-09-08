@@ -9,6 +9,7 @@ import { useSceneRenderer } from '../scene/useSceneRenderer'
 import { useBattleRenderer } from '../battle/render/useBattleRenderer'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { useGame } from '../game/useGame'
+import { StartPanel } from '../start/StartPanel'
 import { DialogueBox } from '../ui/DialogueBox'
 import { devToolsEnabled } from './devTools'
 
@@ -44,13 +45,34 @@ export function App() {
   if (view.scene !== game.scene) setGame({ scene: view.scene })
   const inBattle = view.panel === 'battle'
   /**
-   * 全灭之后回标题那条路（`GameOver` 里 em1 不是「罹年居士」的那一支）。
+   * 标题画面。
    *
-   * **web 端还没有 `StartPanel`**（`src/start/StartPanel.java`，归 xl-kaa）。
-   * 没有它的时候唯一诚实的做法是**说出来**：不说的话玩家看到的是一张定住的
-   * 地图，而"游戏卡住了"与"这里本来就没做"长得一模一样。
+   * 今天**只有一条路**走到它：全灭，而且 `GameOver` 里那只 em1 不是
+   * 「罹年居士」（见 `game/session.ts`）。原版还有一条 —— 开机就停在标题上
+   * （`GameLauncher` 构造函数末尾那句 `switchTo("start")`）—— web 端开机
+   * 仍然直进场景，那处差别登记在 `xl-q7f`，不是忘了。
    */
-  const gameOver = view.panel === 'start'
+  const atTitle = view.panel === 'start'
+
+  /**
+   * 「起」：重开一局。
+   *
+   * **两句缺一不可**，而它们分管的是两件事：
+   *
+   * - `setSceneName(START_SCENE)` —— 原版 `StartPanel.startLoadAction()` 的
+   *   case 0 是 `switchTo("scene")` 加 `scenePanel.initiation("脚本1.txt")`，
+   *   新游戏进的是**脚本1**，不是死之前那个场景，也不是开发用选择器上停着
+   *   的那个。
+   * - `view.restart()` —— 队伍回出厂状态 + 整个会话重建（见 `useGame`）。
+   *
+   * 在脚本1 里死掉再重开时 `setSceneName` 是空操作（值没变），全靠
+   * `restart()` 里那个 `generation` 把 effect 顶起来；从别的场景重开则两句
+   * 都起作用，而 effect 只跑一遍。两条路各有一条用例（`App.test.tsx`）。
+   */
+  const onNewGame = () => {
+    setSceneName(START_SCENE)
+    view.restart()
+  }
 
   /**
    * 一次鼠标点击 → 舞台**逻辑坐标**（1024×640）。
@@ -77,7 +99,7 @@ export function App() {
         hostContent={
           <>
             {/* 一个面板一张画布，`hidden` 切换 —— 两张一起显示会上下摞着。 */}
-            <div className="stage-panel" ref={sceneHostRef} hidden={inBattle || gameOver} />
+            <div className="stage-panel" ref={sceneHostRef} hidden={inBattle || atTitle} />
             <div
               className="stage-panel"
               ref={battleHostRef}
@@ -89,17 +111,12 @@ export function App() {
         }
         overlay={
           <>
-            {status.kind === 'ready' || inBattle || gameOver ? null : (
+            {status.kind === 'ready' || inBattle || atTitle ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
-            {gameOver ? (
-              <p className="stage-notice stage-notice--loading" role="status">
-                全灭 —— 原版这时回开始界面，而 web 端的开始界面还没做（xl-kaa）。
-                刷新页面重开一局。
-              </p>
-            ) : null}
+            {atTitle ? <StartPanel onNewGame={onNewGame} /> : null}
             {inBattle && view.battleLoading ? (
               <p className="stage-notice stage-notice--loading" role="status">
                 正在载入战斗…
@@ -123,8 +140,8 @@ export function App() {
           </label>
         ) : null}
         <p className="toolbar-hint">
-          {gameOver
-            ? '全灭。开始界面归 xl-kaa，今天只能刷新页面重开。'
+          {atTitle
+            ? '开始界面：点「起」重开一局（读档要等 M6 存档）'
             : inBattle
               ? '战斗中：点「击」再点怪物；技、防、物同理'
               : '方向键走动，按住 Ctrl 或 Shift 跑动，空格搭话／推进对话，回车跳过逐字打印'}
