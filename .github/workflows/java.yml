@@ -1,0 +1,67 @@
+name: java
+
+on:
+  # 手动触发。留着它有一个具体用途：这条工作流合并时**从没在真的 runner 上
+  # 跑过**，而没有它就只能靠去改 paths 名单上的某个文件来验一次。
+  workflow_dispatch:
+  push:
+    branches: [master]
+    # 三样判据各自的输入都要在这张名单上，否则它们在最该响的时候是哑的 ——
+    # 而**不触发的工作流在 PR 上没有红叉，跟跑过并通过长得一模一样**
+    # （web.yml 的注释里记的是同一件事）。
+    #
+    # - src/**、tools/src/**、tools/test/**：单元测试与编译的直接输入。
+    # - script/**：export-truth 读的就是这 96 个脚本；它们变了而真值没跟着变，
+    #   正是 `git diff --exit-code` 该抓的那一刻。
+    # - tools/ground-truth/**：冻结真值本身。有人手改了它而不重导，同上。
+    # - image/**、sources/**：ReadImageWarningTest 从 image/ 下现扫一张真图，
+    #   而 Reader 构造时会去读这两处的素材。
+    # - 三个 jar 与 tools/*.sh：classpath 与跑法都写死在脚本里。
+    paths: ['src/**', 'tools/src/**', 'tools/test/**', 'tools/build.sh', 'tools/test.sh',
+            'tools/export-truth.sh', 'tools/ground-truth/**', 'script/**',
+            'image/**', 'sources/**', '*.jar', '.github/workflows/java.yml']
+  # 下面这份名单和上面那份逐字相同，是抄的，不是忘了去重。web.yml 里记了理由：
+  # YAML 锚点更短，但 Actions 认不认锚点这个仓库没实测过，不在 CI 触发条件上
+  # 冒这个险。两份漂移是静默的，改一份时另一份也要改。
+  pull_request:
+    paths: ['src/**', 'tools/src/**', 'tools/test/**', 'tools/build.sh', 'tools/test.sh',
+            'tools/export-truth.sh', 'tools/ground-truth/**', 'script/**',
+            'image/**', 'sources/**', '*.jar', '.github/workflows/java.yml']
+
+concurrency:
+  group: java-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # setup-java 会把 JAVA_HOME 设好，tools/*.sh 里那句
+      # `: "${JAVA_HOME:=/opt/homebrew/…}"` 只在没设时才兜底，所以这里自然
+      # 用的是 runner 上的 17。源码 targets JavaSE-1.7，17 编得过。
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 全部命令从仓库根跑：原版把 script/、sources/、image/ 当相对路径读。
+      - name: 编译
+        run: tools/build.sh
+
+      - name: 单元测试
+        run: tools/test.sh
+
+      # 数据层判据。**这两步必须分开**：export-truth.sh 自己成功只说明它跑完了，
+      # 「跑出来的东西和入库的一样吗」是另一个问题，而后者才是判据。
+      # --exit-code 是它变红的方式；没有它，diff 打印一屏差异然后 exit 0。
+      - name: 重导 96 份解析真值
+        run: tools/export-truth.sh
+
+      - name: 真值必须无 diff
+        run: git diff --exit-code -- tools/ground-truth
+
+      # export-trace.sh --check 这一趟**故意不接**：实测 2m34s，且它要
+      # -Djava.awt.headless=false（战斗驱动器要真的 Swing 组件），runner 上跑不跑
+      # 得起来没测过。一条长期红的 CI 等于没有 CI。单独一张票去测它：xl-u7b。
