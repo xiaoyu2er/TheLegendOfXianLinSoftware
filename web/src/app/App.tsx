@@ -64,14 +64,14 @@ export function App() {
    * `ScenePanel` 造出来、再 `switchTo("start")`）。不预热的话点完「起」
    * 还要盯一会儿"正在载入 脚本1…"。
    *
-   * ⚠️ 它还**顺带管着标题那一屏的曲子**：`useGame` 的那条 pump 只在渲染器
-   * 就绪时才起（下面那句 `status.kind === 'ready' ? renderer : null`），而
-   * 主题曲是 pump 里 `bgm.sync(currentBgm(...))` 放上去的。这里若不给一个
-   * 真场景名，渲染器永远不就绪 —— 标题就成了一屏哑的。两半都由
-   * `game/useGameBgm.test.tsx` 跑出来，不是读出来的。
+   * ⚠️ **它曾经还兼着标题那一屏的曲子，现在不了**（xl-w16）。`useGame` 那条
+   * pump 原先起手一句 `if (!renderer) return`，于是主题曲要等这里预热的脚本1
+   * 整个载完才响 —— 实测哑 0.26–0.52 秒，而被自动播放挡下来时代价更大
+   * （第一次手势会被浪费掉）。数字、测法与理由都在 `game/useGame.ts` 那条
+   * pump 的注释里，判据在 `game/useGameBgm.test.tsx`。
    *
-   * 代价是**主题曲要等脚本1 的地图载完才响**，而原版 `switchTo("start")`
-   * 是当场 `readBGM("主题曲.mp3")`。这处差别登记在 `xl-w16`，不是没看见。
+   * 所以这一句现在**只**为预热而存在：改掉它标题照样有声音，只是点完「起」
+   * 要多盯一会儿"正在载入 脚本1…"。
    */
   const shownScene = game.scene ?? sceneName ?? START_SCENE
   const { status, renderer } = useSceneRenderer(sceneHostRef, shownScene)

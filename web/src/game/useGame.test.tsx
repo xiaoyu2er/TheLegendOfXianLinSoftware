@@ -8,7 +8,7 @@ import { getParty, initialMember, rememberParty, resetParty } from '../fakes/par
 import { getScene } from '../data/scenesEager'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { roleTileX, roleTileY } from '../state/role'
-import { createWorld } from '../state/step'
+import { TICK_MS, createWorld } from '../state/step'
 import type { RoleState, World } from '../state/types'
 import { useGame } from './useGame'
 
@@ -272,6 +272,63 @@ describe('useGame 接线', () => {
     expect(result.current.scene).toBeNull()
     // 回标题之后一帧都不再来 —— 世界丢掉了，不是藏起来了。
     expect(seen.length).toBe(drawn)
+  })
+
+  /**
+   * **渲染器还没就绪时世界不推进**（xl-w16 之后仍然成立的那半）。
+   *
+   * 那道守卫原先是 pump 起手的一句 `if (!renderer) return`，xl-w16 把它挪到
+   * `isRunning` 之后 —— 「还没开局」那一路不再受它管（标题要出声），
+   * 「开局了但渲染器还没到」这一路照旧。挪的时候少写一句 `last = now`
+   * 是最容易犯的错，而它的表现不是"不动"，是**渲染器一到位世界就往前跳一大
+   * 截**：那段等待里流逝的时间会被下一拍一次性补跑。
+   *
+   * 所以这里验的是两件事，而第二件才是判据的分辨力所在：
+   *
+   * 1. 没有渲染器时一帧都不画；
+   * 2. 等了 5 秒再把渲染器交出来，跑三拍 —— 主角的位置与**从头就有渲染器、
+   *    只跑同样三拍**的那一局**逐字段相同**。那 5 秒是真的丢掉了。
+   *
+   * 拿另一局当基准而不是手写坐标：走三拍走多远由步长与动画决定，写死一个数
+   * 只会在别处改了步长时红，且红得看不出因果。
+   */
+  it('渲染器还没就绪：一帧不画，而且这段时间不会攒着一次性补跑', async () => {
+    await prepareExits(createWorld(await loadScene('宿舍')))
+
+    // 甲局：渲染器晚到 5 秒。
+    const late = renderHook(({ r }) => useGame(r, '宿舍'), {
+      initialProps: { r: null as SceneRenderer | null },
+    })
+    await act(async () => {
+      await loadScene('宿舍')
+    })
+    press('ArrowRight')
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(seen).toHaveLength(0)
+    late.rerender({ r: renderer })
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS * 3)
+    })
+    const afterLate = seen.at(-1)
+    expect(afterLate).toBeDefined()
+    late.unmount()
+
+    // 乙局：渲染器从头就在，同样三拍。
+    seen = []
+    renderHook(() => useGame(renderer, '宿舍'))
+    await act(async () => {
+      await loadScene('宿舍')
+    })
+    press('ArrowRight')
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS * 3)
+    })
+    const afterPrompt = seen.at(-1)
+    expect(afterPrompt).toBeDefined()
+
+    expect(afterLate).toEqual(afterPrompt)
   })
 
   it('卸载之后不再推进，也不再收键', async () => {

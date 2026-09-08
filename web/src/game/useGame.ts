@@ -154,12 +154,30 @@ export function useGame(
     setDialogue(null)
     setScene(null)
     setBattleLoading(false)
-    // 载入那几十毫秒里显示的是**场景**（"正在载入 X…"），不是标题：翻回标题
-    // 会把 `StartPanel` 整个重挂一次，卷轴缩回去再展开一遍 —— 点完「起」
-    // 画面倒着走一段，而两种写法都"最后进了脚本1"。
+    // 载入那几十毫秒里显示的是**场景**（"正在载入 X…"），不是标题。
     //
-    // 与原版的差别在这里：原版是 `initiation(...)` 返回之后才 `switchTo("scene")`，
-    // 没有这一屏载入提示。取舍登记在 `xl-w16`。
+    // **这一点跟原版是一致的**，而 xl-w16 的票面写反了（它说"原版是
+    // `initiation(...)` 返回之后才 `switchTo("scene")`"）。照 GBK 源码现读
+    // （`src/start/StartPanel.java` 的 `startLoadAction()` case 0）：
+    //
+    //     GameLauncher.switchTo("scene");          ← 先换面板
+    //     …
+    //     GameLauncher.scenePanel.initiation("脚本1.txt");   ← 后读盘
+    //
+    // 换面板在前、读盘在后，顺序与这里一模一样。而且原版在换面板**之前**
+    // 还要等 `loadTimer` 走完（`if (loadTimer.stop())`，30 拍，见
+    // `start/layout.ts` 的 `LOAD_TICKS`），那段载入动画是画在标题那一屏上的
+    // —— 这一层也复刻了（`start/panelState.ts`）。
+    //
+    // 真正的残差只有一条，而且不在这个顺序上：原版 `initiation` 是**同步**
+    // 读本地文件，几毫秒就回来，那一屏"正在载入"快到看不见；这里的场景 JSON
+    // 与贴图是 `fetch` 来的，所以那句提示看得见一下。要抹掉它只能预取，而
+    // 预取正是 `app/App.tsx` 里 `shownScene` 那一句在做的事。
+    //
+    // ⚠️ 顺带记一条被推翻的理由：这里原先写的是"翻回标题会把 `StartPanel`
+    // 整个重挂一次，卷轴缩回去再展开一遍"。那句站不住 —— 点「起」这条路上
+    // 面板本来就停在 `'start'`，让它继续停着并不会重挂任何东西。真正的理由
+    // 是上面那条：原版就是先换面板。
     const startingPanel: Panel = sceneName === null ? 'start' : 'scene'
     panelRef.current = startingPanel
     setPanel(startingPanel)
@@ -223,8 +241,43 @@ export function useGame(
     }
   }, [])
 
+  /**
+   * 这条 pump **不等渲染器**（xl-w16）。
+   *
+   * 它原先起手是一句 `if (!renderer) return`，而那一句同时兼着两件事：
+   *
+   * 1. 「切场景那几十毫秒里别往旧渲染器上推世界」——真的需要，见下面那道
+   *    `if (!renderer)`，位置挪了，语义一个字没变；
+   * 2. 「还没开局时也别跑」——**这一半是白搭的**，而且有代价：标题那一屏的
+   *    主题曲是 pump 里 `bgm.sync(currentBgm(session))` 放上去的，于是它要
+   *    等脚本1 的地图与 JSON 全部载完、`status.kind` 变成 `ready`，标题才
+   *    出声。原版 `GameLauncher.switchTo("start")` 是当场 `readBGM`。
+   *
+   * **哑多久实测过**（2026-09-08，这台 mac，`pnpm build` 的产物 + `pnpm
+   * preview`，Chrome 152，逐次开一个隔离的浏览器上下文＝冷缓存）。两个读数
+   * 都在页面自己的 `performance.now()` 上取：标题背景图 `.start-back` 的
+   * `load`，与那唯一一个 `Audio` 对象被赋 `src` 的那一刻（`src` 的 setter
+   * 是从 `HTMLMediaElement.prototype` 上劫的，源码一个字没改）。
+   *
+   *     冷缓存  418 / 518 / 322 / 258 ms
+   *     热缓存  264 / 296 ms
+   *
+   * 也就是 **0.26–0.52 秒的哑场**。⚠️ 这组数是**没有自动播放门槛时**的：
+   * 那次跑的 Chrome 由 devtools 起，`play()` 直接 resolve、`currentTime`
+   * 在走。真实浏览器上第一次访问会被自动播放策略挡下来，此时哑多久由用户
+   * 什么时候给出第一次手势决定，跟这个数无关。
+   *
+   * 而**被挡下来那条路才是真正该修的理由**，它比 0.5 秒难看得多：
+   * `bgmPlayer` 只有在 `play()` 被拒之后才 `arm()` 一个手势监听器
+   * （见 `audio/bgmPlayer.ts`）。pump 起得晚，这半秒里用户按下的那一次
+   * ——很可能正是点在「起」上的那一下——落在监听器装上之前，**整个被浪费
+   * 掉**，主题曲要等下一次手势才响。pump 不等渲染器之后，会话一建出来
+   * 下一拍（`TICK_MS` = 10ms）就 `sync`，第一次手势就接得住。
+   *
+   * 代价是这条 interval 现在从挂载起就一直在跑。没开局时它每拍只做两件事：
+   * 读一个 ref、调一次 `sync`（同值是空操作，见 `bgmPlayer.sync`）。
+   */
   useEffect(() => {
-    if (!renderer) return
     let last = performance.now()
     /** 一个场景要量哪几只怪 —— 按场景名记一份，不必每拍重扫脚本。 */
     const nameCache = new Map<string, readonly string[]>()
@@ -247,6 +300,17 @@ export function useGame(
       if (!isRunning(session)) {
         last = now
         bgmRef.current?.sync(currentBgm(session))
+        return
+      }
+      // **从这里往下都要渲染器**：场景正在换的那几十毫秒里，世界已经在新场景
+      // 里，而渲染器手上还是旧地图。这时候推进世界就得往旧渲染器上画，撞它
+      // 那道 NPC 条数的校验。停一拍就是原版 `initiation` 读盘时停的那一拍。
+      //
+      // 这一句原先写在 effect 的第一行（`if (!renderer) return`）。挪到这里
+      // 是 xl-w16 的改动：**拦的东西一个没少**（世界照样不推进），少拦的只有
+      // 「还没开局」那一路，而那一路本来就一行渲染都没有。
+      if (!renderer) {
+        last = now
         return
       }
       // 邻居还没取到手就先停一拍：出口切换是同步的，切不动只能是抛
