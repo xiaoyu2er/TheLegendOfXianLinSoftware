@@ -52,12 +52,25 @@ export const START_IMAGES: Readonly<Record<StartImageName, string>> = {
   cloud: 'sources/StartPanel/最终云彩.png',
 }
 
-/** 一段逐帧动画：源目录、共几帧。 */
+/** 一段逐帧动画：源目录、共几帧、这一段的 WebP 走无损还是有损。 */
 export interface StartSequence {
   /** `sources/StartPanel/` 下的目录名，原版 `new StartAnimation(n, s, …)` 的 `s`。 */
   readonly dir: string
   /** 帧数，原版那个 `n`。文件是 `1.png .. n.png`，下标 `0 .. n-1`。 */
   readonly count: number
+  /**
+   * `true` = 这一段烘成**有损** WebP（`DEFAULT_LOSSY_QUALITY`），
+   * `false` = 走 `-lossless`，也就是 PNG 源的默认。裁定与实测见下面
+   * `START_SEQUENCES` 的头注（xl-bbs）。
+   *
+   * **写成必填而不是可选**，是为了让「新加一段动画」这件事必须在这里表一次态。
+   * 可选的话漏写就是静默走无损，而多几 MB 的按需产物在画面上看不出来 ——
+   * 这张票要解决的正是那个形状的问题。
+   *
+   * 产物那一端由 `scrollQuality.test.ts` 核：入库的每一帧的 WebP 编码方式
+   * 必须跟这一列对得上，两边不一致立刻红。
+   */
+  readonly lossy: boolean
 }
 
 /**
@@ -75,25 +88,75 @@ export interface StartSequence {
  *
  * 于是两头都有判据：数字对不对着原版，由源码守；文件在不在，由烘焙器守。
  *
- * ## ⚠️ 卷轴那两段是 9.3 MB（实测），而且**只能按需取**
+ * ## ⚠️ 卷轴那两段单独走**有损 q80**（xl-bbs 的裁定，2026-09-08）
  *
- * 无损 WebP 实测（2026-09-08）：`卷轴` 与 `反向卷轴` 各 10 帧、各 4642 KB，
- * 六段加两张整屏图一共 9988 KB。走的是 `?url`（见 `assets/resolve.ts`），
- * 所以它们**不进 JS 包**，是一帧一个文件；渲染层每一拍只挂当前那一帧的
- * `<img>`（`StartPanel.tsx`），因此标题屏静止时只取第 0 帧的 101 KB。
+ * 起因：xl-4si 按「PNG 一律无损」把六段全烘了无损 WebP，实测两段卷轴各 10 帧、
+ * 各 4642 KB，占 start:* 全部 9988 KB 的 93%。它们走的是 `?url`
+ * （见 `assets/resolve.ts`），所以**不进 JS 包**，是一帧一个文件；渲染层每一拍
+ * 只挂当前那一帧的 `<img>`（`StartPanel.tsx`），因此标题屏静止时只取第 0 帧。
+ * 代价是**过场第一次播的时候会卡**：10 帧要在 1 秒内依次首取，慢网上补不齐。
  *
- * 代价是**过场第一次播的时候会卡**：10 帧在 1 秒内依次首取，慢网上补不齐。
- * 没有在这里开有损的例外 —— `scripts/bake.ts` 的 `toWebp` 头注里写着
- * 「PNG 一律无损，不给任何一张开例外」，那是 xl-9bd.14 拿眼睛看过之后的裁定，
- * 不该由这张票顺手推翻。要预取还是要降质，登记在 `xl-bbs`。
+ * 四条路都摆在票面上（预取 / 降质 / 只预取前几帧 / 就这样），选的是**降质**，
+ * 而且**只给这两段开例外**，别的五类 PNG 一张不动。
+ *
+ * ### 为什么这两段可以，而 xl-9bd.14 判的「大迷宫不行」仍然成立
+ *
+ * 那条裁定的理由是像素画：大迷宫的草地是**逐像素杂色点阵**，有损把它抹成
+ * 色块，而本项目的「锐利」放大模式（`stage/scaling.ts`）存在的意义就是保住
+ * 那些颗粒。**卷轴不是像素画，是一张纸卷的照片** —— 连续调、带 alpha 抠像，
+ * 正是有损编码擅长而无损编码最吃亏的那一类（纸纤维的噪点无损压不动）。
+ *
+ * 拿眼睛看过（2026-09-08，第 8 帧，逐点放大即 `pixelated` 的放大方式）：
+ * 1:1 分不出来；2 倍下极轻微更平滑，要盯着找；10 倍下纸纤维的颗粒明显被抹平，
+ * 卷轴的硬边与投影完好。过场只有 1 秒，且这一屏不进跨端逐帧比对
+ * （`replay/implemented.ts` 的 `IMPLEMENTED_DRIVERS` 今天是 scene / battle，
+ * 一条 start 驱动器都没有），所以大迷宫那笔「永远留下 22% 偏离」的账这里不存在。
+ *
+ * ### 量化（10 帧合计 9212800 像素，源 PNG vs q80 解回来的 RGBA）
+ *
+ * 透明区的 RGB 到不了屏幕，两边按各自的 alpha 合成到同一个中灰底上再比。
+ * 「一个像素的差」取三通道最大差，口径逐字照 `compare/diff.ts` 的 `frameDiff`：
+ *
+ *   完全相同 44.35%   超容差 8 的像素 3.36%   超 32 的 0.01%   最大单通道差 75
+ *   alpha 通道**逐字节相同**（`cwebp` 的有损档默认无损存 alpha，抠像边不会晕）
+ *
+ * 换成 xl-9bd.14 那条「累计口径」（分母 = 像素 × 3 个通道）是 **差>8 1.33%**，
+ * 对着大迷宫的 22.31% 小一个数量级。
+ *
+ * ### 代价与收益
+ *
+ *   档位     每段 10 帧   两段合计   第 0 帧   超8 像素
+ *   无损     4642 KB      9285 KB    101 KB   —
+ *   **q80**  **414 KB**   **827 KB** **16 KB** 3.36%
+ *   q90      827 KB       1654 KB    —        0.99%
+ *
+ * start:* 那 58 条产物因此从 9988 KB 降到 1531 KB（重烘后实测）。q90 把偏离压到 0.99%（不到三分之一）
+ * 却要两倍字节，而 1:1 下 q80 已经看不出来，所以取 q80 —— 也就是
+ * `scripts/bake.ts` 的 `DEFAULT_LOSSY_QUALITY`，**不新造一个档位常量**。
+ *
+ * ### 另外三条为什么没选
+ *
+ * - **预取**：那是把 9.3 MB 从「过场时取」改成「开机就主动下载」，比现在糟。
+ *   降质之后整段只有 414 KB，浏览器自己按需取就够了，不必再加一套预取机制。
+ * - **只预取前几帧**：同上，且它是一个要自己维护的旋钮（预取到第几帧），
+ *   而降质把问题从根上消掉了。
+ * - **就这样**：9.3 MB 在这两段上是纯浪费，见上面的实测。
+ *
+ * ### 还剩一笔没在这张票里花掉
+ *
+ * `反向卷轴` 的 10 帧与 `卷轴` 的 10 帧**逐像素相同、只是次序相反**
+ * （2026-09-08 实测：两边解成 RGBA 后 `cmp` 10/10 全同；入库的无损 WebP 产物
+ * 也是 md5 两两相等）。把 `backScroll` 的第 f 帧指到 `scroll` 的第 9−f 帧
+ * 能再省一半、并让第二次过场全部命中缓存 —— 但那要在烘焙期立一条恒等判据，
+ * 跟「降不降质」是两件事，登记在 xl-l6h。
  */
 export const START_SEQUENCES: Readonly<Record<StartSequenceName, StartSequence>> = {
-  buttonGlow: { dir: '按钮动画', count: 4 },
-  cursor: { dir: '鼠标', count: 8 },
-  scroll: { dir: '卷轴', count: 10 },
-  backScroll: { dir: '反向卷轴', count: 10 },
-  loading: { dir: '载入', count: 10 },
-  loading2: { dir: '载入2', count: 3 },
+  buttonGlow: { dir: '按钮动画', count: 4, lossy: false },
+  cursor: { dir: '鼠标', count: 8, lossy: false },
+  scroll: { dir: '卷轴', count: 10, lossy: true },
+  backScroll: { dir: '反向卷轴', count: 10, lossy: true },
+  loading: { dir: '载入', count: 10, lossy: false },
+  loading2: { dir: '载入2', count: 3, lossy: false },
 }
 
 /**

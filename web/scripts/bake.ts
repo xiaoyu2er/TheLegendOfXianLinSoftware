@@ -396,7 +396,20 @@ function main(): void {
       }
       const relative = `start/${name}/${frame}.webp`
       manifest[startFrameAssetId(name as StartSequenceName, frame)] = relative
-      bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
+      // 档位由 `START_SEQUENCES` 那一列点名，不在这里按目录名认（xl-bbs）。
+      // 认名字的话，「哪几段是有损的」就抄在了两个地方，而分家的表现是某一段
+      // 悄悄比另一段大十倍 —— 没有任何检查看得见。产物那一端由
+      // `src/start/scrollQuality.test.ts` 跟这一列对账。
+      // 档位那两个位置留空，走 `toWebp` 自己的默认（`DEFAULT_LOSSY_QUALITY`）
+      // —— 在这里把它重抄一遍的话，改了默认值这一路会悄悄不跟着变。
+      bytes += toWebp(
+        absolute,
+        resolve(ASSETS_OUT, relative),
+        undefined,
+        undefined,
+        undefined,
+        sequence.lossy,
+      )
       startFrames++
     }
   }
@@ -893,8 +906,7 @@ function battleWebp(source: string, destination: string, crop?: SourceRect): num
  * 9.5 MB 里的 2.5 MB。这里仍然按源格式走，**不**改成"哪个小选哪个"——
  * 后者会在没人看的情况下把像素图降质。
  *
- * **xl-9bd.14 已经拿眼睛看过了，结论是维持现状，不给任何一张开例外。**
- * 2026-09-06 的实测：
+ * **xl-9bd.14 已经拿眼睛看过了，结论是维持现状。** 2026-09-06 的实测：
  *
  * - 藏经阁1层 根本不用考虑：q80 576 KB 比无损的 521 KB 还大，又大又有损。
  * - 大迷宫 1:1 看不出差别，10 倍放大很明显：无损的草地是逐像素杂色点阵
@@ -907,6 +919,28 @@ function battleWebp(source: string, destination: string, crop?: SourceRect): num
  * - 省的那 2.1 MB 不在关键路径上：xl-9bd.15 之后产物用 `?url` 引用，
  *   dist/assets 下是一堆独立文件，只有真的走进大迷宫的玩家才下载它一次。
  *   「双份 + 按缩放选」与「渐进加载」两种方案反而会让仓库更大。
+ *
+ * ## ⚠️ 那条裁定当时写的是「不给任何一张开例外」，xl-bbs 开了一个（2026-09-08）
+ *
+ * `forceLossy` 这个参数就是那个例外的入口：传 `true` 的 PNG 走 `-q`，不传的照旧。
+ * 名字里的 `force` 不是修饰：对 JPG 源传 `false` 一样是有损（它本来就走有损
+ * 那一支），这个开关**只对 PNG 有意义**。
+ * **今天只有一处传它** —— 开始界面的 `卷轴` / `反向卷轴` 两段逐帧动画，
+ * 由 `START_SEQUENCES` 的 `lossy` 一列点名（`src/start/assets.ts`）。
+ *
+ * 为什么这不是把 xl-9bd.14 推翻了：那条裁定的理由是**像素画的颗粒**，而卷轴
+ * 是一张纸卷的**照片**（连续调 + alpha 抠像），是有损擅长、无损最吃亏的一类。
+ * 拿眼睛看过，1:1 分不出来。量化实测**按上面那四项同一个口径**（累计，分母
+ * = 像素 × 3 个通道；10 帧 9212800 像素）：
+ *
+ *   完全相同 52.32%   差>8 1.33%   差>32 0.003%   最大单通道差 75
+ *
+ * 也就是**差>8 是 1.33% 对大迷宫的 22.31%**，小一个数量级。代价 4642 KB →
+ * 414 KB 每段。逐像素口径的那一组、四条路怎么比的、为什么不取 q90，都在
+ * `START_SEQUENCES` 的头注里，不在这儿重抄一遍。
+ *
+ * **加第二个例外之前先读那份头注**：它记的不是「有损更小」（那永远成立），
+ * 是「这一批素材属于哪一类、拿眼睛看过没有」。
  */
 function toWebp(
   source: string,
@@ -914,10 +948,11 @@ function toWebp(
   crop?: SourceRect,
   quality: number = DEFAULT_LOSSY_QUALITY,
   sns?: number,
+  forceLossy = false,
 ): number {
   useInput(source)
   mkdirSync(dirname(destination), { recursive: true })
-  const lossless = source.toLowerCase().endsWith('.png')
+  const lossless = !forceLossy && source.toLowerCase().endsWith('.png')
   // `-sns` 只在有损分支拼进去：它是量化参数的分配启发式，无损档下 `cwebp`
   // 收下它也不用，而**收下不用**与**真的生效**在产物上长得一模一样 ——
   // 那正是「明天有人把 -lossless 改掉」时唯一能露馅的地方。
