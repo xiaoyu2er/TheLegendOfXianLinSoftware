@@ -11,7 +11,16 @@ import { DRUGS, drugIntroText } from './drugs'
  * 介绍文字里那两个数，都直接来自这里）。
  */
 describe('六种回复类药品对回 sources/Shop/drug.txt', () => {
-  /** GBK + CRLF。`$` 锚点在这份文件上不加 `\r` 处理会静默匹配不到（CLAUDE.md）。 */
+  /**
+   * GBK + CRLF。`$` 锚点在这份文件上不加 `\r` 处理会静默匹配不到（CLAUDE.md）。
+   *
+   * ⚠️ **这一处故意不换成 `test/javaSource.ts`**（xl-xh3）。那个 helper 读的是
+   * **原版 Java 源码**——它的文档、它的名字、以及围着它的那条规矩（「凡是拿它的
+   * 结果做匹配的地方都要先断言解出来的条数 > 0」）说的都是源码。这里读的是
+   * `sources/Shop/drug.txt`，一份**游戏数据文件**：解码方式碰巧相同，来源与
+   * 含义不同。套上去只会让 `javaSource` 这个名字不再是真的，而名字不再是真的
+   * 之后，下一个人读到 `javaSource('sources/…')` 分不出这是源码还是数据。
+   */
   const rows = (() => {
     const text = new TextDecoder('gbk').decode(readFileSync(repoPath('sources/Shop/drug.txt')))
     return text

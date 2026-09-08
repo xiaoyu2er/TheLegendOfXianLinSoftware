@@ -197,8 +197,11 @@ describe('怪物出厂表逐列对回原版源码', () => {
  * 一道门一条用例。
  */
 describe('源码解析器解不出来就抛', () => {
-  const raw = readFileSync(repoPath('src/battle/Enemy.java'))
-  const gbk = new TextDecoder('gbk').decode(raw)
+  const ENEMY_JAVA = 'src/battle/Enemy.java'
+  const gbk = javaSource(ENEMY_JAVA)
+  // 下面「按 UTF-8 解 → 抛」那条要的是**原始字节**，不是解好的字符串，所以这里
+  // 仍然自己读一次文件；`javaSource` 只给字符串。
+  const raw = readFileSync(repoPath(ENEMY_JAVA))
 
   /** 篡改必须真的写进去了才算数（`sed` 没匹配到照样 exit 0，见 dispatch.md）。 */
   function tamper(from: string | RegExp, to: string): string {

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { decodePng } from '../../compare/png'
+import { javaSource } from '../../test/javaSource'
 import { repoPath } from '../../test/repoPath'
 import { replayBattle } from '../replay'
 import { snapshotBattle } from '../snapshot'
@@ -23,10 +24,6 @@ import { createPaintState } from './paint'
  * 生成一次绘制清单。它验的不是"每个像素对不对"（那是跨端逐帧比对的事），
  * 而是**这一层不许炸、不许画出名单外的图、坐标不许跑出画布之外**。
  */
-
-function javaSource(path: string): string {
-  return new TextDecoder('gbk').decode(readFileSync(repoPath(path)))
-}
 
 /** 怪物出场图的像素尺寸，跟状态层的测试同一个来源（不从真值里读）。 */
 function spriteSize(name: string): { width: number; height: number } {
