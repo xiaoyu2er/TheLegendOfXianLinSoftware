@@ -6,12 +6,17 @@ import { IMAGE_ROOT } from './battleAssets'
 import { listFiles } from './listFiles'
 
 /**
- * 背景动画烘出来的产物，尺寸必须**正好是源尺寸与画布的交集**（xl-9do）。
+ * 背景动画烘出来的产物尺寸对不对（xl-9do）。
  *
  * 原版 `battle.BackgroundAnimation.drawBackAnimation` 把整张图画在 (0,0)、
  * 不缩放，画布是 1024×640，所以超出这个矩形的像素**一个也没有被画出来过**。
- * `image/背景动画/` 那 753 张里有 145 张越界（2026-09-07 实测：115 张 1240×744、
- * 30 张 1024×768），烘焙时裁掉它们省 6.3% 的字节。
+ * 但「画不出来」并不等于「该裁」：`cwebp` 的有损档会因为输入变小而重掷一次
+ * 量化骰子，可视区内的像素跟着动 —— 所以只有**裁掉的面积够大**（源面积的
+ * 四分之一以上）时才裁。逐档的实测与用户裁定见 `scripts/bake.ts` 的
+ * `backgroundAnimCrop` 头注。
+ *
+ * 今天这批素材落在两侧的是（2026-09-07 实测，记录不是断言）：115 张 1240×744
+ * 裁掉 29.0% → 裁；30 张 1024×768 裁掉 16.7%、608 张 1066×639 裁掉 3.9% → 不裁。
  *
  * **核的是产物，不是烘焙器的源码**，于是它和 `roleSpriteSize.test.ts` 有同一个
  * 边界：改坏 `scripts/bake.ts` 之后**要重跑 `pnpm bake`**，这条才会红。改了烘焙器
@@ -19,8 +24,9 @@ import { listFiles } from './listFiles'
  *
  * 下面三条各拦一种坏法，缺一条另两条就成了恒真的：
  *
- * 1. 逐张核尺寸 —— 拦「裁错了」「漏裁了」。
- * 2. 越界的素材真的存在 —— 拦「今天这批素材恰好没有越界的，于是第 1 条不裁也过」。
+ * 1. 逐张核尺寸 —— 拦「裁错了」「漏裁了」「裁到了不该裁的那两档」。
+ * 2. 门槛两侧都真的有素材 —— 拦「今天这批全在一侧，于是第 1 条退化成恒真」。
+ *    两侧都要有：只有该裁的，`cut >= 门槛` 那半是恒真；只有不该裁的，反过来。
  * 3. 技能动画一张都没被裁 —— 拦「裁剪漏到了别的目录」。技能动画由
  *    `battle.Animation` 画在**算出来的**坐标上，裁它就是裁到肉。
  *
@@ -31,6 +37,23 @@ import { listFiles } from './listFiles'
 
 /** 画布：`battle.BattlePanel` 的 `WIDTH=32*32` / `HEIGHT=20*32`。第 4 条核它。 */
 const CANVAS = { width: 1024, height: 640 }
+
+/**
+ * 裁剪门槛，与 `scripts/bake.ts` 的 `CROP_MIN_AREA` 是同一个数，**故意各写一份**
+ * ——期望值这一侧一旦 import 被测那一侧的常量，改这个数就两边一起改，而这条测试
+ * 照绿。这里要的正是「改了烘焙器的门槛，产物没跟着重烘」会红。
+ */
+const CROP_MIN_AREA = 0.25
+
+/** 这张源图该烘成多大：够门槛就裁到画布，不够就原样。 */
+function wantedSize(src: { width: number; height: number }): { width: number; height: number } {
+  const visible = {
+    width: Math.min(src.width, CANVAS.width),
+    height: Math.min(src.height, CANVAS.height),
+  }
+  const cut = 1 - (visible.width * visible.height) / (src.width * src.height)
+  return cut >= CROP_MIN_AREA ? visible : src
+}
 
 const BACKGROUND_ANIM = '背景动画'
 const SKILL_ANIM = '技能动画'
@@ -47,15 +70,12 @@ function sources(topDir: string): string[] {
 }
 
 describe('背景动画的烘焙裁剪', () => {
-  it('每一张的产物尺寸都是源尺寸与画布的交集', () => {
+  it('每一张的产物尺寸都是门槛裁决出来的那个', () => {
     const wrong: string[] = []
     for (const relative of sources(BACKGROUND_ANIM)) {
       const src = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
       const baked = webpSize(productOf(`${BACKGROUND_ANIM}/${relative}`))
-      const want = {
-        width: Math.min(src.width, CANVAS.width),
-        height: Math.min(src.height, CANVAS.height),
-      }
+      const want = wantedSize(src)
       if (baked.width !== want.width || baked.height !== want.height) {
         wrong.push(
           `${relative}：源 ${src.width}×${src.height}，产物 ${baked.width}×${baked.height}，` +
@@ -67,18 +87,36 @@ describe('背景动画的烘焙裁剪', () => {
   })
 
   /**
-   * 上面那条对一批**恰好全在画布之内**的素材是恒真的 —— 不裁也过。所以把「真有
-   * 越界素材」本身也断言出来。这里只断言「有」，不断言「有 145 张」：张数是别的
-   * agent 换一批素材就会变的东西（dispatch.md 纪律 3），而「一张都没有」才是这条
-   * 判据失效的那个点。
+   * 上面那条在**素材全落在门槛同一侧**时会退化成恒真的一半：全都不该裁的话，
+   * 「产物 = 源尺寸」不裁也过；全都该裁的话，反过来。所以两侧各断言一次「非空」。
+   *
+   * 只断言「非空」，不断言「115 / 638」：张数是别的 agent 换一批素材就会变的东西
+   * （dispatch.md 纪律 3），而「这一侧一张都没有」才是判据失效的那个点。
+   * 2026-09-07 的读数是该裁 115、不该裁 638，是记录不是断言。
    */
-  it('确实有越出画布的素材，裁剪不是空转', () => {
-    const oversized = sources(BACKGROUND_ANIM).filter((relative) => {
-      const { width, height } = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
-      return width > CANVAS.width || height > CANVAS.height
+  it('门槛两侧都真的有素材，这条门槛不是空转', () => {
+    const cuts = sources(BACKGROUND_ANIM).map((relative) => {
+      const src = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
+      const w = wantedSize(src)
+      return w.width !== src.width || w.height !== src.height
     })
-    // 2026-09-07 的读数是 145（115 张 1240×744 + 30 张 1024×768），是记录不是断言。
-    expect(oversized.length).toBeGreaterThan(0)
+    expect(cuts.filter(Boolean).length, '一张都不该裁：第 1 条退化成「产物=源」').toBeGreaterThan(0)
+    expect(cuts.filter((c) => !c).length, '全都该裁：第 1 条退化成「产物=画布」').toBeGreaterThan(0)
+  })
+
+  /**
+   * 门槛之下的那些素材**确实还越着界** —— 也就是说「不裁」是门槛裁出来的结论，
+   * 不是「它们本来就在画布之内」。少了这一条，把门槛改成 999 也照样全绿。
+   */
+  it('不裁的那批里确实有越出画布的，是门槛拦下的而不是本来就不越界', () => {
+    const oversizedButKept = sources(BACKGROUND_ANIM).filter((relative) => {
+      const src = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
+      const w = wantedSize(src)
+      const cropped = w.width !== src.width || w.height !== src.height
+      return !cropped && (src.width > CANVAS.width || src.height > CANVAS.height)
+    })
+    // 2026-09-07 的读数是 30 张 1024×768（1066×639 只越宽不越高，也在里面）。
+    expect(oversizedButKept.length).toBeGreaterThan(0)
   })
 
   it('技能动画那一层一张都没被裁', () => {

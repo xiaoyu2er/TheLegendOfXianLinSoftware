@@ -1,6 +1,6 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "f13679e89442842a698746a2ec61579fdb04af726959e9d977bfbc2f08bb7373",
+    "web/scripts/bake.ts": "4508fa34b95e4414abf34928a4c040e5ed1c553fdaa13be02f78cc6fb4f970c5",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
     "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
