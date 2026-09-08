@@ -49,9 +49,15 @@ export default defineConfig({
      * 这一行没了会怎样，有判据看着：`src/test/testTimeout.test.ts` 读的是
      * **运行时生效的**那个值（`ctx.task.timeout`），不是这个文件的字面量。
      *
-     * `hookTimeout` 保持默认的 10000，**不是漏了**：全套 923 条里只有一个
-     * 钩子（`checkAssets.test.ts` 的 `afterAll`，一句 `rmSync`），没有任何
-     * 实测支持去动它。哪天有了慢钩子，那是另一张票。
+     * `hookTimeout` 留在默认的 10000，**是「没动」，不是「判定过安全」**。
+     * 这里原本写的是「全套只有一个钩子」——那句是错的，来源是一次只搜了
+     * `beforeAll|afterAll` 的 grep，漏掉 `beforeEach|afterEach`；实际是 6 个
+     * 文件 7 处注册（复审时实测）。正是本仓库最在意的那种读数：搜法只覆盖
+     * 一半，而「没搜到」和「不存在」长得一样。
+     *
+     * 改正之后的表态只能是这么弱：**钩子的耗时一次都没量过**，也没有观测到
+     * 任何钩子超时，所以没有依据去动它。哪天有慢钩子撞上 10000ms，那是另一
+     * 张票，届时要像这一行一样把数量出来再定。
      */
     testTimeout: 30_000,
     setupFiles: ['./src/test/setup.ts'],
