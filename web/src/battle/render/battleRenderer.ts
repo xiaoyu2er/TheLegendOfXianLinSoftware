@@ -6,6 +6,8 @@ import { resolveAsset } from '../../assets/resolve'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
 import { TEXT_FONT_STACK } from '../../textFont'
 import type { DrawOp, Rect } from './drawList'
+import type { BlitRect } from './scaledBlit'
+import { scaledBlitPasses } from './scaledBlit'
 
 /**
  * 战斗层渲染器（Pixi）。**执行 `drawList` 那份清单，自己不做任何决定。**
@@ -21,6 +23,9 @@ import type { DrawOp, Rect } from './drawList'
  * 1. **最近邻采样**。Java2D 的 `KEY_INTERPOLATION` 默认就是最近邻，Pixi 默认
  *    线性。战斗里 `Reminder` 那一层是真的在缩放（源 128×24 拉到目标 0..120 宽），
  *    线性过滤会让边缘糊掉一圈，而那一圈在逐帧比对里就是几百个像素。
+ *    **而"最近邻"本身还不够**：纹素边界上打平时 GPU 与 Java2D 会分道扬镳，
+ *    所以缩放那一层的位图由 CPU 按原版的采样表拼出来再 1:1 贴上去，
+ *    见 `scaledBlit.ts` 与下面的 `scaledTexture`（xl-ttu）。
  * 2. **源矩形越界要裁，不要缩**。怒气槽满的时候源矩形会伸到图外面
  *    （`sy1 = 80 - height` 而 height 算到 100），Java2D 把图外那部分当成透明，
  *    也就是**少画几行**，不是把图挤扁。目标与源等大时裁一刀就等价，见 `clip()`。
@@ -146,8 +151,10 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   /**
    * 把源矩形裁进纹理里，目标矩形按同样的比例跟着裁。
    *
-   * 目标与源等大时（战斗里除了 `Reminder` 全是这种）这就是"少画几行/几列"，
-   * 与 Java2D 把图外当透明的效果一致。
+   * **它现在只在目标与源等大时才会被调到**（缩放那一支走 `scaledTexture`），
+   * 而等大时这就是"少画几行/几列"，与 Java2D 把图外当透明的效果一致。
+   * 按比例跟着裁那一段因此恒等于 1:1，留着是因为"越界要裁"这件事本身是原版
+   * 的语义（怒气槽满的时候源矩形会伸到图外面），不是这条分支的偶然。
    */
   function clip(dest: Rect, src: Rect, tex: Texture): { dest: Rect; src: Rect } | null {
     const sx0 = Math.max(0, src.x)
@@ -166,6 +173,84 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
         height: (sy1 - sy0) * ky,
       },
     }
+  }
+
+  /**
+   * 缩放过的位图，按 **素材 + 源矩形 + 目标尺寸** 缓存。
+   *
+   * 只增不减，和精灵池同一个理由：提示图一共 22 张、目标尺寸一共 12 档
+   * （`Reminder.update()` 每拍宽 +10 高 +2，到 120×24 为止），封顶 264 张
+   * 120×24 的小位图；而它每拍都在变尺寸，不缓存就是每帧现拼。
+   */
+  const scaledCache = new Map<string, Texture>()
+
+  /**
+   * 开一张 canvas，把这些矩形逐个 `drawImage` 上去。
+   *
+   * `imageSmoothingEnabled=false` 是必须的：搬的段落要么是 1:1 的整段拷贝，
+   * 要么是"一个源像素铺满 length 个目标像素"，开着插值后者会被抹匀。
+   */
+  function blitOnto(
+    source: CanvasImageSource,
+    width: number,
+    height: number,
+    rects: readonly BlitRect[],
+  ): HTMLCanvasElement {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('取不到缩放贴图的 2D context')
+    ctx.imageSmoothingEnabled = false
+    for (const r of rects) {
+      ctx.drawImage(source, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
+    }
+    return canvas
+  }
+
+  /**
+   * 按原版的采样表把一块源区域拼成目标尺寸的位图。**不经过 GPU 采样**，
+   * 理由见文件头第 1 条与 `scaledBlit.ts`。
+   *
+   * **搬哪些矩形由 `scaledBlitPasses` 说了算**，这里只负责把它们交给
+   * `drawImage`：几何进得了 `pnpm test`（那边拿一个软件 blitter 逐像素核），
+   * 而"开一张 canvas、关掉插值"这件只有浏览器做得成的事留在这里。
+   */
+  function scaledTexture(id: AssetId, tex: Texture, src: Rect, dest: Rect): Texture {
+    const key = `${id}|${src.x},${src.y},${src.width},${src.height}|${dest.width}x${dest.height}`
+    const hit = scaledCache.get(key)
+    if (hit) return hit
+
+    // 缩放这一层没有"源矩形越界要裁"的先例（提示图的源恒为整张图），所以越界
+    // 在这里是响亮失败，而不是照 `clip()` 那样按比例裁一刀 —— 那条等价关系是
+    // 目标与源等大时才成立的，缩放时裁完的比例该怎么算没量过。
+    if (
+      src.x < 0 ||
+      src.y < 0 ||
+      src.x + src.width > tex.width ||
+      src.y + src.height > tex.height
+    ) {
+      throw new Error(
+        `缩放贴图的源矩形越界：${id} 是 ${tex.width}×${tex.height}，` +
+          `要的是 (${src.x},${src.y}) 起 ${src.width}×${src.height}`,
+      )
+    }
+    const resource = tex.source.resource as CanvasImageSource | undefined
+    if (!resource) throw new Error(`缩放贴图取不到 ${id} 的位图源`)
+
+    // 源在图集里的偏移：`scaledBlitPasses` 只知道逻辑坐标，加偏移是这里的事。
+    const passes = scaledBlitPasses(
+      { x: tex.frame.x + src.x, y: tex.frame.y + src.y, width: src.width, height: src.height },
+      dest,
+    )
+
+    const mid = blitOnto(resource, dest.width, src.height, passes.horizontal)
+    const out = blitOnto(mid, dest.width, dest.height, passes.vertical)
+
+    const made = Texture.from(out)
+    made.source.scaleMode = 'nearest'
+    scaledCache.set(key, made)
+    return made
   }
 
   function draw(ops: readonly DrawOp[]): void {
@@ -187,6 +272,17 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
         s.sprite.texture = tex
         s.sprite.position.set(op.x, op.y)
         s.sprite.setSize(tex.width, tex.height)
+        s.sprite.visible = true
+        n++
+        continue
+      }
+      if (op.dest.width !== op.src.width || op.dest.height !== op.src.height) {
+        // 真的在缩放。目标是空的（提示图 `show()` 之后、第一次 `update()` 之前
+        // 就是 0 宽）时原版什么都不画。
+        if (op.dest.width <= 0 || op.dest.height <= 0) continue
+        s.sprite.texture = scaledTexture(op.id, tex, op.src, op.dest)
+        s.sprite.position.set(op.dest.x, op.dest.y)
+        s.sprite.setSize(op.dest.width, op.dest.height)
         s.sprite.visible = true
         n++
         continue
