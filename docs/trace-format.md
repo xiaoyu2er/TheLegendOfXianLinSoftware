@@ -23,6 +23,15 @@
 | `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
 | `shop` | 一次输入事件 | `shop-trade` | `ShopDriver.java` |
 
+**「剧本」这一列里写出来的名字是 2026-09-07 的读数，不是名单。** 权威的名单在
+磁盘上，每份剧本自报 `driver`（缺省算 `scene`）；现数一遍：
+
+```bash
+for f in tools/traces/scripts/*.json; do
+  python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('driver','scene'))" "$f"
+done | sort | uniq -c
+```
+
 **导出命令只有一条，四支通用**（选哪一支由剧本自报的 `driver` 字段定，
 `ExportTrace.pickDriver` 认不出的名字一律硬失败）：
 
@@ -46,8 +55,19 @@ tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 和正确一模一样；能认出错误的是重导之后那个 `git diff`。挑判据时先问：这条检查
 失败的样子，和它通过的样子长得一样吗。
 
-实测（2026-09-07，macOS / openjdk 17，**15 份**剧本全部 `--check` 通过，重导之后
-`git status` 里除本次新增的那一份之外没有任何改动）：
+**这张表不要在这里抄第二份。** 它每加一份剧本就整批变（下面那段括号说了三次
+是怎么变的），而抄旧了之后「对不上」和「真值坏了」长得一模一样。要今天的数就
+现跑一遍，输出即是表：
+
+```bash
+tools/export-trace.sh --check       # 每份剧本导两遍并 cmp，逐行打字节数
+git diff --stat tools/traces/out    # 第二条判据：必须空
+```
+
+下面这一段是 **2026-09-07 的历史读数**（macOS / openjdk 17，当时磁盘上是
+**15 份**剧本，全部 `--check` 通过，重导之后 `git status` 里除那次新增的一份
+之外没有任何改动）。**它不是今天的名单，也从来不是「全的」**——照抄它会漏掉
+之后加的剧本（xl-rh9.14 那六份战斗真值就是这么漏的）：
 
 ```
 确定性 OK：battle-defeat-scene 两次导出逐字节一致（407590 字节）
@@ -80,9 +100,9 @@ xl-rh9.6 加进 `battle-defeat-slot2` 那一行时又整批重量了一次。xl-
 
 `tools/compare-frames.sh` 那条流水线（`docs/frame-compare.md`）四支都跑得到
 原版侧，但 **Web 侧只装配得出 `web/src/replay/implemented.ts` 里
-`IMPLEMENTED_DRIVERS` 列的那几支**——名单只有那一份，这里不抄第二份
-（2026-09-07 的读数：`scene` 与 `battle`；战斗是 M2 接上的）。还没接上的面板
-要等 **M3（xl-6lo）/ M4（xl-knp）** 各自把 web 侧建起来。
+`IMPLEMENTED_DRIVERS` 列的那几支**——名单只有那一份，这里不抄第二份，
+`cat` 它一眼就知道（战斗是 M2 接上的）。还没接上的面板要等
+**M3（xl-6lo）/ M4（xl-knp）** 各自把 web 侧建起来。
 **xl-1vu 这个 SPEC 不做接线**，它只负责让"装配不出来"这件事**响亮**——
 详见 `docs/frame-compare.md` 的「装配不出来的驱动器」。
 
@@ -298,9 +318,9 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 
 ### 验证
 
-`tools/export-trace.sh --check` 把每份剧本导两遍，`cmp` 两份产物。九份剧本这一次
-量到的字节数在上面「四种驱动器一览」那一节里，**那份名单是全的**（照抄一份到这里
-迟早漏掉新加的剧本）。确定性只是两条判据里的一条 —— 另一条是重导之后
+`tools/export-trace.sh --check` 把每份剧本导两遍，`cmp` 两份产物；**它自己逐行
+打出每份的字节数，那就是名单**——这里不抄，上面那一节里的转录块也只是一份带
+日期的历史读数，不是当前名单。确定性只是两条判据里的一条 —— 另一条是重导之后
 `git diff tools/traces/out` 为空，理由见那一节。
 
 还有一处未做结构性隔离的真实时间依赖：`MusicPlayer.play()` 开头有
@@ -619,8 +639,8 @@ xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/1
 ### 回放端
 
 `web/src/replay/main.ts` 的装配表**装得出哪几支，由 `web/src/replay/implemented.ts`
-的 `IMPLEMENTED_DRIVERS` 说了算**（别在这里抄一份名单——2026-09-07 它是
-`scene` 与 `battle`，M2 接上战斗之后就不再只有 `scene` 了）。装不出的那几支，
+的 `IMPLEMENTED_DRIVERS` 说了算**（别在这里抄一份名单——M2 接上战斗之后它就
+不再只有 `scene` 了）。装不出的那几支，
 真值在跨端比对里被**分流**挡在取图之前。
 
 下面是这套分流刚落地时的实测（**2026-09-06 的历史读数**，当时装配表确实只有
