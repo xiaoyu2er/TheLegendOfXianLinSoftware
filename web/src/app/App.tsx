@@ -13,6 +13,9 @@ import { StartPanel } from '../start/StartPanel'
 import { DialogueBox } from '../ui/DialogueBox'
 import { devToolsEnabled } from './devTools'
 
+/** 场景选择器里「标题」那一项的值。空串 = `sceneName` 的 `null`。 */
+const TITLE_OPTION = ''
+
 export function App() {
   /**
    * 全屏的目标是这个外层容器，而**不是**舞台本身。
@@ -24,14 +27,32 @@ export function App() {
   const sceneHostRef = useRef<HTMLDivElement>(null)
   const battleHostRef = useRef<HTMLDivElement>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
-  const [sceneName, setSceneName] = useState<string>(START_SCENE)
+  /**
+   * **现在该在哪个场景**，`null` = 还没开局、停在标题上（xl-q7f）。
+   *
+   * 开机是 `null`：原版 `GameLauncher` 构造函数的最后一句是
+   * `switchTo("start")`，玩家点「起」才 `initiation("脚本1.txt")`。
+   *
+   * 开发用的场景选择器改的也是它。**xl-q7f 之前它身兼两职**（"从哪儿开局"
+   * 与"现在跳到哪儿"），开机不进场景之后这两件事分了家：选择器只说后者，
+   * 「起」才是前者，而且「起」进的恒是 `START_SCENE`。选择器多出来的那个
+   * 「标题」项就是 `null` —— 有了它，选择器上的值与画面上显示的东西**永远
+   * 是同一件事**，不必再靠"值是脚本1 但其实在标题上"这种隐含状态。
+   */
+  const [sceneName, setSceneName] = useState<string | null>(null)
   const fullscreen = useFullscreen(shellRef)
   /**
    * 画面跟着**世界**走，不跟着选择器走（xl-9bd.12）：走到出口是世界自己换的
    * 场景，选择器只决定从哪儿开局。世界还没建好时先照选择器画。
    */
   const [game, setGame] = useState<{ scene: string | null }>({ scene: null })
-  const shownScene = game.scene ?? sceneName
+  /**
+   * 渲染器画哪个场景。还没开局时它是 `START_SCENE` —— 场景那张画布这时是
+   * 藏着的，先把「起」之后要用的那张地图**预热**上（原版也是先把
+   * `ScenePanel` 造出来、再 `switchTo("start")`）。不预热的话点完「起」
+   * 还要盯一会儿"正在载入 脚本1…"。
+   */
+  const shownScene = game.scene ?? sceneName ?? START_SCENE
   const { status, renderer } = useSceneRenderer(sceneHostRef, shownScene)
   const battleRenderer = useBattleRenderer(battleHostRef)
   // 方向键走动、按住 Ctrl（或 Shift）跑动、空格搭话。世界的推进与画面无关，
@@ -45,12 +66,13 @@ export function App() {
   if (view.scene !== game.scene) setGame({ scene: view.scene })
   const inBattle = view.panel === 'battle'
   /**
-   * 标题画面。
+   * 标题画面。**两条路走到它**：
    *
-   * 今天**只有一条路**走到它：全灭，而且 `GameOver` 里那只 em1 不是
-   * 「罹年居士」（见 `game/session.ts`）。原版还有一条 —— 开机就停在标题上
-   * （`GameLauncher` 构造函数末尾那句 `switchTo("start")`）—— web 端开机
-   * 仍然直进场景，那处差别登记在 `xl-q7f`，不是忘了。
+   * - 开机（xl-q7f）—— `sceneName` 是 `null`，会话起手就停在这儿，
+   *   对应原版 `GameLauncher` 构造函数末尾那句 `switchTo("start")`；
+   * - 全灭，而且 `GameOver` 里那只 em1 不是「罹年居士」（见 `game/session.ts`）。
+   *
+   * 两条路在这一层不分家：画的都是同一屏，「起」做的也都是同一件事。
    */
   const atTitle = view.panel === 'start'
 
@@ -148,7 +170,19 @@ export function App() {
         {devToolsEnabled() ? (
           <label className="toolbar-field">
             场景
-            <select value={sceneName} onChange={(e) => setSceneName(e.target.value)}>
+            {/*
+              第一项是「标题」（值为空串 = `sceneName` 的 `null`）：开机停在
+              它上面，选它也回得去。它不是装饰 —— 少了它，选择器上的值就说不
+              出"现在在标题上"这件事，只能显示成脚本1，而那正是 xl-q7f 之前
+              那处"选择器身兼两职"的来源。
+            */}
+            <select
+              value={sceneName ?? TITLE_OPTION}
+              onChange={(e) =>
+                setSceneName(e.target.value === TITLE_OPTION ? null : e.target.value)
+              }
+            >
+              <option value={TITLE_OPTION}>标题</option>
               {SCENE_NAMES.map((name) => (
                 <option key={name} value={name}>
                   {name}

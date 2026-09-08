@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { App } from './App'
-import { SCENE_NAMES, START_SCENE } from '../data/scenes'
+import { SCENE_NAMES } from '../data/scenes'
 
 /**
  * jsdom 根本没有 `document.fullscreenEnabled` / `fullscreenElement` 这两个属性
@@ -52,19 +52,52 @@ describe('App', () => {
     expect(host.style.imageRendering).toBe('pixelated')
   })
 
-  it('开发模式下能跳到另一个场景', () => {
+  /**
+   * 开机进的是**标题画面**（xl-q7f）—— 原版 `GameLauncher` 构造函数的最后
+   * 一句是 `switchTo("start")`，玩家点「起」才进脚本1。
+   *
+   * **这一条必须在这个文件里**：`appTitle.test.tsx` 那边的 `useGame` 是假的，
+   * `panel` 由测试自己摆，所以它证明不了"开机是 start"。这里跑的是真的
+   * `useGame`。
+   *
+   * 两条断言分管两件事：少了第一条，"开机什么都不画"也能过；少了第二条，
+   * "标题贴在一张已经在跑的地图上面"也能过 —— 而后者正是这处差别最像"已经
+   * 做完了"的样子（画面上就是一张正常的标题图）。世界到底推没推是
+   * `game/useGame.test.tsx` 那条「还没开局」在验。
+   */
+  it('打开网页看到的是标题画面，不是脚本1 的地图', () => {
+    render(<App />)
+    expect(screen.getByTestId('start-panel')).toBeInTheDocument()
+    expect(document.querySelectorAll('.stage-panel')[0]!).toHaveAttribute('hidden')
+  })
+
+  it('开发模式下能跳到另一个场景，两个方向都通', () => {
     // 开发用入口，用来"不必每次从头玩到那里"。选项就是已烘焙的场景，
-    // 不是另抄一份名单。
+    // 不是另抄一份名单 —— 外加一项「标题」。
     render(<App />)
     const picker = screen.getByRole('combobox', { name: /场景/ })
     expect([...picker.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+      '标题',
       ...SCENE_NAMES,
     ])
-    // 打开网页看到的是宿舍 —— 原版 ScenePanel 的起始场景。
-    expect(picker).toHaveValue(START_SCENE)
+    // ⚠️ 这一条在 xl-q7f 里改了值（原先是 `toHaveValue(START_SCENE)`，注释还
+    // 写着"打开网页看到的是宿舍"，而 `START_SCENE` 早就是脚本1 了）。
+    // **改的是选择器的含义**：它原先身兼两职 —— "从哪儿开局"与"现在跳到
+    // 哪儿"；开机不进场景之后这两件事分了家，它只剩后者，也就是"现在在
+    // 哪儿"，而开机在标题上。原先那条断言的事实由上面那条用例接手，
+    // 断言的正好是相反的一面。
+    expect(picker).toHaveValue('')
+    expect(screen.getByTestId('start-panel')).toBeInTheDocument()
 
     fireEvent.change(picker, { target: { value: '大地图' } })
     expect(picker).toHaveValue('大地图')
+    // 真的跳走了：标题那一屏当场没了。只断言选择器的值的话，"选择器动了、
+    // 游戏没动"也能过 —— 而那在画面上是"选了没反应"。
+    expect(screen.queryByTestId('start-panel')).toBeNull()
+
+    // 反过来也通，选择器才真的是"现在在哪儿"而不是单程票。
+    fireEvent.change(picker, { target: { value: '' } })
+    expect(screen.getByTestId('start-panel')).toBeInTheDocument()
   })
 
   it('点全屏调用 requestFullscreen，进入后再点调用 exitFullscreen', () => {

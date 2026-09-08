@@ -210,6 +210,65 @@ describe('useGame 接线', () => {
     expect(roleTileX(seen.at(-1)!)).toBe(12)
   })
 
+  /**
+   * 开机停在标题上（xl-q7f）：`sceneName` 是 `null` 就**没有世界**——
+   * 原版这时 `ScenePanel` 那条线程还没起来（`initiation` 与 `Thread.start()`
+   * 都在「起」那一下里）。
+   *
+   * **判据不是 `panel === 'start'` 一条**：先把世界建出来、再把面板摆成
+   * start，那一条照样绿，而画面上两者一模一样。所以还要真按方向键、真推一
+   * 整秒，看渲染器**一帧都收不到**。
+   */
+  it('还没开局：停在标题上，世界一拍都不推', () => {
+    const { result } = renderHook(() => useGame(renderer, null))
+    expect(result.current.panel).toBe('start')
+    expect(result.current.scene).toBeNull()
+
+    press('ArrowRight')
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(seen).toHaveLength(0)
+  })
+
+  /**
+   * 给了场景名才开局 —— 开发用的场景选择器走的就是这条路（`app/App.tsx`
+   * 把选中的名字喂进来），「起」走的也是它（那边还多一句 `restart()`）。
+   *
+   * 反过来也要通：再变回 `null` 就回到标题、世界丢掉。少了这一半，
+   * "开局之后再也回不去"也能过，而它在开始界面上就是"点了没反应"。
+   */
+  it('给了场景名就开局，变回 null 就回标题', async () => {
+    // 出口的目标先取到手，理由同 `mount`。
+    await prepareExits(createWorld(await loadScene('宿舍')))
+    const { result, rerender } = renderHook(({ scene }) => useGame(renderer, scene), {
+      initialProps: { scene: null as string | null },
+    })
+    expect(result.current.panel).toBe('start')
+
+    rerender({ scene: '宿舍' })
+    await act(async () => {
+      await loadScene('宿舍')
+    })
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    expect(result.current.panel).toBe('scene')
+    expect(result.current.scene).toBe('宿舍')
+    // 世界真的在推：渲染器收到了帧，主角站在脚本里的出生格 (12,8) 上。
+    expect(seen.at(-1)!.px).toBe(12 * 32)
+    const drawn = seen.length
+
+    rerender({ scene: null })
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(result.current.panel).toBe('start')
+    expect(result.current.scene).toBeNull()
+    // 回标题之后一帧都不再来 —— 世界丢掉了，不是藏起来了。
+    expect(seen.length).toBe(drawn)
+  })
+
   it('卸载之后不再推进，也不再收键', async () => {
     const { unmount } = await mount()
     unmount()
