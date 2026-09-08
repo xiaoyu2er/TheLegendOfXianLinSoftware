@@ -87,7 +87,13 @@ export function applyBattleInput(w: BattleWorld, input: BattleInput): void {
   mouseMoved(w, input.x, input.y)
   mousePressed(w, input.x, input.y)
   // 点按钮（控制台与两个菜单）是移入 + 按下 + 松开，点怪物只有移入 + 按下。
+  //
+  // `none` 是**游戏本体点在空处**（xl-rh9.17）：原版的 `mouseReleased` 是
+  // 无条件挂上去的监听器，点哪儿都跑，所以空处的一次点击就是移入 + 按下 +
+  // 松开，三个 check 全部落空。真值里没有这个目标 —— 导出器只点它要点的
+  // 东西 —— 所以它由 `game/battleInput.ts` 那一侧产生。
   const clicksButton =
+    input.target === 'none' ||
     input.target.startsWith('command:') ||
     input.target.startsWith('skillMenu:') ||
     input.target.startsWith('drugMenu:')
@@ -187,7 +193,7 @@ function commandReleased(w: BattleWorld, x: number, y: number): void {
   for (const b of commandButtons(w)) if (hit(b, x, y)) b.isclicked = false
 }
 
-function commandButtons(w: BattleWorld) {
+export function commandButtons(w: BattleWorld) {
   return [w.command.attack, w.command.skill, w.command.defend, w.command.thing]
 }
 
@@ -238,7 +244,7 @@ function releaseMenuButton(b: MenuButton, x: number, y: number): void {
 }
 
 /** `skillButtons` —— 当前指着的那一组。 */
-function skillMenuButtons(w: BattleWorld): MenuButton[] {
+export function skillMenuButtons(w: BattleWorld): MenuButton[] {
   return w.skillMenu.groups[w.skillMenu.group]
 }
 
