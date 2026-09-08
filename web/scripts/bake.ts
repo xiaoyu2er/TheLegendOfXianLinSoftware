@@ -445,14 +445,14 @@ function bakeBattleImages(
     claim(product, id)
     if (isDeferredBattleAsset(relative)) {
       const destination = resolve(publicDeferred, product.slice(DEFERRED_PUBLIC_DIR.length + 1))
-      deferredBytes += toWebp(source, destination, undefined, BATTLE_LOSSY_QUALITY)
+      deferredBytes += battleWebp(source, destination)
       deferredFiles[id] = product
       version.update(product).update('\0').update(readFileSync(destination))
       deferred++
       continue
     }
     manifest[id] = product
-    bundledBytes += toWebp(source, resolve(ASSETS_OUT, product), undefined, BATTLE_LOSSY_QUALITY)
+    bundledBytes += battleWebp(source, resolve(ASSETS_OUT, product))
     bundled++
   }
 
@@ -632,8 +632,15 @@ function format(value: unknown, indent: string): string {
 }
 
 /**
- * 有损档位的默认值。地图那批（`sources/` 下的 28 张底图与 28 张 JPG）用它，
- * 理由与实测见下面 `toWebp` 的头注（xl-9bd.14）。
+ * 有损档位的默认值：**除战斗素材外的每一条烘焙路径**都吃它（地图 / NPC /
+ * 主角 / 头像 / 对话框 / 旁白背景 / 药品介绍图）。理由与实测见下面 `toWebp`
+ * 的头注（xl-9bd.14）。
+ *
+ * ⚠️ 那些路径里绝大多数源是 PNG，走 `-lossless`，**这个数对它们无效**。
+ * 今天真正落到有损分支的只有 96 个场景引用到的 28 张地图里的 3 张 JPG
+ * （大地图 / 大地图夜 / 藏经阁2层 —— 2026-09-07 从 `src/generated/scenes/*.json`
+ * 的 `mapName` 现数的）。这是**今天的观察，不是分母**：新素材随时会变，
+ * 别拿它当断言（dispatch.md 纪律 3）。
  */
 const DEFAULT_LOSSY_QUALITY = 80
 
@@ -679,6 +686,16 @@ const DEFAULT_LOSSY_QUALITY = 80
  * 四条上界因此重量，见 `src/compare/expected.ts`。
  */
 const BATTLE_LOSSY_QUALITY = 95
+
+/**
+ * 一张战斗素材转 WebP。存在的理由只有一个：让**两个**调用点（进主包的与按需
+ * 的）不可能各自传一个档位。写成 `toWebp(src, dst, undefined, 95)` 的话，
+ * 那个 `undefined` 占位符还得跟着 `crop` 参数的位置走，而两处传得不一样这件事
+ * 的表现是「某一批素材悄悄比另一批糊」—— 没有任何检查看得见。
+ */
+function battleWebp(source: string, destination: string): number {
+  return toWebp(source, destination, undefined, BATTLE_LOSSY_QUALITY)
+}
 
 /**
  * 转 WebP。**有损源用有损、无损源用无损**：PNG 一律走无损，其余走 `-q`，

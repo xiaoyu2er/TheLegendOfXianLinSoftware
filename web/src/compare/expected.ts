@@ -382,6 +382,12 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '只剩状态栏那三行字的字形；这条剧本不放背景动画，所以没有第二笔账',
     issue: 'xl-9bd.17',
   },
+  // ⚠️ **上面这条是 xl-7ip 的反向判据，2026-09-07 真跑过。** 背景动画的编码从
+  // q80 换到 q95 之后重跑 `tools/compare-frames.sh battle-mishu-zhang`：硬比区
+  // 仍是 24 帧逐像素相等、`panel-text-zhang` 合计 44598、最差 2128/4256 ——
+  // 与换编码之前 xl-rh9.18 记下的数**逐字相同**。它本就不该动（`heroMishu`
+  // 一句 `backgroundAnimation.set` 都没有），所以「它动了」才是信号：那说明
+  // 改到的不只是背景动画那 753 张。下面 `battle-mishu-yu` 同理。
   'battle-mishu-yu': {
     status: 'gap',
     // 文敏的秘术潜能爆发（xl-rh9.14，775 步）。同样是**分区表态**：实测 31 帧，
@@ -389,6 +395,9 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     //
     // 这条剧本还顺带钉住了一个原版缺陷的画面：潜能爆发退回去那一下属性折半、
     // `refreshValue()` 把 hp 夹回新上限，那几帧的血条宽度也在硬比区里。
+    //
+    // xl-7ip 的反向判据（2026-09-07 重跑）：换 q95 之后硬比区仍是 31 帧逐像素
+    // 相等、`panel-text-yu` 合计 64463、最差 2202/4404，与换之前逐字相同。
     gaps: [
       {
         name: 'panel-text-yu',
