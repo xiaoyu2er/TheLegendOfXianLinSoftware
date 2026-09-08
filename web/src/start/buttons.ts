@@ -21,7 +21,19 @@
  * 而且战斗面板的命令按钮是**同一个** −15 / −6（见 `game/session.test.ts` 里
  * 那个 `attack.x - 15, attack.y - 6`）。照抄。
  *
- * 四个不等号都是**严格**的，所以命中框的四条边本身不算命中；宽高各少一格。
+ * ## ⚠️ DOM 的命中比原版**大一圈**，差一个像素（登记，不是遗漏）
+ *
+ * 原版那四个不等号全是**严格**的，所以有效区其实是 49×49 的开区间 ——
+ * 四条边本身不算命中。这一层的命中判定交给了 DOM：按钮元素的盒子就是下面
+ * `startButtonHitBox` 返回的那个 50×50 矩形，而 CSS 盒子含左上两条边。
+ *
+ * 于是与原版差在左边与上边那一列 / 一行：原版点不着，这里点得着。
+ *
+ * 不去补这一像素，是因为补它要在 DOM 上再叠一层自己的命中判定
+ * （`pointer-events: none` 加一个 `onMouseDown` 手算坐标），而那会把「按钮是
+ * 真的 `<button>`、读屏读得到、Tab 走得到、回车按得动」整个作废 —— 为一个
+ * 像素换掉四样无障碍能力，不划算。写在这里，是因为**差一个像素和一模一样
+ * 在画面上分不开**。
  */
 
 /** 原版那两颗按钮的逻辑名。与 `assets.ts` 的图片名一一对应。 */
@@ -47,29 +59,29 @@ export const START_BUTTONS: readonly StartButtonSpec[] = [
   { key: 'load', x: 200, y: 250, width: 50, height: 50, label: '读取存档' },
 ]
 
-export interface Rect {
+/**
+ * 一颗按钮**点得着**的那个矩形（不是画出来的那个）。
+ *
+ * 这就是 DOM 上那个 `<button>` 元素的盒子，见 `StartPanel.tsx` —— 与原版的
+ * 开区间差一个像素，理由与代价在文件头注里。
+ *
+ * 偏移走的是上面那对常量，不再写一遍 `-15` / `-6`：同一对数字两种写法，
+ * 改了一处不改另一处的表现是「按钮偏了 15 px」，而画面上说不出对错。
+ *
+ * **没有配套的 `hitsStartButton`**：命中判定归 DOM，再留一个"逻辑上点不点得
+ * 着"的函数，就是留下一条**没有生产调用方、而且与真正生效的判定差一像素**的
+ * 规则 —— 下一个人会以为那才是权威。
+ */
+export function startButtonHitBox(button: StartButtonSpec): {
   readonly x: number
   readonly y: number
   readonly width: number
   readonly height: number
-}
-
-/** 一颗按钮**点得着**的那个矩形（不是画出来的那个）。 */
-export function startButtonHitBox(button: StartButtonSpec): Rect {
+} {
   return {
     x: button.x + HIT_OFFSET_X,
     y: button.y + HIT_OFFSET_Y,
     width: button.width,
     height: button.height,
   }
-}
-
-/** 舞台逻辑坐标 `(px, py)` 落在这颗按钮上吗。四个不等号照抄原版，都是严格的。 */
-export function hitsStartButton(button: StartButtonSpec, px: number, py: number): boolean {
-  return (
-    px > button.x - 15 &&
-    px < button.x + button.width - 15 &&
-    py > button.y - 6 &&
-    py < button.y + button.height - 6
-  )
 }

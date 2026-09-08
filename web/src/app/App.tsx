@@ -62,12 +62,30 @@ export function App() {
    * - `setSceneName(START_SCENE)` —— 原版 `StartPanel.startLoadAction()` 的
    *   case 0 是 `switchTo("scene")` 加 `scenePanel.initiation("脚本1.txt")`，
    *   新游戏进的是**脚本1**，不是死之前那个场景，也不是开发用选择器上停着
-   *   的那个。
+   *   的那个。这一句照抄原版。
    * - `view.restart()` —— 队伍回出厂状态 + 整个会话重建（见 `useGame`）。
+   *   **这一句不是照抄原版，是这张票的决定**，见下。
+   *
+   * ## ⚠️ 原版点「起」其实**不**重置队伍
+   *
+   * 会重置的是 `GameLauncher.init()`（三个人与四个面板整个重建），而它是
+   * **死代码**：全仓库唯一的调用点是 `src/start/StartPanel.java:336` 那句
+   * 被注释掉的 `// Game.game.init();`（实测 `grep -rna "\.init()" src/`
+   * 只有这一行，GBK 源码不加 `-a` 一律零匹配）。所以原版全灭回标题、再点
+   * 「起」，三个人带着上一局的等级、经验、残血直接进脚本1。
+   *
+   * ADR-0001 说 web 端复刻原版缺陷，这里是**明写的例外**：xl-kaa 的验收标准
+   * 第二条要的就是「重开之后队伍回到出厂状态」。缺陷本身登记在 `xl-lly`。
+   * 写清楚，是因为下一个照着原版重读这一段的人，会以为这里抄错了。
+   *
+   * ## 两条路各自的判据在哪
    *
    * 在脚本1 里死掉再重开时 `setSceneName` 是空操作（值没变），全靠
-   * `restart()` 里那个 `generation` 把 effect 顶起来；从别的场景重开则两句
-   * 都起作用，而 effect 只跑一遍。两条路各有一条用例（`App.test.tsx`）。
+   * `restart()` 里那个 `generation` 把 effect 顶起来 —— 钉住它的是
+   * `game/useGame.test.tsx` 的「重开一局」（同一个场景 restart，主角真的回到
+   * 出生格）。从别的场景重开则两句都起作用，钉住它的是
+   * `app/appTitle.test.tsx`：那里 `useGame` 是假的，验的是 App 这一侧
+   * 「两句都调了」。**两个文件各管一半，谁都不能单独证明这条路是通的。**
    */
   const onNewGame = () => {
     setSceneName(START_SCENE)

@@ -32,6 +32,11 @@ describe('开始界面', () => {
     expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(
       START_BUTTONS.map((b) => b.label),
     )
+    // 上面那条**只验组件用了那份名单**，验不了名单本身写的是什么：把两个
+    // `label` 一起改成乱码，两边一起变，它照绿。名字是给人读的，原版按钮上
+    // 只有一个「起」/「承」字、推不出这两个词，所以这是一份**手写的登记**，
+    // 在这里签一次字。
+    expect(START_BUTTONS.map((b) => b.label)).toEqual(['开始新游戏', '读取存档'])
     expect(screen.getByRole('button', { name: '开始新游戏' })).not.toBeDisabled()
     // **禁用而不是不画**：不画的话「这一版还没做」与「原版就只有一颗按钮」
     // 分不开，而后者是错的。

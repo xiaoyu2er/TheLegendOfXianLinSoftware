@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { decodePng } from '../compare/png'
+import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { javaSource } from '../test/javaSource'
+import { repoPath } from '../test/repoPath'
 import { START_IMAGES } from './assets'
-import {
-  HIT_OFFSET_X,
-  HIT_OFFSET_Y,
-  START_BUTTONS,
-  hitsStartButton,
-  startButtonHitBox,
-} from './buttons'
-import type { StartButtonSpec } from './buttons'
+import type { StartImageName } from './assets'
+import { HIT_OFFSET_X, HIT_OFFSET_Y, START_BUTTONS, startButtonHitBox } from './buttons'
 
 /**
  * 按钮的坐标、尺寸、用哪张图、点得着哪一块 —— 四样全部对着原版 GBK 源码现读
@@ -119,35 +117,49 @@ describe('开始界面的按钮', () => {
     expect(found[0]).toEqual([-HIT_OFFSET_X, -HIT_OFFSET_X, -HIT_OFFSET_Y, -HIT_OFFSET_Y])
   })
 
-  it('命中框整个往左上挪，画出来那个矩形不是点得着的那个', () => {
+  it('命中框整个往左上挪，跟画出来那个矩形不是同一个', () => {
     const newGame = START_BUTTONS[0]!
     expect(startButtonHitBox(newGame)).toEqual({ x: 185, y: 144, width: 50, height: 50 })
-    // 两个矩形有重叠，所以「点在按钮图上」并**不**等于「点不着」——
-    // 分得开的是各自那两条边角。挑的两个点各在一侧：
-    //   (240,150) 在画出来的 50×50 里（200..250 / 150..200），却在命中框
-    //             右边（185..235）外面 —— 看得见、点不着；
-    //   (190,146) 反过来 —— 看不见图，却点得着。
-    expect({
-      画上但点不着: hitsStartButton(newGame, 240, 150),
-      点得着但图外: hitsStartButton(newGame, 190, 146),
-    }).toEqual({ 画上但点不着: false, 点得着但图外: true })
-    // 而命中框的中心点当然在里面。
-    expect(hitsStartButton(newGame, 185 + 25, 144 + 25)).toBe(true)
+    // 两个矩形**有重叠**，所以「点在按钮图上」并不等于「点得着」。分得开的
+    // 是各自那两条边角：(240,150) 在画出来的 50×50 里（200..250）却在命中框
+    // 右边（185..235）外面；(190,146) 反过来。
+    const box = startButtonHitBox(newGame)
+    expect(box.x + box.width).toBeLessThan(newGame.x + newGame.width)
+    expect(box.x).toBeLessThan(newGame.x)
   })
 
-  it('四个不等号都是严格的：四条边本身不算命中', () => {
-    const b: StartButtonSpec = START_BUTTONS[0]!
-    const box = startButtonHitBox(b)
-    const inside = { x: box.x + 1, y: box.y + 1 }
-    expect(hitsStartButton(b, inside.x, inside.y)).toBe(true)
-    // 左边、上边、右边、下边各取一个点，全都不算。写成一个对象比一次，
-    // 哪条边改成了 `>=` 就整块红。
-    expect({
-      left: hitsStartButton(b, box.x, inside.y),
-      top: hitsStartButton(b, inside.x, box.y),
-      right: hitsStartButton(b, box.x + box.width, inside.y),
-      bottom: hitsStartButton(b, inside.x, box.y + box.height),
-    }).toEqual({ left: false, top: false, right: false, bottom: false })
+  /**
+   * 两条 CSS 规则**依赖素材的实际尺寸**，而那两个数原本只以注释存在：
+   *
+   * - `.start-panel { overflow: hidden }` —— 只有当 `back.png` 比舞台高，
+   *   「裁掉多出来那行」才是一件真的在发生的事；
+   * - `.start-button { overflow: visible }` —— 只有当悬停图比按钮宽，
+   *   「让它溢出」才是一件真的在发生的事。
+   *
+   * 素材哪天换了，这两条规则会静静变成空操作 —— 而画面上看起来完全正常。
+   * 所以在这里**量真的文件**，不是抄一个数。
+   */
+  it('素材的实际尺寸撑着那两条 overflow 规则', () => {
+    const size = (name: StartImageName) => {
+      const png = decodePng(readFileSync(repoPath(START_IMAGES[name])))
+      return { width: png.width, height: png.height }
+    }
+    // 背景图比舞台高 —— 原版画进一张 1024×640 的缓冲图，多出来的被裁掉。
+    const back = size('back')
+    expect(back.width).toBe(STAGE_WIDTH)
+    expect(back.height).toBeGreaterThan(STAGE_HEIGHT)
+
+    // 常态图正好是按钮声明的 50×50；悬停图比它宽得多（往右铺开的横幅）。
+    for (const button of START_BUTTONS) {
+      const normal = size(button.key)
+      const hover = size(`${button.key}Hover`)
+      expect({ key: button.key, ...normal }).toEqual({
+        key: button.key,
+        width: button.width,
+        height: button.height,
+      })
+      expect(hover.width).toBeGreaterThan(normal.width)
+    }
   })
 
   it('两颗按钮的命中框不重叠 —— 不然点一次会同时命中两颗', () => {

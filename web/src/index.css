@@ -276,17 +276,22 @@ body {
 }
 
 /* 常态 / 悬停两张图叠着，换的是哪张显示。`:focus-visible` 跟 `:hover` 同步：
-   用键盘 Tab 过来的人也该看得见"选中的是哪一颗"。 */
+   用键盘 Tab 过来的人也该看得见"选中的是哪一颗"。
+
+   **禁用的那颗也换**：原版 `StartButton.isMoveIn` 只看坐标，不看这颗按钮能
+   不能点 —— 它根本没有"禁用"这个概念。写成 `:not(:disabled):hover` 会让
+   「承」在鼠标移上去时一声不吭，而那跟原版不一样；点不点得动由 `disabled`
+   与 `cursor: not-allowed` 表达，不靠"装作没看见"。 */
 .start-button-face--hover {
   display: none;
 }
 
-.start-button:not(:disabled):hover .start-button-face--normal,
-.start-button:not(:disabled):focus-visible .start-button-face--normal {
+.start-button:hover .start-button-face--normal,
+.start-button:focus-visible .start-button-face--normal {
   display: none;
 }
 
-.start-button:not(:disabled):hover .start-button-face--hover,
-.start-button:not(:disabled):focus-visible .start-button-face--hover {
+.start-button:hover .start-button-face--hover,
+.start-button:focus-visible .start-button-face--hover {
   display: block;
 }
