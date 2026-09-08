@@ -3,7 +3,14 @@ import { startAssetId, startFrameAssetId } from '../assets/ids'
 import type { StartSequenceName } from '../assets/ids'
 import { resolveAsset } from '../assets/resolve'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
-import { HIT_OFFSET_X, HIT_OFFSET_Y, START_BUTTONS, startButtonHitBox } from './buttons'
+import {
+  DISABLED_REASON,
+  HIT_OFFSET_X,
+  HIT_OFFSET_Y,
+  START_BUTTONS,
+  START_BUTTON_ENABLED,
+  startButtonHitBox,
+} from './buttons'
 import type { StartButtonKey, StartButtonSpec } from './buttons'
 import {
   ABOUT_HEIGHT,
@@ -233,31 +240,4 @@ export function StartPanel({ onNewGame }: StartPanelProps) {
       />
     </div>
   )
-}
-
-/**
- * 五颗按钮里**哪几颗真的接上了东西** —— 一份**手写的登记**，不是从别处推出
- * 来的（`docs/agents/dispatch.md` 纪律 3：登记必须由人签，推导出来的登记
- * 等于让被守的东西自己给自己签字）。
- *
- * `null` 的那两颗在 UI 上是 `disabled`，理由在 `DISABLED_REASON` 里，也在
- * 上面 `START_ACTIONS` 的头注里。
- */
-const START_BUTTON_ENABLED: Readonly<Record<StartButtonKey, boolean>> = {
-  newGame: true,
-  // 「转」与「回」是活的，但它们**不换面板** —— 走的是卷轴过场加
-  // 「关于我们」那一屏，全在状态机里，所以 `START_ACTIONS` 里没有它们。
-  about: true,
-  goBack: true,
-  load: false,
-  end: false,
-}
-
-/** 禁用的那两颗，鼠标停上去看得到理由。活的那三颗没有 `title`。 */
-const DISABLED_REASON: Readonly<Record<StartButtonKey, string | null>> = {
-  newGame: null,
-  load: '读取存档要等 M6 存档（xl-i06.1）',
-  about: null,
-  end: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-4si）',
-  goBack: null,
 }

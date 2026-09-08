@@ -151,10 +151,15 @@ describe('CloudAnimation', () => {
     const ys = path.map((c) => c.y)
     expect(Math.min(...ys)).toBe(CLOUD_LOW_Y)
     expect(Math.max(...ys)).toBe(CLOUD_HIGH_Y)
-    // 票面推出来的那两个数**踩不到**：−384 不是 10 的倍数偏移，360 只在起点
-    // 出现过一次（起点不在 path 里）。这一条就是"别人的数字要自己再量"的实例。
+    // 票面推出来的 −384 **一次都踩不到**（从 360 每拍减 10，落点全是 10 的
+    // 倍数偏移，−380 之后直接到 −390）。
     expect(ys).not.toContain(-384)
-    expect(ys).not.toContain(360)
+    // 360 踩得到，但它**不是端点** —— 云是路过它继续往上飘到 370 的。
+    // 这正是"从掉头条件推出来的端点"与"跑一遍数出来的端点"分岔的地方。
+    expect(ys).toContain(360)
+    const turns = path.filter((c, i) => i > 0 && c.isChange !== path[i - 1]!.isChange)
+    expect(turns.length).toBeGreaterThan(2)
+    expect(new Set(turns.map((c) => c.y))).toEqual(new Set([CLOUD_LOW_Y, CLOUD_HIGH_Y]))
   })
 
   it('第一程 75 拍，此后每一轮 152 拍 —— 因为起点 360 比此后的上端点 370 低一格', () => {

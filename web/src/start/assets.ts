@@ -74,6 +74,18 @@ export interface StartSequence {
  * （`scripts/bake.ts`，缺了攒进 `missing` 一次报全）。
  *
  * 于是两头都有判据：数字对不对着原版，由源码守；文件在不在，由烘焙器守。
+ *
+ * ## ⚠️ 卷轴那两段是 9.3 MB（实测），而且**只能按需取**
+ *
+ * 无损 WebP 实测（2026-09-08）：`卷轴` 与 `反向卷轴` 各 10 帧、各 4642 KB，
+ * 六段加两张整屏图一共 9988 KB。走的是 `?url`（见 `assets/resolve.ts`），
+ * 所以它们**不进 JS 包**，是一帧一个文件；渲染层每一拍只挂当前那一帧的
+ * `<img>`（`StartPanel.tsx`），因此标题屏静止时只取第 0 帧的 101 KB。
+ *
+ * 代价是**过场第一次播的时候会卡**：10 帧在 1 秒内依次首取，慢网上补不齐。
+ * 没有在这里开有损的例外 —— `scripts/bake.ts` 的 `toWebp` 头注里写着
+ * 「PNG 一律无损，不给任何一张开例外」，那是 xl-9bd.14 拿眼睛看过之后的裁定，
+ * 不该由这张票顺手推翻。要预取还是要降质，登记在 `xl-4si` 的收尾里。
  */
 export const START_SEQUENCES: Readonly<Record<StartSequenceName, StartSequence>> = {
   buttonGlow: { dir: '按钮动画', count: 4 },

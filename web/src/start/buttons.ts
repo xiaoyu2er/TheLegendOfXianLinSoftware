@@ -121,3 +121,35 @@ export function startButtonHitBox(button: StartButtonSpec): {
     height: button.height,
   }
 }
+
+/**
+ * 五颗按钮里**哪几颗真的接上了东西** —— 一份**手写的登记**，不是从别处推出
+ * 来的（`docs/agents/dispatch.md` 纪律 3：登记必须由人签，推导出来的登记
+ * 等于让被守的东西自己给自己签字）。
+ *
+ * `false` 的那两颗在 UI 上是 `disabled`（不是不画 —— 不画的话"这一版还没做"
+ * 与"原版本来就只有三颗按钮"在画面上分不开，而后者是错的），理由在下面的
+ * `DISABLED_REASON` 里。
+ *
+ * ⚠️ **不要把这份名单改成从别处推出来的**（比如"有 handler 的就是活的"）：
+ * 那样它就成了自己给自己签字，而这份名单要守的恰恰是"有没有人悄悄画了一颗
+ * 点了没反应的按钮"。
+ */
+export const START_BUTTON_ENABLED: Readonly<Record<StartButtonKey, boolean>> = {
+  newGame: true,
+  // 「转」与「回」是活的，但它们**不换面板** —— 走的是卷轴过场加
+  // 「关于我们」那一屏，全在状态机里，所以 `START_ACTIONS` 里没有它们。
+  about: true,
+  goBack: true,
+  load: false,
+  end: false,
+}
+
+/** 禁用的那两颗，鼠标停上去看得到理由。活的那三颗没有 `title`。 */
+export const DISABLED_REASON: Readonly<Record<StartButtonKey, string | null>> = {
+  newGame: null,
+  load: '读取存档要等 M6 存档（xl-i06.1）',
+  about: null,
+  end: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-4si）',
+  goBack: null,
+}
