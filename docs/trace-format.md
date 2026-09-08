@@ -76,11 +76,13 @@ xl-rh9.6 加进 `battle-defeat-slot2` 那一行时又整批重量了一次。xl-
 
 跨机器、跨 JDK 版本的一致性**未验证**。
 
-### 跨端逐帧比对只接了 `scene`
+### 跨端逐帧比对没接满四支
 
 `tools/compare-frames.sh` 那条流水线（`docs/frame-compare.md`）四支都跑得到
-原版侧，但 **Web 侧今天只装配得出 `scene`**：战斗 / 菜单 / 商店三个面板要等
-**M2（xl-82c）/ M3（xl-6lo）/ M4（xl-knp）** 各自把 web 侧建起来才接得上线。
+原版侧，但 **Web 侧只装配得出 `web/src/replay/implemented.ts` 里
+`IMPLEMENTED_DRIVERS` 列的那几支**——名单只有那一份，这里不抄第二份
+（2026-09-07 的读数：`scene` 与 `battle`；战斗是 M2 接上的）。还没接上的面板
+要等 **M3（xl-6lo）/ M4（xl-knp）** 各自把 web 侧建起来。
 **xl-1vu 这个 SPEC 不做接线**，它只负责让"装配不出来"这件事**响亮**——
 详见 `docs/frame-compare.md` 的「装配不出来的驱动器」。
 
@@ -616,9 +618,14 @@ xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/1
 
 ### 回放端
 
-`web/src/replay/main.ts` 的装配表今天只有 `scene` 一项，所以战斗真值在跨端比对
-里被**分流**挡在取图之前。实测（2026-09-06，
-`tools/compare-frames.sh battle-min --every 100`，原版侧照常导出 5 帧）：
+`web/src/replay/main.ts` 的装配表**装得出哪几支，由 `web/src/replay/implemented.ts`
+的 `IMPLEMENTED_DRIVERS` 说了算**（别在这里抄一份名单——2026-09-07 它是
+`scene` 与 `battle`，M2 接上战斗之后就不再只有 `scene` 了）。装不出的那几支，
+真值在跨端比对里被**分流**挡在取图之前。
+
+下面是这套分流刚落地时的实测（**2026-09-06 的历史读数**，当时装配表确实只有
+`scene`；今天拿 `battle-min` 跑不再是这个输出，换一条 `menu-*` / `shop-*`
+剧本才是）：
 
 ```
 一条剧本都没比成 —— 这一趟没有任何像素被比过。
@@ -630,7 +637,8 @@ web 侧还装配不出来的剧本 1 条 —— 这一趟它们一帧都没比�
 ```
 
 这正是要的行为 —— 一条没被装配的剧本比出来是"零帧差异"，和"两端完全一致"长得
-一模一样。**接上战斗装配是 M2（xl-82c）的事，xl-1vu 这个 SPEC 不做。**
+一模一样。**接上战斗装配是 M2 的事，xl-1vu 这个 SPEC 不做**（已由 xl-rh9 下
+的一批票做完；菜单与商店仍等 M3 xl-6lo / M4 xl-knp）。
 
 ## 菜单剧本与菜单真值（`driver` = `menu`）
 

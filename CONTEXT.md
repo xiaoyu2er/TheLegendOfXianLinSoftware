@@ -68,8 +68,28 @@ _Avoid_: 一帧、一 tick（tick 只在场景与战斗里等于一步）
 _Avoid_: 渲染、回放
 
 **表态**：
-某条剧本在跨端比对里声称的处境，三选一：`match`（逐像素相等）、
-`gap`（比过了，剩一笔有上界的账）、`unassembled`（一帧都还没比过）。
+某条剧本在跨端比对里声称的处境，四选一（`web/src/compare/expected.ts` 的
+`Expectation.status` 是唯一定义处）：
+
+- `match` —— 两端逐像素相等。
+- `gap` —— **比过了**，剩一笔说得清、有上界的账。
+- `unassembled` —— **一帧都还没比过**：取图页装配不出这条剧本的**整个驱动器**，
+  流水线在它身上非零退出。由 `replay/implemented.ts` 那份驱动器名单裁决。
+- `unpainted` —— **驱动器装得出，可这条剧本会走进一层还没实现的绘制**，
+  `battleDrawList` 当场抛（xl-rh9.11 造的档）。
+
+后两个都是「一帧都没比过」，所以都**不许带任何量出来的数**（`maxRatio` /
+`gaps`）；区别在于**归谁**：`unassembled` 说的是「整个面板还没做」，
+`unpainted` 说的是「同一个面板里某几层还没画」，两者归的票不是一张。
+
+⚠️ **`unpainted` 现在零使用，而它是故意留着的。** 2026-09-07（xl-rh9.15 合并
+之后）实测：`expected.ts` 的 21 个条目是 18 个 `gap` + 3 个 `unassembled`，
+`unpainted` 一条都不剩（最后那条 `battle-mishu-lu` 已换成实测分区 gap），
+`drawList.ts` 的 `unimplemented()` 也已删掉、25 层全实现。**这不代表它是死
+代码**：下一个里程碑再出现「驱动器装得出、但某一层还没画」时就要用它，而
+`drawList.test.ts` 与 `expected.test.ts` 里守着它的那几条判据是留着的脚手架
+（今天空转，有对象时立刻生效）。要摘掉它，另开一张票、配一条判据，不要顺手删。
+
 _Avoid_: 状态、预期、expectation
 
 **缺口区 / 硬比区**：
