@@ -123,6 +123,12 @@ describe('原版点「起」不重置队伍（xl-lly）', () => {
       // 三个字段都是 static，才谈得上"new 一个新对象也带着上一局的值"。
       // 找不到（或找到两处）由 `javaStaticInt` 抛 —— 这里要的就是"恰好一处
       // static 初值"这件事本身，值是多少下面用不上。
+      //
+      // ⚠️ **这一条的分辨力整个寄存在 `javaStaticInt` 的抛上**，实测过：
+      // 把源码里 `angryValue=0;` 的初值去掉，这条立刻红（抛）；但同时把
+      // helper 改成"抓不到就返回 0"，这条就变绿了 —— 而那一步
+      // `javaStaticInt.test.ts` 是红的。所以别把下面这句 `toBeGreaterThanOrEqual`
+      // 当判据看，真正的判据是 helper 自己那 7 条。
       for (const field of ['level', 'exp', 'angryValue']) {
         expect(javaStaticInt(source, field, `${className}.java`)).toBeGreaterThanOrEqual(0)
       }
