@@ -36,8 +36,17 @@
  * 在画面上分不开**。
  */
 
-/** 原版那两颗按钮的逻辑名。与 `assets.ts` 的图片名一一对应。 */
-export type StartButtonKey = 'newGame' | 'load'
+/**
+ * 原版那五颗按钮的逻辑名。与 `assets.ts` 的图片名**逐字**一一对应
+ * （`newGame` ↔ `newGame` / `newGameHover`），所以渲染层只有一处拼接。
+ *
+ * ⚠️ 「回」叫 `goBack` 而不是 `back`：`back` 在 `START_IMAGES` 里已经是
+ * **背景图** `back.png` 了。原版自己就撞了这两个词（`StartButton back` 与
+ * `Image backgroundImage = readImage("back.png")`），照抄名字会让
+ * `startAssetId('back')` 查出一张 1024×641 的底图当按钮画，而"按钮变成
+ * 一整屏"这件事在测试里是查得出来的、在画面上却像是布局崩了。
+ */
+export type StartButtonKey = 'newGame' | 'load' | 'about' | 'end' | 'goBack'
 
 export interface StartButtonSpec {
   readonly key: StartButtonKey
@@ -54,9 +63,36 @@ export interface StartButtonSpec {
 export const HIT_OFFSET_X = -15
 export const HIT_OFFSET_Y = -6
 
+/**
+ * 五颗按钮，**顺序照抄 `initialButtons()`**。
+ *
+ * 顺序是有意义的：`initialAnimations()` 里那圈高亮动画是
+ * `new StartAnimation(4, "按钮动画", this, 200, 150 + i * 100)` 按 `i` 建的，
+ * 第 5 条单独建在 (800, 550)，而 `initialButtons()` 正是按同样的顺序把
+ * `buttonAnimations.get(0..4)` 分给五颗按钮的。于是**每颗按钮的高亮动画就画在
+ * 它自己的 (x, y) 上** —— 这条由 `layout.test.ts` 对着源码比，不是看出来的。
+ */
 export const START_BUTTONS: readonly StartButtonSpec[] = [
   { key: 'newGame', x: 200, y: 150, width: 50, height: 50, label: '开始新游戏' },
   { key: 'load', x: 200, y: 250, width: 50, height: 50, label: '读取存档' },
+  { key: 'about', x: 200, y: 350, width: 50, height: 50, label: '关于我们' },
+  { key: 'end', x: 200, y: 450, width: 50, height: 50, label: '结束游戏' },
+  { key: 'goBack', x: 800, y: 550, width: 50, height: 50, label: '返回标题' },
+]
+
+/**
+ * 开机就在屏幕上的那四颗 —— 原版构造函数末尾那四句
+ * `buttons.add(start/load/about/end)`。
+ *
+ * 「回」不在里面：它是点了「转」、卷轴展开之后才 `buttons.add(back)` 的，
+ * 点了它自己又 `buttons.remove(back)`。这条名单因此是**会变的**，变的那一半
+ * 在 `panelState.ts` 里。
+ */
+export const INITIAL_START_BUTTONS: readonly StartButtonKey[] = [
+  'newGame',
+  'load',
+  'about',
+  'end',
 ]
 
 /**

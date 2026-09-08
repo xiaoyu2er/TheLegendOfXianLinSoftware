@@ -120,7 +120,51 @@ export function drugPictureAssetId(picture: string): AssetId {
  * 成 `Record<StartImageName, string>`，两边对不上 `pnpm typecheck` 就红。
  */
 export function startAssetId(
-  name: 'back' | 'newGame' | 'newGameHover' | 'load' | 'loadHover',
+  name:
+    | 'back'
+    | 'newGame'
+    | 'newGameHover'
+    | 'load'
+    | 'loadHover'
+    | 'about'
+    | 'aboutHover'
+    | 'end'
+    | 'endHover'
+    | 'goBack'
+    | 'goBackHover'
+    | 'aboutPage'
+    | 'cloud',
 ): AssetId {
   return `start:${name}`
 }
+
+/**
+ * 开始界面上一段逐帧动画的**一帧**（xl-4si）。
+ *
+ * 原版 `start.StartAnimation` 的构造函数是
+ * `array[i] = Reader.readImage("sources/StartPanel/" + s + "/" + (i+1) + ".png")`，
+ * 也就是目录名加上**从 1 起**的编号。`frame` 这里是**下标**（`0 .. length-1`），
+ * 与 `StartAnimation.i` 同一套，那个差 1 只出现在烘焙器里 —— 跟主角跑步图、
+ * 头像、旁白背景是同一个处理法（见 `roleAssetId` / `headAssetId`）。
+ *
+ * 目录名不漏进这一层：`卷轴` / `反向卷轴` / `按钮动画` 这些中文名与
+ * `START_IMAGES` 里那几条一样，是原版写死的文件名，映射在
+ * `src/start/assets.ts` 的 `START_SEQUENCES`。
+ */
+export function startFrameAssetId(name: StartSequenceName, frame: number): AssetId {
+  return `start:${name}:${frame}`
+}
+
+/**
+ * 开始界面上那六段逐帧动画的逻辑名。
+ *
+ * 与 `startAssetId` 的联合类型同一个套路：`START_SEQUENCES` 声明成
+ * `Record<StartSequenceName, …>`，两边对不上 `pnpm typecheck` 就红。
+ */
+export type StartSequenceName =
+  | 'buttonGlow'
+  | 'cursor'
+  | 'scroll'
+  | 'backScroll'
+  | 'loading'
+  | 'loading2'
