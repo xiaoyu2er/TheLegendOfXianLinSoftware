@@ -62,9 +62,21 @@ describe('GBK 解码只有一个入口', () => {
 
   it('自己解 GBK 的，只有手签豁免的那几处', () => {
     const found = files.filter((f) => readFileSync(repoPath('web', f), 'utf8').includes(NEEDLE))
-    // 扫描器失灵时 found 是空的，而空数组与"一处都没多"长得一样 —— 靠下面这条
-    // 与**非空的**手签表对撞把它顶出来（ALLOWED 恒非空，见上面那张表）。
-    expect(found.sort()).toEqual(Object.keys(ALLOWED).sort())
+    const allowed = Object.keys(ALLOWED)
+    // ⚠️ 差集要**分开断言**，不能只写 `toEqual`。vitest 对超过两三项的数组会打成
+    // `[ 'a', …(3) ]`，多出来的那个路径正好被省略号吃掉 —— 判据是红的，可它
+    // 不告诉你红在哪个文件上（xl-xh3 实测：篡改后输出里根本没有那个文件名）。
+    expect(
+      found.filter((f) => !allowed.includes(f)),
+      '这几个文件自己解了 GBK 却不在豁免表里：改用 test/javaSource.ts，或者手签进 ALLOWED 并写清理由',
+    ).toEqual([])
+    expect(
+      allowed.filter((f) => !found.includes(f)),
+      '豁免表里这几处已经不自己解码了 —— 从 ALLOWED 里删掉',
+    ).toEqual([])
+    // 上面两条差集都空时，剩下的只有"扫描器整个空转"这一种可能：空集合与空集合
+    // 的差也是空。所以还要这一条 —— ALLOWED 恒非空，found 为空时它必红。
+    expect(found.length, '一处自己解 GBK 的都没扫到 —— 扫描器空转了').toBe(allowed.length)
   })
 
   it('豁免表里的每一处都真的存在，且真的自己解了码', () => {
