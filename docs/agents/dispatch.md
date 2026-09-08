@@ -463,3 +463,30 @@ GBK 源码被 grep 当成二进制**整个跳过**，不加 `-a` 一律「无匹
 还要先 `iconv -f UTF-8 -t GBK` 再喂进去。
 
 「没找到」在这里和「不存在」长得一模一样，而它其实是编码问题。
+
+## 两条 herdr / git 的判据坑（2026-09-07 主 session 验收时现踩）
+
+都是「拿一条查询的空结果当结论」，而空结果的成因跟你以为的不是一回事。
+
+**`herdr worktree list` 不带 `--cwd` 时，列的不是你 cwd 所在的仓库。** 它按
+当前 focus 的 workspace 判断，所以在 XianLin 的目录里跑，可能整页返回另一个
+仓库的 worktree。拿它的输出 grep 分支名取 workspace id，得到的是**空串**，
+接着 `herdr worktree remove --workspace ""` 报 `workspace_not_found` ——
+这一次是响的，但同样的空串喂给别的命令未必。**一律 `herdr worktree list
+--cwd "$PWD"`。**
+
+**`git branch --merged master` 给 worktree 上的分支加的前缀是 `+`，不是 `*`。**
+清理前判「合没合并」时写 `git branch --merged master | tr -d ' *' | grep -x
+<分支>`，三个**已经合并**的分支全部判成未合并（`+xl-9c7` 去掉空格和 `*` 还是
+`+xl-9c7`）。这次是假阴性、拦住了清理，但同一个写法反过来也能假阳性。
+判包含关系不要靠前缀字符串：
+
+    git merge-base --is-ancestor "$(git rev-parse <分支>)" master
+
+**顺带一条给写票面的人：转抄别人枚举出来的「一共 N 处」要自己再数一遍。**
+`xl-rh9.15` 的票面从上一轮交接文档转抄了「三处手写的登记」，实测是**四处**
+（漏了 `drawList.test.ts` 的 `COVERED / UNCOVERED`）。别人的枚举和别人的
+测量，转抄进你的票面之后长得一模一样。同一张票上还有一句「上浮五拍、下沉
+五拍」被照抄了三代（原版注释 → xl-rh9.14 → 票面），实测是 9 拍一轮 ——
+`Pet.update()` 那三个 `if` 是并列的，第一支把 code 推成 5 之后第二支当场
+又成立。
