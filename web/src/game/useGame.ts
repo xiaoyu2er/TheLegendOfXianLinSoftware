@@ -131,11 +131,13 @@ export function useGame(
   const loadedBattleRef = useRef<BattleWorld | null>(null)
   const battleLoadingRef = useRef(false)
 
-  // 换场景 = 换一个世界。主角回到脚本里的出生格。
+  // 换场景 = 换一个世界。主角回到脚本里的出生格。**`sceneName` 是 `null` 就
+  // 一个世界都不建**（xl-q7f）：开机、以及开发用选择器拨回「标题」那一项，
+  // 走的都是这条 —— 会话停在起手态上，标题那一屏归 `app/App.tsx` 画。
   //
   // 场景 JSON 是按需取的（见 `data/scenes.ts`），所以这里有一段"世界还没建好"
-  // 的时间：`tickerRef` 先清空，下面的 pump 认得 `null` 并跳过这一拍。旧世界
-  // 必须当场清掉——留着它，切场景的这几十毫秒里主角会在旧地图上继续走。
+  // 的时间：会话先换成起手态，下面的 pump 认得它并跳过这一拍。旧世界必须当场
+  // 清掉——留着它，切场景的这几十毫秒里主角会在旧地图上继续走。
   useEffect(() => {
     let disposed = false
     // 会话**当场就有**，只是还没开局（`scene: null`，见 `session.ts`）：

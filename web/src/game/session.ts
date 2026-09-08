@@ -291,6 +291,10 @@ export function currentBgm(session: Session): string | null {
   if (session.panel === 'battle' && session.battle !== null) return session.battle.world.bgm
   // 标题那一屏放主题曲。**还没开局与全灭回标题走的是同一句**，原版也是同一句
   // （`switchTo("start")` 里那个 `readBGM("主题曲.mp3")`），两条路都到得了它。
+  //
+  // 后半个 `scene === null` 是**给类型看的**，不是第二条路：没开局蕴含
+  // `panel === 'start'`，前半个已经拦住了；但 `panel` 不窄化 `scene`，
+  // 少了它下面那句就得写 `!`。
   if (session.panel === 'start' || session.scene === null) return TITLE_BGM
   return session.scene.world.audio.bgm
 }
