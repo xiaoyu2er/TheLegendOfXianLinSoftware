@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { START_SCENE } from '../data/scenes'
+import { LOAD_TICKS, START_TICK_MS } from '../start/layout'
 import type { GameView } from '../game/useGame'
 import type { Panel } from '../game/session'
 
@@ -39,8 +40,15 @@ const { App } = await import('./App')
 beforeEach(() => {
   restart.mockClear()
   panel.current = 'scene'
+  // 开始界面自己有一条 100 ms 的拍（`start/useStartPanel.ts`），而它数的是
+  // `performance.now()` 的差 —— 假时钟必须**连 performance 一起**接管，
+  // 不然每次触发都算作"过去了 0 ms"，一拍都不会走。
+  vi.useFakeTimers()
 })
-afterEach(cleanup)
+afterEach(() => {
+  vi.useRealTimers()
+  cleanup()
+})
 
 describe('App 与开始界面', () => {
   it('面板是 scene 的时候没有开始界面', () => {
@@ -67,6 +75,15 @@ describe('App 与开始界面', () => {
     expect(picker).toHaveValue('大地图')
 
     fireEvent.click(screen.getByRole('button', { name: '开始新游戏' }))
+
+    // ⚠️ **点下去当场不该有任何反应**（xl-4si）：原版是卷轴展开 10 拍、再等
+    // `loadTimer` 30 拍才 `switchTo("scene")`。xl-kaa 那一版是立刻的，这两条
+    // 断言就是那处差别在 App 这一侧的判据。
+    expect(restart).not.toHaveBeenCalled()
+    expect(picker).toHaveValue('大地图')
+    act(() => {
+      vi.advanceTimersByTime((10 + LOAD_TICKS) * START_TICK_MS)
+    })
 
     // 两件事都得发生。写成一个对象比一次：只做了一件的话一眼看得出是哪一件。
     // —— 漏掉 setSceneName 的表现是"重开之后还在大地图"，而画面正常；

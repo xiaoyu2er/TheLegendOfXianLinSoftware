@@ -245,6 +245,10 @@ body {
      缓冲图，多出来那行就是被裁掉的 —— 这里照裁，不缩。缩一下整张图纵向差
      半个像素，而画面上看起来完全正常。 */
   overflow: hidden;
+  /* 原版 start.Mouse 把系统光标换成一个 16×16 全透明的自定义 cursor，再自己
+     画 8 帧（xl-4si）。`cursor: none` 是它在浏览器里的对应物 —— 写在整个
+     面板上而不是只写在按钮上，因为原版是 `panel.setCursor(...)`。 */
+  cursor: none;
 }
 
 .start-back {
@@ -260,14 +264,20 @@ body {
   padding: 0;
   border: 0;
   background: none;
-  cursor: pointer;
+  /* 光标归 .start-panel 那条 `cursor: none` 管（原版是 panel.setCursor 的
+     那个透明 cursor，整屏都没有系统光标）。这里必须 inherit：cursor 虽然是
+     继承属性，但按钮自己声明了就轮不到继承，于是移到按钮上时系统光标会
+     冒出来，而屏幕上同时还有自绘的那一只 —— 两个指针。 */
+  cursor: inherit;
   /* 悬停那张图是 190×53，比 50×50 的命中框宽得多，要能溢出（原版按原始
-     尺寸画在同一个左上角，见 start/assets.ts）。 */
+     尺寸画在同一个左上角，见 start/assets.ts）。那圈高亮 53×54 同理。 */
   overflow: visible;
 }
 
 .start-button:disabled {
-  cursor: not-allowed;
+  /* 同上，禁用也不放系统光标出来。点不点得动由 `disabled` 与那颗按钮的
+     `title` 表达（见 buttons.ts 的 START_BUTTON_WIRING）。 */
+  cursor: inherit;
 }
 
 .start-button-face {
@@ -275,23 +285,56 @@ body {
   image-rendering: inherit;
 }
 
-/* 常态 / 悬停两张图叠着，换的是哪张显示。`:focus-visible` 跟 `:hover` 同步：
-   用键盘 Tab 过来的人也该看得见"选中的是哪一颗"。
+/* ——— xl-4si：常态 / 悬停不再由 CSS 的 :hover 换 ———
+   换哪张现在是**状态**（`panelState.ts` 的 `hover` 字段），因为原版
+   `StartButton.isMoveIn` 同时做两件事：换图**和**开那圈高亮动画。CSS 换得了
+   图、换不了动画，两边各管一半就会各说各话（鼠标移出去图变回来了、高亮还在
+   转）。`:hover` / `:focus-visible` 这两条路都进同一个状态，见
+   `StartPanel.tsx` 的 onMouseEnter / onFocus。
 
    **禁用的那颗也换**：原版 `StartButton.isMoveIn` 只看坐标，不看这颗按钮能
-   不能点 —— 它根本没有"禁用"这个概念。写成 `:not(:disabled):hover` 会让
-   「承」在鼠标移上去时一声不吭，而那跟原版不一样；点不点得动由 `disabled`
-   与 `cursor: not-allowed` 表达，不靠"装作没看见"。 */
-.start-button-face--hover {
-  display: none;
+   不能点 —— 它根本没有"禁用"这个概念。点不点得动由 `disabled` 与那颗按钮的
+   `title` 表达，不靠"装作没看见"。 */
+
+/* 那圈 4 帧高亮画在按钮自己的 (x, y) 上，原版 drawButton 无条件画它。
+   它比按钮大一圈，靠上面那条 overflow: visible 溢出。 */
+.start-button-glow {
+  position: absolute;
+  image-rendering: inherit;
 }
 
-.start-button:hover .start-button-face--normal,
-.start-button:focus-visible .start-button-face--normal {
-  display: none;
+/* ——— xl-4si：云 / 卷轴 / 关于我们 / 载入 / 自绘鼠标 ———
+   全部 position: absolute 并按原始尺寸画，与原版那一串
+   `g.drawImage(img, x, y, panel)` 一致（不带宽高 = 不缩放）。
+   叠放次序照抄原版 `paint()`：背景 → 云 → 按钮 → 卷轴 → 载入 → 回 → 鼠标，
+   这里靠 DOM 顺序表达，所以**不给任何一层 z-index** —— 加了 z-index 就等于
+   在 DOM 顺序之外再开一套次序，两套不一致时画面上完全看不出来。 */
+.start-cloud,
+.start-scroll,
+.start-loading,
+.start-cursor {
+  position: absolute;
+  image-rendering: inherit;
+  /* 这几层全盖在按钮上面，不透传的话鼠标永远进不了任何一颗按钮。 */
+  pointer-events: none;
 }
 
-.start-button:hover .start-button-face--hover,
-.start-button:focus-visible .start-button-face--hover {
-  display: block;
+/* 「关于我们」是**裁剪**不是缩放：整张图放进一个宽 w 的窗口里左对齐，
+   与原版 `drawImage(img, 0,0,w,640, 0,0,w,640, this)` 一致。给 <img> 设
+   width 会把整幅压扁，而画面上一样像在展开。 */
+.start-about {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
+
+.start-about img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  image-rendering: inherit;
+}
+
+

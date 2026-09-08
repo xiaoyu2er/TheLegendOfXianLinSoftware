@@ -6,7 +6,14 @@ import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { START_IMAGES } from './assets'
 import type { StartImageName } from './assets'
-import { HIT_OFFSET_X, HIT_OFFSET_Y, START_BUTTONS, startButtonHitBox } from './buttons'
+import {
+  HIT_OFFSET_X,
+  HIT_OFFSET_Y,
+  INITIAL_START_BUTTONS,
+  START_BUTTONS,
+  START_BUTTON_WIRING,
+  startButtonHitBox,
+} from './buttons'
 
 /**
  * 按钮的坐标、尺寸、用哪张图、点得着哪一块 —— 四样全部对着原版 GBK 源码现读
@@ -48,7 +55,7 @@ function javaButtons(): JavaButton[] {
 }
 
 describe('开始界面的按钮', () => {
-  it('原版一共五颗，这一票复刻其中两颗（分母现读，名单手写）', () => {
+  it('原版一共五颗，五颗全在（分母现读，名单手写）', () => {
     const found = javaButtons()
     // 分母：源码里到底有几句 `new StartButton(...)`。原版加一颗按钮而这里
     // 不动，这条红 —— 那正是该有人来重新签一次名单的时刻。
@@ -56,20 +63,54 @@ describe('开始界面的按钮', () => {
 
     // 名单是**手写的登记**，不是从上面那份现扫推出来的：推出来的话
     // 「哪几颗已经复刻了」就成了自己给自己签字（见 docs/agents/dispatch.md
-    // 纪律 3 那条被记录过的误用）。
+    // 纪律 3 那条被记录过的误用）。xl-kaa 那一版这里只有两颗，xl-4si 补齐。
+    expect(START_BUTTONS.map((b) => b.key)).toEqual([
+      'newGame',
+      'load',
+      'about',
+      'end',
+      'goBack',
+    ])
+    // 开机在屏幕上的只有前四颗 —— 原版构造函数末尾那四句 `buttons.add(...)`，
+    // 「回」是点了「转」之后才加进去的。
+    const adds = [...START_PANEL.matchAll(/buttons\.add\((\w+)\);/g)].map((m) => m[1])
+    expect(adds).toEqual(['start', 'load', 'about', 'end', 'back'])
+    // 前四句在构造函数里、第五句在 `startButtonAction()` 里 —— 名单只取前四。
+    expect(INITIAL_START_BUTTONS).toEqual(['newGame', 'load', 'about', 'end'])
+  })
+
+  it('五颗里有两颗是**明写不做**的，理由逐字签在这里', () => {
+    // 这是一份手写的登记（见 `START_BUTTON_WIRING` 的头注）。在这里签一次字：
+    // 改成从别处推出来的，"有没有人悄悄画了一颗点了没反应的按钮"就没人问了。
     //
-    // 没复刻的三颗与理由：
-    //   about（转）—— 关于我们那一屏，连卷轴动画一起归 xl-4si
-    //   end  （结）—— `System.exit(0)`，浏览器里没有对应物
-    //   back （回）—— 只在关于我们那一屏里出现，跟着 about 一起
-    expect(START_BUTTONS.map((b) => b.key)).toEqual(['newGame', 'load'])
+    // ⚠️ 这条**只是签字，不是判据** —— 它拿登记跟同一份登记的手抄本比，
+    // 两边一起改就照绿。真正验这件事的是 `StartPanel.test.tsx` 里那条
+    // 「每一颗活着的按钮，点下去屏幕都得真的变」。
+    expect(Object.fromEntries(START_BUTTONS.map((b) => [b.key, START_BUTTON_WIRING[b.key].enabled])))
+      .toEqual({ newGame: true, about: true, goBack: true, load: false, end: false })
+    // 禁用的那两颗必须各自带一句理由，活的那三颗必须没有 —— 一颗按钮"禁用
+    // 了但没说为什么"与"忘了接线"长得一模一样。
+    for (const button of START_BUTTONS) {
+      const wiring = START_BUTTON_WIRING[button.key]
+      expect(wiring.disabledReason === null, `${button.key} 的理由与它的启用状态对不上`).toBe(
+        wiring.enabled,
+      )
+    }
+    // 分母：真的检查了五颗，而不是循环一次都没进。
+    expect(START_BUTTONS).toHaveLength(5)
   })
 
   it('坐标与尺寸逐个数照抄 initialButtons()', () => {
     const java = new Map(javaButtons().map((b) => [b.name, b]))
-    // 逻辑名 → 原版的变量名。这一层映射是手写的，因为原版那两个名字
-    // （start / load）本身不说明它们是干什么的。
-    const named: Record<string, string> = { newGame: 'start', load: 'load' }
+    // 逻辑名 → 原版的变量名。这一层映射是手写的，因为原版那几个名字本身
+    // 不说明它们是干什么的（尤其 `back` —— 它是「回」按钮，不是背景图）。
+    const named: Record<string, string> = {
+      newGame: 'start',
+      load: 'load',
+      about: 'about',
+      end: 'end',
+      goBack: 'back',
+    }
     const actual: Record<string, unknown> = {}
     const expected: Record<string, unknown> = {}
     for (const button of START_BUTTONS) {
@@ -92,6 +133,11 @@ describe('开始界面的按钮', () => {
     const pairs = [
       { key: 'newGame', java: 'start', normal: START_IMAGES.newGame, hover: START_IMAGES.newGameHover },
       { key: 'load', java: 'load', normal: START_IMAGES.load, hover: START_IMAGES.loadHover },
+      { key: 'about', java: 'about', normal: START_IMAGES.about, hover: START_IMAGES.aboutHover },
+      { key: 'end', java: 'end', normal: START_IMAGES.end, hover: START_IMAGES.endHover },
+      // ⚠️ 「回」的图叫 `goBack` 而不是 `back` —— 后者在 START_IMAGES 里是
+      // **背景图**。抄成 `back` 会让这颗按钮画成一整屏底图。
+      { key: 'goBack', java: 'back', normal: START_IMAGES.goBack, hover: START_IMAGES.goBackHover },
     ]
     for (const pair of pairs) {
       const source = java.get(pair.java)!
@@ -100,7 +146,7 @@ describe('开始界面的按钮', () => {
         images: source.images,
       })
     }
-    // 分母：上面这个循环真的跑过两轮。
+    // 分母：上面这个循环真的跑满了五轮。
     expect(pairs).toHaveLength(START_BUTTONS.length)
   })
 
@@ -149,23 +195,38 @@ describe('开始界面的按钮', () => {
     expect(back.width).toBe(STAGE_WIDTH)
     expect(back.height).toBeGreaterThan(STAGE_HEIGHT)
 
-    // 常态图正好是按钮声明的 50×50；悬停图比它宽得多（往右铺开的横幅）。
+    // 常态图正好是按钮声明的 50×50。
     for (const button of START_BUTTONS) {
       const normal = size(button.key)
-      const hover = size(`${button.key}Hover`)
       expect({ key: button.key, ...normal }).toEqual({
         key: button.key,
         width: button.width,
         height: button.height,
       })
-      expect(hover.width).toBeGreaterThan(normal.width)
     }
+    // 悬停图比常态图宽的**只有四颗** —— 「回」那颗的 回2.png 实测也是 50×50，
+    // 所以"悬停图一定更宽"不是一条规律，是四颗的巧合。写成对五颗都断言会红；
+    // 写成一条都不断言，`overflow: visible` 就成了空操作而没人知道。
+    const wider = START_BUTTONS.filter((b) => size(`${b.key}Hover`).width > size(b.key).width)
+    expect(wider.map((b) => b.key)).toEqual(['newGame', 'load', 'about', 'end'])
   })
 
-  it('两颗按钮的命中框不重叠 —— 不然点一次会同时命中两颗', () => {
-    const [a, c] = [START_BUTTONS[0]!, START_BUTTONS[1]!]
-    const boxA = startButtonHitBox(a)
-    const boxC = startButtonHitBox(c)
-    expect(boxA.y + boxA.height).toBeLessThanOrEqual(boxC.y)
+  it('五颗按钮的命中框两两不重叠 —— 不然点一次会同时命中两颗', () => {
+    const boxes = START_BUTTONS.map((b) => ({ key: b.key, ...startButtonHitBox(b) }))
+    const overlapping: string[] = []
+    let pairs = 0
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        pairs++
+        const a = boxes[i]!
+        const b = boxes[j]!
+        const apart =
+          a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y
+        if (!apart) overlapping.push(`${a.key}×${b.key}`)
+      }
+    }
+    // 分母：五颗两两一共 10 对。零对的循环跑完看起来跟全过了一样。
+    expect(pairs).toBe(10)
+    expect(overlapping).toEqual([])
   })
 })

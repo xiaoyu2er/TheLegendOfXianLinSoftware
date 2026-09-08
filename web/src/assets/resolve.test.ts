@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
-import { START_IMAGES, TITLE_BGM } from '../start/assets'
+import { START_IMAGES, START_SEQUENCES, TITLE_BGM } from '../start/assets'
 import DEFERRED_BGM_IDS from '../generated/deferredBgm.json'
 import MISSING_IDS from '../generated/missingAssets.json'
 import { BG_COUNT } from '../state/narratage'
@@ -119,10 +119,13 @@ describe('资产逻辑 ID', () => {
     // 药品菜单的介绍图（xl-rh9.12）。它不在 `image/` 下，所以不归上面那个
     // 分母 —— 见 `assets/ids.ts` 的 `drugPictureAssetId`。
     expect(ids.filter((id) => id.startsWith('drug:'))).toHaveLength(drugPictureFilesInRepo())
-    // 开始界面（xl-kaa）。分母是 `START_IMAGES` 的键数，不是手写的 5 ——
-    // 那份表的类型是 `Record<StartImageName, string>`，少一条 typecheck 就红。
+    // 开始界面（xl-kaa 起，xl-4si 加了六段逐帧动画）。分母是那两份表算出来
+    // 的，不是手写的数：`START_IMAGES` 的类型是 `Record<StartImageName, string>`、
+    // `START_SEQUENCES` 的是 `Record<StartSequenceName, …>`，少一条 typecheck
+    // 就红；而帧数本身由 `start/layout.test.ts` 对着 GBK 源码守着。
+    const startFrames = Object.values(START_SEQUENCES).reduce((sum, s) => sum + s.count, 0)
     expect(ids.filter((id) => id.startsWith('start:'))).toHaveLength(
-      Object.keys(START_IMAGES).length,
+      Object.keys(START_IMAGES).length + startFrames,
     )
     const known = [
       'map:',

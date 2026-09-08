@@ -10,7 +10,7 @@
  * 模块的话，挪一下按钮坐标就要重跑一次 `pnpm bake`，而重烘要 cwebp 与
  * afconvert，还会带上一批 m4a 的时间戳 churn。
  */
-import type { startAssetId } from '../assets/ids'
+import type { StartSequenceName, startAssetId } from '../assets/ids'
 
 /**
  * `startAssetId` 认的那几个逻辑名 —— **从那个函数的形参上取**，不再抄一遍。
@@ -40,6 +40,60 @@ export const START_IMAGES: Readonly<Record<StartImageName, string>> = {
   newGameHover: 'sources/StartPanel/按钮/起2.png',
   load: 'sources/StartPanel/按钮/承.png',
   loadHover: 'sources/StartPanel/按钮/承2.png',
+  // 另外三颗按钮与那两张整屏图（xl-4si）。`goBack` 是原版的「回」，
+  // **不是** `back` —— 后者是背景图 `back.png`，两个词在原版里就撞了。
+  about: 'sources/StartPanel/按钮/转.png',
+  aboutHover: 'sources/StartPanel/按钮/转2.png',
+  end: 'sources/StartPanel/按钮/结.png',
+  endHover: 'sources/StartPanel/按钮/结2.png',
+  goBack: 'sources/StartPanel/按钮/回.png',
+  goBackHover: 'sources/StartPanel/按钮/回2.png',
+  aboutPage: 'sources/StartPanel/关于我们.png',
+  cloud: 'sources/StartPanel/最终云彩.png',
+}
+
+/** 一段逐帧动画：源目录、共几帧。 */
+export interface StartSequence {
+  /** `sources/StartPanel/` 下的目录名，原版 `new StartAnimation(n, s, …)` 的 `s`。 */
+  readonly dir: string
+  /** 帧数，原版那个 `n`。文件是 `1.png .. n.png`，下标 `0 .. n-1`。 */
+  readonly count: number
+}
+
+/**
+ * 六段逐帧动画（xl-4si）。
+ *
+ * **帧数抄的是 Java 源码里的那个字面量，不是扫目录扫出来的**，而这是**故意**
+ * 的：`sources/StartPanel/` 下还有 `云彩/`（9 张）与 `载入动画/`（4 张）两个
+ * 目录，原版一张都没读过。扫目录会把它们一起烘进来，而多烘几张图在画面上
+ * 完全看不出来。
+ *
+ * 那这个数字谁来守？`layout.test.ts` 把 `initialAnimations()` 里那七句
+ * `new StartAnimation(n, "目录名", …)` 从 GBK 源码里现读出来逐条比 ——
+ * 分母是「七句」，少一句立刻红。烘焙器那边再核一次文件在不在
+ * （`scripts/bake.ts`，缺了攒进 `missing` 一次报全）。
+ *
+ * 于是两头都有判据：数字对不对着原版，由源码守；文件在不在，由烘焙器守。
+ *
+ * ## ⚠️ 卷轴那两段是 9.3 MB（实测），而且**只能按需取**
+ *
+ * 无损 WebP 实测（2026-09-08）：`卷轴` 与 `反向卷轴` 各 10 帧、各 4642 KB，
+ * 六段加两张整屏图一共 9988 KB。走的是 `?url`（见 `assets/resolve.ts`），
+ * 所以它们**不进 JS 包**，是一帧一个文件；渲染层每一拍只挂当前那一帧的
+ * `<img>`（`StartPanel.tsx`），因此标题屏静止时只取第 0 帧的 101 KB。
+ *
+ * 代价是**过场第一次播的时候会卡**：10 帧在 1 秒内依次首取，慢网上补不齐。
+ * 没有在这里开有损的例外 —— `scripts/bake.ts` 的 `toWebp` 头注里写着
+ * 「PNG 一律无损，不给任何一张开例外」，那是 xl-9bd.14 拿眼睛看过之后的裁定，
+ * 不该由这张票顺手推翻。要预取还是要降质，登记在 `xl-bbs`。
+ */
+export const START_SEQUENCES: Readonly<Record<StartSequenceName, StartSequence>> = {
+  buttonGlow: { dir: '按钮动画', count: 4 },
+  cursor: { dir: '鼠标', count: 8 },
+  scroll: { dir: '卷轴', count: 10 },
+  backScroll: { dir: '反向卷轴', count: 10 },
+  loading: { dir: '载入', count: 10 },
+  loading2: { dir: '载入2', count: 3 },
 }
 
 /**

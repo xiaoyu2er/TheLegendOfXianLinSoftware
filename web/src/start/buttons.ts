@@ -36,8 +36,17 @@
  * 在画面上分不开**。
  */
 
-/** 原版那两颗按钮的逻辑名。与 `assets.ts` 的图片名一一对应。 */
-export type StartButtonKey = 'newGame' | 'load'
+/**
+ * 原版那五颗按钮的逻辑名。与 `assets.ts` 的图片名**逐字**一一对应
+ * （`newGame` ↔ `newGame` / `newGameHover`），所以渲染层只有一处拼接。
+ *
+ * ⚠️ 「回」叫 `goBack` 而不是 `back`：`back` 在 `START_IMAGES` 里已经是
+ * **背景图** `back.png` 了。原版自己就撞了这两个词（`StartButton back` 与
+ * `Image backgroundImage = readImage("back.png")`），照抄名字会让
+ * `startAssetId('back')` 查出一张 1024×641 的底图当按钮画，而"按钮变成
+ * 一整屏"这件事在测试里是查得出来的、在画面上却像是布局崩了。
+ */
+export type StartButtonKey = 'newGame' | 'load' | 'about' | 'end' | 'goBack'
 
 export interface StartButtonSpec {
   readonly key: StartButtonKey
@@ -54,9 +63,36 @@ export interface StartButtonSpec {
 export const HIT_OFFSET_X = -15
 export const HIT_OFFSET_Y = -6
 
+/**
+ * 五颗按钮，**顺序照抄 `initialButtons()`**。
+ *
+ * 顺序是有意义的：`initialAnimations()` 里那圈高亮动画是
+ * `new StartAnimation(4, "按钮动画", this, 200, 150 + i * 100)` 按 `i` 建的，
+ * 第 5 条单独建在 (800, 550)，而 `initialButtons()` 正是按同样的顺序把
+ * `buttonAnimations.get(0..4)` 分给五颗按钮的。于是**每颗按钮的高亮动画就画在
+ * 它自己的 (x, y) 上** —— 这条由 `layout.test.ts` 对着源码比，不是看出来的。
+ */
 export const START_BUTTONS: readonly StartButtonSpec[] = [
   { key: 'newGame', x: 200, y: 150, width: 50, height: 50, label: '开始新游戏' },
   { key: 'load', x: 200, y: 250, width: 50, height: 50, label: '读取存档' },
+  { key: 'about', x: 200, y: 350, width: 50, height: 50, label: '关于我们' },
+  { key: 'end', x: 200, y: 450, width: 50, height: 50, label: '结束游戏' },
+  { key: 'goBack', x: 800, y: 550, width: 50, height: 50, label: '返回标题' },
+]
+
+/**
+ * 开机就在屏幕上的那四颗 —— 原版构造函数末尾那四句
+ * `buttons.add(start/load/about/end)`。
+ *
+ * 「回」不在里面：它是点了「转」、卷轴展开之后才 `buttons.add(back)` 的，
+ * 点了它自己又 `buttons.remove(back)`。这条名单因此是**会变的**，变的那一半
+ * 在 `panelState.ts` 里。
+ */
+export const INITIAL_START_BUTTONS: readonly StartButtonKey[] = [
+  'newGame',
+  'load',
+  'about',
+  'end',
 ]
 
 /**
@@ -84,4 +120,44 @@ export function startButtonHitBox(button: StartButtonSpec): {
     width: button.width,
     height: button.height,
   }
+}
+
+/**
+ * 五颗按钮各自的**接线**：活没活、不活的话为什么 —— 一份**手写的登记**，
+ * 不是从别处推出来的（`docs/agents/dispatch.md` 纪律 3：登记必须由人签，
+ * 推导出来的登记等于让被守的东西自己给自己签字）。
+ *
+ * 两件事合在一条里，是因为它们**必须一起改**：`enabled: false` 而没有理由，
+ * 与"忘了接线"长得一模一样；有理由却是 `true`，那句理由永远没人看得见。
+ * 分成两张表（原本正是两张）就要靠人记得同时改两处。
+ *
+ * `false` 的那两颗在 UI 上是 `disabled`，**不是不画** —— 不画的话"这一版还没
+ * 做"与"原版本来就只有三颗按钮"在画面上分不开，而后者是错的。
+ *
+ * ⚠️ **不要把 `enabled` 改成从别处推出来的**（比如"有 handler 的就是活的"）：
+ * 那样它就成了自己给自己签字，而这份登记要守的恰恰是"有没有人悄悄画了一颗
+ * 点了没反应的按钮"。真正把这件事验出来的是 `StartPanel.test.tsx` 里那对
+ * 「点下去屏幕得真的变 / 得纹丝不动」—— 把这里任何一颗翻个面，两条都红
+ * （实测：`end` 翻成 `true`，三条用例当场红）。
+ */
+export interface StartButtonWiring {
+  /** `false` = 这一版明写不做，UI 上 `disabled`。 */
+  readonly enabled: boolean
+  /** 禁用理由，会写进按钮的 `title`。**活着的那几颗必须是 `null`**。 */
+  readonly disabledReason: string | null
+}
+
+export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWiring>> = {
+  newGame: { enabled: true, disabledReason: null },
+  // 「转」与「回」是活的，但它们**不换面板** —— 走的是卷轴过场加「关于我们」
+  // 那一屏，全在状态机里（`panelState.ts`），所以组件那边没有它们的 handler。
+  about: { enabled: true, disabledReason: null },
+  goBack: { enabled: true, disabledReason: null },
+  load: { enabled: false, disabledReason: '读取存档要等 M6 存档（xl-i06.1）' },
+  end: {
+    enabled: false,
+    // 原版是 `System.exit(0)`。浏览器里没有对应物：`window.close()` 只对脚本
+    // 自己开的窗口有效，玩家从地址栏进来的页面调它一声不吭。
+    disabledReason: '浏览器里没有 System.exit(0) 的对应物，这一版不做（xl-u23）',
+  },
 }

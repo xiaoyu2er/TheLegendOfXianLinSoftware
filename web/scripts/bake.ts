@@ -54,6 +54,7 @@ import {
   npcAssetId,
   roleAssetId,
   startAssetId,
+  startFrameAssetId,
 } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
 import { listFiles } from '../src/assets/listFiles'
@@ -62,8 +63,9 @@ import { DRUGS } from '../src/battle/drugs'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
-import { START_IMAGES, TITLE_BGM } from '../src/start/assets'
+import { START_IMAGES, START_SEQUENCES, TITLE_BGM } from '../src/start/assets'
 import type { StartImageName } from '../src/start/assets'
+import type { StartSequenceName } from '../src/assets/ids'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../src/stage/constants'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -380,7 +382,27 @@ function main(): void {
     manifest[startAssetId(name as StartImageName)] = relative
     bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
   }
-  console.log(`开始界面素材 ${Object.keys(START_IMAGES).length} 张 → start/*.webp`)
+  // 六段逐帧动画（xl-4si）。帧数是原版 `new StartAnimation(n, "目录", …)` 里的
+  // 那个 `n`，不是扫目录 —— 理由见 `src/start/assets.ts` 的 `START_SEQUENCES`。
+  let startFrames = 0
+  for (const [name, sequence] of Object.entries(START_SEQUENCES)) {
+    for (let frame = 0; frame < sequence.count; frame++) {
+      // 文件从 1 起编号，下标从 0 起。这个差 1 只出现在这里。
+      const source = `sources/StartPanel/${sequence.dir}/${frame + 1}.png`
+      const absolute = resolve(REPO, source)
+      if (!existsSync(absolute)) {
+        missing.push(`开始界面动画 ${source}`)
+        continue
+      }
+      const relative = `start/${name}/${frame}.webp`
+      manifest[startFrameAssetId(name as StartSequenceName, frame)] = relative
+      bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
+      startFrames++
+    }
+  }
+  console.log(
+    `开始界面素材 ${Object.keys(START_IMAGES).length} 张 + 动画 ${startFrames} 帧 → start/*.webp`,
+  )
 
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)
@@ -395,7 +417,7 @@ function main(): void {
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 战斗常用 ${battle.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes)}`,
   )
 
   writeStamp()
