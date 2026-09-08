@@ -6,17 +6,25 @@ import { IMAGE_ROOT } from './battleAssets'
 import { listFiles } from './listFiles'
 
 /**
- * 背景动画烘出来的产物尺寸对不对（xl-9do）。
+ * 背景动画烘出来的产物尺寸对不对（xl-9do；门槛在 xl-x6w 里删掉了）。
  *
  * 原版 `battle.BackgroundAnimation.drawBackAnimation` 把整张图画在 (0,0)、
  * 不缩放，画布是 1024×640，所以超出这个矩形的像素**一个也没有被画出来过**。
  * 但「画不出来」并不等于「该裁」：`cwebp` 的有损档会因为输入变小而重掷一次
- * 量化骰子，可视区内的像素跟着动 —— 所以只有**裁掉的面积够大**（源面积的
- * 四分之一以上）时才裁。逐档的实测与用户裁定见 `scripts/bake.ts` 的
- * `backgroundAnimCrop` 头注。
+ * 量化骰子，可视区内的像素跟着动 —— xl-9do 因此加了一条面积门槛
+ * （`CROP_MIN_AREA = 0.25`），只裁 1240×744 那一档。
  *
- * 今天这批素材落在两侧的是（2026-09-07 实测，记录不是断言）：115 张 1240×744
- * 裁掉 29.0% → 裁；30 张 1024×768 裁掉 16.7%、608 张 1066×639 裁掉 3.9% → 不裁。
+ * **xl-x6w 把那条门槛删了，改回「越界就裁」**，因为战斗有损那条路加了
+ * `-sns 0`，裁引起的最坏单张恶化从 +18032 降到 +2869（2×2 全量实测见
+ * `scripts/bake.ts` 的 `BATTLE_LOSSY_SNS` 头注）。骰子**没有消失**，只是小了
+ * 一个量级 —— 这两件事是捆在一起的一个决定。
+ *
+ * 于是今天这批 753 张**全都越界、全都被裁**，第 2 条那种「门槛两侧各非空」
+ * 的对撞不再存在。**但第 1 条没有因此退化成恒真**：三档源尺寸裁出来的目标
+ * 矩形是三个不同的值（1066×639 → 1024×639 只削宽、1024×768 → 1024×640 只削高、
+ * 1240×744 → 1024×640 两边都削），所以「无脑输出 1024×640」这种坏法会在 608 张
+ * 上红。新的第 2 条守的正是这件事：**三种越界形态各非空**，可视矩形是逐张
+ * 两条边各自 `min` 出来的，不是一个常数。
  *
  * **核的是产物，不是烘焙器的源码**，于是它和 `roleSpriteSize.test.ts` 有同一个
  * 边界：改坏 `scripts/bake.ts` 之后**要重跑 `pnpm bake`**，这条才会红。改了烘焙器
@@ -24,35 +32,38 @@ import { listFiles } from './listFiles'
  *
  * 下面三条各拦一种坏法，缺一条另两条就成了恒真的：
  *
- * 1. 逐张核尺寸 —— 拦「裁错了」「漏裁了」「裁到了不该裁的那两档」。
- * 2. 门槛两侧都真的有素材 —— 拦「今天这批全在一侧，于是第 1 条退化成恒真」。
- *    两侧都要有：只有该裁的，`cut >= 门槛` 那半是恒真；只有不该裁的，反过来。
+ * 1. 逐张核尺寸 —— 拦「裁错了」「漏裁了」「裁到了不该裁的目录」。
+ * 2. 三种越界形态各非空 —— 拦「今天这批只越一条边，于是第 1 条对另一条边恒真」。
  * 3. 技能动画一张都没被裁 —— 拦「裁剪漏到了别的目录」。技能动画由
  *    `battle.Animation` 画在**算出来的**坐标上，裁它就是裁到肉。
  *
  * 第 4 条核的是**前提**：裁剪的合法性整个建立在「原版把它画在 (0,0) 且不缩放」
  * 上，那句话在 Java 源码里。源码哪天变了（迁移期它是规格，本不该变），裁剪就
  * 静静地开始裁掉画得出来的像素，而产物尺寸那三条**照样全绿**。
+ *
+ * **上面说「三条」「第 4 条」，文件里就恰好是四个 `it`，别再多一个。**
+ * xl-x6w 起初还加了第五条「越界的一张都没漏裁」，`/code-review` 规范轴指出它
+ * **被第 1 条完全蕴含**：第 1 条已经断言每张产物都等于 `min(源, 画布)`，越界的
+ * 那张必然 `产物 ≠ 源`，于是第五条只要第 1 条绿就恒绿 —— 它是个诊断，不是判据，
+ * 而**假判据和真判据长得一样**。已删。要加第五条，先说清它能红而这四条全绿的
+ * 那种坏法是什么。
  */
 
 /** 画布：`battle.BattlePanel` 的 `WIDTH=32*32` / `HEIGHT=20*32`。第 4 条核它。 */
 const CANVAS = { width: 1024, height: 640 }
 
 /**
- * 裁剪门槛，与 `scripts/bake.ts` 的 `CROP_MIN_AREA` 是同一个数，**故意各写一份**
- * ——期望值这一侧一旦 import 被测那一侧的常量，改这个数就两边一起改，而这条测试
- * 照绿。这里要的正是「改了烘焙器的门槛，产物没跟着重烘」会红。
+ * 这张源图该烘成多大：越界就裁到可视矩形，不越界就原样。
+ *
+ * **故意不 import `scripts/bake.ts` 的 `backgroundAnimCrop`**：期望值这一侧一旦
+ * 跟被测那一侧共用代码，共用的那段错了两边就一起错，而这条测试照绿
+ * （`jpegSize` 的头注写的是同一件事）。
  */
-const CROP_MIN_AREA = 0.25
-
-/** 这张源图该烘成多大：够门槛就裁到画布，不够就原样。 */
 function wantedSize(src: { width: number; height: number }): { width: number; height: number } {
-  const visible = {
+  return {
     width: Math.min(src.width, CANVAS.width),
     height: Math.min(src.height, CANVAS.height),
   }
-  const cut = 1 - (visible.width * visible.height) / (src.width * src.height)
-  return cut >= CROP_MIN_AREA ? visible : src
 }
 
 const BACKGROUND_ANIM = '背景动画'
@@ -70,7 +81,7 @@ function sources(topDir: string): string[] {
 }
 
 describe('背景动画的烘焙裁剪', () => {
-  it('每一张的产物尺寸都是门槛裁决出来的那个', () => {
+  it('每一张的产物尺寸都是可视矩形算出来的那个', () => {
     const wrong: string[] = []
     for (const relative of sources(BACKGROUND_ANIM)) {
       const src = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
@@ -87,38 +98,24 @@ describe('背景动画的烘焙裁剪', () => {
   })
 
   /**
-   * 上面那条在**素材全落在门槛同一侧**时会退化成恒真的一半：全都不该裁的话，
-   * 「产物 = 源尺寸」不裁也过；全都该裁的话，反过来。所以两侧各断言一次「非空」。
+   * 上面那条在**这批素材只越一条边**时会对另一条边退化成恒真：假如全都只越宽，
+   * 那么 `height` 那一半写 `min` 还是写「原样」都过；反过来同理；而假如没有一张
+   * 两条边都越，「两条边同时裁」这件事就一次都没被走到过。所以**三种形态各断言
+   * 一次非空**。
    *
-   * 只断言「非空」，不断言「115 / 638」：张数是别的 agent 换一批素材就会变的东西
-   * （dispatch.md 纪律 3），而「这一侧一张都没有」才是判据失效的那个点。
-   * 2026-09-07 的读数是该裁 115、不该裁 638，是记录不是断言。
+   * 只断言「非空」，不断言「608 / 30 / 115」：张数是别的 agent 换一批素材就会变
+   * 的东西（dispatch.md 纪律 3），而「这一类一张都没有」才是判据失效的那个点。
+   * 2026-09-08 的读数是只越宽 608（1066×639）、只越高 30（1024×768）、
+   * 两边都越 115（1240×744），是记录不是断言。
    */
-  it('门槛两侧都真的有素材，这条门槛不是空转', () => {
-    const cuts = sources(BACKGROUND_ANIM).map((relative) => {
+  it('三种越界形态各有素材，可视矩形是两条边各自算出来的', () => {
+    const shapes = sources(BACKGROUND_ANIM).map((relative) => {
       const src = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
-      const w = wantedSize(src)
-      return w.width !== src.width || w.height !== src.height
+      return { w: src.width > CANVAS.width, h: src.height > CANVAS.height }
     })
-    expect(cuts.filter(Boolean).length, '一张都不该裁：第 1 条退化成「产物=源」').toBeGreaterThan(0)
-    expect(cuts.filter((c) => !c).length, '全都该裁：第 1 条退化成「产物=画布」').toBeGreaterThan(0)
-  })
-
-  /**
-   * 门槛之下的那些素材**确实还越着界** —— 也就是说「不裁」是门槛裁出来的结论，
-   * 不是「它们本来就在画布之内」。少了这一条，把门槛改成 999 也照样全绿。
-   */
-  it('不裁的那批里确实有越出画布的，是门槛拦下的而不是本来就不越界', () => {
-    const oversizedButKept = sources(BACKGROUND_ANIM).filter((relative) => {
-      const src = jpegSize(repoPath(IMAGE_ROOT, BACKGROUND_ANIM, relative))
-      const w = wantedSize(src)
-      const cropped = w.width !== src.width || w.height !== src.height
-      return !cropped && (src.width > CANVAS.width || src.height > CANVAS.height)
-    })
-    // 2026-09-07 的读数是 **638**（608 张 1066×639 只越宽，30 张 1024×768 只越高），
-    // 是记录不是断言。这个数原先写成 30，那是「只数了越高的那一档」推出来的，
-    // 不是量出来的 —— /code-review 规范轴逮到的。
-    expect(oversizedButKept.length).toBeGreaterThan(0)
+    expect(shapes.filter((s) => s.w && !s.h).length, '没有一张只越宽：削高那一半恒真').toBeGreaterThan(0)
+    expect(shapes.filter((s) => !s.w && s.h).length, '没有一张只越高：削宽那一半恒真').toBeGreaterThan(0)
+    expect(shapes.filter((s) => s.w && s.h).length, '没有一张两边都越：同时裁没被走到').toBeGreaterThan(0)
   })
 
   it('技能动画那一层一张都没被裁', () => {
