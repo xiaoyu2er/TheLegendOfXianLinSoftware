@@ -1,11 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import manifest from '../generated/assets.json'
 import { startFrameAssetId } from '../assets/ids'
 import type { StartSequenceName } from '../assets/ids'
 import { repoPath } from '../test/repoPath'
-import { START_SEQUENCES } from './assets'
+import { START_SEQUENCES, START_SEQUENCE_ALIASES, aliasSourceFrame } from './assets'
 
 /**
  * 入库的开始界面动画产物，编码方式跟 `START_SEQUENCES` 的 `lossy` 一列对得上
@@ -18,8 +18,9 @@ import { START_SEQUENCES } from './assets'
  * `bakeStamp.test.ts` 只核输入没变，`resolve.test.ts` 只核 URL 取得到，
  * `pnpm build` 只关心文件在不在。
  *
- * 判据的分母是**现算的**：`START_SEQUENCES` 有几段、每段几帧，就核几个文件。
- * 名单不手抄，加一段动画自动进来（dispatch.md 纪律 3）。
+ * 判据的分母是**现算的**：`START_SEQUENCES` 有几段、每段几帧，就核几个文件
+ * （走别名的那几段除外，它们没有自己的产物，见 xl-l6h）。名单不手抄，加一段
+ * 动画自动进来（dispatch.md 纪律 3）。
  */
 
 /** WebP 的编码方式，从产物字节里读出来。 */
@@ -84,14 +85,21 @@ describe('开始界面动画的 WebP 档位', () => {
       }
     }
     expect(wrong).toEqual([])
-    // 一条都没核到与"全都对"长得一样。分母现算：六段的帧数之和。
+    // 一条都没核到与"全都对"长得一样。分母现算。
     //
     // 数的是**互异的文件**而不是循环跑了几圈。这一条是篡改矩阵改出来的：
     // 原来数的是圈数，而把下标写死（`startFrameAssetId(name, 0)`）之后循环
     // 照样跑满 45 圈、读出来的编码方式还全对（同一段里每一帧的档位一样），
-    // 那一版是绿的。换成互异文件数之后同一条篡改立刻红（6 ≠ 45）。
+    // 那一版是绿的。换成互异文件数之后同一条篡改立刻红。
+    //
+    // **走别名的那几段不进分母**（xl-l6h）：它们没有自己的产物文件，第 f 帧
+    // 读到的正是被指向那一段的第 9−f 帧那一份字节。上面那 45 圈仍然跑满，
+    // 互异文件只有 35 个 —— 这个减法从 `START_SEQUENCE_ALIASES` 现推，不写
+    // 死 35，别人加一段动画时它自己跟着走。
     expect(read.size).toBe(
-      Object.values(START_SEQUENCES).reduce((sum, sequence) => sum + sequence.count, 0),
+      Object.entries(START_SEQUENCES)
+        .filter(([name]) => START_SEQUENCE_ALIASES[name as StartSequenceName] === undefined)
+        .reduce((sum, [, sequence]) => sum + sequence.count, 0),
     )
     expect(read.size).toBeGreaterThan(0)
   })
@@ -113,6 +121,39 @@ describe('开始界面动画的 WebP 档位', () => {
   })
 
   /**
+   * 上面两条之外，还有一份**登记**要钉：哪一段整段指向了另一段（xl-l6h）。
+   *
+   * 同样手写，理由同上 —— 从 `START_SEQUENCE_ALIASES` 现筛出来的话，这条就是
+   * 恒真的（dispatch.md 纪律 3 那条"登记必须由人来签"）。
+   */
+  it('走别名的恰好是 backScroll，逆序指向 scroll', () => {
+    expect(START_SEQUENCE_ALIASES).toEqual({ backScroll: { of: 'scroll', order: 'reverse' } })
+  })
+
+  /**
+   * 别名在**映射表**那一端真的落下了吗：`backScroll` 的第 f 帧与 `scroll` 的
+   * 第 9−f 帧必须是**同一条相对路径**，而且 `backScroll` 不许再有自己的产物
+   * 目录。
+   *
+   * 为什么两句都要：只比路径的话，烘焙器多烘一套 `start/backScroll/*.webp`
+   * 留在那儿也读不出来（映射表指着 `scroll`，多出来的文件没人引用，
+   * `pnpm build` 一声不吭把它们打进 dist）；只查目录的话，映射表指错帧
+   * （比如顺序而不是逆序）照样绿。
+   */
+  it('backScroll 逐帧指向 scroll 的逆序帧，且不再有自己的产物目录', () => {
+    const alias = START_SEQUENCE_ALIASES.backScroll
+    if (alias === undefined) throw new Error('backScroll 的别名登记没了；上一条本该先红')
+    const count = START_SEQUENCES.backScroll.count
+    const pairs = Array.from({ length: count }, (_, frame) => [
+      TABLE[startFrameAssetId('backScroll', frame)],
+      TABLE[startFrameAssetId('scroll', aliasSourceFrame(alias, frame, count))],
+    ])
+    expect(pairs.filter(([mine, theirs]) => mine === undefined || mine !== theirs)).toEqual([])
+    expect(pairs).toHaveLength(count)
+    expect(existsSync(resolve(ASSETS, 'start/backScroll'))).toBe(false)
+  })
+
+  /**
    * 降质是为了字节数，所以字节数也要有个上界 —— 否则"档位还在、但源素材换成
    * 了一批更重的"这件事没人看得见。
    *
@@ -121,11 +162,10 @@ describe('开始界面动画的 WebP 档位', () => {
    * 而离今天的实测很近 —— 两边都撞得到。实测过它对"只是变糊得少了"也有分辨力：
    * 档位从 q80 滑到 q95 是 1287 KB，这条红。
    *
-   * ⚠️ **今天这条量的是同一份字节两次，不是两份独立证据。** `反向卷轴` 与
-   * `卷轴` 逐像素相同、只是次序相反（xl-l6h），所以两段的 q80 产物
-   * `scroll/f` 与 `backScroll/9−f` md5 两两相等、合计字节也一模一样。美术只
-   * 换掉 `反向卷轴/` 那一批的话，这条**照样绿** —— 拦它要的是 xl-l6h 那条
-   * 烘焙期的恒等判据，不是这里。写在这儿，免得下一个人把它读成两道锁。
+   * ⚠️ **走别名的那几段不在这条里量**（xl-l6h）。`backScroll` 没有自己的产物，
+   * 量它等于把 `scroll` 那 414 KB 又数了一遍 —— 上界读起来像两道锁，其实是
+   * 同一份字节两次。美术只换掉 `反向卷轴/` 那一批的话，拦它的是烘焙期那条
+   * 恒等判据（`START_SEQUENCE_ALIASES` 的头注），从来不是这里。
    *
    * ⚠️ **档位本身没有判据，这里只有体积这个代理。** 真要钉住"解回来的像素跟
    * 源差多少"，得在测试里塞一个 WebP 解码器；今天没有。上面那条 q95 → 1287 KB
@@ -133,8 +173,11 @@ describe('开始界面动画的 WebP 档位', () => {
    */
   it('每一段声明为有损的动画，字节数都不超过 900 KB', () => {
     // 名单从 `lossy` 那一列现筛，不手抄 —— 这条验的是**字节数**，不是 lossy
-    // 声明本身，所以现筛不会让它变恒真（"恰好是两段卷轴"由上一条钉着）。
-    const lossy = Object.entries(START_SEQUENCES).filter(([, sequence]) => sequence.lossy)
+    // 声明本身，所以现筛不会让它变恒真（"恰好是两段卷轴"由上面那条钉着）。
+    const lossy = Object.entries(START_SEQUENCES).filter(
+      ([name, sequence]) =>
+        sequence.lossy && START_SEQUENCE_ALIASES[name as StartSequenceName] === undefined,
+    )
     expect(lossy.length).toBeGreaterThan(0)
     for (const [name, sequence] of lossy) {
       const total = Array.from({ length: sequence.count }, (_, frame) =>
