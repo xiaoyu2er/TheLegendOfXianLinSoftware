@@ -746,6 +746,41 @@ const DEFAULT_LOSSY_QUALITY = 80
 const BATTLE_LOSSY_QUALITY = 95
 
 /**
+ * 战斗有损那条路的 `-sns`（xl-x6w）。**只挂在战斗这条路上**，不动
+ * `DEFAULT_LOSSY_QUALITY` 那条 —— 今天走后者的是 3 张 JPG 地图，它们一张都
+ * **没量过**，而 `-sns` 是 `cwebp` 的全局默认，顺手加上去等于替没量过的素材
+ * 做决定。技能动画那 1017 张是 PNG 走 `-lossless`，`-sns` 对它们无效。
+ *
+ * `-sns`（spatial noise shaping，`cwebp` 默认 50）是对**整张图**做分段分析、
+ * 再给各段分配量化参数的那个启发式。设成 0 就关掉分段，编码变成局部的。
+ *
+ * **2×2 全量实测**（753 张背景动画，`cwebp` 1.6.0 `-q 95`，2026-09-08；
+ * 「超容差」= 可视区内相对**源 JPEG** 三通道最大差 > 8 的**像素**数合计，
+ * 口径逐字照 `src/compare/diff.ts` 的 `frameDiff`，容差 8 正是跨端比对那个）：
+ *
+ *   源尺寸    张数 | 默认+不裁  MiB | 默认+全裁  MiB | sns0+不裁  MiB | sns0+全裁  MiB
+ *   1066×639  608 |   125607 26.09 |   146281 25.54 |   122502 26.03 |   123122 25.46
+ *   1240×744  115 |    49537  7.24 |    24680  5.64 |    30427  7.01 |    17052  5.48
+ *   1024×768   30 |     3301  0.97 |     3266  0.96 |     2844  1.01 |     2812  1.00
+ *   合计      753 |   178445 34.30 |   174227 32.14 |   155773 34.05 |   142986 31.93
+ *
+ * 左起第一列是 xl-7ip 入库的那批，第二列是 xl-9do 试过又放弃的「全裁」，
+ * **右下角是今天入库的这批**。中间还有一档「`-sns 0` + 只裁 1240×744」，
+ * 逐张拼出来是 142398 / 32.52 MiB —— 见 `backgroundAnimCrop` 头注里为什么
+ * 不取它。xl-9do 入库的那批（只裁 1240×744、默认 sns）是 153588 / 32.70 MiB，
+ * 由第二趟按档拼出来与直接量的逐字相同，那是这套量法自己的交叉核对。
+ *
+ * 所以 `-sns 0` + 全裁比 xl-9do 入库的那批**又少 6.9% 的偏离、又小 0.77 MiB**，
+ * 三档逐档也都不亏（123122 < 125607、17052 < 24680、2812 < 3301）。
+ *
+ * ⚠️ **合计会骗人，逐张不是全赢**：753 张里 **220 张变差、430 张变好、103 张
+ * 持平**。最坏的一张是 `神剑傲州/10`，6791 → 18890 —— 它不是裁出来的
+ * （不裁也是 18420），是 `-sns 0` 在这张图上自己就更差。四条剧本的上界因此
+ * 必须**重量**，不能拿合计推。上界见 `src/compare/expected.ts`。
+ */
+const BATTLE_LOSSY_SNS = 0
+
+/**
  * 背景动画的顶层目录名。**不从 `DEFERRED_TOP_DIRS` 里取下标**：那份名单说的是
  * 「按需加载」，跟「画在 (0,0) 不缩放」是两件不相干的事，哪天名单顺序变了或多
  * 进来一个目录，按下标取会静静裁错一批素材。
@@ -779,29 +814,26 @@ const BACKGROUND_ANIM_DIR = '背景动画'
  * 抽签式的 —— 同一档尺寸里有的变好、有的变坏。所以裁不裁不能凭「反正画不出来」
  * 推，得逐档量。
  *
- * **753 张全量实测**（`cwebp` 1.6.0 `-q 95`，2026-09-07；「超容差」= 可视区内
- * 相对**源 JPEG** 单通道差 > 8 的像素合计，容差 8 正是跨端比对用的那个）：
+ * **xl-9do 因此只裁了 1240×744 那一档**，另外两档字节几乎不省却要重掷一次骰子。
+ * 那条门槛（`CROP_MIN_AREA = 0.25`）在 xl-x6w 里删掉了，改回「越界就裁」——
+ * 理由是 `BATTLE_LOSSY_SNS` 那条头注里的 2×2 实测：**`-sns 0` 之后「裁」这一步
+ * 掷的骰子小了一个量级**，最坏的单张恶化从 +18032 降到 +2869。
  *
- *   源尺寸      张数  裁掉面积   不裁超容差   裁后超容差   不裁 MiB  裁后 MiB    省
- *   1066×639    608     3.9%      125607      146281     26.09     25.54    2.1%
- *   1024×768     30    16.7%        3301        3266      0.97      0.96    1.5%
- *   1240×744    115    29.0%       49537       24680      7.24      5.64   22.1%
+ * ⚠️ **xl-x6w 的票面写的是「抽签消失了」，那句话是错的，实测推翻。** 它的依据
+ * 是一张图（`神剑傲州/31` 在 `-sns 0` 下裁与不裁是 67 vs 68）。全量 753 张量下来
+ * 骰子**还在掷**：`-sns 0` 下裁与不裁仍有 **348 张**读数不同，逐张 |Δ| 合计
+ * 25551，最大的一张 `伏虎冲天/46` 是 9550 → 2。变的是**振幅**，不是有无 ——
+ * 恰好 `神剑傲州/31` 是安静的那一张。所以这条门槛不是「变成不必要的」，是
+ * 「它防的那个量级已经不在了」，而 `-sns 0` 与「越界就裁」是**捆在一起**的
+ * 一个决定：哪天有人把 `BATTLE_LOSSY_SNS` 改回默认，这里必须一并回到有门槛。
  *
- * 三档的结论完全不同，**只有 1240×744 那一档两头都赚**：字节省 22.1%，而且偏离
- * 源 JPEG 的像素**减半**。另外两档字节几乎不省，却要为此重掷一次骰子 ——
- * 1066×639 那档掷出来是 +16%，其中 `神剑傲州/31` 一张就从 107 涨到 18139，
- * 足以把 `battle-zhang-skills` 的最差帧从 0.27% 顶到 2.50%（超上界 3.76 倍），
- * 等于把上界重新交还给「素材编码」那笔账 —— 正是 xl-7ip 花 +16 MiB 要摆脱的
- * 东西。**2026-09-07 用户裁定：只裁 1240×744 那一档。**
+ * **全裁买到的**（对照见 `BATTLE_LOSSY_SNS` 头注的表）：31.93 vs 32.52 MiB，
+ * 省 0.59 MiB；代价是超容差合计 142986 vs 142398，多 588（+0.4%）。走 public/
+ * 按需加载，那 0.59 MiB 就是玩家的下载量。
  *
- * 顺带量到但**没有采纳**的一条：`-sns 0` 关掉整图分段之后，裁与不裁逐张几乎
- * 相同（`神剑傲州/31` 是 67 vs 68），全裁 + `-sns 0` 是 31.93 MiB / 超容差
- * 142986，三档全赢 —— 它还会让下面 `CROP_MIN_AREA` 那条门槛整个变成不必要的。
- * 它动的是 xl-7ip 拍板的编码设置，超出这张票的范围，同样由用户裁定不在这一趟里
- * 做，另开了 **xl-x6w**（表与注意事项都在那张票上）。
- *
- * 票面两个数与实测口径也对不上，一并更正：「整体再省约 3%」是 xl-7ip 在 15 张
- * 样本上按无损 `-z 9` 口径量的；「29%」是**面积**，1240×744 的字节只省 22.1%。
+ * 票面两个数与 xl-9do 的实测口径对不上，那里已一并更正：「整体再省约 3%」是
+ * xl-7ip 在 15 张样本上按无损 `-z 9` 口径量的；「29%」是**面积**，1240×744 的
+ * 字节只省 22.1%。
  *
  * **只作用在背景动画上。** 技能动画那 1017 张由 `battle.Animation` 画在**算出来
  * 的**坐标上（随出招方与目标动），「画不出来的部分」不是一个跟素材绑定的常量；
@@ -811,22 +843,12 @@ function backgroundAnimCrop(relative: string, source: string): SourceRect | unde
   if (relative.split('/')[0] !== BACKGROUND_ANIM_DIR) return undefined
   const { width, height } = imageSize(source)
   const visible = { width: Math.min(width, STAGE_WIDTH), height: Math.min(height, STAGE_HEIGHT) }
-  const cut = 1 - (visible.width * visible.height) / (width * height)
-  return cut >= CROP_MIN_AREA ? visible : undefined
+  // 「越界就裁」：两条边都没越界的素材整张都画得出来，`-crop` 就是个空操作，
+  // 但它仍会让 cwebp 重编码一遍同样的内容 —— 返回 `undefined` 让调用方连
+  // `-crop` 都不传，产物路径与「本来就不该裁」那批（技能动画）保持同一条。
+  if (visible.width === width && visible.height === height) return undefined
+  return visible
 }
-
-/**
- * 裁剪的门槛：**画不出来的部分要占源面积这么多，才值得裁**。
- *
- * 这不是一个能从数据推出来的分母，是一条**登记**（dispatch.md 纪律 3 的那个
- * 区分）：裁剪会重掷一次量化骰子，所以它必须买到点什么。上面那张表是它的依据 ——
- * 今天这批素材落在门槛两侧的是 29.0%（裁）与 16.7% / 3.9%（不裁）。
- *
- * 取 0.25 而不是贴着 16.7% 或 29.0% 写：贴着任何一头，都会让「明天多进来一档
- * 尺寸」这件事静静地按今天这批素材的边界裁决。哪天真有一档落在 25% 附近，该做的
- * 是照上面那张表的口径把它量一遍，而不是挪这个数。
- */
-const CROP_MIN_AREA = 0.25
 
 /**
  * 一张战斗素材转 WebP。存在的理由只有一个：让**两个**调用点（进主包的与按需
@@ -838,13 +860,14 @@ const CROP_MIN_AREA = 0.25
  * 产物上看不出来。
  */
 function battleWebp(source: string, destination: string, crop?: SourceRect): number {
-  return toWebp(source, destination, crop, BATTLE_LOSSY_QUALITY)
+  return toWebp(source, destination, crop, BATTLE_LOSSY_QUALITY, BATTLE_LOSSY_SNS)
 }
 
 /**
  * 转 WebP。**有损源用有损、无损源用无损**：PNG 一律走无损，其余走 `-q`，
  * 档位由调用方给（默认 `DEFAULT_LOSSY_QUALITY`，战斗素材那条路传
- * `BATTLE_LOSSY_QUALITY`，两者的实测依据都在各自的头注里）。
+ * `BATTLE_LOSSY_QUALITY`，两者的实测依据都在各自的头注里）。`sns` 同理，
+ * 不传就用 `cwebp` 自己的默认 50，战斗那条路传 `BATTLE_LOSSY_SNS`。
  * JPG 本来就已经有损，再无损编码等于把 JPEG 的块效应一并存下来
  * （大地图.jpg 3200×2560 4.2 MB → q80 2.0 MB，实测）。
  *
@@ -880,11 +903,17 @@ function toWebp(
   destination: string,
   crop?: SourceRect,
   quality: number = DEFAULT_LOSSY_QUALITY,
+  sns?: number,
 ): number {
   useInput(source)
   mkdirSync(dirname(destination), { recursive: true })
   const lossless = source.toLowerCase().endsWith('.png')
-  const flags = lossless ? ['-lossless'] : ['-q', String(quality)]
+  // `-sns` 只在有损分支拼进去：它是量化参数的分配启发式，无损档下 `cwebp`
+  // 收下它也不用，而**收下不用**与**真的生效**在产物上长得一模一样 ——
+  // 那正是「明天有人把 -lossless 改掉」时唯一能露馅的地方。
+  const flags = lossless
+    ? ['-lossless']
+    : ['-q', String(quality), ...(sns === undefined ? [] : ['-sns', String(sns)])]
   const cropFlags = crop ? ['-crop', '0', '0', String(crop.width), String(crop.height)] : []
   execFileSync('cwebp', ['-quiet', ...cropFlags, ...flags, source, '-o', destination])
   return statSync(destination).size
