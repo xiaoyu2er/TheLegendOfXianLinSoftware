@@ -78,10 +78,12 @@ export interface GameView {
    *    换掉；这一层的对应物就是那个模块级单例。不做的话新一局开局就带着上
    *    一局的等级、经验和残血 —— 而画面上完全正常。
    *
-   *    ⚠️ **原版实际上没走这条路**：`init()` 是死代码，唯一的调用点被注释掉
-   *    了（`src/start/StartPanel.java:336`）。重置是这张票的验收标准要的，
-   *    不是照抄；原版那个缺陷登记在 `xl-lly`，详情见 `app/App.tsx` 的
-   *    `onNewGame`。
+   *    ⚠️ **原版实际上没走这条路**：`init()` 是死代码，唯一指向它的调用点
+   *    被注释掉了（`src/start/StartPanel.java:336`）；而且即便没被注释掉，
+   *    它也只到"满血复活、等级经验照旧"—— 那三个类的 `level` / `exp` 是
+   *    `static`，构造函数一个都不赋。重置是这张票的验收标准要的，不是照抄；
+   *    原版那个缺陷登记在 `xl-lly`，判据在 `fakes/originalNewGame.test.ts`，
+   *    取舍写在 `app/App.tsx` 的 `onNewGame` 与 ADR-0001 的「例外」表里。
    * 2. **世界重建**。`init()` 还 `new` 了战斗 / 菜单 / 商店三个面板，这一层
    *    对应的是把整个会话（场景 ticker + 战斗 ticker）丢掉重来，也就是下面
    *    那个 `generation` 一涨、建会话的 effect 重跑一遍。
