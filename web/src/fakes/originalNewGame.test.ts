@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { PartyKey } from '../battle/units'
 import { javaSource } from '../test/javaSource'
+import { javaStaticInt } from '../test/javaStaticInt'
 import { repoPath } from '../test/repoPath'
 
 /**
@@ -120,9 +121,10 @@ describe('原版点「起」不重置队伍（xl-lly）', () => {
     (className) => {
       const source = javaSource(`src/battle/${className}.java`)
       // 三个字段都是 static，才谈得上"new 一个新对象也带着上一局的值"。
+      // 找不到（或找到两处）由 `javaStaticInt` 抛 —— 这里要的就是"恰好一处
+      // static 初值"这件事本身，值是多少下面用不上。
       for (const field of ['level', 'exp', 'angryValue']) {
-        const declared = [...source.matchAll(new RegExp(`public\\s+static\\s+int\\s+${field}\\s*=`, 'g'))]
-        expect(declared, `${className}.java 里 public static int ${field}= 的行数`).toHaveLength(1)
+        expect(javaStaticInt(source, field, `${className}.java`)).toBeGreaterThanOrEqual(0)
       }
 
       const body = methodBody(source, `public ${className}(int x,int y,BattlePanel bp){`)

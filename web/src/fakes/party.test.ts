@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
+import { javaStaticInt } from '../test/javaStaticInt'
 import { HEROES, derive } from '../battle/units'
 import type { PartyKey } from '../battle/units'
 import { DEFAULT_LEVEL, getParty, initialMember, rememberParty, resetParty } from './party'
@@ -17,23 +18,16 @@ import { DEFAULT_LEVEL, getParty, initialMember, rememberParty, resetParty } fro
  * 伤害数字都会变，而画面上完全正常。
  */
 
-/** `public static int level=<n>;` —— 三个类里各一行。 */
-function javaLevel(className: string): number {
+/**
+ * `public static int <字段>=<n>;` —— 三个类里各一行。
+ *
+ * 「恰好一行」这条分母在 `javaStaticInt` 里：零行是正则被排版带偏（或者源码
+ * 没按 GBK 解出来，那种情况下满屏乱码而匹配数同样是 0，与「这一行不存在」
+ * 长得一样），两行以上则说不清读的是哪一处 —— 两种都抛。
+ */
+function javaStatic(className: string, field: string): number {
   const source = javaSource(`src/battle/${className}.java`)
-  const found = [...source.matchAll(/public\s+static\s+int\s+level\s*=\s*(\d+)\s*;/g)]
-  // 分母：**恰好一行**。零行是正则被排版带偏（或者源码没按 GBK 解出来，
-  // 那种情况下满屏乱码而匹配数同样是 0，与「这一行不存在」长得一样）；
-  // 两行以上说明源码里有第二处初值，那时「读的是哪一处」就说不清了。
-  expect(found, `${className}.java 里 public static int level= 的行数`).toHaveLength(1)
-  return Number(found[0]![1])
-}
-
-/** `public static int exp=<n>;` —— 同上。 */
-function javaExp(className: string): number {
-  const source = javaSource(`src/battle/${className}.java`)
-  const found = [...source.matchAll(/public\s+static\s+int\s+exp\s*=\s*(\d+)\s*;/g)]
-  expect(found, `${className}.java 里 public static int exp= 的行数`).toHaveLength(1)
-  return Number(found[0]![1])
+  return javaStaticInt(source, field, `${className}.java`)
 }
 
 /** 逻辑名 → 原版的类名。 */
@@ -49,7 +43,7 @@ describe('队伍的出厂状态', () => {
     // 队伍里多一个人，typecheck 就逼着这里也多一条。
     const keys = Object.keys(CLASSES) as PartyKey[]
     expect(keys).toHaveLength(3)
-    const fromJava = Object.fromEntries(keys.map((k) => [k, javaLevel(CLASSES[k])]))
+    const fromJava = Object.fromEntries(keys.map((k) => [k, javaStatic(CLASSES[k], 'level')]))
     expect(DEFAULT_LEVEL).toEqual(fromJava)
     // 三个数**不一样**，所以上面那条比得出东西：三个都是 1 的话，把
     // `DEFAULT_LEVEL` 整个换成 `{zhang:1,yu:1,lu:1}` 也照样绿。
@@ -64,7 +58,7 @@ describe('队伍的出厂状态', () => {
         key,
         hp: d.hpMax,
         mp: d.mpMax,
-        exp: javaExp(CLASSES[key]),
+        exp: javaStatic(CLASSES[key], 'exp'),
         dead: false,
       })
       // 分得开：满血不是 0，也不是某个小数。
@@ -91,9 +85,9 @@ describe('队伍的出厂状态', () => {
     })
     // 而且等级真的是原版那三个数，不只是"和 initialMember 一致"。
     expect([after.zhang.level, after.yu.level, after.lu.level]).toEqual([
-      javaLevel(CLASSES.zhang),
-      javaLevel(CLASSES.yu),
-      javaLevel(CLASSES.lu),
+      javaStatic(CLASSES.zhang, 'level'),
+      javaStatic(CLASSES.yu, 'level'),
+      javaStatic(CLASSES.lu, 'level'),
     ])
   })
 })

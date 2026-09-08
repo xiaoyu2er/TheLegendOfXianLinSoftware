@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { repoPath } from '../test/repoPath'
+import { javaSource } from '../test/javaSource'
+import { javaStaticInt } from '../test/javaStaticInt'
 import { SKILLS, SKILL_MENU, SKILL_NUMBER, skillMpUse } from './skills'
 import type { PartyKey } from './units'
 
@@ -11,13 +11,10 @@ import type { PartyKey } from './units'
  * skillCode k+1）。抄错一位的表现是「放了隔壁那一招的动画」或者「扣错了灵力」，
  * 画面上完全正常 —— 所以这里把三处都解出来再对，而不是读一遍觉得没问题。
  *
- * ⚠️ GBK 源码用 `readFileSync` + `TextDecoder('gbk')` 读，不能用 `grep`
+ * ⚠️ GBK 源码用 `javaSource()` 读（`TextDecoder('gbk')`），不能用 `grep`
  * （不加 `-a` 会被当成二进制整个跳过，"没找到"和"不存在"长得一样，
  * 见 `docs/agents/dispatch.md`）。
  */
-function javaSource(path: string): string {
-  return new TextDecoder('gbk').decode(readFileSync(repoPath(path)))
-}
 
 const JAVA_CLASS: Readonly<Record<PartyKey, string>> = {
   zhang: 'ZhangXiaoFan',
@@ -33,9 +30,9 @@ describe('技能表对回原版源码', () => {
     // 推出来的按钮数不同（3/4 对 2/3），差的那一颗正是剧本要点的那一颗。
     for (const key of ['zhang', 'yu', 'lu'] as const) {
       const src = javaSource(`src/battle/${JAVA_CLASS[key]}.java`)
-      const m = src.match(/public\s+static\s+int\s+skillNumber\s*=\s*(\d+)\s*;/)
-      expect(m, `${JAVA_CLASS[key]}.java 里找不到 skillNumber 的初值 —— 解析器空转`).not.toBeNull()
-      expect(Number(m![1]), `${key} 的 skillNumber`).toBe(SKILL_NUMBER[key])
+      // 抓不到（解析器空转）由 `javaStaticInt` 自己抛，不会落成一个空值
+      const n = javaStaticInt(src, 'skillNumber', `${JAVA_CLASS[key]}.java`)
+      expect(n, `${key} 的 skillNumber`).toBe(SKILL_NUMBER[key])
     }
   })
 
