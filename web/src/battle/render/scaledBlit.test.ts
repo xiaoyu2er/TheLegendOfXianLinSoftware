@@ -10,14 +10,18 @@ import { nearestBlitRuns, nearestSourceIndexes } from './scaledBlit'
  * 自己身上量出来的（`tools/src/devtools/ExportScaledBlit.java`），所以不是自己
  * 出题自己判卷。
  *
- * 判据要挡住三种「看起来通过」：
+ * 判据要挡住四种「看起来通过」：
  *
  * 1. **黄金数据读不到 / 是空的**。分母不是写死的常量，是从文件里数出来的
  *    （`map.length - 1`），而下面「覆盖范围」那一条要求它至少到源长的两倍；
  *    空表在那里就红，不会安静地跑零轮。
- * 2. **表对了但用不上**。`nearestBlitRuns` 是渲染器真正照着搬像素的那份，
+ * 2. **对错了那一张表**。黄金数据里有两张：源图带透明与全不透明各一份，Java2D
+ *    对这两种走的是不同的 blit 循环。提示图全都带透明，所以复刻必须对上
+ *    `transparent` 那张；「两张表确实不同，而且我们用的是带透明那张」单列一条，
+ *    对上另一张就红。
+ * 3. **表对了但用不上**。`nearestBlitRuns` 是渲染器真正照着搬像素的那份，
  *    所以它要还原回同一张表，而不是只测那个下标函数。
- * 3. **退回 GPU 的那套四舍五入**。「打平的位置」单列一条：提示图那两个真的会
+ * 4. **退回 GPU 的那套四舍五入**。「打平的位置」单列一条：提示图那两个真的会
  *    用到的目标长度上，`floor(k*i + k/2)`（GPU 最近邻的算法）与 Java 不一致的
  *    位置在这里被点名，改回去就红。
  */
@@ -25,13 +29,17 @@ import { nearestBlitRuns, nearestSourceIndexes } from './scaledBlit'
 const GOLDEN_PATH = 'tools/scaled-blit-golden/java-scaled-blit.json'
 
 type Axis = { srcLen: number; map: number[][] }
-type Golden = { note: string; x: Axis; y: Axis }
+type Tables = { x: Axis; y: Axis }
+type Golden = { note: string; transparent: Tables; opaque: Tables }
 
 const golden = JSON.parse(readFileSync(repoPath(GOLDEN_PATH), 'utf8')) as Golden
 
+/** 复刻要对上的那一张：提示图带透明。 */
+const USED = golden.transparent
+
 const AXES: [string, Axis][] = [
-  ['X（源 128 宽）', golden.x],
-  ['Y（源 24 高）', golden.y],
+  ['X（源 128 宽）', USED.x],
+  ['Y（源 24 高）', USED.y],
 ]
 
 describe('黄金数据本身', () => {
@@ -61,6 +69,40 @@ describe('nearestSourceIndexes 与 Java2D 逐个相同', () => {
   })
 })
 
+/**
+ * 源图透不透明会换一条 blit 循环。这一条钉住两件事：两张表**真的不同**（否则
+ * 上面那条「对上 transparent」是恒真的），以及**复刻对的是带透明那张**。
+ */
+describe('两条 blit 循环', () => {
+  const differing = (a: Axis, b: Axis): number[] => {
+    const out: number[] = []
+    for (let destLen = 1; destLen < a.map.length; destLen++) {
+      if (JSON.stringify(a.map[destLen]) !== JSON.stringify(b.map[destLen])) out.push(destLen)
+    }
+    return out
+  }
+
+  it('X 上两张表差在这些目标长度，其中 20 是提示图真的会走到的一档', () => {
+    const got = differing(golden.transparent.x, golden.opaque.x)
+    expect(got).toContain(20)
+    expect(got.length).toBeGreaterThan(0)
+    // 复刻跟的是带透明那张：在这些档上它必须对上 transparent、对不上 opaque。
+    for (const destLen of got) {
+      expect(nearestSourceIndexes(128, destLen)).toEqual(golden.transparent.x.map[destLen])
+      expect(nearestSourceIndexes(128, destLen)).not.toEqual(golden.opaque.x.map[destLen])
+    }
+  })
+
+  it('Y 上两张表差在这些目标长度，其中 10 是提示图真的会走到的一档', () => {
+    const got = differing(golden.transparent.y, golden.opaque.y)
+    expect(got).toContain(10)
+    for (const destLen of got) {
+      expect(nearestSourceIndexes(24, destLen)).toEqual(golden.transparent.y.map[destLen])
+      expect(nearestSourceIndexes(24, destLen)).not.toEqual(golden.opaque.y.map[destLen])
+    }
+  })
+})
+
 describe('nearestBlitRuns', () => {
   it.each(AXES)('%s 的区间还原回同一张表', (_name, axis) => {
     for (let destLen = 1; destLen < axis.map.length; destLen++) {
@@ -83,7 +125,7 @@ describe('nearestBlitRuns', () => {
 
 /**
  * 打平的位置：`k*i + k/2` 恰好落在整数上时，GPU 的最近邻取那个整数，Java2D
- * 未必。**同一个目标长度里两个方向都可能出现**，所以它凑不出一次平移。
+ * 未必 —— 而**方向随目标长度而变**，所以它凑不出一次平移。
  */
 describe('纹素边界上的平局', () => {
   /** GPU 最近邻：目标像素中心 (i+0.5) 映回源，向下取整。 */
@@ -102,29 +144,54 @@ describe('纹素边界上的平局', () => {
   it('128→80（t=125 那一帧的宽）上，两者差在周期 5 的那几列', () => {
     // 1.6i+0.8 是整数当且仅当 i ≡ 2 (mod 5)。
     const expected = [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77]
-    expect(disagreements(golden.x, 80)).toEqual(expected)
-    for (const i of expected) expect(golden.x.map[80]![i]).toBe(gpu(128, 80, i) - 1)
+    expect(disagreements(USED.x, 80)).toEqual(expected)
+    for (const i of expected) expect(USED.x.map[80]![i]).toBe(gpu(128, 80, i) - 1)
   })
 
-  it('提示图真的会用到的两个混合长度上，平局两个方向都有', () => {
-    // X=20 与 Y=10 —— `Reminder.update()` 每拍宽 +10、高 +2，这两个长度都在路上。
-    for (const [axis, destLen] of [
-      [golden.x, 20],
-      [golden.y, 10],
-    ] as [Axis, number][]) {
-      const java = axis.map[destLen]!
-      let up = 0
-      let down = 0
-      for (let i = 0; i < destLen; i++) {
-        const exact = ((i + 0.5) * axis.srcLen) / destLen
-        if (!Number.isInteger(exact)) continue
-        if (java[i] === exact) up++
-        else if (java[i] === exact - 1) down++
-        else throw new Error(`目标长 ${destLen} 的第 ${i} 个既不是 ${exact} 也不是 ${exact - 1}`)
-      }
-      expect(up).toBeGreaterThan(0)
-      expect(down).toBeGreaterThan(0)
+  /** 一个目标长度里，平局向上与向下各有几个。 */
+  const ties = (axis: Axis, destLen: number): { up: number; down: number } => {
+    const java = axis.map[destLen]!
+    let up = 0
+    let down = 0
+    for (let i = 0; i < destLen; i++) {
+      const exact = ((i + 0.5) * axis.srcLen) / destLen
+      if (!Number.isInteger(exact)) continue
+      if (java[i] === exact) up++
+      else if (java[i] === exact - 1) down++
+      else throw new Error(`目标长 ${destLen} 的第 ${i} 个既不是 ${exact} 也不是 ${exact - 1}`)
     }
+    return { up, down }
+  }
+
+  it('带透明那条循环里，平局的方向由目标长度整体定 —— 同一档不混', () => {
+    let seen = 0
+    for (const [, axis] of AXES) {
+      for (let destLen = 1; destLen < axis.map.length; destLen++) {
+        const { up, down } = ties(axis, destLen)
+        if (up + down === 0) continue
+        seen++
+        expect({ destLen, up, down }).toEqual(
+          up > 0 ? { destLen, up, down: 0 } : { destLen, up: 0, down },
+        )
+      }
+    }
+    // 「一档平局都没有」会让上面那句恒真，所以分母也要断言。
+    expect(seen).toBeGreaterThan(50)
+  })
+
+  it('可方向随目标长度而变，所以一次平移凑不出来', () => {
+    // 提示图高度走过的那几档：Y=2 全部向上，Y=10 全部向下。一个 ε 只能把
+    // 所有平局往同一边推，两者必有一边被推错。
+    expect(ties(USED.y, 2)).toEqual({ up: 2, down: 0 })
+    expect(ties(USED.y, 10)).toEqual({ up: 0, down: 2 })
+  })
+
+  it('不透明那条循环更进一步：同一档里两个方向都有', () => {
+    // 这不是复刻要走的那条路（提示图全带透明），列在这里是因为它是「平局不是
+    // 一条能凑的规则」最硬的那个证据，而且它是数据不是转述。
+    const tiesOf = (axis: Axis, destLen: number) => ties(axis, destLen)
+    expect(tiesOf(golden.opaque.x, 20)).toEqual({ up: 1, down: 3 })
+    expect(tiesOf(golden.opaque.y, 10)).toEqual({ up: 1, down: 1 })
   })
 })
 
