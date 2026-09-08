@@ -115,7 +115,9 @@ describe('背景动画的烘焙裁剪', () => {
       const cropped = w.width !== src.width || w.height !== src.height
       return !cropped && (src.width > CANVAS.width || src.height > CANVAS.height)
     })
-    // 2026-09-07 的读数是 30 张 1024×768（1066×639 只越宽不越高，也在里面）。
+    // 2026-09-07 的读数是 **638**（608 张 1066×639 只越宽，30 张 1024×768 只越高），
+    // 是记录不是断言。这个数原先写成 30，那是「只数了越高的那一档」推出来的，
+    // 不是量出来的 —— /code-review 规范轴逮到的。
     expect(oversizedButKept.length).toBeGreaterThan(0)
   })
 
@@ -139,9 +141,18 @@ describe('背景动画的烘焙裁剪', () => {
     const draws = [...java.matchAll(/g\.drawImage\(([^;]*?)\);/g)].map((m) => m[1]!.trim())
     expect(draws).toEqual(['currentImage, x, y, bp'])
 
-    // `x` / `y` 的每一个赋值点都必须是 0。两个构造器各一对，`set()` 不碰它们。
-    const assigns = [...java.matchAll(/^\s*(x|y)\s*=\s*([^;]+);/gm)].map((m) => `${m[1]}=${m[2]!.trim()}`)
-    expect(assigns.length).toBeGreaterThan(0)
+    // `x` / `y` 的每一个赋值点都必须是 `=0`。两个构造器各一对，`set()` 不碰它们。
+    //
+    // 正则要认全所有**写**的形态，不能只认行首的裸赋值：`this.x=`、`x+=`、`x++`
+    // 逃出去之后「没匹配到」就是这条判据的通过条件（dispatch.md：「找不到东西」
+    // 不许成为通过条件）。所以这里连 `this.`、复合赋值与自增自减一起抓，
+    // 抓到什么都原样记进 `assigns`，让它去和白名单比。
+    const assigns = [
+      ...java.matchAll(/(?:^|[^\w.])(?:this\.)?([xy])\s*(\+\+|--|[-+*/%]?=)\s*([^;]*);/g),
+    ].map((m) => `${m[1]}${m[2]}${m[3]!.trim()}`)
+    expect(assigns.length, 'x/y 的赋值点一个都没匹配到 —— 界标写错了或源码挪走了').toBeGreaterThan(0)
+    // 四处：两个构造器各写一次 x 与 y。多出任何别的形态都会在这里现形。
+    expect(assigns.length).toBe(4)
     expect([...new Set(assigns)].sort()).toEqual(['x=0', 'y=0'])
 
     const panel = javaSource('src/battle/BattlePanel.java')
@@ -185,7 +196,11 @@ function jpegSize(file: string): { width: number; height: number } {
     if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
       return { height: b.readUInt16BE(i + 5), width: b.readUInt16BE(i + 7) }
     }
-    i += 2 + b.readUInt16BE(i + 2)
+    const length = b.readUInt16BE(i + 2)
+    // 段长 < 2 会让 `i` 不前进，循环永远走不完 —— 而「测试跑不完」和「测试还没跑」
+    // 在 CI 上长得一样。烘焙器那份有这条守卫，这份原先漏了。
+    if (length < 2) throw new Error(`${file} 的段长 ${length} 不合法`)
+    i += 2 + length
   }
   throw new Error(`${file} 里找不到 SOF 段`)
 }

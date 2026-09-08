@@ -18,7 +18,18 @@
  * 于是 27 帧素材缺了十三年没人发现 —— 把这类失败搬到构建时是唯一的办法。
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, relative as relativePath, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
@@ -691,15 +702,6 @@ const DEFAULT_LOSSY_QUALITY = 80
 const BATTLE_LOSSY_QUALITY = 95
 
 /**
- * 一张战斗素材转 WebP。存在的理由只有一个：让**两个**调用点（进主包的与按需
- * 的）不可能各自传一个档位。写成 `toWebp(src, dst, crop, 95)` 的话，两处传得
- * 不一样这件事的表现是「某一批素材悄悄比另一批糊」—— 没有任何检查看得见。
- *
- * `crop` 由调用方算（`backgroundAnimCrop`）并且**只算一次**、两个分支共用同一个
- * 变量：这里同样不能让两个分支各算一遍，否则「按需的裁了、进主包的没裁」在
- * 产物上看不出来。
- */
-/**
  * 背景动画的顶层目录名。**不从 `DEFERRED_TOP_DIRS` 里取下标**：那份名单说的是
  * 「按需加载」，跟「画在 (0,0) 不缩放」是两件不相干的事，哪天名单顺序变了或多
  * 进来一个目录，按下标取会静静裁错一批素材。
@@ -715,6 +717,13 @@ const BACKGROUND_ANIM_DIR = '背景动画'
  * 在两个构造器里都写死 `0`，`set()` 只改 name 与 length，源码里没有第三个赋值点。
  * 画布是 `BattlePanel` 的 `WIDTH=32*32` × `HEIGHT=20*32` = 1024×640。于是超出
  * 这个矩形的像素**一个也没有被画出来过**，十三年里没有人看见过它们。
+ *
+ * ⚠️ 这里量的是 `BattlePanel` 的画布，而代码用的是 `STAGE_WIDTH/HEIGHT` ——
+ * 那个常量自述对齐的是 `ScenePanel` 的 `WIDTH/HEIGHT`。**今天两者同值**
+ * （两边都是 1024×640，`ScenePanel` 写的是字面量、`BattlePanel` 写的是 `32*32`
+ * 与 `20*32`），所以用哪个都一样；真分家的那天要用的是 `BattlePanel` 那一对。
+ * `backgroundAnimCrop.test.ts` 第 4 条正是从 `BattlePanel.java` 现读乘出来核的，
+ * 所以分家时它先红。
  *
  * Web 侧走的是 `drawList` 的 `kind: 'image'` + `setSize(tex.width, tex.height)`
  * —— 同样是原尺寸、同样落在 (0,0)、同样被舞台裁掉。所以把源里画不出来的那部分
@@ -774,6 +783,15 @@ function backgroundAnimCrop(relative: string, source: string): SourceRect | unde
  */
 const CROP_MIN_AREA = 0.25
 
+/**
+ * 一张战斗素材转 WebP。存在的理由只有一个：让**两个**调用点（进主包的与按需
+ * 的）不可能各自传一个档位。写成 `toWebp(src, dst, crop, 95)` 的话，两处传得
+ * 不一样这件事的表现是「某一批素材悄悄比另一批糊」—— 没有任何检查看得见。
+ *
+ * `crop` 由调用方算（`backgroundAnimCrop`）并且**只算一次**、两个分支共用同一个
+ * 变量：这里同样不能让两个分支各算一遍，否则「按需的裁了、进主包的没裁」在
+ * 产物上看不出来。
+ */
 function battleWebp(source: string, destination: string, crop?: SourceRect): number {
   return toWebp(source, destination, crop, BATTLE_LOSSY_QUALITY)
 }
@@ -889,7 +907,15 @@ function pngSize(file: string): { width: number; height: number } {
  * 表现为「某一批背景动画少了一条边」—— 没有任何人会去看它。
  */
 function imageSize(file: string): { width: number; height: number } {
-  const head = readFileSync(file).subarray(0, 2)
+  // 只为两个魔数字节把整个文件读进来是白读的（753 张 × 平均几十 KB），
+  // 而 `readFileSync` 没有"只读前 N 字节"的形式，所以走 fd。
+  const head = Buffer.alloc(2)
+  const fd = openSync(file, 'r')
+  try {
+    readSync(fd, head, 0, 2, 0)
+  } finally {
+    closeSync(fd)
+  }
   if (head[0] === 0x89 && head[1] === 0x50) return pngSize(file)
   if (head[0] === 0xff && head[1] === 0xd8) return jpegSize(file)
   throw new Error(`${file} 既不是 PNG 也不是 JPEG，读不出宽高`)
