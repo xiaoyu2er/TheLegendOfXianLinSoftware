@@ -1403,7 +1403,16 @@ function makePet(w: BattleWorld): Pet {
   return { x: 700, y: 400, speed, power, isDraw: true, isStop: false, code: 0 }
 }
 
-/** `Pet.update()`：上浮五拍、下沉五拍，第十拍归零。只动 `y`。 */
+/**
+ * `Pet.update()`。只动 `y`。
+ *
+ * ⚠️ **原版的注释说「上浮五拍、下沉五拍」，而它的代码不是那样**（xl-rh9.15
+ * 实测）：三个 `if` 是并列的，`code==4` 那一拍先 `y--`（code 变 5），紧接着
+ * 第二支立刻成立又 `y++`（code 变 6，5 被跳过）。同一拍一上一下净位移 0，
+ * 于是一轮是 **9 拍**：−1 四拍、平一拍、+1 四拍，振幅 4。下面的实现是照抄
+ * 那两个顺序 `if` 的，形状由 `render/drawList.test.ts` 那条判据钉着 ——
+ * `pet.y` 不在行为真值里，只有它验得到。
+ */
 function updatePet(pet: Pet): void {
   if (pet.isStop) return
   if (pet.code < 5) {

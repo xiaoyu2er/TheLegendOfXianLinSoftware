@@ -614,7 +614,9 @@ function enemyOps(w: BattleWorld, e: Enemy, push: (op: DrawOp) => void): void {
  *
  * 原版那三行就是全部：`if(isDraw) g.drawImage(petImage, x, y, bp)` —— 一张
  * 静止的图，**没有帧号**（`loadAnimation()` 是个空方法）。会动的只有 `y`：
- * `update()` 上浮五拍、下沉五拍，十拍一轮，状态层已经推出来了。
+ * `update()` 一轮 **9 拍**：−1 四拍、平一拍、+1 四拍，振幅 4。原版的注释写的
+ * 是「上浮五拍、下沉五拍」，而它那三个并列的 `if` 会在 code==4 那一拍一上一下
+ * （见 `step.ts` 的 `updatePet`）。状态层已经把这个 y 推出来了。
  *
  * ⚠️ **`pet.x` / `pet.y` / `pet.isDraw` 三个字段一个都不在行为真值里** ——
  * 导出器的 `snapshotState` 从没取过 `bp.pet`（见 `types.ts` 的 `Pet`）。所以
