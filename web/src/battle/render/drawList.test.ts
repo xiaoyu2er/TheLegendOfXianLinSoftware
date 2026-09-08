@@ -495,6 +495,9 @@ describe('全部战斗真值合起来画到了哪几层', () => {
     'hurt-value',
     'instruct',
     'mouse',
+    // xl-rh9.15 之前这一层在 UNCOVERED 里：先是结构性缺席（世界里没有 pet
+    // 这个字段），xl-rh9.14 之后是走到就抛。battle-mishu-lu 第 864 拍起画到它。
+    'pet',
     'progress-bar',
     'reminder',
     'skill-anim',
@@ -505,12 +508,15 @@ describe('全部战斗真值合起来画到了哪几层', () => {
     'victory-reminder',
   ]
 
-  /** 一次都没画到的层，各自写明为什么。**没有第三种。** */
-  const UNCOVERED: Readonly<Record<string, string>> = {
-    pet:
-      'xl-rh9.14 把陆雪琪的秘术做出来之后，世界里有了 pet 字段（battle-mishu-lu ' +
-      '第 855 拍召出它）—— 这一层因此从"结构性缺席"变成了抛，归 xl-rh9.15'
-  }
+  /**
+   * 一次都没画到的层，各自写明为什么。**没有第三种。**
+   *
+   * xl-rh9.15 把小精灵画出来之后这里空了 —— 25 层全部被至少一条真值走到过。
+   * **空不等于这张表没用**：上面那条「不许有第三种」拿它当分母，谁新加一层
+   * 却不写判据，`unaccounted` 立刻红；而下面「登记说盖不到，实际画到了」
+   * 那一支现在恒真，它只在这张表重新长出条目时才有对象。
+   */
+  const UNCOVERED: Readonly<Record<string, string>> = {}
 
   /** 每一条真值各跑一遍，收下它画到的层。抛了就停在那一拍（那也是结论）。 */
   const covered = (() => {
@@ -650,18 +656,23 @@ describe('哪条剧本在末拍之前抛，与它的表态对得上（xl-rh9.11�
   })
 
   it('表 unpainted 的就是这一条 —— 这是一份登记，不是自动推导', () => {
-    // **两头都会红**：谁新表一条 unpainted，这一行红；谁把小精灵画出来了
+    // **两头都会红**：谁新表一条 unpainted，这一行红；谁把最后一层画出来了
     // 却没改表，也红。写成 `filter` 现扫出来的就是对的，这两件事都不会响
     // （纪律 3 那条误用的形状）。
     //
     // 历史：xl-rh9.12 之前有一批 unpainted，四层画出来之后一条都不剩，这里
     // 曾经签的是一个空数组。xl-rh9.14 又添了六条，xl-rh9.18 把其中五条换成
-    // 真量出来的 gap —— 剩下的这一条撞的是第 11 层小精灵（xl-rh9.15）。
+    // 真量出来的 gap，最后一条 `battle-mishu-lu` 撞第 11 层小精灵 ——
+    // xl-rh9.15 把它画出来了，于是这里**第二次**签回空数组。
+    //
+    // ⚠️ 空数组这一侧是真的会红的那一侧：下面 `for (const a of attempts)`
+    // 里每条剧本都走 else 那一支「不许在末拍之前抛」，一条剧本抛了却没表
+    // unpainted 就红。反过来"这份登记恒真"要靠有人新表 unpainted 才有对象。
     const unpainted = attempts.filter((a) => expectationOf(a.name).status === 'unpainted')
     expect(
       unpainted.map((a) => a.name),
       '表 unpainted 的剧本变了？改这份登记，下面那一支会跟着验它',
-    ).toEqual(['battle-mishu-lu'])
+    ).toEqual([])
   })
 
   it('这些剧本撞上的层，正是登记在案还没画的那几层', () => {
@@ -673,7 +684,12 @@ describe('哪条剧本在末拍之前抛，与它的表态对得上（xl-rh9.11�
     // 换成对撞一份**手写的**未实现层名单：多撞一层红（有别的东西炸了），
     // 少撞一层也红（那一层画出来了，表该改了）。分辨力从"不止一层"换成了
     // "恰好是这几层"，比原先还硬。
-    const UNIMPLEMENTED_LAYERS = ['pet']
+    //
+    // xl-rh9.15 之后这份名单是空的（25 层一层不缺），于是这一条只剩"多撞
+    // 一层红"那半边 —— 而那半边现在也够不着，因为上面那条已经钉死了没有
+    // 剧本表 unpainted、这个循环一次都进不去。**它是留着的脚手架**：再有
+    // 一层画不出来时，往这里签一个名字，它立刻恢复双向。
+    const UNIMPLEMENTED_LAYERS: string[] = []
     const hit = new Set<string>()
     for (const a of attempts) {
       if (expectationOf(a.name).status !== 'unpainted') continue

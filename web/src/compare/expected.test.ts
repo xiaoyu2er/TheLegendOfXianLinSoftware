@@ -48,16 +48,21 @@ describe('跨端比对的期望表', () => {
     const unpainted = Object.entries(EXPECTED).filter(([, e]) => e.status === 'unpainted')
     // **这是一份登记，逐条签在这里**（xl-rh9.18）。xl-rh9.12 把菜单 / 提示图 /
     // 状态图标四层画出来、xl-rh9.13 把胜利结算画出来之后，六条 unpainted 里
-    // 五条换成了真量出来的 gap，只剩 `battle-mishu-lu` —— 它撞的是第 11 层
-    // 小精灵（xl-rh9.15）。
+    // 五条换成了真量出来的 gap，只剩 `battle-mishu-lu` 撞第 11 层小精灵；
+    // xl-rh9.15 把那一层画出来，它也换成了真量出来的分区 gap，**这张表因此
+    // 空了**。
     //
     // 为什么是手写一份名单而不是 `filter` 一下就完事（纪律 3 那条误用）：
-    // 这一行两头都会红 —— 谁新表一条 unpainted，它红；谁把小精灵画出来了
+    // 这一行两头都会红 —— 谁新表一条 unpainted，它红；谁把最后一层画出来了
     // 却没改这张表，它也红。写成"现扫出来的就是对的"，这两件事都不会响。
+    //
+    // 空着的那一侧不是没人守：`drawList.test.ts` 的「表没说画不出来，那它就
+    // 不许在末拍之前抛」逐条剧本地验着 —— 谁让 battleDrawList 又抛起来而
+    // 这里还写着 []，那边红。
     expect(
       unpainted.map(([name]) => name),
       '表 unpainted 的剧本变了？改这份登记，下面那几条会跟着验它',
-    ).toEqual(['battle-mishu-lu'])
+    ).toEqual([])
     for (const [name, e] of unpainted) {
       expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
       expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()

@@ -236,8 +236,9 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
   // ===== xl-rh9.14 的六条：剩下那些技能与秘术 =====
   //
   // 六条原先都是 `unpainted`（技能菜单与状态图标归 xl-rh9.12、小精灵归
-  // xl-rh9.15）。xl-rh9.18 把 xl-rh9.12 合进来之后，**五条比得成了**，各自换成
-  // 下面这些**真量出来的**表态；只剩 `battle-mishu-lu` 还撞第 11 层小精灵。
+  // xl-rh9.15）。xl-rh9.18 把 xl-rh9.12 合进来之后**五条比得成了**，
+  // xl-rh9.15 把第 11 层小精灵画出来之后**第六条也比得成了** —— 六条各自换成
+  // 下面这些**真量出来的**表态，这一批里再没有 `unpainted`。
   //
   // 五条的账合起来只有两笔，逐帧数出来的（`tools/compare-frames.sh`，
   // `--every 25`，容差 8）：
@@ -412,9 +413,62 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     issue: 'xl-9bd.17',
   },
   'battle-mishu-lu': {
-    status: 'unpainted',
-    why: 'web 侧还画不出小精灵（第 11 层）—— 陆雪琪的秘术把它召出来就抛',
-    issue: 'xl-rh9.15',
+    status: 'gap',
+    // 陆雪琪的秘术召出小精灵那一条（xl-rh9.14，1080 步）。第 11 层由 xl-rh9.15
+    // 画出来之后，它从 `unpainted` 换成了这条**真量出来的**分区表态。
+    //
+    // 实测（`tools/compare-frames.sh battle-mishu-lu --every 25`，44 帧，
+    // 容差 8）：
+    //
+    //   硬比区 44 帧**逐像素相等**（三个文字缺口区之外，超容差的像素合计 **0** 个）
+    //   panel-text-zhang  合计 65974、最差 1637（#325）
+    //   panel-text-yu     合计 64491、最差 1637（#150）
+    //   panel-text-lu     合计 87794、最差 2140（#700）
+    //
+    // 那个 **0** 就是这张票的判据，逐样点名它盖住了什么：
+    //
+    // - **小精灵本体**画在 `(pet.x, pet.y)`，而 `pet.x/y/isDraw` 三个字段
+    //   **一个都不在行为真值里**（导出器的 `snapshotState` 没取 `bp.pet`）。
+    //   所以位置对不对、`Pet.update()` 那个"上浮五拍、下沉五拍"的相位对不对，
+    //   逐步的 `toEqual` 一个字都验不到 —— 只有这 44 帧的像素验得到。取样点
+    //   是 25 的倍数，`tick % 10` 在 0 与 5 之间交替，浮动的两端都被采到了。
+    // - **行动条上那一颗小头像**：真值里有 `bar.pet`（petX），可"该不该画
+    //   这一颗"不在真值里。原版判的是 `bp.pet!=null` 而**不是** `pet.isDraw`
+    //   —— 小精灵出手那几拍本体消失、这一颗还在，那几拍也在这 0 里。
+    // - **`小精灵攻击` 那 22 帧动画**与它打出去的伤害数字。
+    //
+    // 这条剧本**不放背景动画**（秘术与小精灵攻击都不走 `skillAttack`，
+    // `backgroundAnimation.isDraw` 全程 false），所以没有 xl-7ip 那笔账，
+    // 剩下的差异只有状态栏那九行字。
+    gaps: [
+      {
+        name: 'panel-text-zhang',
+        // 实测最差帧 1637 个，上界取 2 倍。
+        maxPixels: 3274,
+        rect: { x0: 88, y0: 545, x1: 330, y1: 614 },
+        why: '状态栏第一格（张小凡）的等级 / 血 / 灵力三行字的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'panel-text-yu',
+        // 实测最差帧 1637 个，上界取 2 倍。
+        maxPixels: 3274,
+        rect: { x0: 410, y0: 545, x1: 652, y1: 614 },
+        why: '状态栏第二格（文敏）的等级 / 血 / 灵力三行字的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'panel-text-lu',
+        // 实测最差帧 2140 个，上界取 2 倍。陆雪琪那一格最大，因为她放秘术
+        // 掉灵力、字数比另外两格多变几次。
+        maxPixels: 4280,
+        rect: { x0: 732, y0: 545, x1: 974, y1: 614 },
+        why: '状态栏第三格（陆雪琪）的等级 / 血 / 灵力三行字的字形',
+        issue: 'xl-9bd.17',
+      },
+    ],
+    why: '只剩状态栏那九行字的字形；小精灵那三层（本体 / 行动条上那一颗 / 攻击动画）在硬比区里逐像素相等',
+    issue: 'xl-9bd.17',
   },
   'battle-victory': {
     status: 'gap',

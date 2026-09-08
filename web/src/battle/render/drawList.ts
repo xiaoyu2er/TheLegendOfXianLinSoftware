@@ -12,6 +12,8 @@ import {
   GAME_OVER_RIGHT_ID,
   HP_BAR_ID,
   MP_BAR_ID,
+  PET_HEAD_ID,
+  PET_ID,
   PROGRESS_BAR_ID,
   SKILL_MENU_BACK_ID,
   angryId,
@@ -63,16 +65,18 @@ import { SHOW_ATTR_START, SHOW_EXP_INDEX } from '../victory'
  * **按出现顺序解出来**，逐个与这里对。手抄一份清单，抄错一层的表现是"某个
  * 精灵被别的盖住了"，画面看起来完全正常。
  *
- * ## 还没实现的层：抛，不静默
+ * ## 25 层现在一层不缺（xl-rh9.15）
  *
- * 25 层里今天只剩**一层**画不出来：第 11 层小精灵（归 xl-rh9.15），而它是
- * 一种特别的缺席 —— 世界里**根本没有那个字段**，结构性缺席。药品菜单 /
- * 技能菜单 / 提示图 / 敌我两层战斗状态图标由 xl-rh9.12 画出来了，第 22 层
- * 胜利结算由 xl-rh9.13 画出来了。
- * 没实现的层的处置**不是"什么都不画"** —— 那样"没实现"和"这一帧本来就没有
- * 它"长得一模一样。处置是：那一层**真的要画**的时候当场抛，并点名归哪张票。
- * 判据见 `drawList.test.ts` 的「这一场碰不到的层」与「全部战斗真值合起来
- * 画到了哪几层」两组。
+ * 药品菜单 / 技能菜单 / 提示图 / 敌我两层战斗状态图标由 xl-rh9.12 补上，第 22
+ * 层胜利结算由 xl-rh9.13 补上，最后一层——第 11 层小精灵——由 xl-rh9.15 补上。
+ * 随之删掉的是那个 `unimplemented()`：它已经没有调用者，而 `noUnusedLocals`
+ * 不留死函数。
+ *
+ * **再有一层画不出来时，处置照旧：抛，不是"什么都不画"。** 后者会让"没实现"
+ * 与"这一帧本来就没有它"在逐帧比对里长得一模一样 —— 而那正是这套判据要分开
+ * 的两件事。抛的那句话要点名归哪张票（`drawList.test.ts` 会拿票号去撞
+ * `expected.ts` 里那条剧本的 `unpainted` 表态），`expected.ts` 那条同时改成
+ * `unpainted`。今天两处都是空的，空得是对的：判据仍在，只是没有对象。
  */
 
 export interface Rect {
@@ -181,11 +185,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 10 怪物走图（顺序是 `bp.enemies`：em2 → em1 → em3，原版靠它解决遮掩）
   for (const e of w.enemies) enemyOps(w, e, push)
   // 11 小精灵
-  // xl-rh9.14 把陆雪琪的秘术做出来了，`BattleWorld` 从此有了 `pet` 这个字段
-  // ——在那之前这一层是**结构性缺席**（没有字段可读就没有"画错"的可能）。
-  // 现在有得读了，于是改成走到就抛并点名：`battle-mishu-lu` 那份真值里第 855
-  // 拍召出小精灵，此后它一直在场上。
-  if (w.pet) unimplemented('pet', '小精灵（陆雪琪的秘术召出来的）', 'xl-rh9.15')
+  petOps(w, push)
 
   // 12 行动条
   progressBarOps(w, push)
@@ -218,15 +218,6 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   startAnimOps(w, push)
 
   return ops
-}
-
-function unimplemented(layer: LayerName, what: string, issue: string): never {
-  throw new Error(
-    `第 ${BATTLE_LAYERS.indexOf(layer) + 1} 层「${layer}」这一帧要画${what}，` +
-      `而 web 侧还没有它 —— 归 ${issue}。` +
-      `这里抛而不是"什么都不画"：不画的话，「没实现」与「这一帧本来就没有它」` +
-      `在逐帧比对里长得一模一样。`,
-  )
 }
 
 // ===== 各层 =====
@@ -619,6 +610,24 @@ function enemyOps(w: BattleWorld, e: Enemy, push: (op: DrawOp) => void): void {
 }
 
 /**
+ * 第 11 层小精灵（`Pet.drawPet`，xl-rh9.15）。
+ *
+ * 原版那三行就是全部：`if(isDraw) g.drawImage(petImage, x, y, bp)` —— 一张
+ * 静止的图，**没有帧号**（`loadAnimation()` 是个空方法）。会动的只有 `y`：
+ * `update()` 上浮五拍、下沉五拍，十拍一轮，状态层已经推出来了。
+ *
+ * ⚠️ **`pet.x` / `pet.y` / `pet.isDraw` 三个字段一个都不在行为真值里** ——
+ * 导出器的 `snapshotState` 从没取过 `bp.pet`（见 `types.ts` 的 `Pet`）。所以
+ * 这一层的正确性不是靠逐步 `toEqual` 兜的，是靠 `battle-mishu-lu` 的跨端逐帧
+ * 比对：画错了位置、画错了浮动相位、该消失时没消失，都会在硬比区里露出来。
+ */
+function petOps(w: BattleWorld, push: (op: DrawOp) => void): void {
+  const pet = w.pet
+  if (pet === null || !pet.isDraw) return
+  push({ kind: 'image', layer: 'pet', id: PET_ID, x: pet.x, y: pet.y })
+}
+
+/**
  * 行动条：一条底图 + 七颗小头像，每颗的横坐标就是它跑到哪了。
  *
  * **顺序照抄 `drawProgressBar`**：底图 → 张 → 文 → 陆 → 小精灵 → 怪 1/2/3。
@@ -636,7 +645,11 @@ function progressBarOps(w: BattleWorld, push: (op: DrawOp) => void): void {
   head(w.zxf, p.zhangX)
   head(w.yj, p.yuX)
   head(w.lxq, p.luX)
-  // 小精灵那一颗：`if(bp.pet!=null)`，而 `pet` 恒为 null（见上面第 11 层）。
+  // 小精灵那一颗：原版判的是 `if(bp.pet!=null)`，**不是 `pet.isDraw`** ——
+  // 小精灵出手那一拍 `attack()` 把 `isDraw` 关掉（本体从场上消失、换技能动画
+  // 播），而行动条上这一颗照画不误。两个判据写成同一个的表现是那一颗头像在
+  // 攻击动画期间闪一下，逐帧比对之外看不出来。
+  if (w.pet) push({ kind: 'image', layer: 'progress-bar', id: PET_HEAD_ID, x: p.petX, y: BAR_Y })
   const enemyHead = (e: Enemy | null, x: number) => {
     if (!e) return
     push({ kind: 'image', layer: 'progress-bar', id: enemyHeadId(e.name), x, y: BAR_Y })

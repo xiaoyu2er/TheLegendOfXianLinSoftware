@@ -2,7 +2,7 @@ import { expToLevelUp, refreshValue } from './units'
 import { updateVictoryReminder } from './victory'
 import type { PartyKey, SkillSpec } from './units'
 import { DRUGS, drugIntroText } from './drugs'
-import { MISHU_ANIM, SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
+import { MISHU_ANIM, PET_ATTACK, SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
 import type { SkillEntry } from './skills'
 import {
   MENU_BUTTON_H,
@@ -1401,22 +1401,6 @@ function makePet(w: BattleWorld): Pet {
     (of(w.zxf, '张小凡', 'hurt') + of(w.lxq, '陆雪琪', 'hurt') + of(w.yj, '文敏', 'hurt')) / 3,
   )
   return { x: 700, y: 400, speed, power, isDraw: true, isStop: false, code: 0 }
-}
-
-/** `Pet.attack()` 那一发 `skillAnimation.set(...)`。 */
-const PET_ATTACK: SkillSpec = {
-  name: '小精灵攻击',
-  length: 22,
-  x: 120,
-  y: 135,
-  beAttackedCode: 8,
-  beAttackedTimes: 1,
-  runCode: 6,
-  attackCode: 16,
-  withdrawCode: 22,
-  offsetTo1: 90,
-  offsetTo2: 210,
-  offsetTo3: 0,
 }
 
 /** `Pet.update()`：上浮五拍、下沉五拍，第十拍归零。只动 `y`。 */
