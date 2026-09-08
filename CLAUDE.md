@@ -100,10 +100,17 @@ re-export-and-diff regression checks, both of which must come back empty:
   empty `git diff` is what catches that. See `docs/trace-format.md`.
 
 `web/` has vitest (`pnpm test`). **The Java side has no unit tests at all**
-(`find . -path ./web -prune -o -name '*Test*.java' -print` is empty, measured
-2026-09-07). Whether to build one — and the fact that this sentence used to
-point at `xl-9bd.5`, a *closed* ticket about the golden tests rather than about
-a Java suite — is tracked in `xl-f8y`.
+(`find . -path ./web -prune -o -name '*Test*.java' -print` is empty, re-measured
+2026-09-08). The gap that leaves has been **measured, not argued**
+(2026-09-08): ten mutations, three caught by the two re-export checks and
+**seven invisible to both** — including the two kinds of `src/` edit this repo actually sanctions
+(`fix(path)`'s path normalisation and `fix(diag)`'s missing-image warning),
+and `ExportTrace`'s promise that an unknown `driver` is a hard failure. The
+matrix, the three families it falls into, and the small suite proposed in
+answer to it: `docs/java-side-test-gap.md`. Building that suite needs two
+repo-level calls (how a test dependency enters; whether the Java side gets
+CI) and is still open as `xl-f8y` — deliberately *not* "unit-test `src/`",
+which is frozen specification.
 
 ## Architecture Overview
 
