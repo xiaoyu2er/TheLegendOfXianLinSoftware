@@ -46,10 +46,18 @@ describe('跨端比对的期望表', () => {
     // 与 unassembled 同一条理由（一帧都没比过），只是「比不了」的原因不同：
     // 驱动器装得出，可这条剧本会走进一层还没实现的绘制。分母从表里现数。
     const unpainted = Object.entries(EXPECTED).filter(([, e]) => e.status === 'unpainted')
+    // **这是一份登记，逐条签在这里**（xl-rh9.18）。xl-rh9.12 把菜单 / 提示图 /
+    // 状态图标四层画出来、xl-rh9.13 把胜利结算画出来之后，六条 unpainted 里
+    // 五条换成了真量出来的 gap，只剩 `battle-mishu-lu` —— 它撞的是第 11 层
+    // 小精灵（xl-rh9.15）。
+    //
+    // 为什么是手写一份名单而不是 `filter` 一下就完事（纪律 3 那条误用）：
+    // 这一行两头都会红 —— 谁新表一条 unpainted，它红；谁把小精灵画出来了
+    // 却没改这张表，它也红。写成"现扫出来的就是对的"，这两件事都不会响。
     expect(
-      unpainted.length,
-      '一条 unpainted 都没有了？那几层画出来之后把这条判据删掉',
-    ).toBeGreaterThan(0)
+      unpainted.map(([name]) => name),
+      '表 unpainted 的剧本变了？改这份登记，下面那几条会跟着验它',
+    ).toEqual(['battle-mishu-lu'])
     for (const [name, e] of unpainted) {
       expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
       expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()

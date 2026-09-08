@@ -286,3 +286,36 @@ export const SKILLS: Readonly<Record<PartyKey, Readonly<Record<number, SkillEntr
     },
   },
 }
+
+/**
+ * 三个人的秘术动画（xl-rh9.14 抄的，xl-rh9.18 从 `step.ts` 搬到这里 ——
+ * 渲染那一头也要按它推图，而 `render/assets.ts` 不该去 import 状态机）。
+ *
+ * 秘术走「防」按钮（pattern 7），**不在 `SKILLS` / `SKILL_MENU` 里**：它不走
+ * `skillAttack`，逐句转写在 `step.ts` 的 `heroMishu`。也因此它**没有背景动画**。
+ *
+ * `skillAnimation.set(名字, 帧数, x, y, 后面八个全是 0)` ——
+ * 后八个是 0 意味着：不触发被击动画、不位移。
+ */
+export const MISHU_ANIM: Readonly<Record<PartyKey, SkillSpec>> = {
+  zhang: mishuAnim('张小凡秘术', 18, 560, 190),
+  yu: mishuAnim('文敏秘术', 10, 650, 100),
+  lu: mishuAnim('陆雪琪秘术', 8, 620, 300),
+}
+
+function mishuAnim(name: string, length: number, x: number, y: number): SkillSpec {
+  return {
+    name,
+    length,
+    x,
+    y,
+    beAttackedCode: 0,
+    beAttackedTimes: 0,
+    runCode: 0,
+    attackCode: 0,
+    withdrawCode: 0,
+    offsetTo1: 0,
+    offsetTo2: 0,
+    offsetTo3: 0,
+  }
+}

@@ -12,10 +12,10 @@ import { createBattleRenderer } from '../battle/render/battleRenderer'
 import type { BattleRenderer } from '../battle/render/battleRenderer'
 import { battleDrawList } from '../battle/render/drawList'
 import type { DrawOp } from '../battle/render/drawList'
-import { advancePaintState, applyPaintInput, createPaintState } from '../battle/render/paint'
+import { createPaintState } from '../battle/render/paint'
 import type { PaintState } from '../battle/render/paint'
 import { replayBattle } from '../battle/replay'
-import { stepBattle } from '../battle/step'
+import { stepBattleWithPaint } from '../battle/loop'
 import type { BattleTrace } from '../battle/trace'
 import type { BattleWorld } from '../battle/types'
 import { resolveAsset } from '../assets/resolve'
@@ -230,28 +230,33 @@ async function enemySpriteSizes(names: readonly string[]): Promise<Map<string, {
  * **故意改坏一处渲染**（`--self-check` 的注入点），战斗版。
  *
  * 与场景那一侧同一个意思：世界状态一个字节都不动，只把画出来的那一帧挪偏
- * `heroDx` 像素。**挪的是第 1 层「背景图」，不是主角那一层。**
+ * `heroDx` 像素。**挪的是这一帧的每一条绘制指令**，不是某一层。
  *
- * 为什么不挪主角 —— 实测出来的（2026-09-07，`tools/compare-frames.sh
- * --self-check`）：挪主角那一层时，`battle-min` / `battle-em3-box` /
- * `battle-defeat-scene` 三条正常响，而 `battle-defeat-start` 与
- * `battle-defeat-slot2` 两条报
+ * 这个范围是**两次实测逼出来的**，每一次都表现为「改坏了却没响」：
  *
- *     失败  battle-defeat-slot2  5 帧 · 注入点 #50 · 首个变化帧 无（改坏了却没响）
+ * - 挪**主角**那一层（最初的写法，2026-09-07 xl-rh9.9）：`battle-defeat-start`
+ *   与 `battle-defeat-slot2` 报「首个变化帧 无」。不是判据失灵 —— 打输的剧本
+ *   里三个人都倒下了（`Hero.isDraw=false`，第 7 层整层不画，画的是第 8 层
+ *   死亡动画），末帧还被全灭图整个盖住。挪一层没画出来的东西当然不会变。
+ * - 改挪**第 1 层背景图**之后，`battle-menus` 又报（2026-09-07 xl-rh9.12）：
  *
- * 追下去不是判据失灵，是**这两场里主角那一层根本没画**：打输的剧本里三个人
- * 都倒下了（`Hero.isDraw=false`，第 7 层整层不画，画的是第 8 层死亡动画），
- * 而末帧还被全灭图整个盖住。挪一层没画出来的东西，当然一个像素都不会变。
+ *       失败  battle-menus 19 帧 · 注入点 #225 · 首个变化帧 #250 · 变了 9/19 帧
  *
- * 背景图是唯一**每一帧都在、且不会因为战况而消失**的一层，所以注入点挪它。
- * 自检要断言的两件事（注入点之前逐帧不变、第一个变化帧正好是注入点）不受
- * 影响 —— 变的只是"改坏的是哪一层"。
+ *   同样不是判据失灵：注入点 #225 那一帧正在放技能，**第 2 层背景动画是满屏
+ *   的**（`追星破月` 第 27 帧，1024×640），把挪偏的背景图整个盖掉了。
+ *
+ * 两次的形状是同一个：**"这一层一定看得见"这句话，每接一条新剧本就可能不成立
+ * 一次**，而它不成立的样子正是"改坏了却没响"。所以不再挑层 —— 整帧一起挪，
+ * 那就没有哪一层能盖住另一层了。自检要断言的两件事（注入点之前逐帧不变、
+ * 第一个变化帧正好是注入点）照旧成立，而且不再依赖任何一条剧本的战况。
  */
 function breakBattleOps(ops: DrawOp[], t: number): DrawOp[] {
   const b = window.__xlBreak
   if (!b || t < b.fromTick) return ops
   return ops.map((op) =>
-    op.layer === 'background' && op.kind === 'image' ? { ...op, x: op.x + b.heroDx } : op,
+    op.kind === 'rect'
+      ? { ...op, dest: { ...op.dest, x: op.dest.x + b.heroDx } }
+      : { ...op, x: op.x + b.heroDx },
   )
 }
 
@@ -299,9 +304,7 @@ const battleAssembly: Assembly = {
       const tick = trace.ticks[battleNext]!
       // **按钮贴图要在 stepBattle 之前推**：原版那三个鼠标监听器跑在循环体
       // 之前，读的是这一拍开头的 `command.isDraw`（见 render/paint.ts）。
-      for (const input of tick.input) applyPaintInput(world, paint, input)
-      stepBattle(world, tick.input)
-      advancePaintState(world, paint)
+      stepBattleWithPaint(world, paint, tick.input)
     }
     renderer.draw(breakBattleOps(battleDrawList(world, paint), t))
     await twoFrames()

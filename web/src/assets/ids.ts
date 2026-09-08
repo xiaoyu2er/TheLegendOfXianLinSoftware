@@ -93,3 +93,19 @@ export function narratageBgAssetId(frame: number): AssetId {
 export function bgmAssetId(musicName: string): AssetId {
   return `bgm:${stem(basename(musicName))}`
 }
+
+/**
+ * 药品菜单里那张介绍图（xl-rh9.12）。
+ *
+ * 入参是 `sources/Shop/drug.txt` 第 4 列那个**文件名**（`金创药.png`），
+ * 原版 `ShopReader.readDrug()` 把它拼在 `sources/Shop/药品/回复类/` 后面。
+ *
+ * **它不走 `battleAssetId`**：那一支要求路径以 `image/` 开头，而这六张图不在
+ * `image/` 下 —— 药品是商店那一摊的数据，战斗菜单只是借来画一下。硬塞进
+ * `battle:` 前缀等于让"战斗素材根目录"这个概念多一个例外，而例外不会响。
+ *
+ * **扩展名留着**，与 `npcAssetId` 同一个理由：ID 要是数据里那一列的函数。
+ */
+export function drugPictureAssetId(picture: string): AssetId {
+  return `drug:${normalizePath(picture)}`
+}

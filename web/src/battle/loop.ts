@@ -1,6 +1,6 @@
 import { advancePaintState, applyPaintInput, createPaintState } from './render/paint'
 import type { PaintState } from './render/paint'
-import { stepBattle } from './step'
+import { applyBattleInput, stepBattle } from './step'
 import type { BattleInput } from './step'
 import type { BattleWorld } from './types'
 
@@ -102,12 +102,46 @@ export function advanceBattle(
     return { ...ticker, carryMs: budget, pending: queue }
   }
   for (let i = 0; i < ticks; i++) {
-    const inputs = i === 0 ? queue : EMPTY
-    for (const input of inputs) applyPaintInput(ticker.world, ticker.paint, input)
-    stepBattle(ticker.world, inputs)
-    advancePaintState(ticker.world, ticker.paint)
+    stepBattleWithPaint(ticker.world, ticker.paint, i === 0 ? queue : EMPTY)
   }
   return { ...ticker, carryMs: budget - ticks * BATTLE_TICK_MS, pending: [] }
 }
 
 const EMPTY: readonly BattleInput[] = []
+
+/**
+ * **一拍：输入 → 循环体 → 只有画面看得见的那点更新**（xl-rh9.18）。
+ *
+ * 每一处"回放一份战斗真值"的代码都要按这个顺序跑，所以收成一个函数 ——
+ * 顺序写错了不会报错，只会让某一帧少亮一块，而那种错在单元判据里看不见
+ * （按钮贴图一个字段都不在行为真值里）。
+ *
+ * ## 一拍里有两条输入时，两边必须交替
+ *
+ * ⚠️ 这里原先是**先把这一拍的输入全喂给 `applyPaintInput`，再整批喂给
+ * `stepBattle`**。一拍只有一条输入时两种写法一样；有两条时不一样，而
+ * `xl-rh9.14` 那批剧本正好有（`battle-mishu-yu` 第 655 拍：点「击」+ 点怪物）。
+ *
+ * 原版的两条输入是**两个事件**：第一条的 `mouseReleased` 在处理器里就把
+ * `command.isDraw` 置假了，第二条进来时三个 `if(command.isDraw)` 全部跳过，
+ * 于是「击」按钮保着上一次的待点贴图。批处理的写法让第二条也读到了**这一拍
+ * 开头**的 `isDraw`（还是真），它落在四颗按钮之外，把「击」刷回了常态。
+ *
+ * 表现：此后每一帧「击」按钮那 58×62 一块都不对（实测 2512 个像素），
+ * 而三条剧本的尾巴上全是这一块 —— 逐帧比对之外没有任何东西看得见它。
+ */
+export function stepBattleWithPaint(
+  world: BattleWorld,
+  paint: PaintState,
+  inputs: readonly BattleInput[] = EMPTY,
+): void {
+  for (const input of inputs) {
+    // 顺序照抄原版：事件处理器先跑（读这一条**之前**的 `command.isDraw`），
+    // 跑完它自己就可能把 `isDraw` 改掉，下一条读到的是改过的。
+    applyPaintInput(world, paint, input)
+    applyBattleInput(world, input)
+  }
+  // 输入已经在上面喂完了，这里不再传。
+  stepBattle(world)
+  advancePaintState(world, paint)
+}

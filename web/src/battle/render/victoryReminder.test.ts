@@ -5,13 +5,13 @@ import { resolveAsset } from '../../assets/resolve'
 import { javaSource } from '../../test/javaSource'
 import { repoPath } from '../../test/repoPath'
 import { replayBattle } from '../replay'
-import { stepBattle } from '../step'
+import { stepBattleWithPaint } from '../loop'
 import { readBattleTrace } from '../trace'
 import type { BattleWorld } from '../types'
 import { VICTORY_REMINDER_IDS, VICTORY_REMINDER, victoryReminderFaceId } from './assets'
 import { battleDrawList, VICTORY_REMINDER_LAYOUT } from './drawList'
 import type { DrawOp } from './drawList'
-import { advancePaintState, applyPaintInput, createPaintState } from './paint'
+import { createPaintState } from './paint'
 
 /**
  * 第 22 层「胜利结算」（xl-rh9.13）。
@@ -185,9 +185,7 @@ describe('battle-victory：结算画面逐拍画出来', () => {
     const paint = createPaintState(world)
     const out: Frame[] = []
     for (const tick of trace.ticks) {
-      for (const input of tick.input) applyPaintInput(world, paint, input)
-      stepBattle(world, tick.input)
-      advancePaintState(world, paint)
+      stepBattleWithPaint(world, paint, tick.input)
       const v = world.victoryReminder
       out.push({
         t: tick.t,

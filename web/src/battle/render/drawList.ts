@@ -7,17 +7,21 @@ import { enemyShowsSelected } from './hitBox'
 import {
   ANGRY_BACK_ID,
   CLOUD_ID,
+  DRUG_MENU_BACK_ID,
   GAME_OVER_LEFT_ID,
   GAME_OVER_RIGHT_ID,
   HP_BAR_ID,
   MP_BAR_ID,
   PROGRESS_BAR_ID,
+  SKILL_MENU_BACK_ID,
   angryId,
   backgroundAnimId,
   backgroundId,
   beAttackedId,
   commandButtonId,
   deadId,
+  drugButtonId,
+  drugPictureId,
   enemyHeadId,
   enemySelectedId,
   enemyWalkId,
@@ -28,13 +32,19 @@ import {
   hurtDigitId,
   instructId,
   mouseId,
+  reminderId,
   skillAnimId,
+  skillButtonId,
+  skillIntroId,
+  skillReturnId,
+  stateIconId,
   victoryId,
   VICTORY_REMINDER,
   victoryReminderFaceId,
 } from './assets'
 import type { CommandButtonKey } from './assets'
-import type { BattleWorld, Enemy, Hero } from '../types'
+import { DRUGS } from '../drugs'
+import type { BattleState, BattleWorld, Enemy, Hero, MenuButton } from '../types'
 import type { PartyKey } from '../units'
 import { SHOW_ATTR_START, SHOW_EXP_INDEX } from '../victory'
 
@@ -55,15 +65,14 @@ import { SHOW_ATTR_START, SHOW_EXP_INDEX } from '../victory'
  *
  * ## 还没实现的层：抛，不静默
  *
- * 25 层里有 4 层今天画不出来（药品菜单 / 技能菜单 / 提示图 / 战斗状态图标），
- * 因为它们归别的票 —— 真值 xl-rh9.11 已经补齐，把它们画出来是 xl-rh9.12。
- * 第 22 层「胜利结算」原先也在这一列，xl-rh9.13 把它画出来了。
- * 小精灵是第五种情况：世界里**根本没有那个字段**，结构性缺席。
- * 这些层的处置**不是"什么都不画"** —— 那样"没实现"和"这一帧本来就没有它"
- * 长得一模一样。处置是：那一层**真的要画**的时候当场抛，并点名归哪张票。
- * 触发得到它们的剧本（`battle-menus`）在 `expected.ts` 里表着
- * `unpainted`，判据见 `drawList.test.ts` 的「这一场碰不到的层」与
- * 「表态 unpainted 的剧本，真的画不出来」两组。
+ * 25 层里今天只剩**一层**画不出来：第 11 层小精灵（归 xl-rh9.15），而它是
+ * 一种特别的缺席 —— 世界里**根本没有那个字段**，结构性缺席。药品菜单 /
+ * 技能菜单 / 提示图 / 敌我两层战斗状态图标由 xl-rh9.12 画出来了，第 22 层
+ * 胜利结算由 xl-rh9.13 画出来了。
+ * 没实现的层的处置**不是"什么都不画"** —— 那样"没实现"和"这一帧本来就没有
+ * 它"长得一模一样。处置是：那一层**真的要画**的时候当场抛，并点名归哪张票。
+ * 判据见 `drawList.test.ts` 的「这一场碰不到的层」与「全部战斗真值合起来
+ * 画到了哪几层」两组。
  */
 
 export interface Rect {
@@ -161,7 +170,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 5 控制台
   commandOps(w, p, push)
   // 6 药品菜单
-  if (w.drugMenu.isDraw) unimplemented('drug-menu', '药品菜单（点「物」才打开）', 'xl-rh9.12')
+  drugMenuOps(w, push)
 
   // 7 我方走图 / 8 死亡动画 / 9 胜利动画 —— 原版是**三个独立的循环**，
   //   不是一个循环里画三样：所有人的走图先画完，才轮到所有人的死亡动画。
@@ -181,7 +190,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 12 行动条
   progressBarOps(w, push)
   // 13 技能菜单
-  if (w.skillMenu.isDraw) unimplemented('skill-menu', '技能菜单（点「技」才打开）', 'xl-rh9.12')
+  skillMenuOps(w, push)
 
   // 14 / 15 被击动画：怪物先、我方后
   for (const e of w.enemies) beAttackedOps(e, push)
@@ -189,20 +198,16 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   // 16 技能动画
   skillAnimOps(w, push)
 
-  // 17 / 18 战斗状态图标
-  for (const h of w.heroes) stateIconGuard(h.battleState.isUsable, 'hero-state', '我方')
-  for (const e of w.enemies) stateIconGuard(e.battleState.isUsable, 'enemy-state', '怪物')
+  // 17 / 18 战斗状态图标：**两个独立的循环**，我方全画完才轮到怪物
+  for (const h of w.heroes) stateIconOps(h.battleState, 'hero-state', push)
+  for (const e of w.enemies) stateIconOps(e.battleState, 'enemy-state', push)
 
   // 19 伤害数字
   for (const hv of w.hurtValues) hurtValueOps(hv, push)
   // 20 指示图
   instructOps(w, push)
   // 21 提示图
-  if (w.reminder.isDraw) {
-    // xl-rh9.11 已经把「是第几张」（`reminder.image`，**文件号**）与那个会
-    // 张开的目标矩形补进了真值 —— 画得出来了，但画它是 xl-rh9.12 的活。
-    unimplemented('reminder', '提示图（真值已经记了是第几张与目标矩形）', 'xl-rh9.12')
-  }
+  reminderOps(w, push)
   // 22 胜利结算
   victoryReminderOps(w, push)
   // 23 游标
@@ -222,13 +227,6 @@ function unimplemented(layer: LayerName, what: string, issue: string): never {
       `这里抛而不是"什么都不画"：不画的话，「没实现」与「这一帧本来就没有它」` +
       `在逐帧比对里长得一模一样。`,
   )
-}
-
-function stateIconGuard(isUsable: boolean, layer: LayerName, who: string): void {
-  if (!isUsable) return
-  // xl-rh9.11 把 `type` / `x` / `y` 补进了真值（`battle-menus` 里敌我各挂过
-  // 一次），所以这一层现在画得出来 —— 画它是 xl-rh9.12 的活。
-  unimplemented(layer, `${who}身上的战斗状态图标（真值已经记了 type 与坐标）`, 'xl-rh9.12')
 }
 
 // ===== 各层 =====
@@ -743,6 +741,166 @@ export function hurtDigits(hurt: number): number[] {
   if (first || ten !== 0) out.push(ten)
   out.push(unit)
   return out
+}
+
+/**
+ * 技能菜单与药品菜单共用的落点。两个构造函数里各写了一遍 `x=340; y=200;`，
+ * 一字不差 —— 与 `menuLayout.ts` 里那套按钮几何是同一种"抄了两份的常量"。
+ */
+const MENU_BACK_X = 340
+const MENU_BACK_Y = 200
+
+/** `SkillMenu` 的 `introX=160`，`DrugMenu` 的 `introX=220`。两者不同。 */
+const SKILL_INTRO_X = 160
+const DRUG_INTRO_X = 220
+
+/**
+ * 药品菜单里那一列存货数字：`drawString(numberGOT+"", 575, 246+i*30)`。
+ *
+ * 246 与 226 差 20、步距同样是 30 —— 但原版是**另写的一对字面量**，不是从
+ * 按钮坐标算的。这里照抄成自己的常量：合并成 `menuButtonY(i)+20` 读起来更
+ * 短，可那等于替原版声明了一个它没声明的关系，而关系一旦被当真，改按钮位置
+ * 就会连带把数字挪走。
+ */
+const DRUG_STOCK_X = 575
+const DRUG_STOCK_TOP = 246
+const DRUG_STOCK_STRIDE = 30
+
+/** `Reminder` 构造函数里那个源矩形 `(0,0)-(128,24)`，整场不变。 */
+const REMINDER_SRC: Rect = { x: 0, y: 0, width: 128, height: 24 }
+
+/**
+ * 第 6 层，药品菜单（`DrugMenu.drawDrugMenu`）。
+ *
+ * 顺序照抄：背板 → 七颗按钮 → 六行存货数字 → 介绍图 → 介绍文字。
+ * **存货数字无条件画六行**，与按钮是两个循环 —— 原版那个 `for(int i=0;i<=5;i++)`
+ * 在按钮循环之后另起一段，所以七颗按钮全画完才轮到数字。
+ */
+function drugMenuOps(w: BattleWorld, push: (op: DrawOp) => void): void {
+  const m = w.drugMenu
+  if (!m.isDraw) return
+  push({ kind: 'image', layer: 'drug-menu', id: DRUG_MENU_BACK_ID, x: MENU_BACK_X, y: MENU_BACK_Y })
+  for (const [i, b] of m.buttons.entries()) {
+    push({ kind: 'image', layer: 'drug-menu', id: drugButtonId(i, b.variant), x: b.x, y: b.y })
+  }
+  for (let i = 0; i < DRUGS.length; i++) {
+    const stock = w.drugStock[i]
+    if (stock === undefined) {
+      // 存货表比药品表短 —— 原版是同一个 `DrugPack.drugList`，长度对不上说明
+      // 这两张表分家了。静默少画一行的表现是"那一行没有数字"。
+      throw new Error(`药品存货只有 ${w.drugStock.length} 条，而药品有 ${DRUGS.length} 种`)
+    }
+    push({
+      kind: 'text',
+      layer: 'drug-menu',
+      text: `${stock}`,
+      x: DRUG_STOCK_X,
+      y: DRUG_STOCK_TOP + DRUG_STOCK_STRIDE * i,
+    })
+  }
+  if (!m.isDrawIntro) return
+  if (m.introDrug === null || m.introText === null) {
+    // `checkMoveIn` 里 `isDrawIntro=true` 与那两样是同一句话里写的。少了一样
+    // 说明状态层分家了 —— 原版此时会 `drawImage(null,…)`，什么都不画。
+    throw new Error('药品菜单说要画介绍，可它不知道是哪一种药（introDrug/introText 是 null）')
+  }
+  push({
+    kind: 'image',
+    layer: 'drug-menu',
+    id: drugPictureId(m.introDrug),
+    x: DRUG_INTRO_X,
+    y: m.introY,
+  })
+  push({
+    kind: 'text',
+    layer: 'drug-menu',
+    text: m.introText,
+    x: DRUG_INTRO_X + 10,
+    y: m.introY + 20,
+  })
+}
+
+/**
+ * 第 13 层，技能菜单（`SkillMenu.drawSkillMenu`）。
+ *
+ * 画的是**当前那一组**（`skillButtons`），不是三组都画 —— 三组的按钮坐标
+ * 完全重合，画错组的表现是"技能名对不上这个人"，而按钮排布看着毫无异常。
+ *
+ * 返回按钮**无条件画**：原版这里没有 null 判，也就是说菜单画得出来时它一定
+ * 已经由 `checkRound()` 建好了。真是 null 就抛 —— 那说明有人在 `checkRound()`
+ * 之前把 `isDraw` 置了真，原版在那种情形下是 NPE。
+ */
+function skillMenuOps(w: BattleWorld, push: (op: DrawOp) => void): void {
+  const m = w.skillMenu
+  if (!m.isDraw) return
+  push({ kind: 'image', layer: 'skill-menu', id: SKILL_MENU_BACK_ID, x: MENU_BACK_X, y: MENU_BACK_Y })
+  for (const [i, b] of m.groups[m.group].entries()) {
+    push({
+      kind: 'image',
+      layer: 'skill-menu',
+      id: skillButtonId(m.group, i, b.variant),
+      x: b.x,
+      y: b.y,
+    })
+  }
+  const back: MenuButton | null = m.returnButton
+  if (back === null) {
+    throw new Error(
+      '技能菜单画出来了，可返回按钮还是 null —— 原版 drawSkillMenu 无条件画它，' +
+        '这一步在那边是 NullPointerException。checkRound() 没跑过。',
+    )
+  }
+  push({ kind: 'image', layer: 'skill-menu', id: skillReturnId(back.variant), x: back.x, y: back.y })
+  if (!m.isDrawIntro) return
+  if (m.introImage === null) {
+    throw new Error('技能菜单说要画说明图，可它不知道是哪一张（introImage 是 null）')
+  }
+  push({
+    kind: 'image',
+    layer: 'skill-menu',
+    id: skillIntroId(m.introImage),
+    x: SKILL_INTRO_X,
+    y: m.introY,
+  })
+}
+
+/**
+ * 第 17 / 18 层，战斗状态图标（`BattleState.drawState`）。
+ *
+ * 一个人身上只有一份状态（原版 `Hero.battleState` 是单个对象，`set()` 会把
+ * 上一份先 `Return()` 掉），所以这里最多一条绘制指令。落点 `x/y` 是 `set()`
+ * 写死的那一对，此后不动 —— 它跟着人走的话，人一动图标就飞了。
+ */
+function stateIconOps(state: BattleState, layer: LayerName, push: (op: DrawOp) => void): void {
+  if (!state.isUsable) return
+  push({ kind: 'image', layer, id: stateIconId(state.type), x: state.x, y: state.y })
+}
+
+/**
+ * 第 21 层，提示图（`Reminder.drawReminder`）。
+ *
+ * 这是战斗里**唯一真的在缩放**的一层：源矩形恒为 `(0,0)-(128,24)`，目标矩形
+ * 由 `update()` 每拍朝两边张开（`dx1-=5; dx2+=5; dy1-=1; dy2+=1`）。
+ * `show()` 那一拍两个角还重合，目标矩形宽高都是 0 —— 原版 `drawImage` 在那种
+ * 情形下什么都不画，这边由渲染器的 `clip()` 得到同样的结果（宽 0 的精灵）。
+ *
+ * 缩放意味着采样方式在这一层看得见：Java2D 默认最近邻，Pixi 默认线性，
+ * `battleRenderer` 已经把它改成最近邻（那里的第 1 条就是为这一层写的）。
+ */
+function reminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
+  const r = w.reminder
+  if (!r.isDraw) return
+  if (r.image === null) {
+    // `show(i)` 里 `currentImage=images.get(i)` 与 `isDraw=true` 是同一句话。
+    throw new Error('提示图说要画，可它不知道是第几张（image 是 null）—— show() 没跑过')
+  }
+  push({
+    kind: 'rect',
+    layer: 'reminder',
+    id: reminderId(r.image),
+    dest: { x: r.dx1, y: r.dy1, width: r.dx2 - r.dx1, height: r.dy2 - r.dy1 },
+    src: REMINDER_SRC,
+  })
 }
 
 function instructOps(w: BattleWorld, push: (op: DrawOp) => void): void {

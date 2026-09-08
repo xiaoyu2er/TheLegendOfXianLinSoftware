@@ -2,7 +2,7 @@ import { expToLevelUp, refreshValue } from './units'
 import { updateVictoryReminder } from './victory'
 import type { PartyKey, SkillSpec } from './units'
 import { DRUGS, drugIntroText } from './drugs'
-import { SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
+import { MISHU_ANIM, SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
 import type { SkillEntry } from './skills'
 import {
   MENU_BUTTON_H,
@@ -44,7 +44,7 @@ export interface BattleInput {
 }
 
 export function stepBattle(w: BattleWorld, inputs: readonly BattleInput[] = []): BattleWorld {
-  for (const input of inputs) applyInput(w, input)
+  for (const input of inputs) applyBattleInput(w, input)
 
   // ↓↓↓ 以下顺序逐行对应 BattlePanel.run() 的循环体 ↓↓↓
   // mouse.update()：只更新游标坐标与游标图帧号，两者都不在真值里，也不被任何
@@ -82,7 +82,7 @@ export function stepBattle(w: BattleWorld, inputs: readonly BattleInput[] = []):
  * 移入 + 按下 + 松开，点怪物只有移入 + 按下（`BattleDriver.clickButton` /
  * `clickEnemy`）。`target` 是真值里记着的那一列，不是状态。
  */
-function applyInput(w: BattleWorld, input: BattleInput): void {
+export function applyBattleInput(w: BattleWorld, input: BattleInput): void {
   if (input.e !== 'click') throw new Error(`战斗只认 click 输入，实际 ${input.e}`)
   mouseMoved(w, input.x, input.y)
   mousePressed(w, input.x, input.y)
@@ -1329,33 +1329,6 @@ function setSkillAnimation(w: BattleWorld, spec: SkillSpec): void {
 }
 
 // ================= 秘术（pattern 7） =================
-
-/**
- * 三个人的秘术动画。`skillAnimation.set(名字, 帧数, x, y, 后面八个全是 0)` ——
- * 后八个是 0 意味着：不触发被击动画、不位移。
- */
-const MISHU_ANIM: Readonly<Record<PartyKey, SkillSpec>> = {
-  zhang: mishuAnim('张小凡秘术', 18, 560, 190),
-  yu: mishuAnim('文敏秘术', 10, 650, 100),
-  lu: mishuAnim('陆雪琪秘术', 8, 620, 300),
-}
-
-function mishuAnim(name: string, length: number, x: number, y: number): SkillSpec {
-  return {
-    name,
-    length,
-    x,
-    y,
-    beAttackedCode: 0,
-    beAttackedTimes: 0,
-    runCode: 0,
-    attackCode: 0,
-    withdrawCode: 0,
-    offsetTo1: 0,
-    offsetTo2: 0,
-    offsetTo3: 0,
-  }
-}
 
 /**
  * `LaunchAttack.checkZhang/checkWen/checkLu` 里 `if(bp.currentPattern==7)` 那一段。
