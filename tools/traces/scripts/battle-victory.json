@@ -1,0 +1,18 @@
+{
+  "name": "battle-victory",
+  "description": "打赢之后的结算画面（xl-rh9.13）：battle-min 与 battle-em3-box 都停在「胜利」出现的那一刻，卷轴、两页人物、属性滚动、掉落物清单这一整段一帧都没有真值。这一条一路记到原版自己 switchTo(\"scene\") 为止。怪物取自 脚本20 第 3 行（与 battle-em3-box 同一行 Fight 数据），而**陆雪琪压到 1 级**是有意的：这一场 1190 点经验对 10 级的张小凡与文敏差得远（升一级要 14462），对 1 级的陆雪琪却够（700），于是结算的两条路在同一份真值里都走到 —— 第二页只画升级了的那一个人，属性一项项滚上去，timeCode 数到 55 才回地图。",
+  "driver": "battle",
+  "background": "image/背景图/商塔迷宫.png",
+  "party": ["zhang", "yu", "lu"],
+  "level": { "zhang": 10, "yu": 10, "lu": 1 },
+  "enemies": ["武林高手2/5", "商塔弟子/6", "商塔护法/7"],
+  "seed": 20260907,
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "steps": [
+    { "op": "command", "button": "attack", "budget": 400 },
+    { "op": "target", "enemy": 1, "budget": 50 },
+    { "op": "autoAttack", "until": "victory", "max": 4000 },
+    { "op": "awaitExit", "panel": "scenePanel", "max": 300 }
+  ]
+}

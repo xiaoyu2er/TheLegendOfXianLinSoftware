@@ -233,10 +233,28 @@ public final class BattleDriver implements TraceDriver {
                 default: throw new IllegalStateException(e.getKey());
             }
         }
-        // 出场坐标就是 GameLauncher 里那三行写死的值。
-        if (script.party.contains("zhang")) zxf = new ZhangXiaoFan(560, 160, bp);
-        if (script.party.contains("yu"))    yj  = new YuJie(750, 150, bp);
-        if (script.party.contains("lu"))    lxq = new LuXueQi(800, 330, bp);
+        // 出场坐标就是 GameLauncher 里那三行写死的值。三个人**无论出不出战都建**，
+        // 并挂到 GameLauncher 那三个 public static 引用上 —— 原版 init() 就是这么
+        // 做的（三行 new，紧跟着 menuPanel 把它们收进去），而 VictoryReminder
+        // 收尾那两处会**不判空地**写 GameLauncher.zhangXiaoFan.isLevelUp。
+        //
+        // 不建的话：那一句 NPE 抛在 run() 线程上，而它的 try/catch 只包住 sleep
+        // （xl-1dv.10），线程静静地死掉、闸门永远等不到放行 —— **导出挂死，而挂死
+        // 看起来只是"跑得慢"**，与 PanelTap 那一处是同一个形状的坑（xl-rh9.13
+        // 实测：battle-victory 第一次导出跑了 7 分钟没有产物，退出码 0）。
+        //
+        // 这三个类的字段几乎全是 static，所以"多建一个"不会给出战的那位换一份
+        // 数据：同一个等级建两遍算出来的是同一批值。判据是重导之后
+        // `git diff tools/traces/out` 为空。
+        ZhangXiaoFan zhang = new ZhangXiaoFan(560, 160, bp);
+        YuJie        yu    = new YuJie(750, 150, bp);
+        LuXueQi      lu    = new LuXueQi(800, 330, bp);
+        main.GameLauncher.zhangXiaoFan = zhang;
+        main.GameLauncher.yuJie        = yu;
+        main.GameLauncher.luXueQi      = lu;
+        if (script.party.contains("zhang")) zxf = zhang;
+        if (script.party.contains("yu"))    yj  = yu;
+        if (script.party.contains("lu"))    lxq = lu;
         for (Hero h : new Hero[] { zxf, yj, lxq }) if (h != null) party.add(h);
 
         for (int i = 0; i < 3; i++) {

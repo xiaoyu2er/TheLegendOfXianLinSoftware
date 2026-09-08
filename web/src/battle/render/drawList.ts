@@ -30,9 +30,13 @@ import {
   mouseId,
   skillAnimId,
   victoryId,
+  VICTORY_REMINDER,
+  victoryReminderFaceId,
 } from './assets'
 import type { CommandButtonKey } from './assets'
 import type { BattleWorld, Enemy, Hero } from '../types'
+import type { PartyKey } from '../units'
+import { SHOW_ATTR_START, SHOW_EXP_INDEX } from '../victory'
 
 /**
  * **原版 `BattlePanel.paint()` 那 25 层，摊成一份有序的绘制清单**（xl-rh9.9）。
@@ -51,10 +55,10 @@ import type { BattleWorld, Enemy, Hero } from '../types'
  *
  * ## 还没实现的层：抛，不静默
  *
- * 25 层里有 5 层今天画不出来（药品菜单 / 技能菜单 / 提示图 / 战斗状态图标 /
- * 胜利结算），因为它们归别的票 —— 四层（药品菜单 / 技能菜单 / 提示图 /
- * 战斗状态图标）的真值 xl-rh9.11 已经补齐，把它们画出来是 xl-rh9.12。
- * 小精灵是第六种情况：世界里**根本没有那个字段**，结构性缺席。
+ * 25 层里有 4 层今天画不出来（药品菜单 / 技能菜单 / 提示图 / 战斗状态图标），
+ * 因为它们归别的票 —— 真值 xl-rh9.11 已经补齐，把它们画出来是 xl-rh9.12。
+ * 第 22 层「胜利结算」原先也在这一列，xl-rh9.13 把它画出来了。
+ * 小精灵是第五种情况：世界里**根本没有那个字段**，结构性缺席。
  * 这些层的处置**不是"什么都不画"** —— 那样"没实现"和"这一帧本来就没有它"
  * 长得一模一样。处置是：那一层**真的要画**的时候当场抛，并点名归哪张票。
  * 触发得到它们的剧本（`battle-menus`）在 `expected.ts` 里表着
@@ -200,13 +204,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
     unimplemented('reminder', '提示图（真值已经记了是第几张与目标矩形）', 'xl-rh9.12')
   }
   // 22 胜利结算
-  if (w.victoryReminder.isDraw) {
-    // 状态层那一整段（发经验 / 物品 / 钱 / 升级 / 回地图）已经做完了，归
-    // xl-rh9.5；**画**出来是另一回事：卷轴、两页人物图、四行属性数字、掉落物
-    // 清单，还要连 `image/战斗胜利/` 那批素材一起烘。那是像素这一类判据，
-    // 单开一张票（xl-rh9.13）。这里继续响亮失败 —— 画不出来就不许假装画了。
-    unimplemented('victory-reminder', '胜利结算画面（卷轴 / 两页人物 / 属性滚动 / 掉落物清单）', 'xl-rh9.13')
-  }
+  victoryReminderOps(w, push)
   // 23 游标
   mouseOps(w, p, push)
   // 24 全灭图
@@ -366,6 +364,251 @@ function victoryAnimOps(h: Hero, push: (op: DrawOp) => void): void {
     id: victoryId(h.spec.key, restartFrame(a.code, a.length)),
     x: pos.x,
     y: pos.y,
+  })
+}
+
+// ===== `VictoryReminder` 构造函数里那些从头到尾不变的坐标 =====
+/**
+ * 结算画面上**从头到尾不变**的那些坐标，逐个对应原版 `VictoryReminder` 构造
+ * 函数里的一句赋值。会动的八个（`dy2`/`sy2` 与物品框那六个）在真值里，不在
+ * 这里。
+ *
+ * 导出来是为了让判据够得着：`victoryReminder.test.ts` 把原版构造函数的方法体
+ * 解开，逐个字段与这张表对撞 —— 抄错一个数的表现是"某样东西画偏了几十像素"，
+ * 而那在差异图上和"字形对不上"长得一样。
+ */
+export const VICTORY_REMINDER_LAYOUT = {
+  /** 卷轴：目标矩形的左上角与右边界，源矩形的左上角与右边界。 */
+  dx1: 412,
+  dy1: 80,
+  dx2: 612,
+  sx1: 0,
+  sy1: 0,
+  sx2: 200,
+  /** 升级小图（`levelUpX=412+75; levelUpY=80+60;`）。 */
+  levelUpX: 412 + 75,
+  levelUpY: 80 + 60,
+  /** 「获得物品」那张图。 */
+  thingX: 660,
+  thingY: 80,
+  /** 第一张人物图的落点；三个人纵向每人 +100。 */
+  firstX: 412,
+  firstY: 160,
+  /** 「获得经验」那一行字。 */
+  firstStringX: 532,
+  firstStringY: 80 + 120,
+  /** 四行属性数字（`secondStringX=412+90; secondStringY=80+100;`）。 */
+  secondStringX: 412 + 90,
+  secondStringY: 80 + 100,
+  /** 掉落物清单与「金钱 N」。 */
+  thirdStringX: 690,
+  thirdStringY: 80 + 70,
+} as const
+
+/** 每人一行的纵向间距 —— 人物图、两行经验数字、四行属性数字共用这一个 100。 */
+const VR_ROW_STRIDE = 100
+/** 「还差多少经验」那一行比「获得经验」低 30。 */
+const VR_EXP_LINE_GAP = 30
+/** 四行属性数字与掉落物清单的行距，都是 20。 */
+const VR_LINE_GAP = 20
+
+/** 三个人在结算画面上的行号。原版是六句写死的 `if(bp.zxf!=null)` 之类。 */
+const VR_ROWS: readonly { readonly key: PartyKey; readonly of: (w: BattleWorld) => Hero | null }[] = [
+  { key: 'zhang', of: (w) => w.zxf },
+  { key: 'yu', of: (w) => w.yj },
+  { key: 'lu', of: (w) => w.lxq },
+]
+
+/**
+ * 第 22 层：**打赢之后的结算画面**（`VictoryReminder.drawVictoryReminder`，xl-rh9.13）。
+ *
+ * 状态层那一整段（卷轴拉开、发物品与钱、经验滚下去、翻页、属性一项项加上去、
+ * 回地图）已经由 xl-rh9.5 做完，在 `victory.ts` 里；这里只把它**画出来**，
+ * 一个字段都不写回去。九样东西的次序就是原版那九个 `if` 的书写顺序：
+ * 卷轴底 → 物品框 → 第一页三张人物图 → 第二页（只画升级了的人）→
+ * 两行经验数字 → 四行属性数字 → 掉落物清单与金钱 → 升级小图 → 「获得物品」图。
+ *
+ * **两个矩形都是 1:1，而且都从零开始长。** 卷轴 `dy2`/`sy2` 每拍同时 +20，
+ * 物品框八个坐标每拍 ±4 / ±5 —— 目标与源同步，所以拉伸不会出现。它们各有
+ * 一拍是**零高 / 零面积**的（`sy2=0` 与 `thing_sx1=60` 的那一拍），Java2D 的
+ * `drawImage` 遇到空的源矩形什么都不画，这里照抄成"这一条不推进清单"，而不是
+ * 推一个高度为 0 的矩形下去 —— 后者会在 `clip()` 里除出 NaN。
+ *
+ * **谁画在第几行看的是身份，不是格位。** 原版是 `bp.zxf` / `bp.yj` / `bp.lxq`
+ * 三个引用各判一次，缺席的那一行整行空着，后面的人不会往上挪 —— 与底部状态栏
+ * 那三格是同一个道理。
+ */
+function victoryReminderOps(w: BattleWorld, push: (op: DrawOp) => void): void {
+  const v = w.victoryReminder
+  if (!v.isDraw) return
+  // 逐字段对回原版构造函数的那张表（判据在 victoryReminder.test.ts）。
+  const L = VICTORY_REMINDER_LAYOUT
+
+  // 卷轴底：目标 (412,80)-(612,dy2)，源 (0,0)-(200,sy2)。
+  cornersOp(
+    push,
+    'victory-reminder',
+    VICTORY_REMINDER.back,
+    { x1: L.dx1, y1: L.dy1, x2: L.dx2, y2: v.dy2 },
+    { x1: L.sx1, y1: L.sy1, x2: L.sx2, y2: v.sy2 },
+  )
+  // 物品框：八个坐标全在真值里，从中心对开。
+  cornersOp(
+    push,
+    'victory-reminder',
+    VICTORY_REMINDER.thingBack,
+    { x1: v.thingDx1, y1: v.thingDy1, x2: v.thingDx2, y2: v.thingDy2 },
+    { x1: v.thingSx1, y1: v.thingSy1, x2: v.thingSx2, y2: v.thingSy2 },
+  )
+
+  if (v.firstIsDraw) {
+    for (const [row, { key, of }] of VR_ROWS.entries()) {
+      if (of(w) === null) continue
+      push({
+        kind: 'image',
+        layer: 'victory-reminder',
+        id: victoryReminderFaceId(key, 1),
+        x: L.firstX,
+        y: L.firstY + VR_ROW_STRIDE * row,
+      })
+    }
+  }
+  if (v.secondIsDraw) {
+    // 第二页**只画升级了的人**。没升级的那一行空着。
+    for (const [row, { key, of }] of VR_ROWS.entries()) {
+      const h = of(w)
+      if (h === null || !h.isLevelUp) continue
+      push({
+        kind: 'image',
+        layer: 'victory-reminder',
+        id: victoryReminderFaceId(key, 2),
+        x: L.firstX,
+        y: L.firstY + VR_ROW_STRIDE * row,
+      })
+    }
+  }
+
+  if (v.firstString) {
+    for (const [row, { key, of }] of VR_ROWS.entries()) {
+      if (of(w) === null) continue
+      const y = L.firstStringY + VR_ROW_STRIDE * row
+      // 上面一行是**这一场发了多少经验**（三个人同一个数，每人各拿全额），
+      // 下面一行是这个人**还差多少**升级。两个数都在往下滚。
+      push({ kind: 'text', layer: 'victory-reminder', text: `${v.expToGet}`, x: L.firstStringX, y })
+      push({
+        kind: 'text',
+        layer: 'victory-reminder',
+        text: `${showNum(v.showNums, SHOW_EXP_INDEX[key], key)}`,
+        x: L.firstStringX,
+        y: y + VR_EXP_LINE_GAP,
+      })
+    }
+  }
+
+  if (v.secondString) {
+    for (const [row, { key, of }] of VR_ROWS.entries()) {
+      const h = of(w)
+      if (h === null || !h.isLevelUp) continue
+      const at = SHOW_ATTR_START[key]
+      for (let i = 0; i < 4; i++) {
+        push({
+          kind: 'text',
+          layer: 'victory-reminder',
+          text: `${showNum(v.showNums, at + i, key)}`,
+          x: L.secondStringX,
+          y: L.secondStringY + i * VR_LINE_GAP + VR_ROW_STRIDE * row,
+        })
+      }
+    }
+  }
+
+  if (v.thirdString) {
+    // 掉落物清单：`things.get(i).split("/")[0]` —— 斜杠后面那位是类型（1 药
+    // 2 装备），不画。顺序是 `bp.enemies` 的顺序，不是槽位顺序。
+    for (const [i, thing] of v.things.entries()) {
+      push({
+        kind: 'text',
+        layer: 'victory-reminder',
+        text: thing.split('/')[0]!,
+        x: L.thirdStringX,
+        y: L.thirdStringY + i * VR_LINE_GAP,
+      })
+    }
+    push({
+      kind: 'text',
+      layer: 'victory-reminder',
+      text: `金钱 ${v.moneyToGet}`,
+      x: L.thirdStringX,
+      y: L.thirdStringY + v.things.length * VR_LINE_GAP,
+    })
+  }
+
+  if (v.levelUpIsDraw) {
+    push({
+      kind: 'image',
+      layer: 'victory-reminder',
+      id: VICTORY_REMINDER.levelUp,
+      x: L.levelUpX,
+      y: L.levelUpY,
+    })
+  }
+  if (v.getThingIsDraw) {
+    push({
+      kind: 'image',
+      layer: 'victory-reminder',
+      id: VICTORY_REMINDER.getThing,
+      x: L.thingX,
+      y: L.thingY,
+    })
+  }
+}
+
+/**
+ * `showNums` 那 15 项里的一项。**缺席的角色是 `null`**（见 `victory.ts`），
+ * 而这里的每一个调用点都已经判过那个人在不在场 —— 所以读到 null 说明
+ * `victoryInformation` 与出战名单对不上了，抛，不画一个 `null` 出去。
+ */
+function showNum(showNums: readonly (number | null)[], at: number, key: PartyKey): number {
+  const n = showNums[at]
+  if (n === null || n === undefined) {
+    throw new Error(`showNums[${at}] 是空的，可 ${key} 正在出战 —— 结算画面读到了一个不该缺的数`)
+  }
+  return n
+}
+
+/**
+ * 一个**用对角两点给出的**矩形 —— 原版 `drawImage` 那个八参版就是这么写的。
+ *
+ * 不摊成八个裸 number 参数：那八个数在调用点全是 `number`，传串了一对
+ * （比如把源矩形的 y 传进目标矩形）编译期一声不出，而画出来只是"这张图
+ * 位置有点怪"。分成两个具名对象之后，传串要先写错字段名。
+ */
+interface Corners {
+  readonly x1: number
+  readonly y1: number
+  readonly x2: number
+  readonly y2: number
+}
+
+/**
+ * 原版 `drawImage(img, dx1,dy1,dx2,dy2, sx1,sy1,sx2,sy2, …)` 那一支：**两个
+ * 矩形都按对角两点给**。空的源矩形（宽或高 ≤ 0）什么都不画，与 Java2D 一致。
+ */
+function cornersOp(
+  push: (op: DrawOp) => void,
+  layer: LayerName,
+  id: AssetId,
+  dest: Corners,
+  src: Corners,
+): void {
+  if (src.x2 - src.x1 <= 0 || src.y2 - src.y1 <= 0) return
+  if (dest.x2 - dest.x1 <= 0 || dest.y2 - dest.y1 <= 0) return
+  push({
+    kind: 'rect',
+    layer,
+    id,
+    dest: { x: dest.x1, y: dest.y1, width: dest.x2 - dest.x1, height: dest.y2 - dest.y1 },
+    src: { x: src.x1, y: src.y1, width: src.x2 - src.x1, height: src.y2 - src.y1 },
   })
 }
 

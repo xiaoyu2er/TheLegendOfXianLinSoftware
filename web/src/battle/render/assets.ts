@@ -118,6 +118,59 @@ export function victoryId(key: PartyKey, frame: number): AssetId {
 }
 
 /**
+ * **胜利结算画面那 12 张**（xl-rh9.13）。
+ *
+ * 这份名单逐条对应 `VictoryReminder.loadImage()` 里的每一次 `readImage`：
+ * 四张写死名字的（`0副本` 卷轴底 / `物品` 物品框 / `9` 升级小图 / `获得物品`），
+ * 加上 `for(int i=1;i<=8;i++)` 那八张。目录里其实有 **13** 个文件 ——
+ * `0.png` 一次都没有被读到，所以它**不在**这份名单里。照文件数硬凑成 13 的话，
+ * 多出来的那一条会在 `resolveAsset` 里查得到（烘焙器烘的是目录里的每一个文件），
+ * 于是"多写了一条"和"写对了"长得一样。
+ *
+ * `images` 那八张里，**第 4 张与第 8 张（宋大仁）原版从头到尾没有画过** ——
+ * `drawVictoryReminder` 只用 zhang/wen/lu 各两张。它们仍然在这份名单里，因为
+ * 这份名单抄的是 `loadImage()`，不是"画得到的图"。
+ */
+const VICTORY_BACK_ID = battleId('战斗胜利/0副本.png')
+const VICTORY_THING_BACK_ID = battleId('战斗胜利/物品.png')
+const VICTORY_LEVEL_UP_ID = battleId('战斗胜利/9.png')
+const VICTORY_GET_THING_ID = battleId('战斗胜利/获得物品.png')
+
+export const VICTORY_REMINDER = {
+  back: VICTORY_BACK_ID,
+  thingBack: VICTORY_THING_BACK_ID,
+  levelUp: VICTORY_LEVEL_UP_ID,
+  getThing: VICTORY_GET_THING_ID,
+} as const
+
+/** `images.get(0..7)` —— `image/战斗胜利/1.png` 到 `8.png`，0 基下标。 */
+export function victoryReminderNumbered(index: number): AssetId {
+  if (!Number.isInteger(index) || index < 0 || index > 7) {
+    throw new Error(`战斗胜利那八张图的下标只有 0..7，收到 ${index}`)
+  }
+  return battleId(`战斗胜利/${index + 1}.png`)
+}
+
+/**
+ * 第一页 / 第二页那两张人物图。原版是
+ * `zhang1=images.get(0); zhang2=images.get(4);` 这样六句写死的赋值 ——
+ * 也就是「第一组 0–3、第二组 4–7」，同一个人两组里的位置相同。
+ */
+const VICTORY_PAGE_SLOT: Readonly<Record<PartyKey, number>> = { zhang: 0, yu: 1, lu: 2 }
+export function victoryReminderFaceId(key: PartyKey, page: 1 | 2): AssetId {
+  return victoryReminderNumbered(VICTORY_PAGE_SLOT[key] + (page === 1 ? 0 : 4))
+}
+
+/** `loadImage()` 读到的那 12 张，一条不多一条不少。 */
+export const VICTORY_REMINDER_IDS: readonly AssetId[] = [
+  VICTORY_BACK_ID,
+  VICTORY_THING_BACK_ID,
+  VICTORY_LEVEL_UP_ID,
+  VICTORY_GET_THING_ID,
+  ...Array.from({ length: 8 }, (_, i) => victoryReminderNumbered(i)),
+]
+
+/**
  * 伤害数字。`type` 1 是伤害、2 是回复 —— 原版是同一张 20 条的表加一个 10 的
  * 偏移（`switchNum(num, offset)`），这里写成两个目录名，读起来是同一回事。
  */
@@ -175,6 +228,10 @@ export function battleTextureIds(w: Pick<BattleWorld, 'background' | 'party' | '
     for (const variant of [1, 2, 3] as const) ids.add(commandButtonId(key, variant))
   }
   for (const type of [1, 2]) for (let d = 0; d <= 9; d++) ids.add(hurtDigitId(type, d))
+  // 结算画面那 12 张：原版 `new VictoryReminder(bp)` 在 `initial()` 里就把
+  // `loadImage()` 跑完了，一场战斗只要开打就全部读进内存 —— 与出战名单无关，
+  // 所以这里也无条件全载。
+  for (const id of VICTORY_REMINDER_IDS) ids.add(id)
   for (const h of w.party) {
     ids.add(heroHeadId(h.roleCode))
     ids.add(heroPanelId(h.spec.key))
