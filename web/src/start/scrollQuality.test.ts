@@ -5,7 +5,12 @@ import manifest from '../generated/assets.json'
 import { startFrameAssetId } from '../assets/ids'
 import type { StartSequenceName } from '../assets/ids'
 import { repoPath } from '../test/repoPath'
-import { START_SEQUENCES, START_SEQUENCE_ALIASES, aliasSourceFrame } from './assets'
+import {
+  START_SEQUENCES,
+  START_SEQUENCE_ALIASES,
+  aliasSourceFrame,
+  isAliasedStartSequence,
+} from './assets'
 
 /**
  * 入库的开始界面动画产物，编码方式跟 `START_SEQUENCES` 的 `lossy` 一列对得上
@@ -98,7 +103,7 @@ describe('开始界面动画的 WebP 档位', () => {
     // 死 35，别人加一段动画时它自己跟着走。
     expect(read.size).toBe(
       Object.entries(START_SEQUENCES)
-        .filter(([name]) => START_SEQUENCE_ALIASES[name as StartSequenceName] === undefined)
+        .filter(([name]) => !isAliasedStartSequence(name))
         .reduce((sum, [, sequence]) => sum + sequence.count, 0),
     )
     expect(read.size).toBeGreaterThan(0)
@@ -138,7 +143,13 @@ describe('开始界面动画的 WebP 档位', () => {
    * 为什么两句都要：只比路径的话，烘焙器多烘一套 `start/backScroll/*.webp`
    * 留在那儿也读不出来（映射表指着 `scroll`，多出来的文件没人引用，
    * `pnpm build` 一声不吭把它们打进 dist）；只查目录的话，映射表指错帧
-   * （比如顺序而不是逆序）照样绿。
+   * （比如顺序而不是逆序）照样绿。两半各自打红过（篡改 6 与 7）。
+   *
+   * ⚠️ **这条单独钉不住「逆序」这件事**：它算期望值用的正是烘焙器用的那个
+   * `aliasSourceFrame`，改了那个函数，两边一起跟着改。真正拦住它的是这一对：
+   * 只改函数不重烘 → 入库的映射表跟新算法对不上，**这条红**（篡改 6 的形状）；
+   * 改了函数又重烘 → 烘焙期那条恒等判据红（篡改 4 实测 10/10 帧对不上）。
+   * 所以别把 `aliasSourceFrame` 只留一处读成"这条测试自足了"。
    */
   it('backScroll 逐帧指向 scroll 的逆序帧，且不再有自己的产物目录', () => {
     const alias = START_SEQUENCE_ALIASES.backScroll
@@ -149,7 +160,15 @@ describe('开始界面动画的 WebP 档位', () => {
       TABLE[startFrameAssetId('scroll', aliasSourceFrame(alias, frame, count))],
     ])
     expect(pairs.filter(([mine, theirs]) => mine === undefined || mine !== theirs)).toEqual([])
-    expect(pairs).toHaveLength(count)
+    // 分母不为零。上一行的 `filter(...).toEqual([])` 在 `count` 为 0 时是恒真的
+    // ——「一对都没核到」与「全都对」长得一模一样，跟这个文件里别处那两句
+    // `toBeGreaterThan(0)` 是同一条。
+    //
+    // ⚠️ 这里原来写的是 `expect(pairs).toHaveLength(count)`，那一行**恒真**：
+    // `pairs` 是 `Array.from({ length: count })` 造出来的，长度按构造就等于
+    // `count`。它读起来像在守分母，其实一次都不可能红（/code-review 标出来的，
+    // 已跑代码确认）。
+    expect(count).toBeGreaterThan(0)
     expect(existsSync(resolve(ASSETS, 'start/backScroll'))).toBe(false)
   })
 
@@ -175,8 +194,7 @@ describe('开始界面动画的 WebP 档位', () => {
     // 名单从 `lossy` 那一列现筛，不手抄 —— 这条验的是**字节数**，不是 lossy
     // 声明本身，所以现筛不会让它变恒真（"恰好是两段卷轴"由上面那条钉着）。
     const lossy = Object.entries(START_SEQUENCES).filter(
-      ([name, sequence]) =>
-        sequence.lossy && START_SEQUENCE_ALIASES[name as StartSequenceName] === undefined,
+      ([name, sequence]) => sequence.lossy && !isAliasedStartSequence(name),
     )
     expect(lossy.length).toBeGreaterThan(0)
     for (const [name, sequence] of lossy) {

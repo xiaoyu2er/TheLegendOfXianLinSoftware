@@ -71,6 +71,7 @@ import {
   START_SEQUENCE_ALIASES,
   TITLE_BGM,
   aliasSourceFrame,
+  isAliasedStartSequence,
 } from '../src/start/assets'
 import type { StartImageName, StartSequenceAlias } from '../src/start/assets'
 import type { StartSequenceName } from '../src/assets/ids'
@@ -399,7 +400,7 @@ function main(): void {
   // 映射表的路径 —— 那时报的是"查不到"，读起来像烘焙漏了一帧。
   let startFrames = 0
   for (const [name, sequence] of Object.entries(START_SEQUENCES)) {
-    if (START_SEQUENCE_ALIASES[name as StartSequenceName] !== undefined) continue
+    if (isAliasedStartSequence(name)) continue
     for (let frame = 0; frame < sequence.count; frame++) {
       const source = startFrameSource(sequence.dir, frame)
       const absolute = resolve(REPO, source)
@@ -941,6 +942,10 @@ function bakeStartAlias(
 ): number {
   const sequence = START_SEQUENCES[name]
   const target = START_SEQUENCES[alias.of]
+  // ⚠️ 下面那三条 `fail`（接力别名 / 帧数不等 / lossy 不等）**今天一条都红不了**：
+  // `START_SEQUENCE_ALIASES` 只有一条，三个分支都不可达。它们是给"第二条别名
+  // 进来的那天"准备的，没有篡改验证撑着 —— 别把它们读成已经验过的判据。真正
+  // 验过的是下面那条恒等判据（见提交信息里的篡改矩阵）。
   // 显式标注成 `=> never`，TypeScript 才肯拿它做控制流收窄（少了这个标注，
   // 下面 `relative` 在 `fail` 之后仍然是 `string | undefined`）。
   const fail: (why: string) => never = (why) => {
@@ -949,15 +954,21 @@ function bakeStartAlias(
   }
   // 接力别名（a → b → c）今天没有，也不打算有：`manifest` 里 b 那条是不是
   // 已经落好，取决于两个别名谁先被遍历到，而排错的那一头看到的是"查不到"。
-  if (START_SEQUENCE_ALIASES[alias.of] !== undefined) fail(`${alias.of} 自己也是别名，不许接力`)
+  if (isAliasedStartSequence(alias.of)) fail(`${alias.of} 自己也是别名，不许接力`)
   // 帧数不等时 `aliasSourceFrame` 会算出一个越界的下标。越界的表现是
   // "映射表里没有那一帧"，读起来像烘焙漏了 —— 在这里点名说清楚。
   if (target.count !== sequence.count) {
     fail(`帧数不等：${name} 有 ${sequence.count} 帧，${alias.of} 有 ${target.count} 帧`)
   }
+  // 别名段没有自己的产物，`lossy` 说的是"它读到的那份字节是什么档位"，
+  // 所以必须跟被指向那一段相等。不等的话 `scrollQuality.test.ts` 那条声明与
+  // 产物的对账**报的是别人的账**（理由见 `StartSequence.lossy` 的头注）。
+  if (target.lossy !== sequence.lossy) {
+    fail(`lossy 声明不等：${name} 是 ${sequence.lossy}，${alias.of} 是 ${target.lossy}`)
+  }
 
   const temporary = mkdtempSync(resolve(tmpdir(), 'xl-start-alias-'))
-  const differ: string[] = []
+  const mismatches: string[] = []
   let frames = 0
   try {
     for (let frame = 0; frame < sequence.count; frame++) {
@@ -985,7 +996,7 @@ function bakeStartAlias(
       const b = resolve(temporary, `${frame}-b.webp`)
       toWebp(mineAbsolute, a)
       toWebp(theirsAbsolute, b)
-      if (!readFileSync(a).equals(readFileSync(b))) differ.push(`${mine} ≠ ${theirs}`)
+      if (!readFileSync(a).equals(readFileSync(b))) mismatches.push(`${mine} ≠ ${theirs}`)
 
       manifest[startFrameAssetId(name, frame)] = relative
       frames++
@@ -994,12 +1005,12 @@ function bakeStartAlias(
     rmSync(temporary, { recursive: true, force: true })
   }
 
-  if (differ.length > 0) {
+  if (mismatches.length > 0) {
     console.error(
       `开始界面动画别名 ${name} → ${alias.of}（${alias.order}）的恒等判据不成立，` +
-        `${sequence.count} 帧里有 ${differ.length} 帧对不上：`,
+        `${sequence.count} 帧里有 ${mismatches.length} 帧对不上：`,
     )
-    for (const line of differ) console.error(`  ${line}`)
+    for (const line of mismatches) console.error(`  ${line}`)
     console.error(
       '别名成立的前提是这两段逐像素相同（见 src/start/assets.ts 的 START_SEQUENCE_ALIASES）。',
     )

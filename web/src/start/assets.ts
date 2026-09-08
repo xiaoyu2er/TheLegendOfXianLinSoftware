@@ -69,6 +69,13 @@ export interface StartSequence {
    *
    * 产物那一端由 `scrollQuality.test.ts` 核：入库的每一帧的 WebP 编码方式
    * 必须跟这一列对得上，两边不一致立刻红。
+   *
+   * **走别名的那一段没有自己的产物**（xl-l6h），所以这一列在它身上说的是
+   * 「它读到的那份字节是什么档位」，也就是必须跟被指向那一段的这一列相等。
+   * 烘焙器落别名之前核这一条 —— 不核的话，`backScroll: lossy: false` 与
+   * `scroll: lossy: true` 可以同时写着，而 `scrollQuality.test.ts` 拿
+   * backScroll 的 ID 读到的正是 scroll 那份有损字节，于是那条声明与产物的
+   * 对账**报的是别人的账**。
    */
   readonly lossy: boolean
 }
@@ -211,6 +218,21 @@ export const START_SEQUENCE_ALIASES: Readonly<
   Partial<Record<StartSequenceName, StartSequenceAlias>>
 > = {
   backScroll: { of: 'scroll', order: 'reverse' },
+}
+
+/**
+ * 这一段是不是整段指向了别人（也就是它自己不出产物）。
+ *
+ * 收口成一个函数，是这个文件里 `aliasSourceFrame` 那条理由的同一条：查表
+ * 这件事散在烘焙器与测试里三处，三处都要把 `string` 断言成
+ * `StartSequenceName`，而断言错了的表现是**某一段被静静当成没有别名**——
+ * 于是它照常烘一套产物，判据一条都不响。
+ *
+ * 收 `string` 不收 `StartSequenceName`：调用处全是 `Object.entries()` 出来的
+ * `string`，那个断言收在这里一处。
+ */
+export function isAliasedStartSequence(name: string): boolean {
+  return START_SEQUENCE_ALIASES[name as StartSequenceName] !== undefined
 }
 
 /**
