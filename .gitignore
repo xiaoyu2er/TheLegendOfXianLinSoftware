@@ -1,3 +1,8 @@
+# 依赖与构建缓存。`web/.gitignore` 里已有一份，那一份只管 `web/` 下面 ——
+# 在**仓库根**跑一次 `npx vitest run web/src/...` 就会在根上长出
+# `node_modules/.vite/`，而它一路进了 `git add -A`（xl-knp.6 实测：一份记着
+# 「某测试失败」的 vitest 缓存被提交了）。
+node_modules/
 
 # Beads / Dolt files (added by bd init)
 .dolt/

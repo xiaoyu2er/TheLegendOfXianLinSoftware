@@ -8,6 +8,10 @@ import { useFullscreen } from '../stage/useFullscreen'
 import { useSceneRenderer } from '../scene/useSceneRenderer'
 import { useBattleRenderer } from '../battle/render/useBattleRenderer'
 import { useMenuRenderer } from '../menu/render/useMenuRenderer'
+import { useShopRenderer } from '../shop/render/useShopRenderer'
+import { useShopPreview } from '../shop/render/useShopPreview'
+import { SHOP_PREVIEW_CHOICES } from '../shop/preview'
+import type { ShopPreviewChoice } from '../shop/preview'
 import { wheelRows } from '../menu/scroll'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { useGame } from '../game/useGame'
@@ -34,6 +38,7 @@ export function App() {
   const sceneHostRef = useRef<HTMLDivElement>(null)
   const battleHostRef = useRef<HTMLDivElement>(null)
   const menuHostRef = useRef<HTMLDivElement>(null)
+  const shopHostRef = useRef<HTMLDivElement>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
   /**
    * **现在该在哪个场景**，`null` = 还没开局、停在标题上（xl-q7f）。
@@ -82,6 +87,21 @@ export function App() {
   const { status, renderer } = useSceneRenderer(sceneHostRef, shownScene)
   const battleRenderer = useBattleRenderer(battleHostRef)
   const menuRenderer = useMenuRenderer(menuHostRef)
+  /**
+   * **开发用的商店预览**（xl-knp.6）。
+   *
+   * ⚠️ 它不是进店的正路：原版进店走的是场景里的选择事件，把它接到会话上
+   * （`game/session.ts` 的 `Panel`）是 **xl-yg6.2** 的活。这里只让骨架在
+   * 浏览器里真的画得出来 —— `shop/render/drawList.test.ts` 守的是那份清单，
+   * 守不了"清单真的贴上了纹理"，而两者失败的样子不一样（断言红 vs 一片空白）。
+   *
+   * 因此它**不进 `view.panel`**，只是一个盖在最上面的独立面板；选它就等于
+   * 把游戏那一半先搁一边。
+   */
+  const shopRenderer = useShopRenderer(shopHostRef)
+  const [shopPreview, setShopPreview] = useState<ShopPreviewChoice>('none')
+  const shop = useShopPreview(shopRenderer, shopPreview)
+  const inShopPreview = shopPreview !== 'none'
   // 方向键走动、按住 Ctrl（或 Shift）跑动、空格搭话。世界的推进与画面无关，
   // 见 useGame；对话框是它交出来的那份状态的投影。
   //
@@ -192,6 +212,14 @@ export function App() {
     if (at) view.menuInput({ e, x: at.x, y: at.y })
   }
 
+  /** 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。 */
+  const onShopMouse =
+    (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!inShopPreview) return
+      const at = stagePoint(event)
+      if (at) shop.input({ e, x: at.x, y: at.y })
+    }
+
   /**
    * 滚轮 —— 装备页与物品页那两处列表翻页用（xl-6lo.13）。**原版没有这一种
    * 输入**，它只从浏览器进来。
@@ -215,36 +243,50 @@ export function App() {
             <div
               className="stage-panel"
               ref={sceneHostRef}
-              hidden={inBattle || inMenu || atTitle}
+              hidden={inBattle || inMenu || atTitle || inShopPreview}
               data-testid="scene-host"
             />
             <div
               className="stage-panel"
               ref={battleHostRef}
-              hidden={!inBattle}
+              hidden={!inBattle || inShopPreview}
               onMouseDown={onStageClick}
               data-testid="battle-host"
             />
             <div
               className="stage-panel"
               ref={menuHostRef}
-              hidden={!inMenu}
+              hidden={!inMenu || inShopPreview}
               onMouseDown={onMenuMouse('press')}
               onMouseUp={onMenuMouse('release')}
               onMouseMove={onMenuMouse('move')}
               onWheel={onMenuWheel}
               data-testid="menu-host"
             />
+            <div
+              className="stage-panel"
+              ref={shopHostRef}
+              hidden={!inShopPreview}
+              onMouseDown={onShopMouse('press')}
+              onMouseUp={onShopMouse('release')}
+              onMouseMove={onShopMouse('move')}
+              data-testid="shop-host"
+            />
           </>
         }
         overlay={
           <>
-            {status.kind === 'ready' || inBattle || inMenu || atTitle ? null : (
+            {status.kind === 'ready' || inBattle || inMenu || atTitle || inShopPreview ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
-            {atTitle ? <StartPanel onNewGame={onNewGame} /> : null}
+            {atTitle && !inShopPreview ? <StartPanel onNewGame={onNewGame} /> : null}
+            {inShopPreview && shop.loading ? (
+              <p className="stage-notice stage-notice--loading" role="status">
+                正在载入商店…
+              </p>
+            ) : null}
             {inMenu && view.menuLoading ? (
               <p className="stage-notice stage-notice--loading" role="status">
                 正在载入菜单…
@@ -255,7 +297,9 @@ export function App() {
                 正在载入战斗…
               </p>
             ) : null}
-            {dialogue && !inBattle && !inMenu ? <DialogueBox dialogue={dialogue} /> : null}
+            {dialogue && !inBattle && !inMenu && !inShopPreview ? (
+              <DialogueBox dialogue={dialogue} />
+            ) : null}
           </>
         }
       />
@@ -284,8 +328,25 @@ export function App() {
             </select>
           </label>
         ) : null}
+        {devToolsEnabled() ? (
+          <label className="toolbar-field">
+            商店
+            <select
+              value={shopPreview}
+              onChange={(e) => setShopPreview(e.target.value as ShopPreviewChoice)}
+            >
+              {SHOP_PREVIEW_CHOICES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <p className="toolbar-hint">
-          {atTitle
+          {inShopPreview
+            ? '商店预览（开发用）：加减买卖还没接（xl-knp.7 / .8），进店的正路等 xl-yg6.2'
+            : atTitle
             ? '开始界面：点「起」重开一局（读档要等 M6 存档）'
             : inBattle
               ? '战斗中：点「击」再点怪物；技、防、物同理'
