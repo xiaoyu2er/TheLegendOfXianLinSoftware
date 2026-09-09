@@ -1,0 +1,178 @@
+import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
+import { isDeferredMenuAsset, menuAssetId } from '../../assets/menuAssets'
+import { resolveDeferredMenuAsset } from '../../assets/deferredMenu'
+import { resolveAsset } from '../../assets/resolve'
+import type { AssetId } from '../../assets/ids'
+import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
+import { TEXT_FONT_STACK } from '../../textFont'
+import type { MenuDrawOp } from './drawList'
+
+/**
+ * 菜单层渲染器（Pixi）。**执行 `drawList` 那份清单，自己不做任何决定。**
+ *
+ * 分工与 `battle/render/battleRenderer.ts` 一样：画什么、画在哪、按什么次序
+ * 全在 `drawList.ts` 那个纯函数里，进得了 `pnpm test`；这里只剩"把一张纹理贴
+ * 到 (x,y)"这件在浏览器里才做得成的事，因此**没有测试缝** —— 给它硬加缝只会
+ * 得到一堆断言"我调用了 setTexture"的实现细节测试。真实像素由跨端逐帧比对
+ * 兜底，而 menu 那条流水线由 **xl-6lo.14** 接上。
+ *
+ * **不与战斗那一份抽公共件**（xl-6lo.2 §模块边界）：两边今天确实像，但都还没
+ * 长成，现在抽是在猜共性，而且会让 M3 每张票都去动战斗模块、并行度归零。
+ * M3 收尾再评估。
+ *
+ * ## 两处照抄原版的绘制语义
+ *
+ * 1. **最近邻采样**。Java2D 的 `KEY_INTERPOLATION` 默认是最近邻，Pixi 默认线性。
+ *    菜单这一层没有缩放（每一条都是 `g.drawImage(img,x,y,panel)` 原尺寸贴），
+ *    所以差别只出在缩放整个舞台的时候 —— 那由 `stage/scaling.ts` 管。这里
+ *    仍然把纹理的 `scaleMode` 设成 `nearest`，免得将来加了缩放层才发现。
+ * 2. **字画在基线上**。`g.drawString(s,x,y)` 的 y 是基线，不是行盒左上角。
+ *    与场景 / 战斗同一个理由，用 2D canvas 自己写字；ascent 是量出来的，
+ *    不是拍的常数 —— 换一台机器换一条后备字体链，整排字会上下错开几个像素。
+ */
+
+export interface MenuRenderer {
+  /** 把这一帧用得到的纹理一次载齐。**必须在第一次 `draw` 之前 await 完。** */
+  load(ids: readonly AssetId[]): Promise<void>
+  /** 画一帧：执行这份清单。 */
+  draw(ops: readonly MenuDrawOp[]): void
+  destroy(): void
+}
+
+export async function createMenuRenderer(host: HTMLElement): Promise<MenuRenderer> {
+  const app = new Application()
+  await app.init({
+    width: STAGE_WIDTH,
+    height: STAGE_HEIGHT,
+    autoDensity: false,
+    resolution: 1,
+    background: '#000000',
+  })
+  if (app.canvas.width !== STAGE_WIDTH || app.canvas.height !== STAGE_HEIGHT) {
+    app.destroy({ removeView: true }, { children: true })
+    throw new Error(
+      `菜单渲染器建出来的位图是 ${app.canvas.width}×${app.canvas.height}，` +
+        `应为 ${STAGE_WIDTH}×${STAGE_HEIGHT}。`,
+    )
+  }
+  app.canvas.className = 'stage-canvas'
+  host.appendChild(app.canvas)
+
+  const stage = new Container()
+  app.stage.addChild(stage)
+
+  const textures = new Map<AssetId, Texture>()
+  /** 精灵池：只增不减。一帧十来条，来回建销毁不值得。 */
+  const pool: Sprite[] = []
+  /** 文字纹理按「内容 + 字号 + 颜色」缓存 —— 顶栏那行字每帧都一样。 */
+  const textCache = new Map<string, { texture: Texture; ascent: number; left: number }>()
+
+  const measureCanvas = document.createElement('canvas')
+  const measureCtx = measureCanvas.getContext('2d')
+  if (!measureCtx) throw new Error('取不到菜单文字层的 2D context')
+
+  function fontOf(size: number): string {
+    // `new Font("文鼎粗钢笔行楷", Font.BOLD, size)`。那款中文字体多半没交付，
+    // 后备链在 `textFont.ts` 里 —— 它正是逐帧比对里最会抖的东西。
+    return `bold ${size}px ${TEXT_FONT_STACK}`
+  }
+
+  function textTexture(text: string, size: number, color: string) {
+    const key = `${size}|${color}|${text}`
+    const hit = textCache.get(key)
+    if (hit) return hit
+    const pad = 2
+    measureCtx!.font = fontOf(size)
+    const m = measureCtx!.measureText(text)
+    const left = Math.ceil(m.actualBoundingBoxLeft) + pad
+    const ascent = Math.ceil(m.actualBoundingBoxAscent) + pad
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, left + Math.ceil(m.actualBoundingBoxRight) + pad)
+    canvas.height = Math.max(1, ascent + Math.ceil(m.actualBoundingBoxDescent) + pad)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('取不到菜单文字纹理的 2D context')
+    ctx.font = fontOf(size)
+    ctx.fillStyle = color
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText(text, left, ascent)
+    const made = { texture: Texture.from(canvas), ascent, left }
+    textCache.set(key, made)
+    return made
+  }
+
+  /**
+   * 一个菜单素材的 URL。**进主包的走映射表，按需的走 `menuContent.json`** ——
+   * 边界由 `assets/menuAssets.ts` 定，这里只照它分流。
+   */
+  async function urlOf(id: AssetId): Promise<string> {
+    const relative = id.startsWith('menu:') ? id.slice('menu:'.length) : null
+    if (relative === null) throw new Error(`菜单渲染器只认 menu: 开头的 ID，收到 ${id}`)
+    // 反向自检：ID 是从路径算出来的，算回去必须一致。不一致说明有人手写了 ID。
+    if (menuAssetId(`sources/菜单/${relative}`) !== id) {
+      throw new Error(`菜单素材 ID ${id} 不是从 sources/菜单/${relative} 算出来的`)
+    }
+    return isDeferredMenuAsset(relative) ? resolveDeferredMenuAsset(id) : resolveAsset(id)
+  }
+
+  async function load(ids: readonly AssetId[]): Promise<void> {
+    const wanted = [...new Set(ids)].filter((id) => !textures.has(id))
+    if (wanted.length === 0) return
+    const urls = await Promise.all(wanted.map(urlOf))
+    const loaded = (await Assets.load(urls)) as Record<string, Texture>
+    wanted.forEach((id, i) => {
+      const texture = loaded[urls[i]!]
+      if (!texture) throw new Error(`菜单素材 ${id} 载入之后取不到纹理`)
+      texture.source.scaleMode = 'nearest'
+      textures.set(id, texture)
+    })
+  }
+
+  function textureOf(id: AssetId): Texture {
+    const t = textures.get(id)
+    if (!t) {
+      // 静默不画就是"这一块偶尔不见了"，正是查不出来的那种错 ——
+      // `menuTextureIds` 少推了一条的表现就长这样。
+      throw new Error(
+        `菜单渲染要 ${id}，但没有载入它（已载 ${textures.size} 张）；` +
+          `名单由 render/assets.ts 的 menuTextureIds 从世界现推。`,
+      )
+    }
+    return t
+  }
+
+  function slot(i: number): Sprite {
+    while (pool.length <= i) {
+      const sprite = new Sprite()
+      sprite.visible = false
+      stage.addChild(sprite)
+      pool.push(sprite)
+    }
+    return pool[i]!
+  }
+
+  function draw(ops: readonly MenuDrawOp[]): void {
+    ops.forEach((op, i) => {
+      const sprite = slot(i)
+      if (op.kind === 'image') {
+        sprite.texture = textureOf(op.id)
+        sprite.position.set(op.x, op.y)
+      } else {
+        const { texture, ascent, left } = textTexture(op.text, op.size, op.color)
+        sprite.texture = texture
+        // 基线 → 左上角：往上挪一个 ascent，往左挪一个 left。
+        sprite.position.set(op.x - left, op.y - ascent)
+      }
+      sprite.visible = true
+    })
+    for (let i = ops.length; i < pool.length; i++) pool[i]!.visible = false
+    app.render()
+  }
+
+  return {
+    load,
+    draw,
+    destroy() {
+      app.destroy({ removeView: true }, { children: true })
+    },
+  }
+}
