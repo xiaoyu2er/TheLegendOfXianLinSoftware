@@ -1,7 +1,8 @@
 import { HEROES, derive } from '../battle/units'
-import type { PartyKey } from '../battle/units'
+import type { Attributes, PartyKey } from '../battle/units'
 import { SKILL_NUMBER } from '../battle/skills'
-import { DEFAULT_WEAPONS } from './defaultWeapons'
+import { DEFAULT_WEAPONS, withWeapon } from './defaultWeapons'
+import { attributesOf } from '../fakes/party'
 
 /**
  * 菜单里那三个人的**开局属性**，也就是菜单真值 `heroes[]` 那一列。
@@ -66,14 +67,19 @@ export const MENU_DEFAULT_LEVEL: Readonly<Record<PartyKey, number>> = {
 }
 
 /**
- * 队伍此刻的等级与血 / 灵力。游戏本体开菜单时喂它 —— 对应
+ * 队伍此刻的等级、四项基础属性与血 / 灵力。游戏本体开菜单时喂它 —— 对应
  * `GameLauncher.switchTo("menu")` 里那三句 `refreshValue()`：**打开的那一刻
  * 看到的是最新属性**，而不是上一场战斗之前的旧数据。
+ *
+ * ⚠️ **四项属性也要喂**（xl-6lo.16）。原版那三个对象的属性字段是 `static`，
+ * 菜单与战斗读的是同一份；这一层的队伍从 xl-6lo.16 起也记着它们（带装备加成，
+ * 见 `fakes/party.ts`）。少喂的话，上一次开菜单穿的装备、上一场战斗升的级
+ * 全都要按等级重算一遍 —— 而重算出来的是一个完全合法的裸属性。
  *
  * 回放真值时**不喂**（真值那几份跑的是一个干净 JVM 里的第一次开菜单），
  * 所以这一项是可选的，缺席时这个函数一个字节都不变。
  */
-export interface LiveParty {
+export interface LiveParty extends Readonly<Attributes> {
   readonly level: number
   readonly hp: number
   readonly mp: number
@@ -89,12 +95,10 @@ export function createMenuHeroes(
     const level = now?.level ?? MENU_DEFAULT_LEVEL[key]
     const base = HEROES[key].attributes(level)
     const weapon = DEFAULT_WEAPONS[key]
-    const attrs = {
-      physicalPower: base.physicalPower + weapon.addPhysicalPower,
-      agile: base.agile + weapon.addAgile,
-      strength: base.strength + weapon.addStrength,
-      sprit: base.sprit + weapon.addSpirit,
-    }
+    // 喂了实时队伍就**照单全收**，不再走上面那三步：队伍那一份记的就是"此刻
+    // 的四项属性"，武器加成已经算在里头了（`fakes/party.ts` 的 `initialMember`
+    // 抄的正是这三步）。在它上面再加一次武器，等于开一次菜单加一把刀。
+    const attrs: Attributes = now ? attributesOf(now) : withWeapon(base, weapon)
     const d = derive(attrs)
     return {
       name,

@@ -10,7 +10,7 @@ import {
   expToLevelUp,
   refreshValue,
 } from './units'
-import type { PartyKey } from './units'
+import type { Attributes, PartyKey } from './units'
 import { DRUGS } from './drugs'
 import {
   MENU_BUTTON_H,
@@ -41,6 +41,19 @@ export interface BattleConfig {
   background: string
   party: readonly PartyKey[]
   levels: Readonly<Partial<Record<PartyKey, number>>>
+  /**
+   * **此刻的四项基础属性**，压过按等级算出来的那一份（xl-6lo.16）。
+   *
+   * 原版没有这个参数，因为它根本不需要：那三个类的属性字段全是 `static`，
+   * 开机建 `MenuPanel` 时 `EquipPanel.addPack()` 就把开局武器的加成 `+=`
+   * 了上去，战斗面板读到的一直是那一份。这一层每场新建人物，于是那件事
+   * 变成了显式的一次搬运 —— 与 `carry` 同一个理由、同一个形状。
+   *
+   * **剧本不喂它**（每一份行为真值都是一个干净 JVM 里的第一场，那时属性就是
+   * `attributes(level)`），所以不传时这个函数一个字节都不变。游戏本体从
+   * `fakes/party.ts` 喂。
+   */
+  attributes?: Readonly<Partial<Record<PartyKey, Attributes>>> | undefined
   /** 三个槽位写满，空槽位是 null，写法是 `名字/编号`（编号 5/6/7）。 */
   enemies: readonly (string | null)[]
   seed: number
@@ -78,7 +91,8 @@ export interface BattleConfig {
  * 跨战斗活着的那几样。
  *
  * **这是唯一一份清单**：`fakes/party.ts` 的 `PartyMemberState` 直接
- * `extends` 它，只多一个 `level`。往这里加一样东西，那边跟着有。
+ * `extends` 它，只多一个 `level` 与四项基础属性（那两样各有自己的入口参数，
+ * `levels` 与 `attributes`）。往这里加一样东西，那边跟着有。
  */
 export interface HeroCarry {
   exp: number
@@ -191,9 +205,11 @@ function button(x: number, y: number): GameButton {
   return { x, y, width: 58, height: 62, isclicked: false }
 }
 
-function makeHero(key: PartyKey, level: number): Hero {
+function makeHero(key: PartyKey, level: number, override?: Attributes): Hero {
   const spec = HEROES[key]
-  const attributes = spec.attributes(level)
+  // 喂了就用喂的那一份（`BattleConfig.attributes`）—— 队伍此刻的属性带着装备
+  // 加成与历次 `levelUp()`，按等级重算会把它们抹掉。
+  const attributes = override ?? spec.attributes(level)
   const derived = derive(attributes)
   return {
     spec,
@@ -309,7 +325,7 @@ export function createBattle(config: BattleConfig): BattleWorld {
       // 出来的。默认一个值等于悄悄换一场仗打。
       throw new Error(`剧本没给 ${key} 的等级 —— 等级没有默认值（见 docs/trace-format.md）`)
     }
-    const hero = makeHero(key, level)
+    const hero = makeHero(key, level, config.attributes?.[key])
     const carry = config.carry?.[key]
     if (carry !== undefined) applyCarry(hero, carry)
     return hero

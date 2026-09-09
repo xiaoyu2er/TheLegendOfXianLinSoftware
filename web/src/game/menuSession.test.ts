@@ -7,8 +7,26 @@ import { createWorld } from '../state/step'
 import { roleTileX, roleTileY } from '../state/role'
 import { MENU_TICK_MS } from '../menu/loop'
 import { FUNC_MAIN_ORDER } from '../menu/funcButtons'
-import { NO_INPUT, advanceSession, createSession, enterScene, menuWorldOf, openMenu } from './session'
+import { DRUGS } from '../battle/drugs'
+import { HEROES, derive } from '../battle/units'
+import { createBattle } from '../battle/world'
+import { DEFAULT_WEAPONS, withWeapon } from '../menu/defaultWeapons'
+import { DRUG_LIST_VIEW, DRUG_LIST_X, DRUG_ROW_H } from '../menu/drugPanel'
+import { EQUIPMENT_LISTS } from '../menu/equipment'
+import { addEquipment } from '../menu/equipPanel'
+import { rowBandTop } from '../menu/scroll'
+import { buttonCenter, clickButton, selectEquipRow } from '../test/menuClicks'
+import {
+  NO_INPUT,
+  advanceSession,
+  configFor,
+  createSession,
+  enterScene,
+  menuWorldOf,
+  openMenu,
+} from './session'
 import type { RunningSession, SessionDeps } from './session'
+import type { BattleInfo } from '../state/fight'
 import type { MenuInput } from '../menu/step'
 
 /**
@@ -40,11 +58,6 @@ function inScene(name: string): RunningSession {
   return enterScene(createSession(DEPS), createWorld(getScene(name)))
 }
 
-/** 天书页那颗按钮的命中中心 —— 与导出器 `MenuDriver.center()` 同一条公式。 */
-function centerOf(b: { x: number; y: number; width: number; height: number }) {
-  return { x: b.x - 15 + Math.floor(b.width / 2), y: b.y - 6 + Math.floor(b.height / 2) }
-}
-
 function click(x: number, y: number): MenuInput[] {
   return [
     { e: 'press', x, y },
@@ -64,12 +77,11 @@ describe('场景 ↔ 菜单这条环路', () => {
     expect(menu!.panel).toBe('thingPanel')
 
     // 切到天书页 —— 顶栏那颗按钮的落点由几何算出来，不写死坐标。
-    s = advanceSession(s, { ...NO_INPUT, menu: click(...Object.values(centerOf(menu!.tabs.func)) as [number, number]) }, 0)
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menu!.tabs.func)) }, 0)
     expect(menuWorldOf(s)!.panel).toBe('funcPanel')
 
     const back = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.returnButton
-    const at = centerOf(back)
-    s = advanceSession(s, { ...NO_INPUT, menu: click(at.x, at.y) }, 0)
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
     expect(s.panel).toBe('scene')
     expect(menuWorldOf(s)).toBeNull()
     expect({
@@ -194,5 +206,214 @@ describe('场景 ↔ 菜单这条环路', () => {
     // 这一层的对应物：出菜单只有天书页那一颗按钮，`SessionInput.menu` 里
     // 根本没有键盘那一种。
     expect(FUNC_MAIN_ORDER).toContain('returnButton')
+  })
+})
+
+/**
+ * **菜单里改掉的东西回得到队伍**（xl-6lo.16）。
+ *
+ * ## ⚠️ 这一段同样没有行为真值，凭什么算过
+ *
+ * 与上面那条环路一个理由：两条 menu 真值都从 `new MenuPanel()` 起、到剧本跑完
+ * 为止，**关菜单之后不在任何一份真值里**。而这条缝原版**根本不存在** ——
+ * `GameLauncher` 构造函数里 `menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)`
+ * 传的就是战斗那三个对象，它们的数据字段几乎全是 `static`，喝药那句
+ * `DrugPanel.addValue()` 改的就是战斗与场景读的同一份东西。
+ *
+ * 所以判据是三条，每一条都跑得出红绿，而且**期望值不手写**：
+ *
+ * 1. **喝一瓶药**，从场景一路点进去（`advanceSession` 收输入），看队伍那边
+ *    跟没跟上，回到场景之后还在不在；
+ * 2. **穿一件盔甲**改四项属性，看队伍那边跟没跟上；
+ * 3. **下一场战斗读到的是队伍那一份**，不是按等级重算出来的裸属性。
+ *
+ * ## 今天游戏本体走不到，判据里那一句"塞货"是怎么回事
+ *
+ * 药与装备在游戏本体里的唯一来源是商店（M4 / xl-knp），`openMenu` 不喂
+ * `drugs` / `equipment`，六种药与六张装备表的持有量全是 0 —— 玩家点不出
+ * 「使用」按钮。判据里那句"往背包里塞一瓶"就是药店将来要做的那一句，写在
+ * 这里是**为了让这条路今天就有人走**：等到 M4 才发现写回漏了，中间这段时间
+ * "没写回"与"写回了"长得一模一样。
+ */
+describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
+  /** 往菜单世界的背包里塞货 —— 药店（xl-knp）将来做的就是这一句。 */
+  function stockDrug(s: RunningSession, name: string, count: number): void {
+    const stock = menuWorldOf(s)!.drugPack.find((d) => d.name === name)
+    if (!stock) throw new Error(`六种药里没有「${name}」`)
+    stock.count += count
+  }
+
+  /** 物品页清单第 `index` 行的带中 —— 与 `MenuDriver.move()` 同一条公式。 */
+  function drugRow(index: number): { x: number; y: number } {
+    return {
+      x: DRUG_LIST_X + 1,
+      y: rowBandTop(DRUG_LIST_VIEW, index, 0) + Math.floor(DRUG_ROW_H / 2),
+    }
+  }
+
+  it('喝一瓶药：队伍那边当场跟上，回到场景还在', () => {
+    let s = inScene('宿舍')
+    // 把张小凡打成残血 —— 满血的话喝下去被夹回上限，`before === after` 恒真。
+    getParty().zhang.hp = 1
+    // 这三样菜单改不动，末尾要拿它们对一次。给它们**非零的值**：全是 0 的话
+    // "没被动过"与"被写成了 0"长得一样。
+    Object.assign(getParty().zhang, { exp: 77, isDead: true, angryValue: 42 })
+    const untouched = { ...getParty().zhang }
+    s = openMenu(s)
+
+    const drug = DRUGS[0]!
+    stockDrug(s, drug.name, 1)
+    const zhang = () => menuWorldOf(s)!.heroes[0]!
+    expect(zhang().name, '第 0 个人应当是张小凡').toBe('zhangxiaofan')
+    expect(zhang().hp, '菜单打开的那一刻看到的就该是队伍那个残血').toBe(1)
+    // 这一场真的分得开：喝完不会顶到上限，也就不会与"什么都没发生"混在一起。
+    expect(1 + drug.addHp).toBeLessThan(zhang().hpMax)
+
+    // 选中那一行（鼠标一移就选中），再点「使用」—— 两步都走 advanceSession。
+    s = advanceSession(s, { ...NO_INPUT, menu: [{ e: 'move', ...drugRow(0) }] }, 0)
+    expect(menuWorldOf(s)!.panels.thingPanel.drug!.currentDrug).toBe(drug.name)
+
+    // ⚠️ **喝之前先量一遍队伍**：不量的话，下面那句"队伍等于菜单"在
+    // "两边都是 1、一口药都没喝下去"时照样绿。
+    expect(getParty().zhang.hp, '还没点「使用」，队伍不该动').toBe(1)
+
+    const [ux, uy] = buttonCenter(menuWorldOf(s)!.panels.thingPanel.drug!.useButton)
+    s = advanceSession(s, { ...NO_INPUT, menu: click(ux, uy) }, 0)
+
+    const inMenu = zhang().hp
+    expect(inMenu, '这一口药没喝下去').toBe(1 + drug.addHp)
+    // 正本判据一：**每一拍都写回**，不是等关菜单。
+    expect(getParty().zhang.hp, '喝完这一拍队伍还是陈的').toBe(inMenu)
+
+    // 正本判据二：关菜单回场景，那个数还在（没被回场景那条路抹掉）。
+    const back = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.returnButton
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
+    expect(s.panel).toBe('scene')
+    expect(getParty().zhang.hp, '关菜单把喝出来的血丢了').toBe(inMenu)
+
+    // ⚠️ `rememberMenuParty` **只记五样**，理由是"菜单里没有一条路改得动
+    // 经验 / 死没死 / 怒气"。那句话原先没有判据守着 —— 它正是"找不到东西
+    // 就算通过"那一族（/code-review 标准轴提的）。这里把它变成一条断言：
+    // 走完这一整趟，那三样一个字都不许变。哪天菜单真的动得了其中一样
+    // （读档、学技能），这条会红，提醒有人把它加进写回清单。
+    expect({
+      exp: getParty().zhang.exp,
+      isDead: getParty().zhang.isDead,
+      angryValue: getParty().zhang.angryValue,
+    }).toEqual({ exp: untouched.exp, isDead: untouched.isDead, angryValue: untouched.angryValue })
+  })
+
+  it('穿一件盔甲：四项属性与上限一起回到队伍', () => {
+    let s = inScene('宿舍')
+    s = openMenu(s)
+    const w = menuWorldOf(s)!
+    const e = w.panels.equipPanel.equip!
+
+    // 张小凡用得了、而且**真的加体力**的第一件盔甲 —— 名字与数从表里取。
+    // 不加体力的话 hpMax 不变，"跟上了"与"没跟上"长得一样。
+    const armor = EQUIPMENT_LISTS.armor.find(
+      (i) => (i.user === 0 || i.user === 1) && i.addPhysicalPower > 0,
+    )
+    if (!armor) throw new Error('盔甲表里没有张小凡用得了、又加体力的东西')
+    // 装备超市（xl-knp）将来做的就是这一句。
+    addEquipment(e, armor.name, 1)
+
+    const before = { ...getParty().zhang }
+    // 装备页那几下用现成的点击助手（`test/menuClicks.ts`），它们直接推菜单
+    // 世界 —— 这一条要验的是**写回那一步**，输入怎么进来上一条已经验过了。
+    w.panel = 'equipPanel'
+    clickButton(w, e.slots.armor)
+    selectEquipRow(w, armor.name)
+    clickButton(w, e.use)
+    expect(e.packs[1]!.armor, '这件盔甲没穿上').toBe(armor.name)
+
+    const zhang = w.heroes[0]!
+    expect(zhang.physicalPower, '穿上了却没加体力').toBe(before.physicalPower + armor.addPhysicalPower)
+
+    // 还没推过一拍，队伍应当还是旧的 —— 这一句让下面那条不至于按构造成立。
+    expect(getParty().zhang.physicalPower).toBe(before.physicalPower)
+
+    s = advanceSession(s, NO_INPUT, 0)
+    const after = getParty().zhang
+    expect({
+      physicalPower: after.physicalPower,
+      agile: after.agile,
+      strength: after.strength,
+      sprit: after.sprit,
+    }).toEqual({
+      physicalPower: zhang.physicalPower,
+      agile: zhang.agile,
+      strength: zhang.strength,
+      sprit: zhang.spirit,
+    })
+    // 派生值不入库（队伍只记四项基础属性），所以核的是**算出来的那个上限**。
+    expect(derive(after).hpMax).toBe(zhang.hpMax)
+    expect(derive(after).hpMax).toBeGreaterThan(derive(before).hpMax)
+
+    // ⚠️ **再开一次菜单，那件盔甲加的属性还在**。少了这一条，"开菜单时按等级
+    // 重算一遍属性"这个改法是绿的：这一场里等级没变，重算出来的正好等于
+    // 出厂那一份 —— 而玩家看到的是"翻了一次菜单，盔甲白穿了"。
+    s = advanceSession(
+      s,
+      { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) },
+      0,
+    )
+    const back = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.returnButton
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
+    expect(s.panel).toBe('scene')
+    s = openMenu(s)
+    // ⚠️ **四项一起比，不能只比体力**。篡改矩阵第 8 条就是这么漏掉的：把
+    // 「喂了实时队伍就照单全收」改成"在实时属性上**再加一次**武器加成"
+    // （开一次菜单加一把刀），整条判据仍然全绿 —— 因为张小凡那把月苗刀
+    // `addPhysicalPower` 是 **0**，重复计数在体力与 hpMax 上一个数都不差。
+    // 它加的是敏捷 1 / 武力 2 / 精气 1，比上四项立刻红。
+    const reopened = menuWorldOf(s)!.heroes[0]!
+    expect({
+      physicalPower: reopened.physicalPower,
+      agile: reopened.agile,
+      strength: reopened.strength,
+      spirit: reopened.spirit,
+      hpMax: reopened.hpMax,
+    }).toEqual({
+      physicalPower: zhang.physicalPower,
+      agile: zhang.agile,
+      strength: zhang.strength,
+      spirit: zhang.spirit,
+      hpMax: zhang.hpMax,
+    })
+    // 而它有分辨力的前提是那把武器**真的加了点什么** —— 四项全 0 的话
+    // "再加一次"与"不加"长得一样，上面那条又恒真了。
+    const knife = DEFAULT_WEAPONS.zhang
+    expect(
+      knife.addPhysicalPower + knife.addAgile + knife.addStrength + knife.addSpirit,
+    ).toBeGreaterThan(0)
+  })
+
+  it('下一场战斗读到的是队伍那一份属性，不是按等级重算的裸属性', () => {
+    resetParty()
+    // 空槽位在脚本里写的就是字面的 `null` 三个字（`enemySlots` 认的是它）。
+    const info: BattleInfo = ['迷宫1/1.jpg', 'zhang', 'yu', 'lu', '怪物1/5', 'null', 'null']
+    const naked = derive(HEROES.yu.attributes(getParty().yu.level))
+
+    // 出厂就带着开局那把武器：玉洁的鸳鸯刀加体力，上限跟着高一截。
+    // 期望值走 `derive` 现算，**不写 70 那个系数** —— 写死的话 `derive` 改了
+    // 公式这里照样绿，而它正是被测的那条算式。
+    const base = HEROES.yu.attributes(getParty().yu.level)
+    const fresh = createBattle(configFor(info, DEPS))
+    const yu = fresh.heroes.find((h) => h.spec.key === 'yu')!
+    expect(yu.hpMax).toBe(derive(withWeapon(base, DEFAULT_WEAPONS.yu)).hpMax)
+    // 反向控制：这个差不是 0，上面那条才有分辨力（武器不加体力的话，
+    // "喂了队伍属性"与"按等级重算"算出来是同一个数）。
+    expect(yu.hpMax).toBeGreaterThan(naked.hpMax)
+
+    // 再改一次队伍属性（菜单里穿装备走的就是这条路），战斗跟着变。
+    const bumped = { ...getParty().yu, physicalPower: getParty().yu.physicalPower + 1 }
+    getParty().yu.physicalPower = bumped.physicalPower
+    const again = createBattle(configFor(info, DEPS))
+    const yu2 = again.heroes.find((h) => h.spec.key === 'yu')!
+    expect(yu2.hpMax).toBe(derive(bumped).hpMax)
+    expect(yu2.hpMax).toBeGreaterThan(yu.hpMax)
+    resetParty()
   })
 })

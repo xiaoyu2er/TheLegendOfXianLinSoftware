@@ -3,7 +3,15 @@ import { javaSource } from '../test/javaSource'
 import { javaStaticInt } from '../test/javaStaticInt'
 import { HEROES, derive } from '../battle/units'
 import type { PartyKey } from '../battle/units'
-import { DEFAULT_LEVEL, getParty, initialMember, rememberParty, resetParty } from './party'
+import { DEFAULT_WEAPONS } from '../menu/defaultWeapons'
+import {
+  DEFAULT_LEVEL,
+  attributesOf,
+  getParty,
+  initialMember,
+  rememberParty,
+  resetParty,
+} from './party'
 
 /**
  * 队伍的**出厂状态**（xl-kaa 补的判据）。
@@ -70,8 +78,32 @@ describe('队伍的出厂状态', () => {
     resetParty()
     // 先弄脏，走的是"打完一场记回去"那条正路。
     rememberParty([
-      { spec: { key: 'zhang' }, level: 9, exp: 123, hp: 1, mp: 2, isDead: true, angryValue: 5 },
-      { spec: { key: 'yu' }, level: 7, exp: 45, hp: 3, mp: 4, isDead: false, angryValue: 6 },
+      {
+        spec: { key: 'zhang' },
+        level: 9,
+        physicalPower: 99,
+        agile: 98,
+        strength: 97,
+        sprit: 96,
+        exp: 123,
+        hp: 1,
+        mp: 2,
+        isDead: true,
+        angryValue: 5,
+      },
+      {
+        spec: { key: 'yu' },
+        level: 7,
+        physicalPower: 89,
+        agile: 88,
+        strength: 87,
+        sprit: 86,
+        exp: 45,
+        hp: 3,
+        mp: 4,
+        isDead: false,
+        angryValue: 6,
+      },
     ])
     expect(getParty().zhang.level).toBe(9)
 
@@ -89,5 +121,99 @@ describe('队伍的出厂状态', () => {
       javaStatic(CLASSES.yu, 'level'),
       javaStatic(CLASSES.lu, 'level'),
     ])
+  })
+})
+
+/**
+ * **出厂属性带着开局那三把武器**（xl-6lo.16）。
+ *
+ * 这不是"给队伍加个 buff"，是照抄 `GameLauncher` 构造函数里那两行的先后：
+ * 先 `new ZhangXiaoFan(x,y,battlePanel)`（按等级重算属性、`hp=hpMax`），
+ * 再 `new MenuPanel(zhangXiaoFan,luXueQi,yuJie)` —— 里头 `new EquipPanel()`
+ * 的构造函数调 `addPack()`，四项属性各 `+=` 一次武器加成再 `refreshValue()`，
+ * 而 `refreshValue()` **只往下夹、不往上补**。
+ *
+ * 于是玉洁开局就**不是满血**：她 3 级、体力 14，鸳鸯刀 +3 变 17，`hpMax`
+ * 从 980 推到 1190，而 `hp` 停在 980。两个数都是合法数字，只有先后不同才分得
+ * 出来 —— 所以这条判据的一半是**从 GBK 源码现读那个先后**。
+ *
+ * ⚠️ 这几个数是注释里的读数（2026-09-09 现算），**下面的断言一个都不写它们**
+ * —— 写关系不写数，改了武器表或等级公式也不会假红。
+ */
+describe('出厂属性带着开局那把武器（xl-6lo.16）', () => {
+  const launcher = javaSource('src/main/GameLauncher.java')
+
+  it('原版的先后：三个人先建、MenuPanel 后建，而且收的就是那三个对象', () => {
+    const born = launcher.indexOf('zhangXiaoFan=new ZhangXiaoFan(')
+    const menu = launcher.indexOf('menuPanel=new MenuPanel(')
+    // 零匹配与"次序对"长得一样（源码没按 GBK 解出来时满屏乱码，两个都是 -1，
+    // 而 `-1 < -1` 是 false —— 所以两句 `toBeGreaterThan(-1)` 不能省）。
+    expect(born, 'GameLauncher 里没解出 new ZhangXiaoFan(').toBeGreaterThan(-1)
+    expect(menu, 'GameLauncher 里没解出 new MenuPanel(').toBeGreaterThan(-1)
+    expect(menu, 'MenuPanel 竟然建在三个人之前').toBeGreaterThan(born)
+    // 传的就是那三个对象 —— 传别的什么，"共用同一份状态"这条就不成立了。
+    expect(launcher).toContain('menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)')
+    // 而那一步真的会改属性：EquipPanel 的构造函数调 addPack()。
+    expect(javaSource('src/menu/EquipPanel.java')).toContain('addPack()')
+  })
+
+  it('四项属性 = 按等级算的那一份 + 武器加成；血与灵力停在**穿之前**的上限', () => {
+    let notFull = 0
+    for (const key of Object.keys(CLASSES) as PartyKey[]) {
+      const m = initialMember(key)
+      const base = HEROES[key].attributes(m.level)
+      const w = DEFAULT_WEAPONS[key]
+      expect({
+        physicalPower: m.physicalPower,
+        agile: m.agile,
+        strength: m.strength,
+        sprit: m.sprit,
+      }).toEqual({
+        physicalPower: base.physicalPower + w.addPhysicalPower,
+        agile: base.agile + w.addAgile,
+        strength: base.strength + w.addStrength,
+        sprit: base.sprit + w.addSpirit,
+      })
+      // 血是**穿武器之前**那个上限，不是穿完之后的。
+      expect({ hp: m.hp, mp: m.mp }).toEqual({ hp: derive(base).hpMax, mp: derive(base).mpMax })
+      if (m.hp < derive(m).hpMax) notFull += 1
+    }
+    // ⚠️ 分辨力所在：**至少有一个人开局不满血**。三把武器要是都不加体力，
+    // 上面那条"停在穿之前的上限"就与"停在穿之后的上限"长得一模一样。
+    expect(notFull, '三个人开局都满血 —— 那上面那条判据分不出先后').toBeGreaterThan(0)
+  })
+})
+
+/**
+ * `attributesOf` 自己的判据（篡改矩阵第 13 条挑出来的空洞）。
+ *
+ * 它是 /code-review 标准轴那条 Data Clumps 的产物：五处逐字段展开收成一个
+ * 函数。收完之后它**同时站在每一条比对的两边** —— 队伍写回读它、菜单喂参数
+ * 读它、战斗配置读它 —— 于是它漏掉一项（实测把 `sprit` 写死成 10），两边一起
+ * 漏，所有比对照样相等，整套判据全绿。
+ *
+ * 所以判据不能再是"两边相等"，得**把它接到消费者身上**：`derive` 的七个派生值
+ * 里有四个读 `sprit`，一个读 `agile`、一个读 `strength`。挑出来的那份属性只要
+ * 有一项不对，`derive` 就不同。
+ */
+describe('attributesOf 一项都不许漏（xl-6lo.16）', () => {
+  it('挑出来的那份，derive 出来与原件逐字段相同', () => {
+    // 四个数**两两不同**，而且都不是 10 —— 相同的话"漏了一项用默认值顶上"
+    // 与"挑对了"长得一样，正是那次篡改钻的空子。
+    const src = { physicalPower: 13, agile: 17, strength: 23, sprit: 31 }
+    expect(new Set(Object.values(src)).size, '四个数要两两不同').toBe(4)
+    expect(attributesOf(src)).toEqual(src)
+    // 接到消费者身上：`derive` 的七个值里 sprit / agile / strength 各有人读，
+    // 漏掉任何一项这一句都红（体力那一项由上面那条 toEqual 兜着）。
+    expect(derive(attributesOf(src))).toEqual(derive(src))
+  })
+
+  it('多带的字段不许漏进来 —— 它挑的是四项，不是整个对象', () => {
+    // 队伍那份对象上还挂着 level / hp / exp 等等；`BattleConfig.attributes`
+    // 收的是**四项**，混进别的字段会让"配置"与"整份状态"分不开。
+    const m = initialMember('yu')
+    expect(Object.keys(attributesOf(m)).sort()).toEqual(
+      ['agile', 'physicalPower', 'sprit', 'strength'],
+    )
   })
 })
