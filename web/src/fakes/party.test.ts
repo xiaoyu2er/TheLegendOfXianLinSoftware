@@ -3,6 +3,7 @@ import { javaSource } from '../test/javaSource'
 import { javaStaticInt } from '../test/javaStaticInt'
 import { HEROES, derive } from '../battle/units'
 import type { PartyKey } from '../battle/units'
+import { DEFAULT_WEAPONS } from '../menu/defaultWeapons'
 import { DEFAULT_LEVEL, getParty, initialMember, rememberParty, resetParty } from './party'
 
 /**
@@ -113,5 +114,62 @@ describe('队伍的出厂状态', () => {
       javaStatic(CLASSES.yu, 'level'),
       javaStatic(CLASSES.lu, 'level'),
     ])
+  })
+})
+
+/**
+ * **出厂属性带着开局那三把武器**（xl-6lo.16）。
+ *
+ * 这不是"给队伍加个 buff"，是照抄 `GameLauncher` 构造函数里那两行的先后：
+ * 先 `new ZhangXiaoFan(x,y,battlePanel)`（按等级重算属性、`hp=hpMax`），
+ * 再 `new MenuPanel(zhangXiaoFan,luXueQi,yuJie)` —— 里头 `new EquipPanel()`
+ * 的构造函数调 `addPack()`，四项属性各 `+=` 一次武器加成再 `refreshValue()`，
+ * 而 `refreshValue()` **只往下夹、不往上补**。
+ *
+ * 于是玉洁开局就**不是满血**：鸳鸯刀 +3 体力把 `hpMax` 推到 910，而 `hp`
+ * 停在 700。两个数都是合法数字，只有先后不同才分得出来 —— 所以这条判据
+ * 的一半是**从 GBK 源码现读那个先后**。
+ */
+describe('出厂属性带着开局那把武器（xl-6lo.16）', () => {
+  const launcher = javaSource('src/main/GameLauncher.java')
+
+  it('原版的先后：三个人先建、MenuPanel 后建，而且收的就是那三个对象', () => {
+    const born = launcher.indexOf('zhangXiaoFan=new ZhangXiaoFan(')
+    const menu = launcher.indexOf('menuPanel=new MenuPanel(')
+    // 零匹配与"次序对"长得一样（源码没按 GBK 解出来时满屏乱码，两个都是 -1，
+    // 而 `-1 < -1` 是 false —— 所以两句 `toBeGreaterThan(-1)` 不能省）。
+    expect(born, 'GameLauncher 里没解出 new ZhangXiaoFan(').toBeGreaterThan(-1)
+    expect(menu, 'GameLauncher 里没解出 new MenuPanel(').toBeGreaterThan(-1)
+    expect(menu, 'MenuPanel 竟然建在三个人之前').toBeGreaterThan(born)
+    // 传的就是那三个对象 —— 传别的什么，"共用同一份状态"这条就不成立了。
+    expect(launcher).toContain('menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)')
+    // 而那一步真的会改属性：EquipPanel 的构造函数调 addPack()。
+    expect(javaSource('src/menu/EquipPanel.java')).toContain('addPack()')
+  })
+
+  it('四项属性 = 按等级算的那一份 + 武器加成；血与灵力停在**穿之前**的上限', () => {
+    let notFull = 0
+    for (const key of Object.keys(CLASSES) as PartyKey[]) {
+      const m = initialMember(key)
+      const base = HEROES[key].attributes(m.level)
+      const w = DEFAULT_WEAPONS[key]
+      expect({
+        physicalPower: m.physicalPower,
+        agile: m.agile,
+        strength: m.strength,
+        sprit: m.sprit,
+      }).toEqual({
+        physicalPower: base.physicalPower + w.addPhysicalPower,
+        agile: base.agile + w.addAgile,
+        strength: base.strength + w.addStrength,
+        sprit: base.sprit + w.addSpirit,
+      })
+      // 血是**穿武器之前**那个上限，不是穿完之后的。
+      expect({ hp: m.hp, mp: m.mp }).toEqual({ hp: derive(base).hpMax, mp: derive(base).mpMax })
+      if (m.hp < derive(m).hpMax) notFull += 1
+    }
+    // ⚠️ 分辨力所在：**至少有一个人开局不满血**。三把武器要是都不加体力，
+    // 上面那条"停在穿之前的上限"就与"停在穿之后的上限"长得一模一样。
+    expect(notFull, '三个人开局都满血 —— 那上面那条判据分不出先后').toBeGreaterThan(0)
   })
 })
