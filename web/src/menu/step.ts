@@ -2,12 +2,21 @@ import { moveInButton, pressButton, releaseButton } from './buttons'
 import {
   clearEquipWarnings,
   equipCheckMoveIn,
+  EQUIP_LIST_VIEW,
   equipCheckPressed,
   equipCheckReleased,
+  equipList,
   paintEquip,
 } from './equipPanel'
 import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased } from './funcButtons'
-import { drugPanelMoveIn, drugPanelPressed, drugPanelReleased } from './drugPanel'
+import {
+  DRUG_LIST_VIEW,
+  drugPanelMoveIn,
+  drugPanelPressed,
+  drugPanelReleased,
+  visibleDrugs,
+} from './drugPanel'
+import { pressScrollTrack, wheelScroll } from './scroll'
 import {
   magicCheckMoveIn,
   magicCheckPressed,
@@ -36,10 +45,18 @@ import type { MenuSubPanel, MenuWorld } from './types'
  * 状态是**就地改**的（`types.ts` 的规矩），返回的就是传进来的那个世界。
  */
 
-/** 真值 `input` 那一列的条目。菜单只有鼠标，外加一个时钟脉冲。 */
+/**
+ * 真值 `input` 那一列的条目。菜单只有鼠标，外加一个时钟脉冲。
+ *
+ * ⚠️ `wheel` 那一支**真值里没有** —— 原版没有滚动条，导出器也不会导出它
+ * （`MenuDriver` 认得的 op 里没有滚轮）。它是 web 侧加的第五种输入
+ * （xl-6lo.13），只从浏览器进来。加在这里而不是另开一条路，是因为它与另外
+ * 四种一样要走 `stepMenu` 那一步的开头收尾（清音效、清拒绝旗标、末尾 paint）。
+ */
 export type MenuInput =
   | { readonly e: 'press' | 'release' | 'move'; readonly x: number; readonly y: number; readonly target?: string }
   | { readonly e: 'tick' }
+  | { readonly e: 'wheel'; readonly x: number; readonly y: number; readonly rows: number }
 
 export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuWorld {
   // 音效是**这一步**的（`MusicTap` 每步取走一次），所以每步开头清空。
@@ -105,7 +122,35 @@ export function applyMenuInput(w: MenuWorld, input: MenuInput): void {
     case 'move':
       menuMouseMoved(w, input.x, input.y)
       return
+    case 'wheel':
+      menuWheel(w, input.x, input.y, input.rows)
+      return
   }
+}
+
+/**
+ * 滚轮（xl-6lo.13）。**只送给当前显示的那一页**，与鼠标的三种事件同一个规矩
+ * （`CardLayout` 盖住的三页收不到任何事件）。
+ *
+ * 每一页自己再判这一下落没落在它的列表框里 —— 落在别处一律不动。
+ * ⚠️ 它**一个真值记着的字段都不碰**：不动 `Mouse` 的坐标（滚轮不移动指针）、
+ * 不动选中项、不出声。
+ *
+ * ⚠️ **翻完页不重跑一次悬停判定，这是有意的**（/code-review 的 Spec 轴问到）。
+ * 后果看得见：鼠标停在列表上不动、滚一格，屏幕上那一行换了内容，而选中的
+ * 仍然是原来那一件，直到下一次 `mouseMoved`。两个理由：
+ *
+ * - 原版的选中**只由 `mouseMoved` 改**，没有第二条路。补一条等于给状态机加了
+ *   一种原版没有的转移，而它改的恰恰是真值记着的 `selected` / `selectedName`。
+ * - 「滚动不进真值」这条不变式就没了 —— 而它是这张票最好用的一条判据
+ *   （`scroll.test.ts` 最后那一组）。
+ *
+ * 真要跟手，该做的是在渲染层按当前指针位置画高亮，而不是让滚轮去改状态。
+ */
+function menuWheel(w: MenuWorld, x: number, y: number, rows: number): void {
+  const p = currentPanel(w)
+  if (p.equip) wheelScroll(EQUIP_LIST_VIEW, p.equip, equipList(p.equip).length, x, y, rows)
+  if (p.drug) wheelScroll(DRUG_LIST_VIEW, p.drug, visibleDrugs(w.drugPack).length, x, y, rows)
 }
 
 /**
@@ -216,6 +261,16 @@ function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   // 奇术页：技能按钮 + 那一句无条件的 `currentAnimation=null`。它跑在
   // `scoll.checkPressed()` **之后** —— 切人与清动画同一拍时，先切人。
   if (p.magic && p.scoll) magicCheckPressed(p.magic, p.scoll.whichHero, p.currentX, p.currentY, w.music)
+  // 滚动条的槽（xl-6lo.13）。**排在最后，而且不改上面任何一段的结果**：槽贴着
+  // 列表框的右内沿，那片矩形上原版一颗按钮都没有（六颗槽位按钮在框上面
+  // y 129..149，「使用」「弃用」在框下面），所以它既接不到别人的点击，也不会
+  // 把自己的让出去。判据在 `scroll.test.ts`。
+  if (p.equip) {
+    pressScrollTrack(EQUIP_LIST_VIEW, p.equip, equipList(p.equip).length, p.currentX, p.currentY)
+  }
+  if (p.drug) {
+    pressScrollTrack(DRUG_LIST_VIEW, p.drug, visibleDrugs(w.drugPack).length, p.currentX, p.currentY)
+  }
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */

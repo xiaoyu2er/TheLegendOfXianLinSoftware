@@ -174,9 +174,24 @@ export async function createMenuRenderer(host: HTMLElement): Promise<MenuRendere
   function draw(ops: readonly MenuDrawOp[]): void {
     ops.forEach((op, i) => {
       const sprite = slot(i)
+      // 精灵是**回收再用**的，所以每一条都要把上一条留下的三样按回默认值 ——
+      // 缩放、着色、透明度。少按一样的表现是"某一帧起某张图忽然变小 / 变色"，
+      // 而它取决于上一帧那个位置上是谁，查起来极难（滚动条那条 `rect` 就是
+      // 靠这三样画出来的）。
+      sprite.scale.set(1)
+      sprite.tint = 0xffffff
+      sprite.alpha = 1
       if (op.kind === 'image') {
         sprite.texture = textureOf(op.id)
         sprite.position.set(op.x, op.y)
+      } else if (op.kind === 'rect') {
+        // 一块纯色：白纹理拉到要的尺寸再着色。原版没有这种绘制，见
+        // `drawList.ts` 里 `rect` 那一支的注释（xl-6lo.13 的滚动条）。
+        sprite.texture = Texture.WHITE
+        sprite.position.set(op.x, op.y)
+        sprite.setSize(op.width, op.height)
+        sprite.tint = op.color
+        sprite.alpha = op.alpha
       } else {
         const { texture, ascent, left } = textTexture(op.text, op.size, op.color)
         sprite.texture = texture

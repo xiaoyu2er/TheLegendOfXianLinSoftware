@@ -1,4 +1,5 @@
-import { EQUIP_ROW_H, EQUIP_X_START, EQUIP_Y_START, equipList } from '../menu/equipPanel'
+import { EQUIP_LIST_VIEW, EQUIP_ROW_H, EQUIP_X_START, equipList } from '../menu/equipPanel'
+import { clampScroll, rowBandTop } from '../menu/scroll'
 import { stepMenu } from '../menu/step'
 import type { MenuButtonState, MenuWorld } from '../menu/types'
 
@@ -64,11 +65,16 @@ export function selectEquipRow(w: MenuWorld, name: string): void {
   if (!e) throw new Error('equipPanel 没有装备页状态')
   const index = equipList(e).findIndex((i) => i.name === name)
   if (index < 0) throw new Error(`当前列表里没有「${name}」`)
+  // ⚠️ 落点要跟着**滚动位置**走（xl-6lo.13）：翻过页之后同一行的带子已经
+  // 整体上移了 `offset` 行。写死成"从 y_start_point-22 起数"的话，翻过页的
+  // 场子里这里会选中另一件，而下面那句核对报的是"想选 A，实际选中 B" ——
+  // 看起来像实现错了。`offset` 为 0 时算出来的 y 与原来逐字相同。
+  const offset = clampScroll(EQUIP_LIST_VIEW, equipList(e).length, e.scroll)
   stepMenu(w, [
     {
       e: 'move',
       x: EQUIP_X_START + 1,
-      y: EQUIP_Y_START - EQUIP_ROW_H + EQUIP_ROW_H * index + Math.floor(EQUIP_ROW_H / 2),
+      y: rowBandTop(EQUIP_LIST_VIEW, index, offset) + Math.floor(EQUIP_ROW_H / 2),
     },
   ])
   if (e.currentEquipment !== name) {

@@ -3,6 +3,8 @@ import { DRUGS } from '../battle/drugs'
 import type { DrugSpec } from '../battle/drugs'
 import type { MenuHero } from './heroes'
 import { derive } from '../battle/units'
+import { DRUG_LIST_BOX, clampScroll, rowBandTop } from './scroll'
+import type { ListViewport } from './scroll'
 import { SCOLL_HEROES } from './types'
 import type { DrugPanelState, DrugStock, MenuSubPanel, MenuWorld } from './types'
 
@@ -34,6 +36,22 @@ export const DRUG_ROW_H = 32
  */
 export const DRUG_HIT_W = 130
 
+/**
+ * 物品页那处列表的全部几何 —— 前四项是原版的常量，`box` 是从 `物品3.png`
+ * 上量出来的（`scroll.ts` 的 `LIST_BOX_MEASUREMENT`）。
+ *
+ * ⚠️ **这一页在原版的数据下撑不满**：框里放得下 11 行，而 `drug.txt` 一共
+ * 只有 6 种药。滚动条因此**画不出来**，`menu-scroll` 里守的正是这一侧 ——
+ * 只验撑过的那一侧的话，"装得下时不画"与"这条代码根本没跑"长得一样。
+ */
+export const DRUG_LIST_VIEW: ListViewport = {
+  firstBaseline: DRUG_LIST_Y,
+  rowHeight: DRUG_ROW_H,
+  hitLeft: DRUG_LIST_X,
+  hitRight: DRUG_LIST_X + DRUG_HIT_W,
+  box: DRUG_LIST_BOX,
+}
+
 /** `x_picture` / `y_picture`：选中那瓶药的插图左上角。 */
 export const DRUG_PICTURE_X = 820
 export const DRUG_PICTURE_Y = 178
@@ -52,6 +70,7 @@ export const USE_BUTTON_H = 40
 export function createDrugPanelState(): DrugPanelState {
   return {
     currentDrug: null,
+    scroll: 0,
     useButton: menuButton(USE_BUTTON_X, USE_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
   }
 }
@@ -132,19 +151,21 @@ export function drugCheckMoveIn(w: MenuWorld, p: MenuSubPanel): void {
   const d = p.drug
   if (!d) return
   const list = visibleDrugs(w.drugPack)
-  let originalY = DRUG_LIST_Y - DRUG_ROW_H
   if (list.length !== 0) {
-    for (const stock of list) {
+    // 滚动位置（xl-6lo.13）：整排带子往上挪 `offset` 行，卷上去的行不参与。
+    // `offset == 0` 时与原版逐字相同，而原版永远是 0。
+    const offset = clampScroll(DRUG_LIST_VIEW, list.length, d.scroll)
+    for (let i = offset; i < list.length; i++) {
+      const originalY = rowBandTop(DRUG_LIST_VIEW, i, offset)
       if (
-        p.currentX > DRUG_LIST_X &&
-        p.currentX < DRUG_LIST_X + DRUG_HIT_W &&
+        p.currentX > DRUG_LIST_VIEW.hitLeft &&
+        p.currentX < DRUG_LIST_VIEW.hitRight &&
         p.currentY > originalY &&
         p.currentY < originalY + DRUG_ROW_H
       ) {
-        d.currentDrug = stock.name
+        d.currentDrug = list[i]!.name
         d.useButton.isDraw = true
       }
-      originalY += DRUG_ROW_H
     }
   } else {
     d.useButton.isDraw = false

@@ -105,6 +105,11 @@ export interface DrugPanelState {
    * 置回 `null`，而"哪一瓶"这件事本来就只由名字决定。
    */
   currentDrug: string | null
+  /**
+   * 药品清单翻到第几行了（**原版没有这个东西**，xl-6lo.13）。与装备页那个
+   * 同形，同样**不进真值**。
+   */
+  scroll: number
   /** `use_button`。⚠️ 开局 `isDraw` 是 **No**，构造函数最后一句按回去的。 */
   useButton: MenuButtonState
 }

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { MouseEvent as ReactMouseEvent, WheelEvent as ReactWheelEvent } from 'react'
 import { SCENE_NAMES, START_SCENE } from '../data/scenes'
 import { Stage } from '../stage/Stage'
 import { DEFAULT_SCALING_MODE } from '../stage/scaling'
@@ -8,6 +8,7 @@ import { useFullscreen } from '../stage/useFullscreen'
 import { useSceneRenderer } from '../scene/useSceneRenderer'
 import { useBattleRenderer } from '../battle/render/useBattleRenderer'
 import { useMenuRenderer } from '../menu/render/useMenuRenderer'
+import { wheelRows } from '../menu/scroll'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { useGame } from '../game/useGame'
 import { StartPanel } from '../start/StartPanel'
@@ -191,6 +192,19 @@ export function App() {
     if (at) view.menuInput({ e, x: at.x, y: at.y })
   }
 
+  /**
+   * 滚轮 —— 装备页与物品页那两处列表翻页用（xl-6lo.13）。**原版没有这一种
+   * 输入**，它只从浏览器进来。
+   *
+   * 送的是**行数**不是 `deltaY`：那个数的量纲随设备与操作系统变，换算在
+   * `menu/scroll.ts` 的 `wheelRows` 里，那里进得了 `pnpm test`。
+   */
+  const onMenuWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!inMenu || event.deltaY === 0) return
+    const at = stagePoint(event)
+    if (at) view.menuInput({ e: 'wheel', x: at.x, y: at.y, rows: wheelRows(event.deltaY) })
+  }
+
   return (
     <div className="app-shell" ref={shellRef}>
       <Stage
@@ -218,6 +232,7 @@ export function App() {
               onMouseDown={onMenuMouse('press')}
               onMouseUp={onMenuMouse('release')}
               onMouseMove={onMenuMouse('move')}
+              onWheel={onMenuWheel}
               data-testid="menu-host"
             />
           </>

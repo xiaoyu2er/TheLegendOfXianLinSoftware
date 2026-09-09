@@ -2,6 +2,8 @@ import { menuButton, moveInButton, pressButton, releaseButton } from './buttons'
 import { EQUIPMENT_LISTS, EQUIP_SLOTS } from './equipment'
 import type { EquipSlot, EquipmentSpec } from './equipment'
 import { DEFAULT_WEAPONS } from './defaultWeapons'
+import { EQUIP_LIST_BOX, clampScroll, rowBandTop } from './scroll'
+import type { ListViewport } from './scroll'
 import { refreshMenuHero } from './heroes'
 import type { MenuHero } from './heroes'
 import { SCOLL_HEROES } from './types'
@@ -74,6 +76,13 @@ export interface EquipPanelState {
   warnCannotUse: boolean
   /** 四个 `ShowValue` 的读数。**由 `paintEquip` 算**，`signal!=1` 时真值记 null。 */
   diff: EquipDiff | null
+  /**
+   * 背包列表翻到第几行了（**原版没有这个东西**，xl-6lo.13）。
+   *
+   * ⚠️ 它**不进真值**：`snapshotEquip` 一个字都不记它。原版不裁剪、也没有
+   * 滚动条，所以真值里没有任何一列会因为它变 —— 判据在 `scroll.test.ts`。
+   */
+  scroll: number
   /** 六个槽位按钮（`buttonlist`）。 */
   slots: Record<EquipSlot, MenuButtonState>
   /** `use_button` / `abandon_button`。 */
@@ -106,6 +115,21 @@ export const USE_BUTTON_W = 120
 export const USE_BUTTON_H = 40
 /** `isMoveIn()` 的行高，也是列表每一行的行距（`drawEquipment` 里的 `y += 22`）。 */
 export const EQUIP_ROW_H = 22
+/** 命中带的宽度：`currentX < x_start_point+70`。 */
+export const EQUIP_HIT_W = 70
+
+/**
+ * 装备页那处列表的全部几何 —— 前四项是原版的常量，`box` 是从 `装备4.png`
+ * 上量出来的（`scroll.ts` 的 `LIST_BOX_MEASUREMENT`）。滚动条与命中带共用
+ * 这一份，所以"画在哪"与"点得中哪"不会分家。
+ */
+export const EQUIP_LIST_VIEW: ListViewport = {
+  firstBaseline: EQUIP_Y_START,
+  rowHeight: EQUIP_ROW_H,
+  hitLeft: EQUIP_X_START,
+  hitRight: EQUIP_X_START + EQUIP_HIT_W,
+  box: EQUIP_LIST_BOX,
+}
 
 /** 一件装备在它那张表里的下标；不在表里时 -1。 */
 function indexIn(slot: EquipSlot, name: string | null): number {
@@ -213,6 +237,7 @@ export function createEquipPanel(
     warnEquipped: false,
     warnCannotUse: false,
     diff: null,
+    scroll: 0,
     slots,
     use: menuButton(USE_BUTTON_X, USE_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
     abandon: menuButton(ABANDON_BUTTON_X, ABANDON_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
@@ -398,18 +423,28 @@ export function equipCheckMoveIn(e: EquipPanelState, x: number, y: number): void
  * （`currentY > originalY && currentY < originalY+22`）—— 行与行之间那一条线
  * 上谁都不选中。⚠️ 命中了**不会 break**，也不会在没命中时清掉选中项：
  * 鼠标移开列表时上一次选的那件还留着。照抄。
+ *
+ * 唯一加进来的东西是滚动位置（xl-6lo.13）：整排带子往上挪 `offset` 行，
+ * 卷上去的那几行不再参与。`offset == 0` 时这个循环与原版逐字相同 ——
+ * **包括框外那几行照样点得中**，`menu-scroll` 第 9 / 10 步就点在那里。
+ * 理由与那条唯一的例外见 `scroll.ts` 的文件头注。
  */
 function equipRowMoveIn(e: EquipPanelState, x: number, y: number): void {
   const list = equipList(e)
   if (list.length === 0) return
-  let rowY = EQUIP_Y_START - EQUIP_ROW_H
-  for (const item of list) {
-    if (x > EQUIP_X_START && x < EQUIP_X_START + 70 && y > rowY && y < rowY + EQUIP_ROW_H) {
-      e.currentEquipment = item.name
+  const offset = clampScroll(EQUIP_LIST_VIEW, list.length, e.scroll)
+  for (let i = offset; i < list.length; i++) {
+    const rowY = rowBandTop(EQUIP_LIST_VIEW, i, offset)
+    if (
+      x > EQUIP_LIST_VIEW.hitLeft &&
+      x < EQUIP_LIST_VIEW.hitRight &&
+      y > rowY &&
+      y < rowY + EQUIP_ROW_H
+    ) {
+      e.currentEquipment = list[i]!.name
       e.signal = 1
       e.use.isDraw = true
     }
-    rowY += EQUIP_ROW_H
   }
 }
 

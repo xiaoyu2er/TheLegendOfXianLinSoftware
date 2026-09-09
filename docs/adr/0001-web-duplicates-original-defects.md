@@ -29,6 +29,10 @@
 |---|---|---|---|
 | 点「起」**不重置队伍**（`GameLauncher.init()` 是死代码，唯一调用点被注释掉；而且即便调用了，`level` / `exp` / `angryValue` 是 `static`、三个构造函数一个都不赋，最多只到"满血复活、等级经验照旧"） | 回出厂状态：1 / 3 / 1 级、满血、经验 0 | xl-kaa 的验收标准第二条点名要它。全灭回标题再开一局，带着上一局的残血进脚本1 是玩不下去的 —— 而这一层今天还没有存档（M6，xl-i06.1），"接着上一局"没有别的出口 | `web/src/fakes/originalNewGame.test.ts`（原版那一半）+ `web/src/fakes/party.test.ts`（出厂状态那一半）+ `web/src/game/useGame.test.tsx` 的「重开一局」 |
 
+| **列表不裁剪、也没有滚动条**：`EquipPanel.drawEquipment()` 的 y 一路加下去，画到列表框外照样画；`isMoveIn()` 的命中带同样无界（`originalY += 22`） | **画的那一半裁**：只画滚动窗口里的那几行，框的右内沿上加一条滚动条，滚轮与槽内点击翻页（`MenuInput` 因此多一支 `wheel`，真值里没有它） | 装不下一屏的背包**看不见**后面那几行（20 件武器撑过框 4 行，`menu-scroll` 量的就是它）。xl-6lo.13 的票面要的是「看得见」 | `web/src/menu/scroll.test.ts` 与 `menu/render/scrollbar.test.ts` |
+| 同上的**另一半**：框外那几行**仍然点得中**（落点 y 518 / 540 / 562 / 584，都还在 640 高的面板里） | **不改**：命中带一路往下排、没有下界，`offset == 0` 时算式与原版逐字相同 | 「看得见」与「够得着」是两件事，`menu-scroll` 的剧本描述把它们分开写着。合成一条的话第 9 / 10 步当场对不上真值 —— 篡改矩阵实测：给命中加上下界，`menu-scroll · equip` 立刻红 | `scroll.test.ts` 的「够得着那一半没被改掉」一组 + `menuTrace.test.ts` 的 `menu-scroll · equip` |
+| **`offset > 0` 时卷到框上面去的那几行点不中**（原版没有 `offset`，所以原版没有对应行为可抄） | 命中只从第 `offset` 行起算 | 卷上去的那片区域住着六颗槽位按钮（命中框 y 129..149）。不设这条下界，翻过页之后点槽位按钮会**同时**选中一件装备 | `scroll.test.ts`「翻上去的那几行点不中」（装备页 / 物品页各一条） |
+
 还有一条：**原版自己就不一致。**「承」（读档）走的是三个人的
 `intialFromInfo()`，它把 `level` / `hp` / `mp` / `angryValue` / `exp` 逐个从
 `roleInfo` 写回去（`ZhangXiaoFan.java:718` / `YuJie.java:749` /
