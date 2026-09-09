@@ -295,10 +295,17 @@ describe('菜单状态层对齐行为真值', () => {
                 (e) => e.e === blocked.event && 'target' in e && e.target === blocked.target,
               ),
           )
+          // ⚠️ 两件事分开断言：`findIndex` 的 -1（找不到）与命中第 0 步是两回事，
+          // 并成一档 `toBeGreaterThan(0)` 的话，报错文案只说得出其中一件
+          // （/code-review 的 Standards 轴提的）。
           expect(
             want,
             `${name} 里找不到「${blocked.panel} 上 ${blocked.event} ${blocked.target}」这一步 ——` +
               ` 剧本改了，这条登记要跟着改`,
+          ).not.toBe(-1)
+          expect(
+            want,
+            `${name} 卡在第 0 步 —— 那等于前半截一格都没对上，这条登记就没有意义了`,
           ).toBeGreaterThan(0)
 
           // 正题：第一处分歧**恰好**是那一步。早一步 → 这一票自己做错了；

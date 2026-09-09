@@ -57,6 +57,16 @@ function world(equipment: readonly { name: string; count: number }[] = []): Menu
   return w
 }
 
+/** 一个 `menu:装备/…` 的 ID 去掉前缀，也就是原版那句 `new ImageIcon` 里的相对路径。 */
+function stem(id: string): string {
+  return id.replace('menu:装备/', '')
+}
+
+/** 三态贴图的**词干** —— 去掉前缀再去掉末尾那个 `1.png`。 */
+function buttonStem(key: Parameters<typeof equipButtonId>[0]): string {
+  return stem(equipButtonId(key, 'normal')).replace('1.png', '')
+}
+
 function pageOps(w: MenuWorld): MenuDrawOp[] {
   return menuDrawList(w).filter((op) => op.layer === 'page')
 }
@@ -79,16 +89,16 @@ describe('装备页的贴图 ID，对回原版那几处读图', () => {
     expect(paths.length, 'EquipPanel 里一句读图都没解出来').toBeGreaterThan(0)
     for (const slot of EQUIP_SLOTS) {
       for (const image of ['normal', 'waitclick'] as const) {
-        expect(paths, `${slot} 的 ${image}`).toContain(equipButtonId(slot, image).replace('menu:装备/', ''))
+        expect(paths, `${slot} 的 ${image}`).toContain(stem(equipButtonId(slot, image)))
       }
     }
     for (const key of ['use', 'abandon'] as const) {
       for (const image of ['normal', 'waitclick', 'pressed'] as const) {
-        expect(paths, `${key} 的 ${image}`).toContain(equipButtonId(key, image).replace('menu:装备/', ''))
+        expect(paths, `${key} 的 ${image}`).toContain(stem(equipButtonId(key, image)))
       }
     }
-    expect(paths).toContain(warningId('equipped').replace('menu:装备/', ''))
-    expect(paths).toContain(warningId('cannotUse').replace('menu:装备/', ''))
+    expect(paths).toContain(stem(warningId('equipped')))
+    expect(paths).toContain(stem(warningId('cannotUse')))
   })
 
   it('⚠️ 六颗槽位按钮按下时贴的是常态图 —— 它们根本没有第三张', () => {
@@ -104,17 +114,16 @@ describe('装备页的贴图 ID，对回原版那几处读图', () => {
       expect(equipButtonId(slot, 'pressed')).toBe(equipButtonId(slot, 'normal'))
       // 反面：磁盘上真的没有那张 `<词干>3.png`。写成"三态三张"的话这里会
       // 去要一个不存在的文件，而表现只是"按下去那颗按钮消失了"。
-      const stem = equipButtonId(slot, 'normal').replace('menu:装备/', '').replace('1.png', '')
+      const name = `${buttonStem(slot)}3.png`
       expect(
-        existsSync(repoPath('sources/菜单/装备', `${stem}3.png`)),
-        `${stem}3.png 居然存在了 —— 那这条照抄的依据就变了`,
+        existsSync(repoPath('sources/菜单/装备', name)),
+        `${name} 居然存在了 —— 那这条照抄的依据就变了`,
       ).toBe(false)
     }
     // 正向控制：使用 / 弃用那两颗确实有第三张。
     for (const key of ['use', 'abandon'] as const) {
       expect(equipButtonId(key, 'pressed')).not.toBe(equipButtonId(key, 'normal'))
-      const stem = equipButtonId(key, 'normal').replace('menu:装备/', '').replace('1.png', '')
-      expect(existsSync(repoPath('sources/菜单/装备', `${stem}3.png`))).toBe(true)
+      expect(existsSync(repoPath('sources/菜单/装备', `${buttonStem(key)}3.png`))).toBe(true)
     }
   })
 

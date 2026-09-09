@@ -1,9 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
-import { EQUIPMENT_LISTS, EQUIP_SLOTS, SLOT_CODE, SLOT_FILE } from './equipment'
+import { EQUIPMENT_LISTS, EQUIP_SLOTS, SLOT_FILE } from './equipment'
 import type { EquipSlot, EquipmentSpec } from './equipment'
-import { javaSource } from '../test/javaSource'
 
 /**
  * `equipment.ts` 抄的那六张表，逐行核回 `sources/Shop/` 下的 GBK 数据。
@@ -80,28 +79,4 @@ describe('六类装备的全表对齐原版数据', () => {
       }
     }
   })
-
-  it('CURRENTLIST 的六个常量与原版相同', () => {
-    // 真值 `equip.tab` 那一列是这个数换回来的名字，错一位就是"选中的槽位是另一个"。
-    const src = javaSource('src/menu/EquipPanel.java')
-    const found = new Map<string, number>()
-    for (const m of src.matchAll(/final int (WEAPON|ARMOR|HELMET|SHOE|GLOVE|DECORATION)=(\d+);/g)) {
-      found.set(m[1]!, Number(m[2]))
-    }
-    // 解不出来与"解出来全对"长得一样（GBK 源码被当成二进制、字段被挪走都是零匹配）。
-    expect(found.size, 'EquipPanel.java 里一个槽位常量都没解出来').toBe(EQUIP_SLOTS.length)
-    for (const slot of EQUIP_SLOTS) {
-      expect(found.get(SLOT_FILE_CONST[slot]), `${slot} 的 CURRENTLIST`).toBe(SLOT_CODE[slot])
-    }
-  })
 })
-
-/** 槽位 → `EquipPanel` 里那个 `final int` 常量名。 */
-const SLOT_FILE_CONST: Readonly<Record<EquipSlot, string>> = {
-  weapon: 'WEAPON',
-  armor: 'ARMOR',
-  helmet: 'HELMET',
-  shoe: 'SHOE',
-  glove: 'GLOVE',
-  decoration: 'DECORATION',
-}

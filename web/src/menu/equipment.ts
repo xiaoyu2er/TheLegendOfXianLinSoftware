@@ -20,19 +20,6 @@
 /** 六个槽位。次序照 `EquipPanel` 里 `buttonlist[0..5]` 的排布（也是页面上那一排的左右次序）。 */
 export type EquipSlot = 'weapon' | 'armor' | 'helmet' | 'shoe' | 'glove' | 'decoration'
 
-/**
- * 槽位 → `EquipPanel` 里那个 `CURRENTLIST` 整数。真值的 `equip.tab` 那一列
- * 就是这个数经 `MenuDriver.slotName()` 换回来的名字。
- */
-export const SLOT_CODE: Readonly<Record<EquipSlot, number>> = {
-  weapon: 1,
-  armor: 2,
-  helmet: 3,
-  shoe: 4,
-  glove: 5,
-  decoration: 6,
-}
-
 /** 槽位 → `sources/Shop/<名字>.txt`，也就是 `ShopReader.readEquipment(s)` 的那个 `s`。 */
 export const SLOT_FILE: Readonly<Record<EquipSlot, string>> = {
   weapon: '武器',
@@ -43,7 +30,16 @@ export const SLOT_FILE: Readonly<Record<EquipSlot, string>> = {
   decoration: '饰品',
 }
 
-/** 六个槽位的**遍历次序**。`EquipPanel.buttonlist` 与真值 `equipped` 那六个键都是它。 */
+/**
+ * 六个槽位的**遍历次序**。`EquipPanel.buttonlist` 与真值 `equipped` 那六个键
+ * 都是它，判据在 `equipPanel.test.ts`（从源码的 `buttonlist[n]=` 六行现解）。
+ *
+ * ⚠️ 原版还有一份 `CURRENTLIST` 整数（`WEAPON=1` … `DECORATION=6`，正好是这个
+ * 次序），**这里故意不抄它**：Web 侧从头到尾用的是槽位名（真值 `equip.tab`
+ * 那一列也是名字，`MenuDriver.slotName()` 已经把数换回去了）。抄一份没人用的
+ * 表，再给它配一条判据，守的就只是它自己 —— 改坏它除了那条判据什么都不会响
+ * （/code-review 的 Standards 轴提的）。
+ */
 export const EQUIP_SLOTS: readonly EquipSlot[] = [
   'weapon',
   'armor',

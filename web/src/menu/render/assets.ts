@@ -148,7 +148,9 @@ export function menuTextureIds(w: MenuWorld): AssetId[] {
  * 「使用 / 弃用」那两颗才是三张各一张。照着「三态三张」写会去要一个
  * `武器3.png`，而那个文件根本不存在 —— 表现是按下去那一颗按钮消失了。
  */
-const EQUIP_BUTTON_STEM: Readonly<Record<EquipSlot | 'use' | 'abandon', string>> = {
+export type EquipButtonKey = EquipSlot | 'use' | 'abandon'
+
+const EQUIP_BUTTON_STEM: Readonly<Record<EquipButtonKey, string>> = {
   weapon: '武器',
   armor: '盔甲',
   helmet: '头盔',
@@ -160,12 +162,9 @@ const EQUIP_BUTTON_STEM: Readonly<Record<EquipSlot | 'use' | 'abandon', string>>
 }
 
 /** 只有这两颗有第三张图（按下时）。 */
-const EQUIP_BUTTON_HAS_PRESSED: readonly (EquipSlot | 'use' | 'abandon')[] = ['use', 'abandon']
+const EQUIP_BUTTON_HAS_PRESSED: readonly EquipButtonKey[] = ['use', 'abandon']
 
-export function equipButtonId(
-  key: EquipSlot | 'use' | 'abandon',
-  image: ButtonImage,
-): AssetId {
+export function equipButtonId(key: EquipButtonKey, image: ButtonImage): AssetId {
   const n =
     image === 'pressed' && !EQUIP_BUTTON_HAS_PRESSED.includes(key) ? 1 : STATE_SUFFIX[image]
   return id(`装备/${EQUIP_BUTTON_STEM[key]}${n}.png`)
@@ -208,7 +207,8 @@ export function showValueDigitId(digit: number, down: boolean): AssetId {
  */
 export function equipTextureIds(): AssetId[] {
   const ids: AssetId[] = []
-  for (const key of [...EQUIP_SLOTS, 'use' as const, 'abandon' as const]) {
+  const keys: readonly EquipButtonKey[] = [...EQUIP_SLOTS, 'use', 'abandon']
+  for (const key of keys) {
     for (const image of Object.keys(STATE_SUFFIX) as ButtonImage[]) {
       ids.push(equipButtonId(key, image))
     }
