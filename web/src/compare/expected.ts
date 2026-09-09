@@ -1039,6 +1039,25 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
     issue: 'xl-knp.1',
   },
+  'shop-categories': {
+    status: 'unassembled',
+    // xl-knp.3 补的两条商店真值之一：装备自选超市六类全走一遍。处境与
+    // shop-trade 逐字相同（web 侧整个商店系统还没做），所以同样既不写
+    // maxRatio 也不写 gaps —— 一帧都还没比过，写任何数都是编的。
+    //
+    // 归票写 xl-knp.10（「shop 进逐帧比对流水线 —— M4 收口」）而不是
+    // shop-trade 那条的 xl-knp.1：xl-knp.1 是 M4 重拆之前的那张，重拆之后
+    // 接线这件事落在 xl-knp.10 上，而这两条新真值正是它的输入。
+    why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
+    issue: 'xl-knp.10',
+  },
+  'shop-edges': {
+    status: 'unassembled',
+    // xl-knp.3 补的另一条：库存为 0 的那一件买下去、背包里没有那件东西按卖出。
+    // 同上，一帧都没比过。
+    why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
+    issue: 'xl-knp.10',
+  },
   // ===================== 菜单五条（xl-6lo.14 接上 driver=menu） =====================
   //
   // 这五条从 `unassembled` 换成**真量出来的分区表态**。量法与读数都在下面每条

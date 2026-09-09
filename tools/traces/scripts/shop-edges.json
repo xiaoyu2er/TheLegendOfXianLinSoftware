@@ -1,0 +1,38 @@
+{
+  "driver": "shop",
+  "name": "shop-edges",
+  "description": "两条原版有分支而 shop-trade 一次都没走到的路：**买一件店里存货是 0 的**，与**卖一件背包里一份都没有的**。两个面板各走一遍。原版两处都是 temp=Math.min(要几件, 另一侧还剩几件)，所以这两条路的后果都是「这一行什么都没发生，只有 purchase 被清零」——而那与「压根没点」长得几乎一样。所以每一次都**同时给另一行也加上一件**：那一行照常成交，于是真值里看得见「一次点击里有一行动了、有一行没动」，而不是整单被拒。\n\n以 seed=1 取到的存货为准：药店第 5 行 灵神天药 存货 0，装备店 weapon 第 1 行 茶罗骨环 存货 0；空背包那两件是药店 姜黄粉 与 shoe 栏 踏风草鞋（setup 里没给，held=0）。成交的搭档分别是 金创药（1000）与 月苗刀（3000）、皮靴（2000）。\n\n顺带把药店店主对白的两个价位档也走完（原版 ShopPanel.isMoveIn 以 6000 分档）：金创药 1000 是「物美价廉，呵呵」，灵神天药 15000 是「药是好药，但是好像有点贵呢」。",
+  "setup": {
+    "party": ["zhang"],
+    "coins": 10000,
+    "seed": 1,
+    "drugs": [{ "name": "金创药", "count": 2 }],
+    "equipment": [{ "name": "皮靴", "count": 1 }]
+  },
+  "maxSteps": 100,
+  "steps": [
+    { "op": "open", "name": "drug" },
+    { "op": "hover", "index": 5 },
+    { "op": "plus", "index": 5 },
+    { "op": "hover", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "buy" },
+    { "op": "hover", "index": 1 },
+    { "op": "plus", "index": 1 },
+    { "op": "hover", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "sell" },
+    { "op": "open", "name": "equipment" },
+    { "op": "hover", "index": 1 },
+    { "op": "plus", "index": 1 },
+    { "op": "hover", "index": 6 },
+    { "op": "plus", "index": 6 },
+    { "op": "buy" },
+    { "op": "category", "name": "shoe" },
+    { "op": "hover", "index": 1 },
+    { "op": "plus", "index": 1 },
+    { "op": "hover", "index": 0 },
+    { "op": "plus", "index": 0 },
+    { "op": "sell" }
+  ]
+}
