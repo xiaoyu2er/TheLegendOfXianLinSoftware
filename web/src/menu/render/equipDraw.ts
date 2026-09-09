@@ -3,9 +3,8 @@ import type { EquipSlot, EquipmentSpec } from '../equipment'
 import {
   CURRENT_IMAGE_X,
   CURRENT_IMAGE_Y,
-  EQUIP_ROW_H,
+  EQUIP_LIST_VIEW,
   EQUIP_X_START,
-  EQUIP_Y_START,
   WORN_IMAGE_X,
   equipCount,
   equipList,
@@ -13,9 +12,11 @@ import {
   specOf,
 } from '../equipPanel'
 import type { EquipPanelState } from '../equipPanel'
+import { rowBaseline, visibleRange } from '../scroll'
 import type { MenuHero } from '../heroes'
 import type { ScollHero } from '../types'
 import { equipButtonId, showValueArrowId, showValueDigitId, warningId } from './assets'
+import { scrollbarOps } from './scrollbar'
 import type { MenuDrawOp } from './drawList'
 import type { AssetId } from '../../assets/ids'
 
@@ -181,15 +182,21 @@ export function equipDrawOps(
   }
 
   // 3. drawEquipment()
+  //
+  // ⚠️ **只画滚动窗口里的那几行**，原版不裁剪（xl-6lo.13，理由见
+  // `menu/scroll.ts` 的文件头注）。`menu-scroll` 那份真值量的就是这件事：
+  // 20 件武器撑过列表框 4 行，第 17..20 行原版照画、画到框外去。
   const list = equipList(e)
-  let y = EQUIP_Y_START
-  for (const item of list) {
+  const window = visibleRange(EQUIP_LIST_VIEW, list.length, e.scroll)
+  for (let i = window.from; i < window.to; i++) {
+    const item = list[i]!
+    const y = rowBaseline(EQUIP_LIST_VIEW, i, window.from)
     const count = equipCount(e, e.currentList, item.name)
     ops.push(text(item.name, EQUIP_X_START, y, LIST_FONT, WHITE))
     // `g.drawString("   "+e.getNumberGOT(), x+150, y)` —— 三个空格照抄。
     ops.push(text(`   ${count}`, EQUIP_X_START + COUNT_DX, y, LIST_FONT, WHITE))
-    y += EQUIP_ROW_H
   }
+  ops.push(...scrollbarOps(EQUIP_LIST_VIEW, list.length, e.scroll))
 
   let message1: string
   let message2: string

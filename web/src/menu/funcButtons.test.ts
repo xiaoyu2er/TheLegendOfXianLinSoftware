@@ -154,9 +154,13 @@ describe('天书页骨架', () => {
     const step = readFileSync(repoPath('web/src/menu/step.ts'), 'utf8')
     const union = /export type MenuInput =([\s\S]*?)\n\nexport function stepMenu/.exec(step)
     expect(union, 'step.ts 里没解出 MenuInput 的联合类型').not.toBeNull()
+    // ⚠️ `wheel` 是 web 侧加的第五种输入（xl-6lo.13 的滚动条），真值里没有
+    // 它。它照样是**鼠标**的一种 —— 这条判据守的是"没有键盘那一种"，不是
+    // "永远只有这两种"。
     expect([...union![1]!.matchAll(/e: '([a-z|' ]+)'/g)].map((m) => m[1]!)).toEqual([
       'press' + "' | '" + 'release' + "' | '" + 'move',
       'tick',
+      'wheel',
     ])
   })
 })

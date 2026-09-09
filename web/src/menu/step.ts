@@ -4,10 +4,18 @@ import {
   equipCheckMoveIn,
   equipCheckPressed,
   equipCheckReleased,
+  equipTrackPress,
+  equipWheel,
   paintEquip,
 } from './equipPanel'
 import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased } from './funcButtons'
-import { drugPanelMoveIn, drugPanelPressed, drugPanelReleased } from './drugPanel'
+import {
+  drugPanelMoveIn,
+  drugPanelPressed,
+  drugPanelReleased,
+  drugTrackPress,
+  drugWheel,
+} from './drugPanel'
 import {
   magicCheckMoveIn,
   magicCheckPressed,
@@ -36,10 +44,18 @@ import type { MenuSubPanel, MenuWorld } from './types'
  * 状态是**就地改**的（`types.ts` 的规矩），返回的就是传进来的那个世界。
  */
 
-/** 真值 `input` 那一列的条目。菜单只有鼠标，外加一个时钟脉冲。 */
+/**
+ * 真值 `input` 那一列的条目。菜单只有鼠标，外加一个时钟脉冲。
+ *
+ * ⚠️ `wheel` 那一支**真值里没有** —— 原版没有滚动条，导出器也不会导出它
+ * （`MenuDriver` 认得的 op 里没有滚轮）。它是 web 侧加的第五种输入
+ * （xl-6lo.13），只从浏览器进来。加在这里而不是另开一条路，是因为它与另外
+ * 四种一样要走 `stepMenu` 那一步的开头收尾（清音效、清拒绝旗标、末尾 paint）。
+ */
 export type MenuInput =
   | { readonly e: 'press' | 'release' | 'move'; readonly x: number; readonly y: number; readonly target?: string }
   | { readonly e: 'tick' }
+  | { readonly e: 'wheel'; readonly x: number; readonly y: number; readonly rows: number }
 
 export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuWorld {
   // 音效是**这一步**的（`MusicTap` 每步取走一次），所以每步开头清空。
@@ -105,7 +121,24 @@ export function applyMenuInput(w: MenuWorld, input: MenuInput): void {
     case 'move':
       menuMouseMoved(w, input.x, input.y)
       return
+    case 'wheel':
+      menuWheel(w, input.x, input.y, input.rows)
+      return
   }
+}
+
+/**
+ * 滚轮（xl-6lo.13）。**只送给当前显示的那一页**，与鼠标的三种事件同一个规矩
+ * （`CardLayout` 盖住的三页收不到任何事件）。
+ *
+ * 每一页自己再判这一下落没落在它的列表框里 —— 落在别处一律不动。
+ * ⚠️ 它**一个真值记着的字段都不碰**：不动 `Mouse` 的坐标（滚轮不移动指针）、
+ * 不动选中项、不出声。
+ */
+function menuWheel(w: MenuWorld, x: number, y: number, rows: number): void {
+  const p = currentPanel(w)
+  if (p.equip) equipWheel(p.equip, x, y, rows)
+  if (p.drug) drugWheel(w, p, x, y, rows)
 }
 
 /**
@@ -216,6 +249,12 @@ function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   // 奇术页：技能按钮 + 那一句无条件的 `currentAnimation=null`。它跑在
   // `scoll.checkPressed()` **之后** —— 切人与清动画同一拍时，先切人。
   if (p.magic && p.scoll) magicCheckPressed(p.magic, p.scoll.whichHero, p.currentX, p.currentY, w.music)
+  // 滚动条的槽（xl-6lo.13）。**排在最后，而且不改上面任何一段的结果**：槽贴着
+  // 列表框的右内沿，那片矩形上原版一颗按钮都没有（六颗槽位按钮在框上面
+  // y 129..149，「使用」「弃用」在框下面），所以它既接不到别人的点击，也不会
+  // 把自己的让出去。判据在 `scroll.test.ts`。
+  if (p.equip) equipTrackPress(p.equip, p.currentX, p.currentY)
+  if (p.drug) drugTrackPress(w, p, p.currentX, p.currentY)
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */

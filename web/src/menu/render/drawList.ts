@@ -20,7 +20,14 @@ import {
   magicSkillButtonId,
 } from './magicSkills'
 import { SCOLL_HEROES } from '../types'
-import { DRUG_LIST_X, DRUG_LIST_Y, DRUG_ROW_H, heroIndexOnScoll, visibleDrugs } from '../drugPanel'
+import {
+  DRUG_LIST_VIEW,
+  DRUG_LIST_X,
+  heroIndexOnScoll,
+  visibleDrugs,
+} from '../drugPanel'
+import { rowBaseline, visibleRange } from '../scroll'
+import { scrollbarOps } from './scrollbar'
 import { DRUGS } from '../../battle/drugs'
 import type { MenuSubPanel, MenuWorld } from '../types'
 
@@ -69,6 +76,22 @@ export const MENU_LAYERS: readonly MenuLayer[] = [
 export type MenuDrawOp =
   /** `g.drawImage(img, x, y, panel)` —— 按原尺寸贴。 */
   | { readonly kind: 'image'; readonly layer: MenuLayer; readonly id: AssetId; readonly x: number; readonly y: number }
+  /**
+   * 一块纯色矩形。**原版一条这样的绘制都没有** —— 它是给滚动条用的
+   * （xl-6lo.13），原版没有滚动条。所以看见它就等于"这一块是 web 侧加的"，
+   * 逐帧比对接上以后（xl-6lo.14）那片矩形要单独表态。
+   */
+  | {
+      readonly kind: 'rect'
+      readonly layer: MenuLayer
+      readonly x: number
+      readonly y: number
+      readonly width: number
+      readonly height: number
+      readonly color: string
+      /** 0..1。槽是半透的，滑块是实的。 */
+      readonly alpha: number
+    }
   /** `g.drawString(s, x, y)` —— **x/y 是基线**，不是行盒左上角。 */
   | {
       readonly kind: 'text'
@@ -236,8 +259,16 @@ function drawDrugPanel(ops: MenuDrawOp[], w: MenuWorld, panel: MenuSubPanel): vo
   }
 
   // `drawEquipment`：清单。名字画在 x，数量画在 x+180，每行下移 32。
-  let y = DRUG_LIST_Y
-  for (const stock of visibleDrugs(w.drugPack)) {
+  //
+  // ⚠️ **只画滚动窗口里的那几行** —— 原版不裁剪，一路画到框外去
+  // （xl-6lo.13，理由见 `menu/scroll.ts` 的文件头注）。今天的药品表只有 6 种、
+  // 框里放得下 11 行，所以这条裁剪在原版数据下**裁不掉任何一行**，而滚动条
+  // 整个不画：这正是「装得下的那一侧」，判据在 `scroll.test.ts`。
+  const drugs = visibleDrugs(w.drugPack)
+  const window = visibleRange(DRUG_LIST_VIEW, drugs.length, d.scroll)
+  for (let i = window.from; i < window.to; i++) {
+    const stock = drugs[i]!
+    const y = rowBaseline(DRUG_LIST_VIEW, i, window.from)
     ops.push({
       kind: 'text',
       layer: 'page',
@@ -256,8 +287,8 @@ function drawDrugPanel(ops: MenuDrawOp[], w: MenuWorld, panel: MenuSubPanel): vo
       size: DRUG_LIST_FONT_SIZE,
       color: DRUG_TEXT_COLOR,
     })
-    y += DRUG_ROW_H
   }
+  ops.push(...scrollbarOps(DRUG_LIST_VIEW, drugs.length, d.scroll))
 
   // 三行说明。⚠️ 字号跟着"有没有选中"走，见上面那两个常量的注释。
   const spec = d.currentDrug === null ? null : DRUGS.find((x) => x.name === d.currentDrug)
