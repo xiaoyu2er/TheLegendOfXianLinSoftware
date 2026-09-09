@@ -15,7 +15,7 @@ import { repoPath } from './repoPath'
  * ## 谁**不**该用这个函数（xl-xh3 数了一遍全仓，判据是 `grep -rn
  * "TextDecoder('gbk')" web/src --include='*.ts'`）
  *
- * 除这个 helper 外，仓库里还有两处自己解 GBK，都是**故意留着**的，不要顺手
+ * 除这个 helper 外，仓库里还有几处自己解 GBK，都是**故意留着**的，不要顺手
  * 收编。⚠️ **这不是一段散文**：`javaSource.test.ts` 会现扫 `web/src` 把实际
  * 的那批文件跟一张手签的豁免表对撞，多一处少一处都红 —— 分母现扫、登记手签，
  * 两者对撞才有分辨力（dispatch.md 纪律 3）。改了下面这份名单就得同步改那张表。
@@ -32,6 +32,11 @@ import { repoPath } from './repoPath'
  *   ⚠️ 那个文件还被 `assets/bakeStamp.test.ts` 的烘焙指纹守着，**连改一行
  *   注释都会让它红**（xl-xh3 实测：`bakeScript.ts` 的哈希变了，一条用例失败）
  *   —— 所以那一处的理由写在这里，而不是写在它自己身上。
+ * - `shop/shopReferences.ts`（xl-knp.5）—— **烘焙器的一部分**，Node 侧但不是
+ *   测试。它收 `repoRoot` 做参数，而这个 helper 从 `import.meta.url` 把仓库根
+ *   算死了。那个参数不是装饰：`shopAssets.test.ts` 靠它把扫描器指到临时目录里
+ *   的假源码树上，才造得出「引用集合变了」那几种失败 —— 换成 helper，那些
+ *   用例就只能在真仓库上跑，而「今天恰好是绿的」与「这一支写坏了」长得一样。
  */
 export function javaSource(path: string): string {
   return new TextDecoder('gbk').decode(readFileSync(repoPath(path)))

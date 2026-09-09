@@ -14,17 +14,23 @@ on:
     # 跟跑过并通过长得一样。名单漏一个目录同样是这种哑法，所以它不靠人记：
     # `bakeStamp.test.ts` 拿指纹里的 703 个输入逐条问「这两行有没有 glob 罩得
     # 住它」。`tools/traces/out/**` 也在里面：走到过哪些场景决定烘哪几首 BGM。
+    # `src/**`（xl-knp.5）：烘焙器现在**读原版 Java 源码** —— 商店素材那半的
+    # 「哪几张有代码引用」是从 `src/` 下每一个 `.java` 里扫出来的，而那正是
+    # 「无引用登记」两头都要红所依赖的另一半分母。它替掉了原来那条更窄的
+    # `src/tools/Reader.java`（后者是它的子集）。代价是 Java 侧的改动现在也会
+    # 触发这条流水线；不这样的话，有人给 `ShopPanel.java` 接上一个新角色而这里
+    # 不跑，那条登记就是哑的 —— 而哑的样子和绿的样子一模一样。
     # `tools/random-golden/**` 是随机数复刻的黄金数据（xl-rh9.1）：它和
     # `tools/ground-truth/**` 同一个道理 —— 重导之后判据变了而这条流水线不跑，
     # 那条判据就是哑的，而哑的样子和绿的样子一模一样。`tools/traces/scripts/**`
     # 跟着一起进来：那条判据「黄金数据覆盖每一份剧本用的种子」的**分母是从剧本
     # 目录数出来的**，加一份带新种子的剧本而这里不跑，同样是哑的。
-    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java', 'tools/random-golden/**',
+    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/**', 'tools/random-golden/**',
             'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
             'dialogue/**', 'tools/traces/out/**', 'tools/traces/scripts/**',
             'image/**']
   pull_request:
-    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/tools/Reader.java', 'tools/random-golden/**',
+    paths: ['web/**', '.github/workflows/web.yml', 'script/**', 'tools/ground-truth/**', 'src/**', 'tools/random-golden/**',
             'maps/**', 'heads/**', 'NPCs/**', 'roles/**', 'backImages/**', 'sources/**',
             'dialogue/**', 'tools/traces/out/**', 'tools/traces/scripts/**',
             'image/**']

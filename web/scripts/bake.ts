@@ -80,6 +80,17 @@ import {
   isIgnoredEquipPicture,
   reconcileEquipPictures,
 } from '../src/menu/equipmentPictures'
+import {
+  SHOP_BUNDLED_DIR,
+  SHOP_ROOT,
+  SHOP_UNREFERENCED_OUT,
+  isUnreferencedShopAsset,
+  reconcileShopAssets,
+  shopAssetId,
+  shopAssetOwner,
+  shopProductPath,
+} from '../src/shop/shopAssets'
+import { scanShopReferences } from '../src/shop/shopReferences'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
@@ -476,12 +487,14 @@ function main(): void {
 
   const equip = bakeEquipPictures(manifest)
 
+  const shop = bakeShopAssets(manifest)
+
   bakeBgm(scenes, manifest)
 
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张 + 菜单骨架 ${menu.bundled} 张 + 装备图 ${equip.baked} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes + menu.bundledBytes + equip.bytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张 + 菜单骨架 ${menu.bundled} 张 + 装备图 ${equip.baked} 张 + 商店 ${shop.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes + menu.bundledBytes + equip.bytes + shop.bundledBytes)}`,
   )
 
   writeStamp()
@@ -794,6 +807,152 @@ function bakeEquipPictures(manifest: Record<string, string>): {
       `${relatives.length} 个文件对账通过`,
   )
   return { baked: toBake.length, bytes }
+}
+
+/**
+ * 商店素材（xl-knp.5）：把 `sources/Shop/` 下**这一票该烘的每一张**烘成 WebP，
+ * 按「有没有代码引用」分两包落盘，并把真磁盘 + 从 Java 源码现扫出来的引用
+ * 集合喂进 `reconcileShopAssets` 对账。
+ *
+ * 边界为什么画在「有没有代码引用」上、第二包为什么不落 `public/`、
+ * `装备/` 与 `药品/回复类/` 为什么一张都不重烘：全在
+ * `src/shop/shopAssets.ts` 的头注里。**六条对账也在那边**（纯函数，每一种
+ * 失败都在 `shopAssets.test.ts` 里真造出来看过）。这里只做四件事：扫盘、
+ * 分两包烘掉、对账、把问题打出去。
+ *
+ * 分母全部现扫：目录里有什么就数什么，一处都不写死。
+ *
+ * ## 量出来的体积（2026-09-09 本机实测，cwebp 1.6.0，86 张全是 PNG 走 `-lossless`）
+ *
+ *   包                        张数     源字节      产物字节   产物/源
+ *   进主包（有代码引用）         73   2,251,049   1,326,950   58.9%
+ *   不进主包（无代码引用）       13     130,191      83,770   64.3%
+ *   合计                        86   2,381,240   1,410,720   59.2%
+ *
+ * 进主包那 1,326,950 B 里 **66% 是 `shopback.png` 一张**（875,420 B，
+ * 1024×640 的整屏背景）—— 它是两个面板 `paint()` 的第一句，开店那一刻必画，
+ * 没有别处可放。⚠️ 这个数与用 `-z 9` 量出来的 869,140 B 不同：`toWebp` 的
+ * 无损分支不传 `-z`。**要量产物就得按落盘那条命令量**，否则量的是另一件事。
+ *
+ * ## 主包净涨多少（同一棵树上量的两个读数）
+ *
+ * 二进制不进 JS —— 进主包那批走 `resolve.ts` 那条 `?url` 的 **eager** glob，
+ * 进去的只有路径字符串外加 `assets.json` 里多出来的映射。所以「主包净涨」
+ * 量的是 `dist/assets/index-*.js`：
+ *
+ *   构型                                index-*.js    对基线      gzip      对基线
+ *   基线（这一枝的代码都在，
+ *   只是还没跑 pnpm bake）               863.81 kB       —      232.97 kB      —
+ *   **73 张进主包**                      878.38 kB  **+14.57 kB** 234.87 kB **+1.90 kB**
+ *
+ * 两行是**同一棵树**上跑的两次 `pnpm build`，中间只隔一次 `pnpm bake` ——
+ * 差的正是「那 73 条映射与产物在不在」这一件事。本模块与 `shopAssets.ts`
+ * 今天没有任何浏览器侧的调用方，所以这一枝新写的代码对两行都是 0
+ * （`equipmentPictures.ts` 头注记着的那个坑：拿改动**之前**的树当基线，
+ * 差值里会混进新代码本身）。
+ *
+ * 每条映射约 **200 B**（14,570 / 73）。⚠️ 与 `equipmentPictures.ts` 那 59 张
+ * 的「约 196 B/条」量级相同，但**那是另一趟、另一个基线上量的，两个绝对值
+ * 不能相减**。
+ *
+ * 不进主包那 13 张一条映射都没有，对上表贡献 **0 B**：这条边界买到的不是
+ * 那 2.6 kB，是让「每一份进主包的产物都有代码在用」那半边判据**不必放水**
+ * ——放水的地方就是下次漏烘看不出来的地方（xl-1dv.17）。
+ */
+function bakeShopAssets(manifest: Record<string, string>): {
+  bundled: number
+  bundledBytes: number
+} {
+  const root = resolve(REPO, SHOP_ROOT)
+  const unreferencedOut = resolve(WEB, SHOP_UNREFERENCED_OUT)
+  // 每次全量重来，与 ASSETS_OUT 同一个理由：留着上一轮的产物会让「删掉一张
+  // 素材」表现为「什么都没发生」。
+  rmSync(unreferencedOut, { recursive: true, force: true })
+
+  const relatives = listFiles(root).sort()
+  if (relatives.length === 0) {
+    // 「一个文件都没扫到」与「全烘完了」在产物上长得一模一样：两边都是零个差异。
+    console.error(`${SHOP_ROOT} 下一个文件都没有 —— 商店素材的分母是从这里现扫的`)
+    process.exit(1)
+  }
+
+  // 引用集合从原版 Java 源码现扫，**并且记进指纹**（`useInput`）：不记的话，
+  // 给 `ShopPanel.java` 接上一个新角色而不重烘，产物少 8 张而判据照绿。
+  const referenced = new Set(scanShopReferences(REPO, useInput))
+
+  // 与 `bakeMenuImages` / `bakeEquipPictures` 同一张表、同一个理由：产物路径把
+  // 扩展名一律换成 `.webp`，同一个目录下的 `x.png` 与 `x.bmp` 会写到同一个
+  // 产物上，**后写的静静盖掉前一张**。今天这 86 张全是 PNG，所以这条守卫
+  // 不响；而「不响」和「撞了却没查」长得一样。
+  const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+  let bundled = 0
+  let bundledBytes = 0
+  let unreferenced = 0
+  let unreferencedBytes = 0
+  let sourceBytes = 0
+  let unreferencedSourceBytes = 0
+
+  for (const relative of relatives) {
+    if (shopAssetOwner(relative) !== 'baked') continue
+    const source = resolve(root, relative)
+    if (isUnreferencedShopAsset(relative)) {
+      // 无代码引用的那批：照烘，但不进映射表、不进主包目录。产物路径仍然要
+      // 唯一 —— 撞了的表现是「登记里两条只剩一份产物」，而那与「本来就只有
+      // 一条」长得一样。
+      const product = shopProductPath(relative).slice(`${SHOP_BUNDLED_DIR}/`.length)
+      unreferencedBytes += toWebp(source, resolve(unreferencedOut, product))
+      unreferencedSourceBytes += statSync(source).size
+      unreferenced++
+      continue
+    }
+    const id = shopAssetId(relative)
+    const product = shopProductPath(relative)
+    const owner = claimed.get(product)
+    if (owner !== undefined) {
+      console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
+      process.exit(1)
+    }
+    claimed.set(product, id)
+    // 上面那道守的是**产物路径**撞车。ID 撞车另守一道：`shopAssetId` 是路径的
+    // 恒等映射，所以今天两者等价，而「等价」是这一版的性质、不是不变量 ——
+    // 哪天 ID 里去掉某一段，没有这道的表现是映射表里后写的静静盖掉前一条。
+    if (manifest[id] !== undefined) {
+      console.error(`商店素材 ID ${id} 撞车：${manifest[id]} 与 ${product} 算出同一个 ID`)
+      process.exit(1)
+    }
+    manifest[id] = product
+    bundledBytes += toWebp(source, resolve(ASSETS_OUT, product))
+    sourceBytes += statSync(source).size
+    bundled++
+  }
+
+  // 两边都得非空。全进主包（或一张都不进）在产物上和「边界生效了」分不开：
+  // 前者的表现是那 13 张无人引用的图占着主包的映射表，「产物→源盖满」那半
+  // 判据就得放水；后者的表现是打开商店一张图都没有。
+  if (bundled === 0 || unreferenced === 0) {
+    console.error(
+      `商店素材打包边界失效：进主包 ${bundled} 张、不进主包 ${unreferenced} 张，` +
+        `而两边都应当有素材（无引用的那批见 shopAssets.ts 的 UNREFERENCED_SHOP_ASSETS）`,
+    )
+    process.exit(1)
+  }
+
+  // 对账：六条一次收齐（磁盘清单与引用集合都从这里喂进去）。
+  const problems = reconcileShopAssets(relatives, [...referenced])
+  if (problems.length > 0) {
+    console.error(`商店素材对账 ${problems.length} 条：`)
+    for (const p of problems) console.error(`  ${p}`)
+    process.exit(1)
+  }
+
+  console.log(
+    `商店素材 ${bundled + unreferenced} 张 → 有代码引用的 ${bundled} 张进 ${SHOP_BUNDLED_DIR}/` +
+      `（源 ${sourceBytes} B → ${kb(bundledBytes)}）、` +
+      `无代码引用的 ${unreferenced} 张进 ${SHOP_UNREFERENCED_OUT}/` +
+      `（源 ${unreferencedSourceBytes} B → ${kb(unreferencedBytes)}，不进主包）；` +
+      `${relatives.length} 个文件对账通过`,
+  )
+  return { bundled, bundledBytes }
 }
 
 /**
