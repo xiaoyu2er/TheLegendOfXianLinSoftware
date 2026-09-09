@@ -4,6 +4,7 @@ import { isDeferredBattleAsset } from '../../assets/battleAssets'
 import { resolveDeferredBattleAsset } from '../../assets/deferredBattle'
 import { resolveDeferredMenuAsset } from '../../assets/deferredMenu'
 import { resolveAsset } from '../../assets/resolve'
+import { drugPictureAssetId } from '../../assets/ids'
 import type { AssetId } from '../../assets/ids'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
 import { TEXT_FONT_STACK } from '../../textFont'
@@ -45,12 +46,19 @@ export interface MenuRenderer {
  * 一个菜单素材的 URL。**进主包的走映射表，按需的走 `menuContent.json`** ——
  * 边界由 `assets/menuAssets.ts` 定，这里只照它分流。
  *
- * `battle:` 是**唯一一个不带 `menu:` 前缀却要在菜单里画的**（xl-6lo.11）：
- * 奇术页那段技能动画的帧在 `image/技能动画/<角色>技能<招号>/` 下，与战斗
- * 用的是同一批文件、同一条按需边界 —— 菜单素材那条边界是按 `sources/菜单/`
- * 的顶层目录切的，`image/` 根本不在那个坐标系里。**前缀是白名单**：认不出来
- * 的一律抛，不猜。猜出来的 ID 要么查不到，要么恰好撞上别的素材（画错图，
- * 且悄无声息）。
+ * **有两个前缀不带 `menu:` 却要在菜单里画**，各有各的理由：
+ *
+ * - `battle:`（xl-6lo.11）：奇术页那段技能动画的帧在
+ *   `image/技能动画/<角色>技能<招号>/` 下，与战斗用的是同一批文件、同一条
+ *   按需边界 —— 菜单素材那条边界是按 `sources/菜单/` 的顶层目录切的，
+ *   `image/` 根本不在那个坐标系里。
+ * - `drug:`（xl-6lo.15）：物品页选中那瓶药的插图在
+ *   `sources/Shop/药品/回复类/` 下，**三个坐标系一个都不在**。它没有按需
+ *   那一半 —— `bake.ts` 的 `DRUG_PICTURE_DIR` 把整个目录一路烘进主包映射表
+ *   （xl-rh9.12 为战斗侧的药品菜单先烘的），所以直接走 `resolveAsset`。
+ *
+ * **前缀是白名单**：认不出来的一律抛，不猜。猜出来的 ID 要么查不到，要么
+ * 恰好撞上别的素材（画错图，且悄无声息）。
  *
  * ⚠️ **它在闭包外面，是为了有一条缝**。这个文件其余部分是"把纹理贴到 (x,y)"
  * —— 没有测试缝，由跨端逐帧比对兜底（见文件头注）。但**分流是个决定**，
@@ -65,9 +73,18 @@ export async function menuAssetUrl(id: AssetId): Promise<string> {
   if (battle !== null) {
     return isDeferredBattleAsset(battle) ? resolveDeferredBattleAsset(id) : resolveAsset(id)
   }
+  const drug = id.startsWith('drug:') ? id.slice('drug:'.length) : null
+  if (drug !== null) {
+    // 反向自检，与下面 `menu:` 那条同一个理由：ID 是从 `drug.txt` 第 4 列
+    // 那个文件名算出来的，算回去必须一致。
+    if (drugPictureAssetId(drug) !== id) {
+      throw new Error(`药品插图 ID ${id} 不是从文件名 ${drug} 算出来的`)
+    }
+    return resolveAsset(id)
+  }
   const relative = id.startsWith('menu:') ? id.slice('menu:'.length) : null
   if (relative === null) {
-    throw new Error(`菜单渲染器只认 menu: 与 battle: 前缀的逻辑 ID，收到 ${id}`)
+    throw new Error(`菜单渲染器只认 menu: / battle: / drug: 前缀的逻辑 ID，收到 ${id}`)
   }
   // 反向自检：ID 是从路径算出来的，算回去必须一致。不一致说明有人手写了 ID。
   if (menuAssetId(`sources/菜单/${relative}`) !== id) {
