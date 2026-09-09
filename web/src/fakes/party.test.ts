@@ -4,7 +4,14 @@ import { javaStaticInt } from '../test/javaStaticInt'
 import { HEROES, derive } from '../battle/units'
 import type { PartyKey } from '../battle/units'
 import { DEFAULT_WEAPONS } from '../menu/defaultWeapons'
-import { DEFAULT_LEVEL, getParty, initialMember, rememberParty, resetParty } from './party'
+import {
+  DEFAULT_LEVEL,
+  attributesOf,
+  getParty,
+  initialMember,
+  rememberParty,
+  resetParty,
+} from './party'
 
 /**
  * 队伍的**出厂状态**（xl-kaa 补的判据）。
@@ -174,5 +181,39 @@ describe('出厂属性带着开局那把武器（xl-6lo.16）', () => {
     // ⚠️ 分辨力所在：**至少有一个人开局不满血**。三把武器要是都不加体力，
     // 上面那条"停在穿之前的上限"就与"停在穿之后的上限"长得一模一样。
     expect(notFull, '三个人开局都满血 —— 那上面那条判据分不出先后').toBeGreaterThan(0)
+  })
+})
+
+/**
+ * `attributesOf` 自己的判据（篡改矩阵第 13 条挑出来的空洞）。
+ *
+ * 它是 /code-review 标准轴那条 Data Clumps 的产物：五处逐字段展开收成一个
+ * 函数。收完之后它**同时站在每一条比对的两边** —— 队伍写回读它、菜单喂参数
+ * 读它、战斗配置读它 —— 于是它漏掉一项（实测把 `sprit` 写死成 10），两边一起
+ * 漏，所有比对照样相等，整套判据全绿。
+ *
+ * 所以判据不能再是"两边相等"，得**把它接到消费者身上**：`derive` 的七个派生值
+ * 里有四个读 `sprit`，一个读 `agile`、一个读 `strength`。挑出来的那份属性只要
+ * 有一项不对，`derive` 就不同。
+ */
+describe('attributesOf 一项都不许漏（xl-6lo.16）', () => {
+  it('挑出来的那份，derive 出来与原件逐字段相同', () => {
+    // 四个数**两两不同**，而且都不是 10 —— 相同的话"漏了一项用默认值顶上"
+    // 与"挑对了"长得一样，正是那次篡改钻的空子。
+    const src = { physicalPower: 13, agile: 17, strength: 23, sprit: 31 }
+    expect(new Set(Object.values(src)).size, '四个数要两两不同').toBe(4)
+    expect(attributesOf(src)).toEqual(src)
+    // 接到消费者身上：`derive` 的七个值里 sprit / agile / strength 各有人读，
+    // 漏掉任何一项这一句都红（体力那一项由上面那条 toEqual 兜着）。
+    expect(derive(attributesOf(src))).toEqual(derive(src))
+  })
+
+  it('多带的字段不许漏进来 —— 它挑的是四项，不是整个对象', () => {
+    // 队伍那份对象上还挂着 level / hp / exp 等等；`BattleConfig.attributes`
+    // 收的是**四项**，混进别的字段会让"配置"与"整份状态"分不开。
+    const m = initialMember('yu')
+    expect(Object.keys(attributesOf(m)).sort()).toEqual(
+      ['agile', 'physicalPower', 'sprit', 'strength'],
+    )
   })
 })

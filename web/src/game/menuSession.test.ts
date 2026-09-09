@@ -363,8 +363,31 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
     expect(s.panel).toBe('scene')
     s = openMenu(s)
-    expect(menuWorldOf(s)!.heroes[0]!.physicalPower).toBe(zhang.physicalPower)
-    expect(menuWorldOf(s)!.heroes[0]!.hpMax).toBe(zhang.hpMax)
+    // ⚠️ **四项一起比，不能只比体力**。篡改矩阵第 8 条就是这么漏掉的：把
+    // 「喂了实时队伍就照单全收」改成"在实时属性上**再加一次**武器加成"
+    // （开一次菜单加一把刀），整条判据仍然全绿 —— 因为张小凡那把月苗刀
+    // `addPhysicalPower` 是 **0**，重复计数在体力与 hpMax 上一个数都不差。
+    // 它加的是敏捷 1 / 武力 2 / 精气 1，比上四项立刻红。
+    const reopened = menuWorldOf(s)!.heroes[0]!
+    expect({
+      physicalPower: reopened.physicalPower,
+      agile: reopened.agile,
+      strength: reopened.strength,
+      spirit: reopened.spirit,
+      hpMax: reopened.hpMax,
+    }).toEqual({
+      physicalPower: zhang.physicalPower,
+      agile: zhang.agile,
+      strength: zhang.strength,
+      spirit: zhang.spirit,
+      hpMax: zhang.hpMax,
+    })
+    // 而它有分辨力的前提是那把武器**真的加了点什么** —— 四项全 0 的话
+    // "再加一次"与"不加"长得一样，上面那条又恒真了。
+    const knife = DEFAULT_WEAPONS.zhang
+    expect(
+      knife.addPhysicalPower + knife.addAgile + knife.addStrength + knife.addSpirit,
+    ).toBeGreaterThan(0)
   })
 
   it('下一场战斗读到的是队伍那一份属性，不是按等级重算的裸属性', () => {
