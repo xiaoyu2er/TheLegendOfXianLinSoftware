@@ -1,5 +1,7 @@
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
+import { repoPath } from '../../test/repoPath'
 import { COL_PARTY } from '../../state/fight'
 import {
   ANIMATION_FRAMES,
@@ -26,13 +28,16 @@ import { shopDrawList } from './drawList'
  * 写完之后拿篡改矩阵量了一遍（读数在文件末尾），**坐标、帧数、`mouses` 长度、
  * `Clock.sleep(120)` 这四样 `layout.test.ts` 已经在守了**，角色名与图片路径
  * `render/assets.test.ts` 已经在守了。照实说：这几条在这里是第二双眼睛，
- * 不是这一票买到的分辨力。真正只有这个文件抓得住的是三样，各有一次实测的篡改：
+ * 不是这一票买到的分辨力。**旧判据全绿、只有这个文件红**的篡改只有两条：
  *
  * - **每条动画的门是哪个标志位**（把 `PARTY_ROLES` 里 `lu` / `wen` 两个 key
- *   对调、角色名不动）—— 旧判据全绿，因为三个人还是三个人、八帧还是八帧；
+ *   对调、角色名不动）—— 旧判据一条都不响，因为三个人还是三个人、八帧还是八帧；
  * - **第四条是按当前这家店取的**（把 `drawList` 里 `KEEPER_ROLE[w.active]`
- *   写死成 `KEEPER_ROLE.drug`）—— 旧判据全绿；
- * - **那三个标志位是队伍名单而不是出战名单**（见下面那条用例）。
+ *   写死成 `KEEPER_ROLE.drug`）—— 同上。
+ *
+ * 第三样 —— **那三个标志位是队伍名单而不是出战名单** —— 旧那边也红，但抓到它的
+ * 是 `preview.test.ts` 里碰巧写死的一个 `{zhang,lu,wen}` 字面量，跟着改一改
+ * 就绿了。这里那一条是真的在比两份名单，见下面那条用例与末尾矩阵的最后一行。
  *
  * 另外两处是把写死的分母改成现推的：`layout.test.ts` 那条写着
  * `expect(ani).toHaveLength(4)`，这里的 4 从源码解出来的条数来；八帧那个数
@@ -47,6 +52,10 @@ import { shopDrawList } from './drawList'
  * 动画线程**永远停在第 0 格**。实测见下面「逐帧读数」。
  *
  * ## 逐帧读数（2026-09-09 实测，原版侧）
+ *
+ * ⚠️ **下面这几个数是一次性读数，不是判据** —— 没有任何东西会在它们过期时变红。
+ * 贴在这里是为了让 xl-knp.10 接线时手里有已知量而不是未知量；要复核就照下面
+ * 这条命令重跑一遍，别把它们当成"已经有人守着了"。
  *
  * ```
  * tools/build.sh
@@ -100,6 +109,8 @@ import { shopDrawList } from './drawList'
  * | `drawList` 里去掉 `if (!w.party[key]) return` | **红** | 红 | `drawList.test.ts` 队伍名单决定画几个人 |
  * | **`PARTY_ROLES` 的 `lu`/`wen` 两个 key 对调**（角色名不动） | **红** | **绿** | 没人 |
  * | **`drawList` 的 `KEEPER_ROLE[w.active]` 写死成 `.drug`** | **红** | **绿** | 没人 |
+ * | `drawList` 的门焊死成 `if (true) return`（谁都不画） | **红** | 未跑 | —— |
+ * | `shop/preview.ts` 里 import 一根 `state/fight` 进来 | **红** | 未跑 | —— |
  * | 一致地换成出战名单那套键（assets + types + world 三处同改） | **红** | 红 | `preview.test.ts` 里那句写死的 `{zhang,lu,wen}` |
  *
  * 最后那一行值得说一句：旧那边确实红了，但抓到它的是预览那一局**碰巧写死的
@@ -180,16 +191,29 @@ function parseRoleLineFlags(): string[] {
   return hits.sort((a, b) => a.at - b.at).map((h) => h.flag)
 }
 
-/** `FightEvent.fight(String[] battleInfo)` 开头那七行，按 `battleInfo[i]` 的下标排。 */
+/**
+ * `FightEvent.fight(String[] battleInfo)` 开头那七行，按 `battleInfo[i]` 的下标排。
+ *
+ * ⚠️ 尾界标用的是紧跟那七行的 `ZhangXiaoFan zxf;`，**不是"往后数几百个字符"**：
+ * 后者切多了会把别处的 `battleInfo[i]` 一起吞进来，而**吞多了不是零匹配** ——
+ * `javaSource.ts` 那条"解出来的条数要 > 0"盖不住它，它长得和解对了一样。
+ * （下面那条重复下标的保险今天**捅不响** —— `FightEvent.java` 里一共就这七处
+ * `battleInfo[`，把窗口拉到十万个字符结果也不变。所以它是防御，不是判据。）
+ */
 function parseBattleInfoNames(): string[] {
   const source = javaSource('src/scene/FightEvent.java')
   const from = source.indexOf('public void fight(String[] battleInfo)')
   if (from < 0) throw new Error('FightEvent.fight 的界标没找着')
-  const block = source.slice(from, from + 800)
+  const to = source.indexOf('ZhangXiaoFan zxf;', from)
+  if (to < 0) throw new Error('FightEvent.fight 里那七行的尾界标没找着')
+  const block = source.slice(from, to)
   const hits = [...block.matchAll(/String (\w+) = battleInfo\[(\d+)\];/g)].map((m) => ({
     at: Number(m[2]),
     name: m[1]!,
   }))
+  if (new Set(hits.map((h) => h.at)).size !== hits.length) {
+    throw new Error('battleInfo 的下标有重复 —— 尾界标切多了')
+  }
   return hits.sort((a, b) => a.at - b.at).map((h) => h.name)
 }
 
@@ -292,6 +316,13 @@ describe('店里那几个角色的循环动画：期望值从两个面板的 GBK
     //
     // 商店读的是前者。要是哪天有人把 `PARTY_ROLES` 的 key 换成后者那一套
     // （两处第二、三位不同），下面头一条当场红。
+    //
+    // ⚠️ **票面那句「改出战名单，画面不变」没有照字面写成一条用例**，是故意的：
+    // 商店这一层**根本收不到出战名单**，所以"改了它画面不变"按构造成立 ——
+    // 那正是 dispatch.md 纪律 3 点名的那种恒真判据，写出来一次也不会红。
+    // 换成两条真会红的：(1) 对撞两份**名单本身**（商店的门必须逐字等于 Role
+    // 那一行，而 Role 那一行必须不等于 Fight 那三列）；(2) 下面那条现扫 ——
+    // 商店那两层的**生产代码**一个字都不许碰 `state/fight`。读数见文件头的矩阵。
     const roleLine = parseRoleLineFlags()
     expect(roleLine.length, 'Reader 的 Role 那一段一个标志位都没解出来').toBeGreaterThan(0)
     expect(PARTY_ROLES.map((r) => r.key), '商店的门与 Role 那一行对不上').toEqual(roleLine)
@@ -308,14 +339,43 @@ describe('店里那几个角色的循环动画：期望值从两个面板的 GBK
       .map(([key]) => key)
     // 两份名单确实不是同一份 —— 否则上面那条"对回 Role 行"就白守了。
     expect(roster).not.toEqual(roleLine)
+
+    // 「不随出战名单变」的第二条：商店那两层的生产代码里不许出现出战名单。
+    // **分母从磁盘现扫**（`shopTrace.test.ts` 那条"状态层不碰渲染"同一个套路）：
+    // 写死一份文件名单的话，明天新加的 `shop/xxx.ts` 里接一根线进来它静默放过。
+    // ⚠️ 排除 `*.test.ts` —— 这个文件自己就得 import `COL_PARTY` 才比得了两份名单。
+    const dirs = ['web/src/shop', 'web/src/shop/render']
+    let scanned = 0
+    for (const dir of dirs) {
+      const files = readdirSync(repoPath(dir), { withFileTypes: true })
+        .filter((e) => e.isFile() && /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name))
+        .map((e) => e.name)
+      // 空转要响：目录名写错了与"这一层干净"长得一样。
+      expect(files.length, `${dir} 一个生产文件都没扫到`).toBeGreaterThan(0)
+      for (const file of files) {
+        const text = readFileSync(repoPath(dir, file), 'utf8')
+        const imports = [...text.matchAll(/^import[^']*'([^']+)'/gm)].map((m) => m[1]!)
+        expect(
+          imports.filter((x) => x.includes('state/fight')),
+          `${dir}/${file} 里 import 了出战名单`,
+        ).toEqual([])
+        scanned++
+      }
+    }
+    expect(scanned, '一个生产文件都没扫到').toBeGreaterThan(dirs.length)
   })
 
   it('队伍名单的每一种取值都对：分母是 2^(标志位个数)，一种不落', () => {
     const keys = PARTY_ROLES.map((r) => r.key)
     // 分母从解析出来的标志位个数推，不写死 8。
     const total = 2 ** keys.length
+    // 空转要响：`PARTY_ROLES` 空了的话 total 是 1，下面那圈只走"谁都不在"
+    // 一种，而每一条 `toBe(0)` 都会绿。
     expect(total).toBeGreaterThan(1)
-    let checked = 0
+    /** 绘制清单里**真的数出来**的队伍动画条数。 */
+    let drawn = 0
+    /** 按枚举出来的组合**应该**有几条。与上面那个是两个独立的量。 */
+    let wanted = 0
     for (let mask = 0; mask < total; mask++) {
       const party = keys.filter((_, i) => (mask >> i) & 1)
       const world = createShopWorld({ party, coins: 10000, seed: 1 })
@@ -335,9 +395,17 @@ describe('店里那几个角色的循环动画：期望值从两个面板的 GBK
           ids.filter((x) => x === animationFrameId(KEEPER_ROLE[active], 0)).length,
           `${active} 店 party=[${party.join(',')}] 的第四条`,
         ).toBe(1)
-        checked++
+        drawn += ids.filter((x) =>
+          PARTY_ROLES.some(({ role }) => x === animationFrameId(role, 0)),
+        ).length
+        wanted += party.length
       }
     }
-    expect(checked, '一种组合都没走到').toBe(total * 2)
+    // ⚠️ 这一条**不是**「循环走了几圈」—— 那种计数按构造成立，一次都不会红
+    // （dispatch.md「断言本身按构造成立」那一族）。左边是绘制清单里真数出来的
+    // 条数，右边是枚举出来的组合该有的条数：把那道门焊死左边就变 0（实测）。
+    // `wanted` 是在**面板那一层**累加的，两家店各加了一遍，所以右边不再乘 2。
+    expect(wanted, '一条队伍动画都没枚举到').toBeGreaterThan(0)
+    expect(drawn, '两家店合计画出来的队伍动画条数').toBe(wanted)
   })
 })
