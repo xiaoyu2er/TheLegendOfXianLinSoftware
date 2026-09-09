@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
+import { repoPath } from '../test/repoPath'
 import { DRUGS } from '../battle/drugs'
 import {
   DRUG_HIT_W,
@@ -89,6 +91,20 @@ describe('物品页的几何，对回 src/menu/DrugPanel.java', () => {
     const count = [...source.matchAll(/drawString\(""\s*\+\s*e\.getNumberGOT\(\),\s*x\s*\+\s*(\d+),/g)]
     expect(count, '数量那一列的 x 偏移没解出来').toHaveLength(1)
     expect(DRUG_HIT_W).toBeLessThan(Number(count[0]![1]))
+  })
+
+  it('`showDrug()` 至今零调用者 —— 有意不抄，不是漏了', () => {
+    // 全仓 88 个 `.java` 里只有它自己那一处定义。哪天有人把它接上，这条红，
+    // 那时才该抄它。"有意不抄"与"漏了"在代码里长得一样，所以要有人签。
+    const files = execFileSync('git', ['ls-files', '*.java'], { cwd: repoPath('.'), encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f !== '')
+    // 空转要响：一个文件都没扫到时下面那句 filter 也是空的。
+    expect(files.length).toBeGreaterThan(50)
+    const mentions = files.filter((f) => javaSource(f).includes('showDrug'))
+    expect(mentions).toEqual(['src/menu/DrugPanel.java'])
+    // 那一处必须是**定义**，不是调用 —— 只数文件名的话"它自己调自己"也算。
+    expect([...source.matchAll(/showDrug\s*\(/g)]).toHaveLength(1)
   })
 
   it('两张表同一个次序 —— 卷轴上的第 n 颗头像就是队伍里的第 n 个人', () => {
@@ -192,6 +208,9 @@ describe('喝药那一步：数量减一、气血涨上去', () => {
     readonly drug: string
     readonly before: MenuHero
     readonly after: MenuHero
+    /** 三个人整份 —— `addValue()` 头上那三句 `refreshValue()` 刷的是三个。 */
+    readonly beforeAll: readonly MenuHero[]
+    readonly afterAll: readonly MenuHero[]
   }
 
   const drinks: Drink[] = []
@@ -204,7 +223,9 @@ describe('喝药那一步：数量减一、气血涨上去', () => {
         (t['drug'] as { list: { count: number }[] }).list.reduce((s, e) => s + e.count, 0)
       if (total(tick) >= total(prev)) continue
       const selected = (prev['drug'] as { selectedName: string | null }).selectedName
-      expect(selected, `${name} 第 ${tick.t} 步喝了药，可上一步没有选中的药`).not.toBeNull()
+      // ⚠️ `not.toBeNull()` 放 `undefined` 过去（`toBeNull` 严格判 null）——
+      // 真值那一行少了这个键时"没取到"就成了通过条件（/code-review 标准轴）。
+      expect(typeof selected, `${name} 第 ${tick.t} 步喝了药，可上一步没有选中的药`).toBe('string')
       const heroIndex = SCOLL_HEROES.findIndex((h) => h.hero === prev['hero'])
       expect(heroIndex, `${name} 第 ${tick.t} 步的卷轴上是 ${prev['hero']} 号`).toBeGreaterThanOrEqual(0)
       drinks.push({
@@ -214,6 +235,8 @@ describe('喝药那一步：数量减一、气血涨上去', () => {
         drug: selected!,
         before: (prev['heroes'] as MenuHero[])[heroIndex]!,
         after: (tick['heroes'] as MenuHero[])[heroIndex]!,
+        beforeAll: prev['heroes'] as MenuHero[],
+        afterAll: tick['heroes'] as MenuHero[],
       })
     }
   }
@@ -234,20 +257,33 @@ describe('喝药那一步：数量减一、气血涨上去', () => {
     it(`${drink.trace} 第 ${drink.t} 步喝 ${drink.drug}：${drink.before.hp}/${drink.before.mp} → 真值的读数`, () => {
       const spec = DRUGS.find((d) => d.name === drink.drug)
       expect(spec, `药品表里没有 ${drink.drug}`).toBeDefined()
-      // 起点整份从真值那一行拷过来 —— 一个数都不是这边算的。
-      const hero: MenuHero = { ...drink.before }
-      drinkDrug(hero, spec!)
-      expect(hero).toEqual(drink.after)
+      // 起点整份从真值那一行拷过来 —— 一个数都不是这边算的。**三个人都拷**：
+      // `addValue()` 头上那三句 `refreshValue()` 刷的是三个人，只核喝药那一个
+      // 的话"刷坏了另外两个"看不出来。
+      const heroes: MenuHero[] = drink.beforeAll.map((h) => ({ ...h }))
+      drinkDrug(heroes, drink.heroIndex, spec!)
+      expect(heroes).toEqual(drink.afterAll)
     })
 
     it(`${drink.trace} 第 ${drink.t} 步：喝到上限就停在上限`, () => {
       // 原版 `if(h>=hero.getHpMax()){hero.setHp(hero.getHpMax());}`。真值这一
       // 场没走到夹的那一支（700+300=1000 < 1050），所以起点按真值的上限往回
-      // 挪一格现造 —— 上限本身仍然是真值给的，夹到哪个数不是手写的。
+      // 挪一格现造。
+      //
+      // ⚠️ **夹到的那个上限是 `refreshMenuHero` 用 `derive()` 现算的，不是这里
+      // 塞进去的那个** —— 上一条 `toEqual(afterAll)` 已经证明两者相等，但这条
+      // 自己也核一遍，免得注释说"上限是真值给的"而实际不是（/code-review 标准轴）。
       const spec = DRUGS.find((d) => d.name === drink.drug)!
-      const hero: MenuHero = { ...drink.before, hp: drink.after.hpMax - 1, mp: drink.after.mpMax - 1 }
-      drinkDrug(hero, spec)
-      expect([hero.hp, hero.mp]).toEqual([
+      const heroes: MenuHero[] = drink.beforeAll.map((h) => ({ ...h }))
+      const me = heroes[drink.heroIndex]!
+      me.hp = drink.after.hpMax - 1
+      me.mp = drink.after.mpMax - 1
+      drinkDrug(heroes, drink.heroIndex, spec)
+      expect([me.hpMax, me.mpMax], '现算的上限与真值那一行不同').toEqual([
+        drink.after.hpMax,
+        drink.after.mpMax,
+      ])
+      expect([me.hp, me.mp]).toEqual([
         spec.addHp > 0 ? drink.after.hpMax : drink.after.hpMax - 1,
         spec.addMp > 0 ? drink.after.mpMax : drink.after.mpMax - 1,
       ])
@@ -275,7 +311,9 @@ describe('喝药那一步：数量减一、气血涨上去', () => {
           want = tick['music']
         }
       }
-      expect(want, `${drink.trace} 第 ${drink.t} 步的真值音效没取到`).not.toBeNull()
+      // 同上：真值缺 `music` 这一列时 `want` 是 `undefined`，`not.toBeNull()`
+      // 会放它过去，而下一行 `toEqual(undefined)` 只要我们也没出声就绿。
+      expect(Array.isArray(want), `${drink.trace} 第 ${drink.t} 步的真值音效没取到`).toBe(true)
       expect(got, `${drink.trace} 第 ${drink.t} 步`).toEqual(want)
     }
   })

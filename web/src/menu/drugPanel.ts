@@ -68,7 +68,7 @@ export function createDrugPanelState(): DrugPanelState {
  * 「这一局没有那种药」与「打错了字」长得一模一样（`MenuDriver.addDrug` 那边
  * 也是 `die`）。
  */
-export function createDrugPack(drugs: readonly { name: string; count: number }[] = []): DrugStock[] {
+export function createDrugPack(drugs: readonly Readonly<DrugStock>[] = []): DrugStock[] {
   const pack: DrugStock[] = DRUGS.map((d) => ({ name: d.name, count: 0 }))
   for (const want of drugs) {
     const stock = pack.find((s) => s.name === want.name)
@@ -81,7 +81,15 @@ export function createDrugPack(drugs: readonly { name: string; count: number }[]
   return pack
 }
 
-/** `DrugPanel.upDateDrugList()`：存货里 `numberGOT>0` 的那几种，按表序。 */
+/**
+ * `DrugPanel.upDateDrugList()`：存货里 `numberGOT>0` 的那几种，按表序。
+ *
+ * ⚠️ 原版还有一个 `showDrug()`（"包里有东西就选中第一件、把按钮打开"），
+ * **这里一个字都没抄，因为它是死代码** —— 全仓 88 个 `.java` 里只有
+ * `DrugPanel.java` 自身那一处定义，零调用者。判据在 `drugPanel.test.ts`
+ * 那条「`showDrug()` 至今零调用者」：哪天有人把它接上，这条会红，那时才
+ * 该抄它。不登记的话「有意不抄」与「漏了」长得一样。
+ */
 export function visibleDrugs(pack: readonly DrugStock[]): DrugStock[] {
   return pack.filter((s) => s.count > 0)
 }
@@ -197,7 +205,7 @@ export function drugPanelPressed(w: MenuWorld, p: MenuSubPanel): void {
     const spec = specOf(stock.name)
     stock.count -= 1
     drugMusic(w, spec)
-    drinkDrug(heroOnScoll(w, p), spec)
+    drinkDrug(w.heroes, heroIndexOnScoll(p), spec)
     if (stock.count === 0) {
       d.currentDrug = null
       d.useButton.isDraw = false
@@ -219,9 +227,9 @@ function drugMusic(w: MenuWorld, spec: DrugSpec): void {
 }
 
 /**
- * 卷轴上选中的那个人。⚠️ 读的是**物品页自己那个 `Scoll`** —— 四个子面板各建
- * 一个，`whichHero` 各走各的，拿当前页的那一个会在"在装备页换了人再回物品页"
- * 时喝错人。
+ * 卷轴上选中的那个人在 `w.heroes` 里的下标。⚠️ 读的是**物品页自己那个
+ * `Scoll`** —— 四个子面板各建一个，`whichHero` 各走各的，拿当前页的那一个
+ * 会在"在装备页换了人再回物品页"时喝错人。
  *
  * `addValue()` 的 switch 只有 1 / 2 / 4 三支（`drawValueBar` 那个多一支
  * `case 3: hero=hero3`，而 `hero3` 从头到尾是 `null`）。`ScollHero` 这个类型
@@ -231,18 +239,27 @@ function drugMusic(w: MenuWorld, spec: DrugSpec): void {
  * 靠下标对上 —— 而"同一个次序"这件事自己也是判据（`drugPanel.test.ts`，
  * `drawList.test.ts` 里也有一条）。两张表的键名不是一套（`wen` vs `yu`），
  * 按名字对会把后两个对调。
+ *
+ * 绘制层的血条读的是同一个人，所以它也调这个函数（原先那边抄了一份一模一样
+ * 的四行，连异常文案都一样 —— /code-review 的标准轴提的 Duplicated Code）。
  */
-function heroOnScoll(w: MenuWorld, p: MenuSubPanel): MenuHero {
+export function heroIndexOnScoll(p: MenuSubPanel): number {
   const which = p.scoll?.whichHero
   const index = SCOLL_HEROES.findIndex((h) => h.hero === which)
   if (index < 0) throw new Error(`物品页的卷轴上没有 ${which} 号`)
+  return index
+}
+
+/** 同上，顺手把人取出来。取不到就是 `heroes` 与卷轴不同长，抛。 */
+export function heroOnScoll(w: MenuWorld, p: MenuSubPanel): MenuHero {
+  const index = heroIndexOnScoll(p)
   const hero = w.heroes[index]
   if (!hero) throw new Error(`队伍里没有第 ${index} 个人`)
   return hero
 }
 
 /**
- * `DrugPanel.addValue()`：喝下去。
+ * `DrugPanel.addValue()`：喝下去。**整个方法**，三句 `refreshValue()` 在内：
  *
  *     hero1.refreshValue(); hero2.refreshValue(); hero4.refreshValue();
  *     h=hero.getHp()+currentDrug.getAddHp();
@@ -250,13 +267,16 @@ function heroOnScoll(w: MenuWorld, p: MenuSubPanel): MenuHero {
  *     if(h>=hero.getHpMax()) hero.setHp(hero.getHpMax()); else hero.setHp(h);
  *     if(m>=hero.getMpMax()) hero.setMp(hero.getMpMax()); else hero.setMp(m);
  *
- * 那三句 `refreshValue()` 折算成 `refreshMenuHero(hero)`：它按四项属性重算
- * 派生值再把 hp/mp 夹回上限，而这条路上属性一个字节都没变，所以它**今天是个
- * 空操作** —— 留着是因为装备页（xl-6lo.9）会在同一个世界里改属性，那时
- * 上限先重算再加血与不重算就是两个数了。
+ * ⚠️ **刷的是三个人，不是喝药那一个** —— 所以这个函数收的是整队加一个下标，
+ * 不是一个人。今天三句全是空操作（属性一个字节都没变），而装备页
+ * （xl-6lo.9）一旦在同一个世界里改了属性，"只刷喝药那一个"与"三个都刷"
+ * 就是两组数了，另外两人会少这一次夹紧。第一版就是只刷了一个 ——
+ * /code-review 的规格轴找回来的。
  */
-export function drinkDrug(hero: MenuHero, spec: DrugSpec): void {
-  refreshMenuHero(hero)
+export function drinkDrug(heroes: MenuHero[], index: number, spec: DrugSpec): void {
+  for (const h of heroes) refreshMenuHero(h)
+  const hero = heroes[index]
+  if (!hero) throw new Error(`队伍里没有第 ${index} 个人`)
   const h = hero.hp + spec.addHp
   const m = hero.mp + spec.addMp
   hero.hp = h >= hero.hpMax ? hero.hpMax : h

@@ -202,6 +202,13 @@ describe('菜单那六层绘制', () => {
     // ⚠️ 这一条守的是文件头注里那句话。原先写的是「四页都是空的」，实测
     // `FuncPanel` 那个不是 —— 它贴 `主人公4人2.png`（xl-a7m：文件不在那个
     // 路径下，原版自己也画不出来）。注释与实现分岔时，注释永远是绿的。
+    //
+    // ⚠️ **这条用例分两半，分辨力全在源码那一半。** 下面那个四页循环
+    // （`special` 层为空）今天**恒真** —— `menuDrawList` 全文一处
+    // `layer: 'special'` 都没 push，filter 按构造必空，换哪一页都绿
+    // （/code-review 标准轴提的，属于"找不到东西就是通过条件"那一族）。
+    // 它是**回归护栏**：哪天有人往 special 层塞东西，这里会响。真正在核
+    // "四页有什么差别"的是上半段那个从 GBK 源码里现解的比对。
     const empty = ['DrugPanel', 'EquipPanel', 'MagicPanel'].map((file) => {
       const src = javaSource(`src/menu/${file}.java`)
       const body = /public void drawSpecialImage\(Graphics g\) \{([\s\S]*?)\n\t\}/.exec(src)
@@ -273,7 +280,7 @@ describe('菜单那六层绘制', () => {
       ])
     })
 
-    it('三行说明：选中与没选中走两支，**字号也不一样**', () => {
+    it('三行说明：坐标与两个字号都对回源码，选中与没选中走两支', () => {
       const src = javaSource('src/menu/DrugPanel.java')
       // 24 号那一句在 `if(currentDrug!=null)` 里面 —— 从源码里核一遍这件事，
       // 抹平成一个字号在画面上是"字大了一点"，没人会发现。
@@ -282,20 +289,39 @@ describe('菜单那六层绘制', () => {
       expect(branch![1]).toContain('Font.BOLD, 24')
       expect(branch![1]).not.toContain('Font.BOLD, 26')
 
+      // 坐标与字号也从源码现解 —— 这一格原先是三个手写常量在测试里被同样
+      // 三个字面量复述一遍，自己证自己（/code-review 规格轴提的）。
+      const intField = (name: string) => {
+        const m = [...src.matchAll(new RegExp(`int\\s+${name}\\s*=\\s*(-?\\d+)\\s*;`, 'g'))]
+        expect(m, `DrugPanel.java 里没解出 int ${name}`).toHaveLength(1)
+        return Number(m[0]![1])
+      }
+      const offset = (message: string) => {
+        const m = [...src.matchAll(new RegExp(`drawString\\(${message},\\s*x_message\\s*\\+\\s*(\\d+),`, 'g'))]
+        expect(m, `${message} 那一行没解出偏移`).toHaveLength(1)
+        return Number(m[0]![1])
+      }
+      const x1 = intField('x_message')
+      const ys = intField('y_message')
+      const xs = [x1, x1 + offset('message2'), x1 + offset('message3')]
+      // 清单那一句的字号 26 —— 没选中时三行说明沿用的就是它。
+      const listFont = [...src.matchAll(/new Font\("文鼎粗钢笔行楷", Font\.BOLD, 26\)/g)]
+      expect(listFont, '清单那一句 26 号字没解出来').toHaveLength(1)
+
       const w = thing()
       const before = pageText(w).slice(-5, -2)
-      expect(before.map((op) => (op.kind === 'text' ? [op.text, op.x, op.size] : null))).toEqual([
-        ['没药了...', 510, 26],
-        ['快去药店买点吧~', 615, 26],
-        ['', 775, 26],
+      expect(before.map((op) => (op.kind === 'text' ? [op.text, op.x, op.y, op.size] : null))).toEqual([
+        ['没药了...', xs[0], ys, 26],
+        ['快去药店买点吧~', xs[1], ys, 26],
+        ['', xs[2], ys, 26],
       ])
 
       stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
       const after = pageText(w).slice(-5, -2)
-      expect(after.map((op) => (op.kind === 'text' ? [op.text, op.x, op.size] : null))).toEqual([
-        ['金创药', 510, 24],
-        [': 生命 +300', 615, 24],
-        ['魔法 +0', 775, 24],
+      expect(after.map((op) => (op.kind === 'text' ? [op.text, op.x, op.y, op.size] : null))).toEqual([
+        ['金创药', xs[0], ys, 24],
+        [': 生命 +300', xs[1], ys, 24],
+        ['魔法 +0', xs[2], ys, 24],
       ])
     })
 

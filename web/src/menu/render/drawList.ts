@@ -11,15 +11,10 @@ import {
   tabId,
   useButtonId,
 } from './assets'
-import {
-  DRUG_LIST_X,
-  DRUG_LIST_Y,
-  DRUG_ROW_H,
-  visibleDrugs,
-} from '../drugPanel'
-import { DRUGS } from '../../battle/drugs'
-import { SCOLL_HEROES } from '../types'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
+import { SCOLL_HEROES } from '../types'
+import { DRUG_LIST_X, DRUG_LIST_Y, DRUG_ROW_H, heroIndexOnScoll, visibleDrugs } from '../drugPanel'
+import { DRUGS } from '../../battle/drugs'
 import type { MenuSubPanel, MenuWorld } from '../types'
 
 /**
@@ -276,9 +271,14 @@ function drawDrugPanel(ops: MenuDrawOp[], w: MenuWorld, panel: MenuSubPanel): vo
   }
 
   // `drawValueBar`：卷轴上选中那个人的血与灵力。⚠️ 读的是**物品页自己那个
-  // `Scoll`**，与 `drugPanel.ts` 的 `heroOnScoll` 同一个理由。
-  const index = SCOLL_HEROES.findIndex((h) => h.hero === panel.scoll?.whichHero)
-  if (index < 0) throw new Error(`物品页的卷轴上没有 ${panel.scoll?.whichHero} 号`)
+  // `Scoll`**，与状态层同一个理由 —— 所以这里调的就是状态层那个函数，不再
+  // 抄一份（/code-review 的标准轴：Duplicated Code）。
+  //
+  // ⚠️ **那三句 `hero1/2/4.refreshValue()` 这一层有意不抄**：原版的
+  // `drawValueBar()` 头上有它们，也就是**画一帧会改状态**。这一层是纯函数
+  // （`drawScoll` 那个 isDraw 副作用也是同样处理的，见上面卷轴那一段），
+  // 而喝药那条路上的三次刷新已经在 `drinkDrug` 里了。
+  const index = heroIndexOnScoll(panel)
   const hero = w.heroes[index]
   if (!hero) throw new Error(`队伍里没有第 ${index} 个人`)
   for (const [i, text] of [
