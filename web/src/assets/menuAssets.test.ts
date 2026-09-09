@@ -277,7 +277,7 @@ describe('路径规范化', () => {
     const unresolved = [...referenced].filter((p) => both.get(menuAssetId(p)) === undefined).sort()
     // ⚠️ `FuncPanel.java:31` 的 `sources/菜单/主人公4人2.png` **本来就取不到**：
     // 那个文件躺在 `天书/` 下。原版走 `new ImageIcon(...)`，取不到既不抛也不
-    // 返回 null，于是十三年没人发现（xl-1dv 那一族的又一例，已另立票）。
+    // 返回 null，于是十三年没人发现（xl-1dv 那一族的又一例，已另立票 xl-a7m）。
     // 这里把它**逐字**登记下来 —— 换成"允许有缺口"，明天真漏烘一张就混进来了。
     expect(unresolved).toEqual(['sources/菜单/主人公4人2.png'])
   })

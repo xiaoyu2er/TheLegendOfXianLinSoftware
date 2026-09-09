@@ -612,7 +612,7 @@ function bakeBattleImages(
  * `menu/FuncPanel.java:31` 拼的是 `sources/菜单/主人公4人2.png`，而那个文件
  * 实际躺在 `sources/菜单/天书/主人公4人2.png`。它走的是
  * `new ImageIcon(...)`，取不到既不抛也不返回 null（跟 xl-1dv.1 那 27 帧同一
- * 种沉默）。烘焙这一侧照目录烘，那张图有产物；**要不要在 Web 侧复刻这个
+ * 种沉默，已另立票 xl-a7m）。烘焙这一侧照目录烘，那张图有产物；**要不要在 Web 侧复刻这个
  * 缺陷是画的那张票的事**，不是烘焙的事。
  */
 function bakeMenuImages(manifest: Record<string, string>): {
