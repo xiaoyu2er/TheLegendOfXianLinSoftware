@@ -10,6 +10,7 @@
     "equipment": [{ "name": "皮靴", "count": 1 }]
   },
   "maxSteps": 100,
+  "every": 1,
   "steps": [
     { "op": "open", "name": "drug" },
     { "op": "hover", "index": 5 },

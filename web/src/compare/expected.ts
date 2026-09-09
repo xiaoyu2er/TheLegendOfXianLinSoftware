@@ -133,6 +133,97 @@ const REMINDER_EXACT = {
   issue: 'xl-ttu / xl-aq0',
 } as const
 
+/**
+ * 商店三条剧本共用的那六块缺口区（xl-knp.10）。
+ *
+ * **矩形是共用的，数不是。** 两家店的绘制坐标逐字相同（`shop/layout.ts` 的
+ * 头注：两个构造函数是复制粘贴的关系），所以同一组矩形对三条剧本都成立，抄三遍
+ * 只会让改一处漏两处；而 `maxPixels` 是**逐条剧本实测**的，由调用处传进来。
+ *
+ * 矩形比实测外接框各边留 **5–7 px** 余量（本文件文件头那条规矩：后备字体链换
+ * 一台机器会让字形外扩几个像素，紧贴外接框的话硬比区会红在一圈描边上）。逐边
+ * 都是 6，只有三处例外，各自的理由写在这里 —— **这个数是照三条剧本的实测外接框
+ * 反算出来的，不是拍的**：
+ *
+ * - `coins` 的上沿只到 y=0（实测外接框顶在 y=4，再往上就是画布边界），**4 px**；
+ * - `list-*` 三个区的下沿 586 与 `keeper-message` 的上沿 587 挨着（缺口区不许
+ *   重叠）。两者的实测外接框相距 12 行（581 与 593），两边各自 **5 / 6 px**；
+ * - `list-price-stock` 与 `list-held` 的上沿是 **7 px**：三条剧本里那两列最靠上
+ *   的差异像素落在 y=184，而它们与 `list-name-purchase`（y=183）共用同一条上沿。
+ *
+ * ⚠️ **`keeper-message` 的右沿对 `shop-trade` 是白送的。** 那条剧本的实测外接框
+ * 只到 x=870，而矩形按另外两条（装备店有第三行 `messageremark`，画在 x=730）
+ * 量到 951 —— 于是 `shop-trade` 有 87×53 px 本可以硬比的地方落进了缺口区。
+ * **不按剧本收窄是有意的**：870 这个数是那一条剧本的店主恰好说了那么长一句话，
+ * 收到它上面等于把一句台词的长度钉成判据，换一句话就红在一个与渲染无关的地方。
+ * 三条剧本共用一组矩形，让度记在这里。
+ *
+ * 为什么价目与存货**合成一个区**：价目画在 `x+180`=633，五位数（灵神天药 15000）
+ * 一直画到 732；而存货画在药店 `x+245`=698、装备店 `x+260`=713，**落在价目那一列
+ * 的 x 范围里面**。切成两个区必然重叠，而缺口区不许重叠。两列是同一族账（都是
+ * 字形），合并不会把两种成因混进一个区。
+ *
+ * 同理商品名（453 起）与「这一单买几件」（药店 `x+100`=553、装备店 `x+102`=555）
+ * 之间只隔 3 px，一并合成一个区。
+ */
+function shopGaps(worst: {
+  readonly nameAndPurchase: number
+  readonly priceAndStock: number
+  readonly held: number
+  readonly coins: number
+  readonly statLabels: number
+  readonly keeperMessage: number
+}): readonly GapRegion[] {
+  // 上界一律是「单帧最多」的 2 倍，与本文件其余各条同一条规矩。乘在这一处，
+  // 免得六个区各写一个算好的数 —— 那种数改错了没人看得出来。
+  const bound = (single: number) => single * 2
+  const GLYPH = 'xl-9bd.17'
+  return [
+    {
+      name: 'list-name-purchase',
+      maxPixels: bound(worst.nameAndPurchase),
+      rect: { x0: 447, y0: 177, x1: 580, y1: 586 },
+      why: '商品名与「这一单买几件」两列的字形（20 号白字）',
+      issue: GLYPH,
+    },
+    {
+      name: 'list-price-stock',
+      maxPixels: bound(worst.priceAndStock),
+      rect: { x0: 632, y0: 177, x1: 738, y1: 586 },
+      why: '价目与存货两列数字的字形（20 号白字）',
+      issue: GLYPH,
+    },
+    {
+      name: 'list-held',
+      maxPixels: bound(worst.held),
+      rect: { x0: 752, y0: 177, x1: 778, y1: 586 },
+      why: '背包持有量那一列数字的字形（20 号白字）',
+      issue: GLYPH,
+    },
+    {
+      name: 'coins',
+      maxPixels: bound(worst.coins),
+      rect: { x0: 899, y0: 0, x1: 977, y1: 25 },
+      why: '右上角钱袋里那串金钱数字的字形',
+      issue: GLYPH,
+    },
+    {
+      name: 'stat-labels',
+      maxPixels: bound(worst.statLabels),
+      rect: { x0: 49, y0: 7, x1: 80, y1: 97 },
+      why: '左上角四行属性标签的字形（图标本身逐像素相等）',
+      issue: GLYPH,
+    },
+    {
+      name: 'keeper-message',
+      maxPixels: bound(worst.keeperMessage),
+      rect: { x0: 447, y0: 587, x1: 957, y1: 639 },
+      why: '底部店主那两三行话的字形',
+      issue: GLYPH,
+    },
+  ]
+}
+
 export const EXPECTED: Readonly<Record<string, Expectation>> = {
   'battle-min': {
     status: 'gap',
@@ -1026,37 +1117,103 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '旁白与对话正文的字形（原版字体未交付）+ 右下角的金币 HUD',
     issue: 'xl-9bd.17 / xl-yg6.1 / xl-9bd.18',
   },
+  // ===================== 商店三条（xl-knp.10 接上 driver=shop） =====================
+  //
+  // 这三条从 `unassembled` 换成**真量出来的分区表态**。共同的几件事写在这里，
+  // 逐条自己的读数在下面各自的 `shopGaps(...)` 实参里。
+  //
+  // - **矩形是从实际差异图上量出来的，不是照 `shop/layout.ts` 的常量写的。**
+  //   量法留成了一个工具：`web/scripts/measureGaps.ts`。第一档把两侧位图逐帧
+  //   对齐、取超容差像素的**并集**、连通聚类，交出每一块的外接框（shop 三条
+  //   各聚出 75/76 块，全是列与行）；第二档拿划好的矩形回核，逐区报「单帧
+  //   最多」，并且**把落在所有区之外的差异像素点出来**。
+  // - **区外的读数是 0**：三条剧本 101 帧，硬比区里一个超容差的像素都没有。
+  //   这就是「不许拿一个更大的框把没认出来的成因盖掉」那句话的可执行证据 ——
+  //   多出一个像素落在没人声明过的地方，`regions.ts` 当场红。
+  // - **成因只有一族：字形**（原版 `文鼎粗钢笔行楷` 未交付，后备链在
+  //   `textFont.ts`），归 xl-9bd.17。菜单那边的另外两族在商店这边**都是零**，
+  //   而那不是没查：`sources/Shop/` 那批素材 xl-knp.5 全烘进来了（缺的三张
+  //   装备图两端都画不出来，见 `render/assets.ts` 的 `pictureTextureId`），
+  //   ADR-0001 例外表里也没有商店的条目。**六个区逐个点名，一族都没混。**
+  // - ⚠️ **反证做过**：区外零差异与「两端都什么都没画」长得一模一样。逐块回到
+  //   原版位图上数「整条剧本里变过多少像素」（`shop-trade`，两侧各数一遍）：
+  //   商品图 (820,200) 22910、招牌 (200,0) 3914/3916、店主动画 (364,515)
+  //   3898/3897、张小凡动画 (0,0) 360、四行属性图标 (60,30..) 0（它本来就是四张
+  //   不动的图）。也就是说硬比区里**真的有东西画过**，而且两端画的是同一批。
+  // - ⚠️ **陆雪琪 (0,160) 与文敏 (0,320) 两条动画一帧都走不到**：三条商店剧本的
+  //   `setup.party` 都只有 `zhang`（xl-knp.9 实测）。它们在这条流水线里是背景，
+  //   要盖住得另补一条 party 更满的商店真值 —— 那属于补真值那一层，不在本票。
+  // - ⚠️ **这条流水线守不住那八格动画怎么循环**：`ShopDriver` 把 Clock 倍率设成
+  //   1e-9，动画线程整次导出停在第 0 格（`replay/main.ts` 的 `SHOP_FROZEN_FRAME`）。
+  //   守那一层的是 `shop/render/animation.test.ts`（xl-knp.9）。
+  //
+  // 三条剧本的取帧密度都是 `every: 1`（剧本自报）：商店与菜单一样是**事件驱动**
+  // 的，一步就是一次输入事件，落到默认的 25 会让 40 步只出 2 帧，却照样打印
+  // 「比过了」。
   'shop-trade': {
-    status: 'unassembled',
-    // 商店真值（xl-1vu.6，driver = shop）。与 menu-equip 同一个处境：Web 侧
-    // 整个商店系统还没做（M4 / xl-knp），取图页拿判别名去装配会直接抛
-    // UnknownDriverError（`src/replay/drivers.ts`），整条流水线在这条剧本上
-    // 非零退出 —— 而不是静静地比出"零帧差异"。
-    //
-    // 所以这里既不写 maxRatio 也不写 gaps：一帧都还没比过，写任何数都是编的。
-    // 商店在 web 侧画出来之后，这一条要么改成 match，要么带上真量出来的表态 ——
-    // **那是 M4 的事，xl-1vu 这个 SPEC 不接线**。
-    why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
-    issue: 'xl-knp.1',
+    status: 'gap',
+    // 40 帧。药店与装备超市各走一条完整的买卖（含买入被拒、加减两端）。
+    // 实测：`tools/compare-frames.sh shop-trade`，容差 8。
+    gaps: shopGaps({
+      // 实测外接框 (453,183)-(574,581)，单帧最多 14113（第 24 帧）。
+      nameAndPurchase: 14113,
+      // 实测外接框 (638,185)-(732,580)，单帧最多 18570（第 29 帧）。
+      priceAndStock: 18570,
+      // 实测外接框 (758,184)-(772,580)，单帧最多 3520（第 24 帧）。
+      held: 3520,
+      // 实测外接框 (905,4)-(971,19)，单帧最多 650（第 0 帧）。
+      coins: 650,
+      // 实测外接框 (55,13)-(74,91)，单帧最多 545（第 0 帧）。
+      statLabels: 545,
+      // 实测外接框 (453,593)-(870,633)，单帧最多 6132（第 32 帧）。药店没有
+      // 第三行（`ShopPanel` 没有 `messageremark`），所以它比另外两条窄。
+      keeperMessage: 6132,
+    }),
+    why: '只剩字形（原版字体未交付）；商品图、招牌、钱袋、四条人物动画与全部按钮逐像素相等',
+    issue: 'xl-9bd.17',
   },
   'shop-categories': {
-    status: 'unassembled',
-    // xl-knp.3 补的两条商店真值之一：装备自选超市六类全走一遍。处境与
-    // shop-trade 逐字相同（web 侧整个商店系统还没做），所以同样既不写
-    // maxRatio 也不写 gaps —— 一帧都还没比过，写任何数都是编的。
-    //
-    // 归票写 xl-knp.10（「shop 进逐帧比对流水线 —— M4 收口」）而不是
-    // shop-trade 那条的 xl-knp.1：xl-knp.1 是 M4 重拆之前的那张，重拆之后
-    // 接线这件事落在 xl-knp.10 上，而这两条新真值正是它的输入。
-    why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
-    issue: 'xl-knp.10',
+    status: 'gap',
+    // 25 帧。装备自选超市六类全走一遍。
+    // 实测：`tools/compare-frames.sh shop-categories`，容差 8。
+    gaps: shopGaps({
+      // 实测外接框 (453,183)-(574,581)，单帧最多 14113（第 0 帧）。
+      nameAndPurchase: 14113,
+      // 实测外接框 (638,184)-(732,580)，单帧最多 18565（第 0 帧）。
+      priceAndStock: 18565,
+      // 实测外接框 (758,185)-(772,580)，单帧最多 3520（第 0 帧）。
+      held: 3520,
+      // 实测外接框 (905,4)-(971,19)，单帧最多 650（第 5 帧）。
+      coins: 650,
+      // 实测外接框 (55,13)-(74,91)，单帧最多 545（第 0 帧）。
+      statLabels: 545,
+      // 实测外接框 (453,593)-(951,633)，单帧最多 8041（第 2 帧）。装备店有
+      // 第三行（`messageremark`，画在 x=730），所以右边比药店那条宽 81 px。
+      keeperMessage: 8041,
+    }),
+    why: '只剩字形（原版字体未交付）；六类切换的按钮与商品图逐像素相等',
+    issue: 'xl-9bd.17',
   },
   'shop-edges': {
-    status: 'unassembled',
-    // xl-knp.3 补的另一条：库存为 0 的那一件买下去、背包里没有那件东西按卖出。
-    // 同上，一帧都没比过。
-    why: 'Web 侧还没有商店系统，取图页装配不出 driver=shop，一帧都出不来',
-    issue: 'xl-knp.10',
+    status: 'gap',
+    // 36 帧。库存为 0 的那一件买下去、背包里没有那件东西按卖出。
+    // 实测：`tools/compare-frames.sh shop-edges`，容差 8。
+    gaps: shopGaps({
+      // 实测外接框 (453,183)-(574,581)，单帧最多 14113（第 17 帧）。
+      nameAndPurchase: 14113,
+      // 实测外接框 (638,185)-(732,580)，单帧最多 18570（第 25 帧）。
+      priceAndStock: 18570,
+      // 实测外接框 (758,184)-(772,580)，单帧最多 3520（第 17 帧）。
+      held: 3520,
+      // 实测外接框 (905,4)-(971,19)，单帧最多 650（第 0 帧）。
+      coins: 650,
+      // 实测外接框 (55,13)-(74,91)，单帧最多 545（第 0 帧）。
+      statLabels: 545,
+      // 实测外接框 (453,593)-(951,633)，单帧最多 8152（第 18 帧）。
+      keeperMessage: 8152,
+    }),
+    why: '只剩字形（原版字体未交付）；被拒的那两笔买卖只改店主那句话，其余逐像素相等',
+    issue: 'xl-9bd.17',
   },
   // ===================== 菜单五条（xl-6lo.14 接上 driver=menu） =====================
   //

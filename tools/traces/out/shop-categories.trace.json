@@ -1,6 +1,7 @@
 {
   "format": "xianlin-trace/1",
   "driver": "shop",
+  "every": 1,
   "script": {"name":"shop-categories","description":"装备自选超市六类全走一遍（weapon → helmet → armor → glove → shoe → decoration → 回 weapon），每一类的存货因此都进真值。这条剧本钉的是**装备店那 56 次掷骰的次数与顺序**：shop-trade 只看得见 weapon 与 shoe 两栏，抽多了、抽少了或换了顺序，另外四栏错位它一个字都看不见。（构造顺序是先药店 6 次、后装备店 56 次，共 62 次；药店那 6 次这条剧本一次都没打开药店，读不出来 —— 它的直接读数在 shop-edges 的第 0 拍。）顺带把装备店店主对白的三个价位档一次走完（原版 isMoveIn 按 <10000 / <30000 / <100000 分三档，没有 else）：weapon 月苗刀 3000 是第一档、鱼肠 16000 是第二档、日月乾坤圈 80000 是第三档，后面每一类再各点一两件复核。选行时避开了头盔那两行（圣兽玲珑冠 / 紫金冠 共用同一张 png），免得 hover 的图标核对退化成认不出行号。","setup":{"party":["zhang"],"coins":10000,"seed":1,"drugs":[],"equipment":[]},"maxSteps":100,"steps":[{"op":"open","name":"equipment"},{"op":"hover","index":6},{"op":"hover","index":8},{"op":"hover","index":5},{"op":"category","name":"helmet"},{"op":"hover","index":0},{"op":"hover","index":5},{"op":"category","name":"armor"},{"op":"hover","index":0},{"op":"hover","index":3},{"op":"category","name":"glove"},{"op":"hover","index":0},{"op":"hover","index":5},{"op":"category","name":"shoe"},{"op":"hover","index":3},{"op":"category","name":"decoration"},{"op":"hover","index":0},{"op":"hover","index":11},{"op":"category","name":"weapon"}]},
   "tickCount": 25,
   "ticks": [

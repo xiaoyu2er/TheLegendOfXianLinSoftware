@@ -31,6 +31,19 @@ import { stepMenu } from '../menu/step'
 // 不会响 —— 那正是"名单抄两份迟早分家"的类型版。
 import type { MenuTrace } from '../menu/trace'
 import type { MenuWorld } from '../menu/types'
+import { shopTextureIds } from '../shop/render/assets'
+import { shopDrawList } from '../shop/render/drawList'
+import type { ShopDrawOp } from '../shop/render/drawList'
+import { createShopRenderer } from '../shop/render/shopRenderer'
+import type { ShopRenderer } from '../shop/render/shopRenderer'
+import { replayShopSetup, shopInputsOfTicks } from '../shop/replay'
+import { stepShop } from '../shop/step'
+import type { ShopInput } from '../shop/step'
+// 同菜单那一条的理由：类型从 `shop/trace.ts` 取，不在这里手抄一份子集。
+// 那个模块转手 `node:fs`，而 `import type` 会被整个擦掉。
+import type { ShopTrace } from '../shop/trace'
+import type { ShopWorld } from '../shop/types'
+import { activePanel } from '../shop/world'
 import { resolveAsset } from '../assets/resolve'
 import { pickAssembly } from './drivers'
 import type { ImplementedDriver } from './implemented'
@@ -406,6 +419,110 @@ const menuAssembly: Assembly = {
   },
 }
 
+/* ===================== 商店（xl-knp.10） ===================== */
+
+let shopRenderer: ShopRenderer | null = null
+let shopTrace: ShopTrace | null = null
+let shopWorld: ShopWorld | null = null
+let shopNext = 0
+/** 上一次真的载过的那份贴图名单（`shopTextureIds` 的 `JSON.stringify`）。 */
+let shopLoaded: string | null = null
+/**
+ * 逐步的输入，**在 `load` 里一次算完**。
+ *
+ * 放在 `load` 而不是每次 `seek` 现算，有两个理由，第二个才是主要的：算一次
+ * 是 O(n) 而不是 O(n²)；而 `shopInputsOfTicks` 会**两个方向都核**（空输入的
+ * 那一步必须真是 `open`、非空的必须不是），放在 `load` 里意味着这份真值接不
+ * 上的话**在取第一帧之前**就抛，而不是走到某一步中途才炸。
+ */
+let shopInputs: readonly ShopInput[][] = []
+
+/**
+ * 逐帧比对里商店动画停在**第 0 格**。
+ *
+ * 这不是一个选择，是原版侧的既成事实：`ShopDriver` 把 `Clock` 的倍率设成
+ * 1e-9，于是那条 `while(true)` 线程的 `Clock.ms(120)` 变成约 3800 年，它在
+ * 整次导出里**一次都没醒过**（`ShopDriver.java` 头注，xl-knp.9 实测）。原版
+ * 位图里的鼠标图与四条人物动画因此全是第一格。
+ *
+ * 后果要说明白：**这条流水线守得住「谁站在哪、画的是哪一张」，守不住这八格
+ * 怎么循环**。那一层由 `shop/render/animation.test.ts` 守（xl-knp.9）。喂一个
+ * 别的帧号进来，两端立刻对不上 —— 而那会被读成一笔缺口账。
+ */
+const SHOP_FROZEN_FRAME = 0
+
+/**
+ * **故意改坏一处渲染**（`--self-check` 的注入点），商店版。
+ *
+ * 与战斗 / 菜单两侧逐字同构，理由也一样：**整帧一起挪，不挑层**。商店每一帧
+ * 的第一条绘制就是满屏 1024×640 的 `shopback.png`，挑任何一层往上挪都可能被
+ * 它盖住，而那不成立的样子正是「改坏了却没响」。
+ */
+function breakShopOps(ops: ShopDrawOp[], t: number): ShopDrawOp[] {
+  const b = window.__xlBreak
+  if (!b || t < b.fromTick) return ops
+  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
+}
+
+/**
+ * 把这一帧要用的贴图载齐。**每一步都问一次**，不是只在 load 时问一次 —— 换一
+ * 家店换整套招牌与店主动画，切一类装备换一整栏商品图。只在 `load()` 里载一次
+ * 的表现是「漏载」只在某几条剧本上炸（`shop-categories` 一切类就抛，而
+ * `shop-trade` 那种停在同一栏的剧本一点事都没有）。
+ */
+async function loadShopFrame(world: ShopWorld): Promise<void> {
+  const ids = shopTextureIds(world)
+  const key = JSON.stringify(ids)
+  if (shopLoaded === key) return
+  await shopRenderer!.load(ids)
+  shopLoaded = key
+}
+
+const shopAssembly: Assembly = {
+  async load(traceJson: string) {
+    const parsed = JSON.parse(traceJson) as ShopTrace
+    shopRenderer ??= await createShopRenderer(hostFor('shop'))
+    activate('shop')
+    // 只读剧本回显的 `setup`，一个状态字段都不从真值里读（`shop/replay.ts`）。
+    const world = replayShopSetup(parsed.script.setup)
+    shopWorld = world
+    shopTrace = parsed
+    shopNext = 0
+    shopLoaded = null
+    // 换店那一步的输入要从剧本的 `open` 指令还原 —— 真值里它是空数组（原版走
+    // 场景的选择事件，面板收不到鼠标事件）。与 `shopTrace.test.ts` 走的是同一
+    // 个函数。
+    shopInputs = shopInputsOfTicks(parsed.script.steps, parsed.ticks)
+    await loadShopFrame(world)
+    shopRenderer.draw(shopDrawList(world, SHOP_FROZEN_FRAME))
+    // `scene` 这一栏对商店来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
+    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+  },
+
+  async seek(t: number) {
+    const trace = shopTrace
+    const world = shopWorld
+    const renderer = shopRenderer
+    if (!trace || !world || !renderer) throw new Error('还没 load 就 seek')
+    if (t < shopNext - 1) {
+      throw new Error(`取图只能往前：当前在第 ${shopNext - 1} 步，要去第 ${t} 步`)
+    }
+    if (t >= trace.ticks.length) {
+      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
+    }
+    for (; shopNext <= t; shopNext++) {
+      stepShop(world, shopInputs[shopNext]!)
+    }
+    await loadShopFrame(world)
+    renderer.draw(breakShopOps(shopDrawList(world, SHOP_FROZEN_FRAME), t))
+    await twoFrames()
+    // 商店的一步是一次输入事件，没有虚拟时间可言（`ShopDriver` 不推时钟）。
+    // 与菜单同一个规矩：`timeMs` 只进日志，报 0 而不是编一个步号乘常数。
+    const p = activePanel(world)
+    return { t, timeMs: 0, x: p.currentX, y: p.currentY }
+  },
+}
+
 /**
  * 判别名 → 装配。**名单只有这一份**，`pickAssembly` 报"本页实现了哪些"时
  * 数的就是它 —— 另抄一张名单，加了驱动器却忘了改名单的那天，报出来的话是错的。
@@ -418,6 +535,7 @@ const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = {
   scene: sceneAssembly,
   battle: battleAssembly,
   menu: menuAssembly,
+  shop: shopAssembly,
 }
 
 /** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */

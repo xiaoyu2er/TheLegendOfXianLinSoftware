@@ -10,6 +10,7 @@
     "equipment": []
   },
   "maxSteps": 100,
+  "every": 1,
   "steps": [
     { "op": "open", "name": "equipment" },
     { "op": "hover", "index": 6 },

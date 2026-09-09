@@ -3659,8 +3659,8 @@
     "tools/traces/out/menu-magic.trace.json": "27f4c9b0da5b5d87a5c5eab9b01838dbce0e3dad52736fa366eb4084b195ed40",
     "tools/traces/out/menu-scroll.trace.json": "03817d7e131b7026ec2e83844512b51ff49bc27e246aa7b24447e989e89c74b6",
     "tools/traces/out/milestone.trace.json": "c2479bfe99c3756a1e1d0579ade175236bfd459eebb61cc744d440391fbe7bbf",
-    "tools/traces/out/shop-categories.trace.json": "e98e1d6fb2310a9c246a4b6debd2b3a3aa9b35c544742bb01b6eb616721d18c6",
-    "tools/traces/out/shop-edges.trace.json": "c9a0e0de1c2f60ab28693a5f5e9af2bc85bb6d5cda56e5942f3e2d197d785960",
-    "tools/traces/out/shop-trade.trace.json": "bd4352850dc227d07d07137665fe83015ba6e6c1d25590dda5ab5b54418c7756"
+    "tools/traces/out/shop-categories.trace.json": "1b142756d239ffad9894051f0067b73bc5455bf112c2ec7a093372c824ca2a69",
+    "tools/traces/out/shop-edges.trace.json": "365d93dd9cc09a626ddd4693071eb9a1ec2c023638146e8dec0540684d93781b",
+    "tools/traces/out/shop-trade.trace.json": "ca763f2b14a423b133d0f4b552860514c863c503100f37925ea6bc249f8febe3"
   }
 }
