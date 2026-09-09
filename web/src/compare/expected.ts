@@ -1071,6 +1071,38 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
     issue: 'xl-6lo',
   },
+  'menu-scroll': {
+    status: 'unassembled',
+    // 列表撑过列表框那一条（xl-6lo.7，driver = menu）。与另外两条 menu 剧本
+    // 同一个处境：Web 侧还没有菜单系统，取图页装配不出 driver=menu，所以既不
+    // 写 maxRatio 也不写 gaps —— 一帧都没比过，写任何数都是编的。
+    //
+    // 它是给 xl-6lo.13（滚动条）当真值的：装备页武器分类塞满 20 件，撑过
+    // 装备4.png 那个列表框 4 行；盔甲分类只有 1 件、物品页 6 种药都装得下 ——
+    // 撑过与没撑过两侧都在这一条里。剧本自己的 description 记着量出来的框。
+    why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
+    issue: 'xl-6lo',
+  },
+  'menu-hero': {
+    status: 'unassembled',
+    // 三个人之间换人看属性那一条（xl-6lo.7，driver = menu）。同上，不写任何
+    // 量出来的数。
+    //
+    // 它补的是另外两条 menu 真值全程 hero=1 留下的空白：hero 取到 1 / 2 / 4，
+    // 背包跟着换，装备页点得到的四个槽（武器是开局自带的、头盔 / 鞋 / 盔甲
+    // 是这一条穿上的）都有读数。护臂与饰品在原版里没有按钮，走不到。
+    why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
+    issue: 'xl-6lo',
+  },
+  'menu-func': {
+    status: 'unassembled',
+    // 天书页设定子菜单的展开收起与 BGM 开关（xl-6lo.7，driver = menu）。同上。
+    //
+    // 它是 func.drawn 唯一取到多组不同值的真值：五组互不相同的按钮集合。
+    // 天书页在 web 侧做出来之后（xl-6lo 的四页那一批），逐字段对齐的对象是它。
+    why: 'Web 侧还没有菜单系统，取图页装配不出 driver=menu，一帧都出不来',
+    issue: 'xl-6lo',
+  },
 }
 
 /**

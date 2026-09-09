@@ -173,6 +173,7 @@ public final class MenuDriver implements TraceDriver {
             case "use":     return click("use", useButton());
             case "abandon": return click("abandon", field(equipPanel(), "abandon_button"));
             case "skill":   return click("skill:" + in.n, skillButton(in.n));
+            case "func":    return click("func:" + in.target, funcButton(in.target));
             case "tick":
                 tick();
                 return sub == in.n - 1;
@@ -407,6 +408,25 @@ public final class MenuDriver implements TraceDriver {
         List<Object> bs = (List<Object>) field(magicPanel(), list);
         if (n > bs.size()) fail("第 " + n + " 个技能按钮不存在，" + list + " 只有 " + bs.size() + " 个");
         return bs.get(n - 1);
+    }
+
+    /**
+     * 天书页的一颗按钮。名字到字段的映射由 {@link MenuScript#funcField} 管，
+     * 那份白名单同时挡住了几颗**点得响但导不出真值**的按钮（System.exit、
+     * 空的 GameLauncher、会真的开音频设备的那一颗）—— 理由逐条写在那里。
+     *
+     * 这里只多核一件事：那颗按钮当前画不画得出来。子按钮的 isDraw 是天书页
+     * 唯一的状态，剧本次序错了（还没点「设定」就去点「开背景音乐」）的表现
+     * 是点在一颗 isDraw=No 的按钮上 —— 交给 {@link #click} 那条 isDraw 断言
+     * 当场报出来，而不是安安静静地导出一份什么都没发生的真值。
+     */
+    private Object funcButton(String name) {
+        if (!panelName().equals("funcPanel")) {
+            fail("func 只能用在天书页，当前是 " + panelName());
+        }
+        String fieldName = MenuScript.funcField(name);
+        if (fieldName == null) fail("没有这颗天书按钮：" + name);
+        return field(field(funcPanel(), "fb"), fieldName);
     }
 
     // ================= 起手 =================

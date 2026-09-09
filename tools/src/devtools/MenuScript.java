@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +26,8 @@ import java.util.Map;
  *   use              点"使用"。按下 + 松开。
  *   abandon          点"弃用"。按下 + 松开。
  *   skill   {n}      点奇术页当前角色的第 n 个技能按钮（1..5）。按下 + 松开。
+ *   func    {name}   点天书页的一颗按钮。可用的名字见 {@link #FUNC_BUTTONS}，
+ *                    点不得的那几颗见 {@link #FUNC_FORBIDDEN}。按下 + 松开。
  *   tick    {n}      显式推进 n 次 {@code FatherPanel.run()} 的循环体，一步一次。
  *
  * tick 是 xl-1vu.9 补上的。菜单的时间驱动是四条 {@code while(true){ Clock.sleep(100);
@@ -87,7 +90,49 @@ public final class MenuScript {
     }
 
     private static final List<String> OPS =
-            Arrays.asList("tab", "hero", "slot", "select", "use", "abandon", "skill", "tick");
+            Arrays.asList("tab", "hero", "slot", "select", "use", "abandon", "skill", "func", "tick");
+
+    /**
+     * 天书页点得动的那几颗按钮：剧本里的名字 → {@code FuncButtons} 上的字段名。
+     *
+     * 名单是**白名单**，不是「目前有这几颗」的读数 —— {@link #FUNC_FORBIDDEN} 里
+     * 那几颗在原版里同样存在、同样画得出来、同样点得响，只是点下去会让**导出**
+     * 失去意义，理由一颗一颗写在那份表里。所以这两份表加起来才是 FuncButtons
+     * 的按钮全集，谁都不许改成从字段现扫。
+     */
+    private static final Map<String, String> FUNC_BUTTONS = new LinkedHashMap<>();
+    /** 点不得的按钮 → 为什么。每条都是实测过的后果，不是顾虑。 */
+    private static final Map<String, String> FUNC_FORBIDDEN = new LinkedHashMap<>();
+    static {
+        FUNC_BUTTONS.put("set", "setButton");
+        FUNC_BUTTONS.put("setBGM", "setBGM");
+        FUNC_BUTTONS.put("setClick", "setClick");
+        FUNC_BUTTONS.put("onBGM", "on_BGM");
+        FUNC_BUTTONS.put("offBGM", "off_BGM");
+        FUNC_BUTTONS.put("offClick", "off_click");
+        FUNC_BUTTONS.put("exit", "exitButton");
+
+        FUNC_FORBIDDEN.put("save",
+                "存档按钮走 GameLauncher.lsPanel，导出时那个静态字段是 null —— 空指针，不是真值");
+        FUNC_FORBIDDEN.put("read", "提取按钮同 save，走的是同一个 null 的 lsPanel");
+        FUNC_FORBIDDEN.put("return",
+                "返回按钮 GameLauncher.switchTo(\"scene\")，导出时没有 GameLauncher，空指针");
+        FUNC_FORBIDDEN.put("restart", "重新开始同 return，走 GameLauncher.switchTo(\"start\")");
+        FUNC_FORBIDDEN.put("exitForSure",
+                "确认离开直接 System.exit(0)：导出器会在写文件之前消失，而**退出码是 0** ——"
+                + " 一次「什么都没导出」长得和成功一模一样，这是本仓库最忌讳的那种失败");
+        FUNC_FORBIDDEN.put("onClick",
+                "开特殊音效：那一支先 openMusic() 把 CAN_PLAY_MUSIC 打开，紧接着自己就"
+                + " readmusic(\"换list.wav\") —— 于是真的开音频设备、起播放线程，两遍导出不可能逐字节一致。"
+                + " 关的那一侧（offClick）没有这个问题，它那一支不出声");
+        FUNC_FORBIDDEN.put("setKey",
+                "键盘设定在原版里**点不到**：它既不在 buttonList 也不在任何一格 subButtonList，"
+                + " 于是 isPressedButton 一次都不会落到它身上（缺陷登记 xl-1dv.16）");
+    }
+
+    /** 剧本里的 func 名字 → {@code FuncButtons} 上的字段名。给 {@link MenuDriver} 用。 */
+    static String funcField(String name) { return FUNC_BUTTONS.get(name); }
+
     private static final List<String> TABS = Arrays.asList("thing", "equip", "magic", "func");
     private static final List<String> SLOTS =
             Arrays.asList("weapon", "armor", "helmet", "shoe", "glove", "decoration");
@@ -129,6 +174,17 @@ public final class MenuScript {
                     target = JsonIn.str(s, "name");
                     if (!SLOTS.contains(target)) {
                         throw new IllegalArgumentException("slot 的 name 只能是 " + SLOTS + "，实际 " + target);
+                    }
+                    break;
+                case "func":
+                    target = JsonIn.str(s, "name");
+                    if (FUNC_FORBIDDEN.containsKey(target)) {
+                        throw new IllegalArgumentException("天书页的 " + target
+                                + " 按钮不许出现在剧本里：" + FUNC_FORBIDDEN.get(target));
+                    }
+                    if (!FUNC_BUTTONS.containsKey(target)) {
+                        throw new IllegalArgumentException("func 的 name 只能是 "
+                                + FUNC_BUTTONS.keySet() + "，实际 " + target);
                     }
                     break;
                 case "select":
