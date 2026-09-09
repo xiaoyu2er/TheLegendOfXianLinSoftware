@@ -6,7 +6,14 @@ import { START_IMAGES, START_SEQUENCES, TITLE_BGM } from '../start/assets'
 import DEFERRED_BGM_IDS from '../generated/deferredBgm.json'
 import MISSING_IDS from '../generated/missingAssets.json'
 import { BG_COUNT } from '../state/narratage'
-import { bgmAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from './ids'
+import {
+  bgmAssetId,
+  equipPictureAssetId,
+  mapAssetId,
+  narratageBgAssetId,
+  npcAssetId,
+  roleAssetId,
+} from './ids'
 import { knownAssetIds, resolveAsset, resolveAssetOrNull, resolveBgmOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
 import { DEFERRED_TOP_DIRS, IMAGE_ROOT, isDeferredBattleAsset } from './battleAssets'
@@ -67,6 +74,32 @@ function equipPictureFilesInRepo(): number {
 }
 
 describe('资产逻辑 ID', () => {
+  /**
+   * 装备图的 ID 必须带上「类」那一段（xl-234）。
+   *
+   * ⚠️ **这一条是直接断言，不是分母**，而这一点是量出来的：今天六个类目录下
+   * 那 59 个 `.png` 文件名两两互异，所以把类去掉，映射表的条数**一条都不会
+   * 变**（篡改矩阵 R9 实测全绿）。也就是说上面那条普查看不见它 ——
+   * 一个"这一场观测不到"的现成例子，判据只能自己造两件同名的来问。
+   */
+  it('同名不同类算出来的 ID 不一样 —— 类必须在 ID 里', () => {
+    expect(equipPictureAssetId('武器', '同名.png')).not.toBe(
+      equipPictureAssetId('饰品', '同名.png'),
+    )
+    // 形状也钉住：它是原版那条 `sources/Shop/装备/<s>/<第 6 列>` 的函数。
+    expect(equipPictureAssetId('武器', '月苗刀.png')).toBe('equip:武器/月苗刀.png')
+    // 反斜杠照规范化，与 `npcAssetId` / `battleAssetId` 同一个规矩。
+    expect(equipPictureAssetId('武器', '月苗刀.png')).toBe(
+      equipPictureAssetId('武器', '月苗刀.png'.replace('/', '\\')),
+    )
+    // 正向控制：今天磁盘上确实一对重名都没有 —— 所以上面那条只能这么问。
+    const png = listFiles(repoPath(EQUIP_PICTURE_ROOT)).filter((f) => f.endsWith('.png'))
+    const names = png.map((f) => f.slice(f.lastIndexOf('/') + 1))
+    expect(new Set(names).size, '磁盘上出现重名了 —— 那烘焙器那道 ID 撞车的守卫该响了').toBe(
+      names.length,
+    )
+  })
+
   it('从地图文件名推出 ID，扩展名与目录都不参与', () => {
     expect(mapAssetId('宿舍.png')).toBe('map:宿舍')
     expect(mapAssetId('大地图.jpg')).toBe('map:大地图')

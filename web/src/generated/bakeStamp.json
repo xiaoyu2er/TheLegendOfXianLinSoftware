@@ -1,10 +1,10 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "15c5ea94e13e0d3e3e996529df90f2883e4ead5ab53487d8e2feb9497b6b2f9c",
+    "web/scripts/bake.ts": "5cd9dc4bfa0cf164ea2198e00d15a538c832206ef786eee43a4cff9cc3738984",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
     "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
-    "web/src/assets/ids.ts": "2c5c6811880822fec8b9ca7c6206df37f48422e4bbd302e0a32c37b94fa7e7f5",
+    "web/src/assets/ids.ts": "a86aef00c10ce40545b68af8cde40778765858218c1400109b45d2f0b2950cb4",
     "web/src/assets/knownMissing.ts": "38e78118acacd0c676a82b159b3410e6698ffab10d88155257dc9a3d087ca3f5",
     "web/src/assets/listFiles.ts": "fb1c2ddfb2d2834afbcd527b014bdb42e8e246182aa39f6b66b99a93b0698dec",
     "web/src/assets/menuAssets.ts": "09dbaedb21455d93d67a1617a57fe4c8d9e58f6761e22092899cb96ced882a18",

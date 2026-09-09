@@ -797,6 +797,15 @@ function bakeEquipPictures(manifest: Record<string, string>): {
       process.exit(1)
     }
     claimed.set(product, id)
+    // ⚠️ 上面那道守的是**产物路径**撞车，而产物路径带着类那一段，所以它看不见
+    // 「两条不同的源算出同一个 ID」。今天六个类目录下的文件名两两互异，去掉
+    // ID 里的类**一个分母都不会变**（xl-234 篡改矩阵 R9 实测全绿）—— 也就是
+    // 说这道守卫今天不响，而不响与"撞了却没查"长得一样。真进来一对重名时，
+    // 没有它的表现是映射表里后写的静静盖掉前一条：选中 A 画出 B。
+    if (manifest[id] !== undefined) {
+      console.error(`装备图 ID ${id} 撞车：${manifest[id]} 与 ${product} 算出同一个 ID`)
+      process.exit(1)
+    }
     manifest[id] = product
     bytes += toWebp(resolve(root, relative), resolve(ASSETS_OUT, product))
   }
