@@ -3,6 +3,7 @@ import { clickedLabels, moveInButton, pressButton, releaseButton } from './butto
 import type { ShopButtonLabel, ShopButtonState } from './buttons'
 import { rowAt } from './layout'
 import type { ShopKind } from './layout'
+import { EQUIPMENT_LISTS } from '../menu/equipment'
 import type { EquipSlot } from '../menu/equipment'
 import { activePanel, currentRows, stepBase, stepButtons } from './world'
 import type { DrugShopState, EquipShopState, ShopPanelState, ShopWorld } from './types'
@@ -108,8 +109,9 @@ function shopMouseMoved(w: ShopWorld, x: number, y: number): void {
  * 它做两件事：换图标框里那张图，以及换店主说的那两三行话。
  *
  * 图标框那一半是骨架做的（xl-knp.6）；店主对白**按店分**：药店那两行
- * 在这里（xl-knp.7），装备店那三行归 xl-knp.8 —— 它往下面那个 `if`
- * 旁边**加**自己那一支就是了，不必重排。
+ * 在 {@link drugHoverMessage}（xl-knp.7），装备店那三行在
+ * {@link equipHoverMessage}（xl-knp.8）。两家店的 `isMoveIn()` 是复制粘贴
+ * 的关系，前半截（命中带、换图标）逐字相同，所以那一半在这个函数里只有一份。
  */
 function panelMoveIn(w: ShopWorld): void {
   const p = activePanel(w)
@@ -118,7 +120,7 @@ function panelMoveIn(w: ShopWorld): void {
   if (row < 0) return
   p.iconPicture = rows[row]!.picture
   if (p.kind === 'drug') drugHoverMessage(p, row)
-  // xl-knp.8 在这里加装备店那一支（messagePlus 三档 + messageRemark 四档）。
+  else equipHoverMessage(p, row)
 }
 
 /**
@@ -150,6 +152,105 @@ function drugHoverMessage(p: DrugShopState, row: number): void {
  * 现读的那个数对，而不是只对分档的结果。
  */
 export const DRUG_EXPENSIVE_FROM = 6000
+
+/**
+ * 装备店店主对白**按价位分的三档**（`src/shop/EquipmentShopPanel.java` 的
+ * `isMoveIn()`）：
+ *
+ *     if     (getReduceMoney()<10000)  messageplus="真是物美价廉啊,";
+ *     else if(getReduceMoney()<30000)  messageplus="好东西啊，但是有点贵啊,";
+ *     else if(getReduceMoney()<100000) messageplus="绝对是当世之宝器,";
+ *
+ * ⚠️ 三处照抄，每一处都能安静地错：
+ *
+ * 1. **它是 else-if 链，所以次序即语义**，而且必须**升序**：把 30000 那一档
+ *    排到 10000 前面，每一件便宜货都会说"有点贵"。
+ * 2. **没有 else** —— 价钱 `>=100000` 时 `messageplus` **一个字都不动**，
+ *    上一件的那句话留在原地。今天六张表里最贵的是 80000，所以这一支
+ *    在任何数据上都走不到（判据见 `equipShop.test.ts` 那条登记）。
+ * 3. **第二句里那个逗号是全角「，」，第一、三句里是半角「,」**，三句末尾
+ *    都还有一个半角逗号。差一个字符就红。
+ *
+ * ⚠️ **导出它的理由与 {@link DRUG_EXPENSIVE_FROM} 一样**：`equipShop.test.ts`
+ * 拿它与 GBK 源码里现读的那三行**逐字**对，而不是只对"分档的结果"——
+ * 100000 那道坎两侧没有商品，只对结果的话改坏它是绿的。
+ */
+export interface EquipPriceBand {
+  /** `getReduceMoney()<N` 里那个 N。 */
+  readonly below: number
+  readonly text: string
+}
+export const EQUIP_PRICE_BANDS: readonly EquipPriceBand[] = [
+  { below: 10000, text: '真是物美价廉啊,' },
+  { below: 30000, text: '好东西啊，但是有点贵啊,' },
+  { below: 100000, text: '绝对是当世之宝器,' },
+]
+
+/**
+ * 「谁能用」那四档（同一个 `isMoveIn()`）：
+ *
+ *     if(getUser()==0) messageremark="每个人都能使用";
+ *     if(getUser()==1) messageremark="但是只有张小凡可以使用";
+ *     if(getUser()==2) messageremark="但是只有陆雪琪可以使用";
+ *     if(getUser()==3) messageremark="但是只有文敏可以使用";
+ *
+ * ⚠️ **四个独立的 `if`，不是 else-if，也没有 else。** 后果有两条，都在数据上
+ * 真的发生：
+ *
+ * 1. **`user==3` 那一档在任何数据上都走不到。** 只有 `武器.txt` 有第 9 列，
+ *    它取到的值是 **0 / 1 / 2 / 4**（`menu/equipment.ts` 头注：1 张小凡、
+ *    2 陆雪琪、**4 玉洁**），别的五张表没有那一列、`user` 停在 0。
+ *    所以「但是只有文敏可以使用」这句话在原版里**一次也印不出来** ——
+ *    它不是"真值恰好没走到"，是死支。
+ * 2. **`user==4` 的那几件武器一档都不匹配**，于是 `messageremark` 留着
+ *    上一件的那句话（鸳鸯刀 / 工布 / 御衡镇日刀 三件）。原版缺陷，照抄
+ *    （ADR-0001）。三条真值一次都没停到这三行上，判据因此在
+ *    `equipShop.test.ts`，从源码取。
+ *
+ * 导出的理由同 {@link EQUIP_PRICE_BANDS}：那两条都要拿这张表与源码逐字对，
+ * 光对"分档的结果"盖不到 `user==3`（走不到）与 `user==4`（不匹配）两支。
+ */
+export interface EquipUserRemark {
+  /** `Equipment.user`：0 = 谁都能用。 */
+  readonly user: number
+  readonly text: string
+}
+export const EQUIP_USER_REMARKS: readonly EquipUserRemark[] = [
+  { user: 0, text: '每个人都能使用' },
+  { user: 1, text: '但是只有张小凡可以使用' },
+  { user: 2, text: '但是只有陆雪琪可以使用' },
+  { user: 3, text: '但是只有文敏可以使用' },
+]
+
+/**
+ * 装备店的 `isMoveIn()` 里那几句赋值。三行话各有各的形状：
+ *
+ * - **第一行**是四段属性拼起来的，`"体力+"+pp+"敏捷+"+ag+"武力+"+st+"精气+"+sp`
+ *   —— **段与段之间一个分隔符都没有**（药店那句有逗号加空格，这句没有），
+ *   所以 `体力+3敏捷+0…` 是对的。四个标签与它们的次序由源码现读的判据守着。
+ * - **第二行**按价位三档，见 {@link EQUIP_PRICE_BANDS}。
+ * - **第三行**按 `user` 四档，见 {@link EQUIP_USER_REMARKS}。
+ *
+ * 四项属性与 `user` 都不在 {@link ShopRow} 上 —— 店里那一列与
+ * `EQUIPMENT_LISTS[category]` **逐下标对齐**（`world.ts` 的 `equipRows` 就是
+ * 照它建的），所以按下标取，与药店同一个手法。
+ */
+function equipHoverMessage(p: EquipShopState, row: number): void {
+  const spec = EQUIPMENT_LISTS[p.category][row]!
+  p.message =
+    `体力+${spec.addPhysicalPower}` +
+    `敏捷+${spec.addAgile}` +
+    `武力+${spec.addStrength}` +
+    `精气+${spec.addSpirit}`
+  const price = p.rows[p.category][row]!.price
+  // else-if 链 + 没有 else：`find` 取升序里第一个命中的，一个都不命中就**不赋值**。
+  const band = EQUIP_PRICE_BANDS.find((b) => price < b.below)
+  if (band !== undefined) p.messagePlus = band.text
+  // 四个独立的 `if`，同样没有 else —— 一个都不命中时留着上一件那句话。
+  for (const remark of EQUIP_USER_REMARKS) {
+    if (spec.user === remark.user) p.messageRemark = remark.text
+  }
+}
 
 /**
  * `setButton()` —— 松开鼠标之后按"哪几颗按钮还挂着 `isclicked`"派活。
@@ -185,8 +286,13 @@ function setButton(w: ShopWorld): void {
  *
  * 今天观测不出次序的差别（六颗互不重叠，一次最多一颗 `isclicked`），但它们
  * 是六个独立的 `if`，真有两颗同时挂着时次序就是结果。照抄。
+ *
+ * ⚠️ **导出它是为了让它可测**（xl-knp.8 收 `/code-review` Spec 轴）：正因为
+ * 今天观测不出次序的差别，它是一份**没有任何行为判据守得住**的手写名单 ——
+ * 抄错次序在真值上、在画面上都看不出来。`equipShop.test.ts` 因此从 GBK 源码里
+ * 现读那六个 `if` 的先后，与这张表逐字对。
  */
-const CATEGORY_BRANCH_ORDER: readonly EquipSlot[] = [
+export const CATEGORY_BRANCH_ORDER: readonly EquipSlot[] = [
   'weapon',
   'armor',
   'helmet',
@@ -220,12 +326,7 @@ function setEquipCategory(w: ShopWorld, p: EquipShopState): void {
 export const DRUG_TRADE_ROWS = 6
 
 /**
- * 买 / 卖。**这一票只做药店**（xl-knp.7）；装备店归 xl-knp.8 —— 它往下面
- * 那个 `if (p.kind !== 'drug') return` 旁边加自己那一支。
- *
- * 空着而不是抛：真值要从头跑到尾。抛的话整条剧本一步都跑不动，于是"这几组
- * 还没做"会伪装成"这一层崩了"，而 `shopTrace.test.ts` 反方向那半边判据
- * （登记成"还欠着"的格子必须**真的**还没对上）就再也跑不到了。
+ * 买 / 卖。药店那一支是 xl-knp.7 做的，装备店那一支是 xl-knp.8。
  *
  * ⚠️ **`buy` 在 `sell` 前面**，而药店的按钮表是 `buy` / `sell`、装备店是
  * `sell` / `buy` —— 分支的先后与按钮表的次序**不是同一件事**，两边的
@@ -233,10 +334,13 @@ export const DRUG_TRADE_ROWS = 6
  */
 function buySellButtons(w: ShopWorld): void {
   const p = activePanel(w)
-  // xl-knp.8：把这一句换成按 kind 分派，装备店那一支照 `EquipmentShopPanel`。
-  if (p.kind !== 'drug') return
-  if (clicked(p.buttons, 'buy')) drugBuy(w, p)
-  if (clicked(p.buttons, 'sell')) drugSell(w, p)
+  if (p.kind === 'drug') {
+    if (clicked(p.buttons, 'buy')) drugBuy(w, p)
+    if (clicked(p.buttons, 'sell')) drugSell(w, p)
+    return
+  }
+  if (clicked(p.buttons, 'buy')) equipBuy(w, p)
+  if (clicked(p.buttons, 'sell')) equipSell(w, p)
 }
 
 /**
@@ -298,11 +402,84 @@ function drugSell(w: ShopWorld, p: DrugShopState): void {
   }
 }
 
+/**
+ * 装备店的买入。与 {@link drugBuy} **逐句同形**，四处不同，每一处都能安静地错：
+ *
+ * 1. **循环上界是 `listTable(equipment).size()` 现算的**，不是药店那个字面量
+ *    `6`。抄成常量的话，切到行数不同的那一栏（武器 20 行、饰品 12 行）就会
+ *    漏掉后面几行 —— 而只买前六行的话它照样对。
+ * 2. **读写的是当前那一栏**（`p.rows[p.category]` 与
+ *    `w.pack.equipment[p.category]`）。切栏之后仍然读 weapon 的表现是
+ *    "在鞋子栏买到了武器"，而金钱的变化数额一样，只有 `pack` 那一列露头。
+ * 3. **被拒时 `messageremark` 也清成 `null`**（药店没有第三行）。
+ * 4. 循环上界现算，所以**不需要**药店那条"字面量 vs `.size()`"的判据；反过来
+ *    要一条判据盯住它**不是**字面量，见 `equipShop.test.ts`。
+ *
+ * 其余三处反直觉的地方与药店**一字不差**（`EquipmentShopPanel.setButton` 是
+ * `ShopPanel.setButton` 复制粘贴改的）：`Money.getCoins()<0` 是**严格小于**
+ * 所以钱正好花光算买得起；退款循环里 `temp` 是**重算**的而 `stock` 已经被减过，
+ * 买超过原存货一半就**退不干净**（原版缺陷，照抄）；`purchase` 的清零在最外面。
+ */
+function equipBuy(w: ShopWorld, p: EquipShopState): void {
+  w.music.push('Clip986.wav')
+  const rows = p.rows[p.category]
+  const held = w.pack.equipment[p.category]
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!
+    const temp = Math.min(row.purchase, row.stock)
+    held[i]! += temp
+    w.coins -= row.price * temp
+    row.stock -= temp
+  }
+  if (w.coins < 0) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]!
+      // ⚠️ 重算 —— `row.stock` 已经被上面那个循环减过了。
+      const temp = Math.min(row.purchase, row.stock)
+      held[i]! -= temp
+      w.coins += row.price * temp
+      row.stock += temp
+    }
+    p.message = '哎呀,小兄弟,你的钱不顾了,要省着点花啊'
+    p.messagePlus = null
+    p.messageRemark = null
+  }
+  for (const row of rows) row.purchase = 0
+}
+
+/**
+ * 装备店的卖出。与 {@link drugSell} 逐句同形，只差上界与读哪一栏
+ * （见 {@link equipBuy} 的第 1、2 条）。卖价同样等于买价，不打折。
+ */
+function equipSell(w: ShopWorld, p: EquipShopState): void {
+  w.music.push('Clip986.wav')
+  const rows = p.rows[p.category]
+  const held = w.pack.equipment[p.category]
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!
+    const temp = Math.min(row.purchase, held[i]!)
+    held[i]! -= temp
+    w.coins += row.price * temp
+    row.stock += temp
+    row.purchase = 0
+  }
+}
+
 /** `drugList.get(i/2-1)` 里那个 `-1`。装备店那一支是 `-4`（`base` 是 9）。 */
 const DRUG_ROW_OFFSET = 1
 
+/** `listTable(equipment).get(i/2-4)` 里那个 `-4`。 */
+const EQUIP_ROW_OFFSET = 4
+
 /**
- * 加 / 减。**这一票只做药店**；装备店归 xl-knp.8。
+ * 加 / 减。**两家店一份实现**（xl-knp.7 做药店、xl-knp.8 接上装备店）——
+ * 原版那两个 `for` 只差 `base`（3 / 9）与那个下标偏移（`i/2-1` / `i/2-4`），
+ * 循环体逐字相同。抄成两份的表现是改了一处忘了另一处，而两家店的加减在
+ * 画面上长得一模一样。
+ *
+ * ⚠️ **偏移不是从 `base` 推的，是各自现读的**：`base/2` 取整恰好等于偏移
+ * （3→1、9→4）是**巧合**，写成 `Math.floor(base/2)` 的话哪天原版某一侧
+ * 多一颗固定按钮就会安静地错位。两个常量各自标着出处。
  *
  * ⚠️ **它是第二个洞，位置不能和买卖那个合并**：原版两个面板的 `setButton`
  * 里，那个 `for(int i=3/9;i<buttonlist.size();i+=2)` 排在 `back` 分支
@@ -317,12 +494,13 @@ const DRUG_ROW_OFFSET = 1
  */
 function stepPurchaseButtons(w: ShopWorld): void {
   const p = activePanel(w)
-  // xl-knp.8：装备店只差 `base` 与读哪一栏（`i/2-4`），形状与这里相同。
-  if (p.kind !== 'drug') return
-  const base = stepBase('drug')
+  const base = stepBase(p.kind)
+  const offset = p.kind === 'drug' ? DRUG_ROW_OFFSET : EQUIP_ROW_OFFSET
+  // 当前那一栏 —— 装备店切栏之后读的必须是新那一栏（`listTable(equipment)`）。
+  const rows = currentRows(w)
   for (let i = base; i < p.buttons.length; i += 2) {
-    // 原版是 `drugList.get(i/2-1)`（整除）—— `base` 是 3，所以偏移就是 1。
-    const row = p.rows[Math.floor(i / 2) - DRUG_ROW_OFFSET]!
+    // 原版是 `drugList.get(i/2-1)` / `listTable(equipment).get(i/2-4)`（整除）。
+    const row = rows[Math.floor(i / 2) - offset]!
     if (p.buttons[i]!.isclicked) {
       w.music.push('click.wav')
       if (row.purchase > 0) row.purchase--

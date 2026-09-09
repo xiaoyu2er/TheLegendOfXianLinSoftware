@@ -6,7 +6,9 @@ import { hitCenter } from './test/hitCenter'
 import { snapshotShop } from './snapshot'
 import { DRUG_EXPENSIVE_FROM, DRUG_TRADE_ROWS, stepShop } from './step'
 import { SHOP_TRACE_NAMES, readShopTrace, replayShop, shopInputsOf } from './trace'
-import type { ShopTrace, ShopTraceTick } from './trace'
+import type { ShopTrace } from './trace'
+import { listOf, tradesOf } from './test/trades'
+import type { Trade, TradeRow } from './test/trades'
 
 /**
  * 药店那半边（xl-knp.7）的三条判据，都**不手写期望值**：
@@ -248,29 +250,8 @@ describe('药店的源码参照模型：期望值从 ShopPanel.java 现读', () 
   })
 })
 
-/** 一条真值里药店那几步成交（松开 buy / sell 的那一步），连着它的前一步。 */
-function drugTrades(trace: ShopTrace): { i: number; kind: string; prev: ShopTraceTick; cur: ShopTraceTick }[] {
-  const out: { i: number; kind: string; prev: ShopTraceTick; cur: ShopTraceTick }[] = []
-  for (const [i, cur] of trace.ticks.entries()) {
-    if (i === 0 || cur['shop'] !== 'drug') continue
-    for (const e of cur.input) {
-      if (e.e !== 'release' || !('target' in e)) continue
-      if (e.target === 'buy' || e.target === 'sell') {
-        out.push({ i, kind: e.target, prev: trace.ticks[i - 1]!, cur })
-      }
-    }
-  }
-  return out
-}
-
-interface Row {
-  readonly name: string
-  readonly price: number
-  readonly stock: number
-  readonly purchase: number
-  readonly held: number
-}
-const listOf = (tick: ShopTraceTick): readonly Row[] => tick['list'] as readonly Row[]
+/** 这一票只看药店那几笔。装备店那半边在 `equipShop.test.ts`。 */
+const drugTrades = (trace: ShopTrace): Trade[] => tradesOf(trace, 'drug')
 
 describe('真值账本：药店每一笔成交的金钱变化', () => {
   /**
@@ -407,9 +388,9 @@ describe('两条边界路径：从真值里认出来，再逐字段核状态层'
         expect(after['pack'], `${name}@${i} 背包`).toEqual(before['pack'])
         // ⚠️ `list` 只有 `purchase` 那一列该被清零，`stock` / `held` 一个不动。
         const strip = (rows: unknown) =>
-          (rows as Row[]).map(({ purchase: _p, ...rest }) => rest)
+          (rows as TradeRow[]).map(({ purchase: _p, ...rest }) => rest)
         expect(strip(after['list']), `${name}@${i} 存货与持有`).toEqual(strip(before['list']))
-        expect((after['list'] as Row[]).every((r) => r.purchase === 0)).toBe(true)
+        expect((after['list'] as TradeRow[]).every((r) => r.purchase === 0)).toBe(true)
         // 变的只有店主那句话。
         expect(after['message']).not.toEqual(before['message'])
         // 而且它就是真值里那一句 —— 这一整条因此不是"只要变了就算"。

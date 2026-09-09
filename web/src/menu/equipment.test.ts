@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
+import { createShopWorld } from '../shop/world'
 import { EQUIPMENT_LISTS, EQUIP_SLOTS, SLOT_FILE } from './equipment'
 import type { EquipSlot, EquipmentSpec } from './equipment'
 
@@ -64,6 +65,40 @@ describe('六类装备的全表对齐原版数据', () => {
     // 分母是磁盘上的行数。零行的逐行对比是恒真的 —— 文件名写错了就长这样。
     expect(lines.length, `${SLOT_FILE[slot]}.txt 一行都没读到`).toBeGreaterThan(0)
     expect(EQUIPMENT_LISTS[slot].map((e) => ({ ...e }))).toEqual(lines.map(parseLine))
+  })
+
+  /**
+   * ⚠️ **第三个消费者的对撞判据**（xl-knp.8 / xl-knp.2，与 `battle/drugs.test.ts`
+   * 里药店那一条同构、同一个理由）。
+   *
+   * 这六张表现在有三处在读：菜单的装备页、装备自选超市的六栏列表，以及这份
+   * 数据本身。xl-knp.2 明确**决定不把它抽到共享位置**（抽公共件会撞 M3 刚落
+   * 的文件，而抽到一起也防不住有人再抄一份出去），改用这一条：装备超市六栏
+   * 列出来的与这里**逐字相等**。
+   *
+   * 哪天有人给商店另抄一份价格表，或者在 `shop/world.ts` 的 `equipRows` 里
+   * 改了名字与价钱的来源，这一条立刻红 —— 而"三份分家"平时是**看不出来的**：
+   * 各自的测试都还绿着，只有改了其中一份的那一天才会露头。
+   */
+  it('⚠️ 装备超市六栏列出来的与这六张表逐字相等 —— 三处消费的是同一份', () => {
+    // 种子随便给：名字与价钱不是摇出来的，摇出来的只有存货。
+    const shop = createShopWorld({ party: ['zhang'], coins: 10000, seed: 1 }).equipment.rows
+    // ⚠️ **分母两头现数**：商店那一头的栏目名单从它自己的键现取，这一头从
+    // `EQUIP_SLOTS`。少一栏、多一栏（或者两份名单认的不是同一个集合）都露头。
+    const slots = Object.keys(shop).sort()
+    expect(slots.length).toBeGreaterThan(0)
+    expect(slots, '装备超市的栏目名单与这六张表的槽位名单不是同一个集合').toEqual(
+      [...EQUIP_SLOTS].sort(),
+    )
+    for (const slot of EQUIP_SLOTS) {
+      // 每一栏自己带分母：空栏的逐行对比是恒真的。
+      expect(shop[slot]!.length, `装备超市 ${slot} 那一栏是空的`).toBeGreaterThan(0)
+      expect(shop[slot]!.length, `装备超市 ${slot} 那一栏的行数`).toBe(EQUIPMENT_LISTS[slot].length)
+      expect(
+        shop[slot]!.map((r) => [r.name, r.price]),
+        `装备超市 ${slot} 那一栏与这张表对不上`,
+      ).toEqual(EQUIPMENT_LISTS[slot].map((e) => [e.name, e.reduceMoney]))
+    }
   })
 
   it('只有武器有使用者限制 —— 「不是这个人能用的」那条拒绝路径只可能发生在武器上', () => {
