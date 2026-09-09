@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DRUGS } from '../battle/drugs'
 import { javaSource } from '../test/javaSource'
 import { snapshotShop } from './snapshot'
-import { DRUG_EXPENSIVE_FROM, stepShop } from './step'
+import { DRUG_EXPENSIVE_FROM, DRUG_TRADE_ROWS, stepShop } from './step'
 import { SHOP_TRACE_NAMES, readShopTrace, replayShop, shopInputsOf } from './trace'
 import type { ShopTrace, ShopTraceTick } from './trace'
 
@@ -117,6 +117,9 @@ describe('药店的源码参照模型：期望值从 ShopPanel.java 现读', () 
     // 分母现数：一个都没解析出来时下面两条是恒真的。
     expect(bounds.length, 'setButton 里一个 for(int i=0;i<N;i++) 都没解析出来').toBeGreaterThan(0)
     expect(new Set(bounds), '几个循环的上界不一样').toEqual(new Set([DRUGS.length]))
+    // ⚠️ **对到常量本身**，不只对到 `DRUGS.length`：只对后者的话，把
+    // `DRUG_TRADE_ROWS` 改成 5 时这一条仍然是绿的（与 6000 那道坎同一个洞）。
+    expect(DRUG_TRADE_ROWS, 'ShopPanel.setButton 里那几个循环的上界').toBe(bounds[0])
     // ⚠️ 原版写的是字面量而不是 `drugList.size()` —— 数据多一行时原版不会跟着变。
     expect(SET_BUTTON).not.toMatch(/for\(int i=0;i<drugList\.size\(\);i\+\+\)/)
   })
@@ -247,10 +250,17 @@ describe('真值账本：药店每一笔成交的金钱变化', () => {
       const trace = readShopTrace(name)
       for (const { kind, prev, cur } of drugTrades(trace)) {
         if (kind !== 'buy') continue
-        // 有人按过加号（要买），而金钱与背包一个数都没动。
-        if (!listOf(prev).some((r) => r.purchase > 0)) continue
-        if (cur['coins'] !== prev['coins']) continue
-        if (listOf(cur).some((row, j) => row.held !== listOf(prev)[j]!.held)) continue
+        // ⚠️ 识别式要**认得出原因**：光看"金钱与背包没动"的话，店里存货
+        // 全是 0 的那种购买也会被算进来，而那是另一条路（`shop-edges` 走的）。
+        // 这里按原版的判据认：`Money.getCoins()<0`，即整单要付的钱**超过**
+        // 手上的钱 —— 而"要付多少"只算得进店里真有存货的那几件。
+        const asked = listOf(prev).reduce(
+          (sum, r) => sum + r.price * Math.min(r.purchase, r.stock),
+          0,
+        )
+        if (asked <= (prev['coins'] as number)) continue
+        expect(cur['coins'], `${name} 那一笔该被拒`).toBe(prev['coins'])
+        expect(listOf(cur).map((r) => r.held)).toEqual(listOf(prev).map((r) => r.held))
         refusals++
       }
     }
@@ -275,9 +285,14 @@ describe('两条边界路径：从真值里认出来，再逐字段核状态层'
       const snaps = snapshots(trace)
       for (const { i, kind, prev, cur } of drugTrades(trace)) {
         if (kind !== 'buy') continue
-        // 认出"被拒"那一笔：真值自己说金钱没动、而这一步之前有人按过加号。
-        const asked = listOf(prev).some((r) => r.purchase > 0)
-        if (!asked || cur['coins'] !== prev['coins']) continue
+        // 认出"被拒"那一笔，按原版的判据（`Money.getCoins()<0`）：整单要付的
+        // 钱超过手上的钱。⚠️ 不用"金钱没动"来认 —— 店里存货全是 0 的那种
+        // 购买金钱同样没动，而那是另一条路。
+        const owed = listOf(prev).reduce(
+          (sum, r) => sum + r.price * Math.min(r.purchase, r.stock),
+          0,
+        )
+        if (owed <= (prev['coins'] as number)) continue
         checked++
         const before = snaps[i - 1]!
         const after = snaps[i]!
