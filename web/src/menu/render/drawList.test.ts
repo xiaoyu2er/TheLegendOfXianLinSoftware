@@ -13,6 +13,7 @@ import {
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
 import { SCOLL_HEROES } from '../types'
 import { MENU_HERO_ORDER } from '../heroes'
+import { HEAD_H, HEAD_POS, HEAD_W } from '../layout'
 import { stepMenu } from '../step'
 import { createMenuWorld } from '../world'
 import type { MenuWorld } from '../types'
@@ -268,6 +269,37 @@ describe('奇术页的 page 层', () => {
         x: 102,
         y: 10,
       },
+    ])
+  })
+
+  it('说明的落点由招号决定 —— 玉洁的第二招落在第二行的位置上', () => {
+    // ⚠️ 只用第一招是核不到这一条的：`(招号-1)*64` 在招号 1 上恒为 0，
+    // 把那一项整个抹掉照样绿（实测：篡改矩阵的 R2 头一轮就是这么绿的）。
+    // 所以这一条特意挑一个招号 ≠ 1 的，而且要挑一个**画得出两颗按钮**的人
+    // —— 玉洁的 skillNumber 是 3，重叠那个循环之后亮两颗。
+    const w = createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true })
+    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+    stepMenu(w, [{ e: 'release', x: 619, y: 62 }])
+    const head4 = HEAD_POS.find((h) => h.hero === 4)!
+    const hx = head4.x - 15 + Math.floor(HEAD_W / 2)
+    const hy = head4.y - 6 + Math.floor(HEAD_H / 2)
+    stepMenu(w, [{ e: 'move', x: hx, y: hy }])
+    stepMenu(w, [{ e: 'press', x: hx, y: hy }])
+    stepMenu(w, [{ e: 'release', x: hx, y: hy }])
+    expect(w.panels.magicPanel.scoll!.whichHero).toBe(4)
+
+    const x = MAGIC_BUTTON_X - 15 + Math.floor(MAGIC_BUTTON_W / 2)
+    const y = magicButtonY(1) - 6 + Math.floor(MAGIC_BUTTON_H / 2)
+    stepMenu(w, [{ e: 'press', x, y }])
+    const anim = w.panels.magicPanel.magic!.current
+    expect(anim, `(${x},${y}) 没点中玉洁的第二颗技能按钮`).not.toBeNull()
+    expect(anim!.skill).toBe(2)
+
+    const texts = menuDrawList(w).filter((op) => op.layer === 'page' && op.kind === 'text')
+    const lines = MAGIC_SKILL_DESCRIPTIONS[4][1]!
+    expect(texts).toEqual([
+      { kind: 'text', layer: 'page', text: lines[0], x: 538, y: 266, size: 27, color: '#ffffff' },
+      { kind: 'text', layer: 'page', text: lines[1], x: 538, y: 300, size: 27, color: '#ffffff' },
     ])
   })
 
