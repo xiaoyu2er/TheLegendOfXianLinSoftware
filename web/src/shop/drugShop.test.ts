@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DRUGS } from '../battle/drugs'
 import { javaSource } from '../test/javaSource'
 import { snapshotShop } from './snapshot'
-import { stepShop } from './step'
+import { DRUG_EXPENSIVE_FROM, stepShop } from './step'
 import { SHOP_TRACE_NAMES, readShopTrace, replayShop, shopInputsOf } from './trace'
 import type { ShopTrace, ShopTraceTick } from './trace'
 
@@ -73,6 +73,11 @@ describe('药店的源码参照模型：期望值从 ShopPanel.java 现读', () 
     const threshold = Number(m![1]!)
     const expensive = m![2]!
     const cheap = m![3]!
+
+    // ⚠️ **先直接对那个数**：`drug.txt` 里没有一件药落在 5000 与 6000 之间，
+    // 所以下面那一圈"分档的结果"对 5000 与对 6000 完全一样 —— 篡改矩阵实测
+    // 把常数改成 5000 时它是绿的。这一行是那个洞唯一的补丁。
+    expect(DRUG_EXPENSIVE_FROM, 'ShopPanel.isMoveIn 里那道坎').toBe(threshold)
 
     // (a) 状态层逐行对源码。
     const world = replayShop(readShopTrace(SHOP_TRACE_NAMES[0]!))

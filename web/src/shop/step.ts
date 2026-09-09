@@ -141,8 +141,15 @@ function drugHoverMessage(p: DrugShopState, row: number): void {
     p.rows[row]!.price >= DRUG_EXPENSIVE_FROM ? '药是好药，但是好像有点贵呢' : '物美价廉，呵呵'
 }
 
-/** `if(drugList.get(i).getReduceMoney()>=6000)` —— 药店店主对白唯一的那道坎。 */
-const DRUG_EXPENSIVE_FROM = 6000
+/**
+ * `if(drugList.get(i).getReduceMoney()>=6000)` —— 药店店主对白唯一的那道坎。
+ *
+ * ⚠️ **导出它是为了让它可测**：`drug.txt` 里没有一件药的价钱落在 5000 与
+ * 6000 之间，所以把这个数改成 5000 之后**分档的结果一个字都不变** ——
+ * 篡改矩阵实测那一条是绿的。`drugShop.test.ts` 因此直接拿它与 GBK 源码里
+ * 现读的那个数对，而不是只对分档的结果。
+ */
+export const DRUG_EXPENSIVE_FROM = 6000
 
 /**
  * `setButton()` —— 松开鼠标之后按"哪几颗按钮还挂着 `isclicked`"派活。
