@@ -354,6 +354,50 @@ describe('滚动条：翻页这件事真的做得成', () => {
     expect(maxScroll(DRUG_LIST_VIEW, longEnough)).toBe(4)
   })
 
+  /**
+   * ⚠️ **这一条用的是一份编出来的存货，不是真值。**
+   *
+   * 理由是实测出来的：把物品页那个循环的下界从 `offset` 改回 `0`（也就是
+   * 「卷上去的行照样点得中」这个错），**整套判据是绿的** —— 因为原版数据下
+   * 药品只有 6 种、框里放得下 11 行，`offset` 恒为 0，两种写法逐字等价。
+   * 这是「这一场观测不到」，不是判据失灵：`menu-scroll` 那份真值验的是物品页
+   * **装得下**的那一侧，它验不了翻页。
+   *
+   * 所以这里编一份长到撑过框的存货，把那条路真的走一遍。**编的是输入不是
+   * 期望值**：期望值仍然是"第 k 个格子选中的是第 k+offset 行"，从列表自己算。
+   * 药品表（`sources/Shop/drug.txt`）长出第 12 行的那天，这条路在真实数据上
+   * 就活了。
+   */
+  it('物品页翻起页来，第 k 个格子选中的是第 k+offset 种药（编的存货）', () => {
+    const w = replayMenu(trace)
+    w.panel = 'thingPanel'
+    const d = drugOf(w)
+    const rows = viewportRows(DRUG_LIST_VIEW)
+    // 撑过框 4 行。名字只在这一层当标识用（选中的是"哪一瓶"由名字决定）。
+    w.drugPack = Array.from({ length: rows + 4 }, (_, i) => ({ name: `试药${i}`, count: 1 }))
+    const list = visibleDrugs(w.drugPack)
+    expect(list.length).toBeGreaterThan(rows)
+    const offset = maxScroll(DRUG_LIST_VIEW, list.length)
+    expect(offset).toBe(4)
+
+    const slotY = (slot: number, at: number) =>
+      rowBandTop(DRUG_LIST_VIEW, slot + at, at) + Math.floor(DRUG_LIST_VIEW.rowHeight / 2)
+    // 没翻页：第 0 个格子选中第 0 种。
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: slotY(0, 0) }])
+    expect(d.currentDrug).toBe(list[0]!.name)
+    // 翻到底：同一个格子选中的是第 offset 种。
+    stepMenu(w, [
+      { e: 'wheel', x: DRUG_LIST_VIEW.box.left + 10, y: DRUG_LIST_VIEW.box.top + 10, rows: offset },
+    ])
+    expect(d.scroll).toBe(offset)
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: slotY(0, offset) }])
+    expect(d.currentDrug).toBe(list[offset]!.name)
+    // 卷到框上面去的那几行点不中。
+    const before = d.currentDrug
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: rowBandTop(DRUG_LIST_VIEW, 0, offset) + 1 }])
+    expect(d.currentDrug, '卷上去的行还点得中').toBe(before)
+  })
+
   it('滚轮只送给当前显示的那一页', () => {
     const w = equipWorld()
     w.panel = 'thingPanel'
