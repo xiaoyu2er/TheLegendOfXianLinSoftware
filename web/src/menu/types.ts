@@ -85,6 +85,28 @@ export interface ScollState {
   hero4: MenuButtonState
 }
 
+/** 一种药在包里的存货 —— `shop.Drug` 的 `name` 与 `numberGOT`。 */
+export interface DrugStock {
+  readonly name: string
+  count: number
+}
+
+/**
+ * 物品页自己那部分（`menu.DrugPanel`）。**只有 `thingPanel` 有**，其余三页
+ * 是 `null`。存货不在这里 —— `DrugPack.drugList` 是 `static`，挂在
+ * `MenuWorld.drugPack` 上（`drugPanel.ts` 文件头注）。
+ */
+export interface DrugPanelState {
+  /**
+   * `DrugPanel.currentDrug` 的**名字**（没选中是 `null`）。存的是名字不是
+   * 对象：原版那个引用指向 `DrugPack.drugList` 里的元素，数量减到 0 时它被
+   * 置回 `null`，而"哪一瓶"这件事本来就只由名字决定。
+   */
+  currentDrug: string | null
+  /** `use_button`。⚠️ 开局 `isDraw` 是 **No**，构造函数最后一句按回去的。 */
+  useButton: MenuButtonState
+}
+
 /** 一个子面板（`menu.FatherPanel`）。 */
 export interface MenuSubPanel {
   readonly name: MenuPanelName
@@ -95,6 +117,8 @@ export interface MenuSubPanel {
   scoll: ScollState | null
   /** 天书页那一排按钮。**只有 `funcPanel` 有**，其余三页是 `null`。 */
   funcButtons: FuncButtonsState | null
+  /** 物品页那一份。**只有 `thingPanel` 有**，其余三页是 `null`。 */
+  drug: DrugPanelState | null
 }
 
 export interface MenuWorld {
@@ -106,6 +130,12 @@ export interface MenuWorld {
   panels: Readonly<Record<MenuPanelName, MenuSubPanel>>
   tabs: Readonly<Record<MenuTabKey, MenuButtonState>>
   heroes: MenuHero[]
+  /**
+   * `shop.DrugPack.drugList` —— **六种药的存货，全局一份**（那个字段是
+   * `static`）。画得出来的清单是它按 `count>0` 过滤出来的，见
+   * `drugPanel.ts` 的 `visibleDrugs`。
+   */
+  drugPack: DrugStock[]
   /**
    * `SaveAndLoad.zhang/lu/wen`：出战名单。卷轴上那三颗头像按钮画不画得出来
    * 由它决定（`Scoll.drawScoll`），**而它是剧本回显，不是状态**。

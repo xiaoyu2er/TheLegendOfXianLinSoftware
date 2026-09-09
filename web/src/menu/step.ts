@@ -1,5 +1,6 @@
 import { moveInButton, pressButton, releaseButton } from './buttons'
 import { funcCheckPressed, funcCheckReleased } from './funcButtons'
+import { drugPanelMoveIn, drugPanelPressed, drugPanelReleased } from './drugPanel'
 import { MENU_PANEL_ORDER, PANEL_OF_TAB, TAB_PRIORITY } from './world'
 import { SCOLL_HEROES } from './types'
 import type { MenuSubPanel, MenuWorld } from './types'
@@ -85,6 +86,7 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
     for (const { field } of SCOLL_HEROES) releaseButton(p.scoll[field], p.currentX, p.currentY)
   }
   if (p.funcButtons) funcCheckReleased(p.funcButtons, p.currentX, p.currentY)
+  drugPanelReleased(p)
 }
 
 function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
@@ -95,6 +97,7 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
   p.currentX = x
   p.currentY = y
   scollCheckMoveIn(w, p)
+  drugPanelMoveIn(w, p)
 }
 
 /**
@@ -124,14 +127,15 @@ function commandCheckPressed(w: MenuWorld): void {
  * `FatherPanel.checkAllButtonPressed` 里**四页共有**的那一句 ——
  * `scoll.checkPressed()`（天书页没有卷轴，所以它那一支整个没有）。
  *
- * 各页自己那部分（装备的六个分类与使用 / 弃用、物品的使用、奇术的技能按钮、
- * 天书的五颗）**不在这一票里**，见 `menuTrace.test.ts` 那张按字段组的登记表：
- * equip → xl-6lo.9、drug → xl-6lo.10、magic → xl-6lo.11、func → xl-6lo.12。
+ * 各页自己那部分按页分票：物品页那一段（「使用」按钮与喝药）是 xl-6lo.10，
+ * 见 `drugPanel.ts`；装备的六个分类与使用 / 弃用是 xl-6lo.9、奇术的技能按钮
+ * 是 xl-6lo.11、天书的五颗是 xl-6lo.12（登记表在 `menuTrace.test.ts`）。
  */
 function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   scollCheckPressed(w, p)
   // 天书页没有卷轴，它的 `checkAllButtonPressed` 只有 `fb.checkPressed()` 一句。
   if (p.funcButtons) funcCheckPressed(p.funcButtons, p.currentX, p.currentY, w.music)
+  drugPanelPressed(w, p)
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */

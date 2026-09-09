@@ -9,9 +9,12 @@ import {
   mouseId,
   scollId,
   tabId,
+  useButtonId,
 } from './assets'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
 import { SCOLL_HEROES } from '../types'
+import { DRUG_LIST_X, DRUG_LIST_Y, DRUG_ROW_H, heroIndexOnScoll, visibleDrugs } from '../drugPanel'
+import { DRUGS } from '../../battle/drugs'
 import type { MenuSubPanel, MenuWorld } from '../types'
 
 /**
@@ -32,11 +35,16 @@ import type { MenuSubPanel, MenuWorld } from '../types'
  *     drawThisPanel(bufferedGraphics);                           ← page（各页自己的）
  *     mouse.drawMouse(bufferedGraphics);                         ← mouse
  *
- * `special` 层与 `page` 层的三页（物品 / 装备 / 奇术）**这一票是空的**：那是
- * 各页各自的内容，归 xl-6lo.10 / .9 / .11。空着而不是抛 —— 骨架这一票的验收
- * 就是"四页的骨架画得出来"，抛会让它一帧都画不出来。⚠️ 代价是「这一页还没做」
- * 与「这一页本来就没有内容」在画面上长得一样，而分开它们的是逐帧比对那张表
- * （xl-6lo.14 接）。
+ * `special` 层这一层今天一条 op 都不出。⚠️ **四页里只有三页的
+ * `drawSpecialImage()` 真是空的**（物品 / 装备 / 奇术）；`FuncPanel` 那个不是
+ * —— 它贴 `sources/菜单/主人公4人2.png`，而**那个文件根本不在那个路径下**
+ * （实际在 `天书/` 下，原版已知缺陷 **xl-a7m**），所以原版自己也画不出来。
+ * 两件事分开记：三页是真空的，天书页那一张欠在 xl-a7m 上。
+ * `page` 层里**物品页已经画上了**
+ * （xl-6lo.10），装备页与奇术页仍空着，归 xl-6lo.9 / .11。空着而不是抛 ——
+ * 骨架那一票的验收就是"四页的骨架画得出来"，抛会让它一帧都画不出来。
+ * ⚠️ 代价是「这一页还没做」与「这一页本来就没有内容」在画面上长得一样，
+ * 而分开它们的是逐帧比对那张表（xl-6lo.14 接）。
  *
  * **天书页那一层是例外，必须画**：出菜单唯一那条路（「返回」）就在上面，而
  * 菜单里的 ESC 是死代码 —— 不画等于玩家出不去。`func` 那一组的**状态**仍然
@@ -75,6 +83,27 @@ const TASK_TEXT_Y = TAB_Y - 13
 const TASK_FONT_SIZE = 25
 const TASK_COLOR = '#ffffff'
 
+/**
+ * `DrugPanel` 里那几个绘制常量（几何那几个在 `drugPanel.ts`，与状态层共用）。
+ *
+ * ⚠️ **字号 24 那一句在 `if(currentDrug!=null)` 里面**：没选中药的时候，
+ * 那三行说明文字沿用上面清单的 26 号字。原版就是这样，两个字号必须分开走。
+ */
+const DRUG_LIST_FONT_SIZE = 26
+const DRUG_COUNT_DX = 180
+const DRUG_TEXT_COLOR = '#ffffff'
+const DRUG_MESSAGE_X = 510
+const DRUG_MESSAGE_Y = 586
+const DRUG_MESSAGE2_DX = 105
+const DRUG_MESSAGE3_DX = 265
+const DRUG_MESSAGE_FONT_SIZE = 24
+/** `x_value` / `y_value`，第二行 `y_value+45`。`Color.blue`、20 号字。 */
+const VALUE_BAR_X = 107
+const VALUE_BAR_Y = 320
+const VALUE_BAR_DY = 45
+const VALUE_BAR_FONT_SIZE = 20
+const VALUE_BAR_COLOR = '#0000ff'
+
 /** `Scoll.drawScoll` 里那几个：`x_level=x_head+90`、`y_level=y_scoll+70`。 */
 const LEVEL_X = HEAD_POS[0]!.x + 90
 const LEVEL_Y = SCOLL_Y + 70
@@ -96,7 +125,8 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
 
   ops.push({ kind: 'image', layer: 'background', id: MENU_BACKGROUND[w.panel], x: 0, y: 0 })
 
-  // `drawSpecialImage` —— 四页各自的，骨架这一票空着（见文件头注）。
+  // `drawSpecialImage` —— 四页各自的。三页真是空的，天书页那一张是 xl-a7m
+  // 的缺陷（见文件头注）。
 
   // `Command.drawCommand`
   ops.push({ kind: 'image', layer: 'command', id: COMMAND_BAR, x: 0, y: TAB_Y })
@@ -142,10 +172,11 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
 
   // `drawThisPanel` —— 四页各自的。
   //
-  // 物品 / 装备 / 奇术三页这一票空着（归 xl-6lo.10 / .9 / .11）；**天书页
-  // 不能空**：出菜单唯一那条路（「返回」）就是这一层画出来的，空着的话
-  // ESC 又是死代码，玩家一点出去的办法都没有。所以这一页照
-  // `FuncButtons.drawFuncButtons()` 画：先五颗主按钮，再四组子按钮。
+  // 装备页与奇术页仍空着（归 xl-6lo.9 / .11）；**天书页不能空**：出菜单唯一
+  // 那条路（「返回」）就是这一层画出来的，空着的话 ESC 又是死代码，玩家一点
+  // 出去的办法都没有。所以那一页照 `FuncButtons.drawFuncButtons()` 画：
+  // 先五颗主按钮，再四组子按钮。物品页见下面的 `drawDrugPanel`。
+  if (panel.drug) drawDrugPanel(ops, w, panel)
   if (panel.funcButtons) {
     const fb = panel.funcButtons
     for (const key of FUNC_MAIN_ORDER) {
@@ -162,6 +193,108 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
 
   ops.push({ kind: 'image', layer: 'mouse', id: mouseId(panel.mouse.frame), x: panel.mouse.x, y: panel.mouse.y })
   return ops
+}
+
+/**
+ * `DrugPanel.drawThisPanel()`，三句、按序：
+ *
+ *     use_button.drawButton(g);
+ *     drawEquipment(g);
+ *     drawValueBar(g);
+ *
+ * ⚠️ **少一样东西：选中那瓶药的插图。** 原版 `drawEquipment` 里那句
+ * `g.drawImage(currentDrug.getPicture(), x_picture, y_picture, this)` 取的是
+ * `sources/Shop/药品/回复类/<名字>.png` —— **那是商店素材，不在 `sources/菜单/`
+ * 下**，整个烘焙管线（`menuAssets.ts` 那条边界、`bake.ts` 的现扫分母、
+ * `bakeStamp` 的指纹）都以 `sources/菜单/` 为根。给它开一条新的素材根是另一
+ * 张票的活（**xl-6lo.15**），不是顺手加一行。这里**不画一张占位图** ——
+ * 占位图会让"图没接上"与"原版这里本来就是空的"长得一样。
+ */
+function drawDrugPanel(ops: MenuDrawOp[], w: MenuWorld, panel: MenuSubPanel): void {
+  const d = panel.drug
+  if (!d) return
+
+  // `use_button.drawButton(g)` —— `MenuButton.drawButton` 里 `isDraw==No` 那
+  // 一支是个空的 if 块，也就是不画。
+  if (d.useButton.isDraw) {
+    ops.push({
+      kind: 'image',
+      layer: 'page',
+      id: useButtonId(d.useButton.image),
+      x: d.useButton.x,
+      y: d.useButton.y,
+    })
+  }
+
+  // `drawEquipment`：清单。名字画在 x，数量画在 x+180，每行下移 32。
+  let y = DRUG_LIST_Y
+  for (const stock of visibleDrugs(w.drugPack)) {
+    ops.push({
+      kind: 'text',
+      layer: 'page',
+      text: stock.name,
+      x: DRUG_LIST_X,
+      y,
+      size: DRUG_LIST_FONT_SIZE,
+      color: DRUG_TEXT_COLOR,
+    })
+    ops.push({
+      kind: 'text',
+      layer: 'page',
+      text: String(stock.count),
+      x: DRUG_LIST_X + DRUG_COUNT_DX,
+      y,
+      size: DRUG_LIST_FONT_SIZE,
+      color: DRUG_TEXT_COLOR,
+    })
+    y += DRUG_ROW_H
+  }
+
+  // 三行说明。⚠️ 字号跟着"有没有选中"走，见上面那两个常量的注释。
+  const spec = d.currentDrug === null ? null : DRUGS.find((x) => x.name === d.currentDrug)
+  if (d.currentDrug !== null && !spec) throw new Error(`药品表里没有 ${d.currentDrug}`)
+  const messages = spec
+    ? [spec.name, `: 生命 +${spec.addHp}`, `魔法 +${spec.addMp}`]
+    : ['没药了...', '快去药店买点吧~', '']
+  const size = spec ? DRUG_MESSAGE_FONT_SIZE : DRUG_LIST_FONT_SIZE
+  const xs = [DRUG_MESSAGE_X, DRUG_MESSAGE_X + DRUG_MESSAGE2_DX, DRUG_MESSAGE_X + DRUG_MESSAGE3_DX]
+  for (const [i, text] of messages.entries()) {
+    ops.push({
+      kind: 'text',
+      layer: 'page',
+      text,
+      x: xs[i]!,
+      y: DRUG_MESSAGE_Y,
+      size,
+      color: DRUG_TEXT_COLOR,
+    })
+  }
+
+  // `drawValueBar`：卷轴上选中那个人的血与灵力。⚠️ 读的是**物品页自己那个
+  // `Scoll`**，与状态层同一个理由 —— 所以这里调的就是状态层那个函数，不再
+  // 抄一份（/code-review 的标准轴：Duplicated Code）。
+  //
+  // ⚠️ **那三句 `hero1/2/4.refreshValue()` 这一层有意不抄**：原版的
+  // `drawValueBar()` 头上有它们，也就是**画一帧会改状态**。这一层是纯函数
+  // （`drawScoll` 那个 isDraw 副作用也是同样处理的，见上面卷轴那一段），
+  // 而喝药那条路上的三次刷新已经在 `drinkDrug` 里了。
+  const index = heroIndexOnScoll(panel)
+  const hero = w.heroes[index]
+  if (!hero) throw new Error(`队伍里没有第 ${index} 个人`)
+  for (const [i, text] of [
+    `生命值:${hero.hp}/${hero.hpMax}`,
+    `魔法值:${hero.mp}/${hero.mpMax}`,
+  ].entries()) {
+    ops.push({
+      kind: 'text',
+      layer: 'page',
+      text,
+      x: VALUE_BAR_X,
+      y: VALUE_BAR_Y + i * VALUE_BAR_DY,
+      size: VALUE_BAR_FONT_SIZE,
+      color: VALUE_BAR_COLOR,
+    })
+  }
 }
 
 /**

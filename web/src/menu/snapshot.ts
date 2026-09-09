@@ -1,3 +1,4 @@
+import { visibleDrugs } from './drugPanel'
 import { MENU_PANEL_ORDER } from './world'
 import type { MenuWorld } from './types'
 
@@ -42,6 +43,28 @@ export function snapshotMenu(w: MenuWorld): Record<string, unknown> {
       skillDefense: h.skillDefense,
       skillNumber: h.skillNumber,
     })),
+    drug: drugSnapshot(w),
     mouse,
+  }
+}
+
+/**
+ * 真值 `drug` 那一列（`MenuDriver.drugJson`）：
+ *
+ * - `list` —— **存货里 `count>0` 的那几种，按药品表的行序**。它读的是
+ *   `DrugPack.drugList`（全局那一份），不是物品页缓存的 `list` 字段。
+ * - `selected` —— 选中那瓶在**上面那份过滤后的清单**里的下标；没选中是 `-1`。
+ *   ⚠️ 不是在六种药那张全表里的下标，喝空了别的药之后两者会分岔。
+ * - `useDraw` —— `use_button.isDraw==1`。
+ */
+function drugSnapshot(w: MenuWorld): Record<string, unknown> {
+  const list = visibleDrugs(w.drugPack)
+  const d = w.panels.thingPanel.drug
+  const current = d?.currentDrug ?? null
+  return {
+    list: list.map((s) => ({ name: s.name, count: s.count })),
+    selected: current === null ? -1 : list.findIndex((s) => s.name === current),
+    selectedName: current,
+    useDraw: d?.useButton.isDraw === true,
   }
 }
