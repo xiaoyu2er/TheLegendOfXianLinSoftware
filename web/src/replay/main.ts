@@ -25,9 +25,12 @@ import { createMenuRenderer } from '../menu/render/menuRenderer'
 import type { MenuRenderer } from '../menu/render/menuRenderer'
 import { replayMenuSetup } from '../menu/replay'
 import { stepMenu } from '../menu/step'
-import type { MenuInput } from '../menu/step'
+// **类型从 `menu/trace.ts` 取，不在这里手抄一份。** 那个模块转手 `node:fs`，
+// 但 `import type` 会被 TypeScript 整个擦掉、一行运行时代码都不产生（战斗那
+// 一侧的 `BattleTrace` 走的是同一条路）。手抄一份子集的话，真值加一列时这里
+// 不会响 —— 那正是"名单抄两份迟早分家"的类型版。
+import type { MenuTrace } from '../menu/trace'
 import type { MenuWorld } from '../menu/types'
-import type { MenuConfig } from '../menu/world'
 import { resolveAsset } from '../assets/resolve'
 import { pickAssembly } from './drivers'
 import type { ImplementedDriver } from './implemented'
@@ -325,23 +328,8 @@ const battleAssembly: Assembly = {
 
 /* ===================== 菜单（xl-6lo.14） ===================== */
 
-interface MenuReplayTick {
-  readonly t: number
-  readonly input: readonly MenuInput[]
-}
-
-interface MenuReplayTrace {
-  readonly driver: string
-  readonly script: {
-    readonly name: string
-    readonly setup: MenuConfig
-  }
-  readonly tickCount: number
-  readonly ticks: readonly MenuReplayTick[]
-}
-
 let menuRenderer: MenuRenderer | null = null
-let menuTrace: MenuReplayTrace | null = null
+let menuTrace: MenuTrace | null = null
 let menuWorld: MenuWorld | null = null
 let menuNext = 0
 /** 上一次真的载过的那份贴图名单（`menuTextureIds` 的 join）。 */
@@ -379,7 +367,7 @@ async function loadMenuFrame(world: MenuWorld): Promise<void> {
 
 const menuAssembly: Assembly = {
   async load(traceJson: string) {
-    const parsed = JSON.parse(traceJson) as MenuReplayTrace
+    const parsed = JSON.parse(traceJson) as MenuTrace
     menuRenderer ??= await createMenuRenderer(hostFor('menu'))
     activate('menu')
     const world = replayMenuSetup(parsed.script.setup)

@@ -260,6 +260,50 @@ describe('装备页画出来的那几段', () => {
     ])
   })
 
+  /**
+   * **「弃用」的画面比状态晚一帧。**
+   *
+   * 原版 `EquipPanel.drawThisPanel()` 先把 `useButtonList` 那两颗画掉，之后才
+   * 在 `drawHeroStuff()` 里改 `abandon_button.isDraw`（同一个文件里一处画、
+   * 一处改，中间隔着 `drawEquipment` 与 `drawWarning`）。于是「弃用」出现或
+   * 消失的那一帧，画面用的是**上一帧留下的值**；而行为真值是 paint 之后抓的，
+   * 记的是新值。两者本来就不是同一个东西。
+   *
+   * 这条判据是 xl-6lo.14 补的，而它是**逐帧比对先发现的**：状态层
+   * （`menuTrace.test.ts`）45 个格子全绿，跨端比对却在 `menu-scroll` 的第 2 / 5
+   * 帧各红 4800 个像素 —— 正好是 (355,430)-(474,469) 那颗 120×40 的按钮。
+   * 判据留在这里而不是只靠流水线：流水线要 Java + Chrome，不进 CI。
+   */
+  it('「弃用」画面比状态晚一帧 —— 消失与出现都要到下一帧', () => {
+    const item = EQUIPMENT_LISTS.weapon.find((i) => i.user === 0)!
+    const w = world([{ name: item.name, count: 1 }])
+    const e = w.panels.equipPanel.equip!
+    const stems = () => pageOps(w).flatMap((op) => (op.kind === 'image' ? [stem(op.id)] : []))
+    const drawn = () => stems().some((id) => id.startsWith(buttonStem('abandon')))
+
+    // 开局身上有武器（张小凡自带），所以「弃用」既是 isDraw 又画得出来。
+    expect([e.heroEquipment !== null, e.abandon.isDraw, drawn()]).toEqual([true, true, true])
+
+    // 弃用发生在**按下**那一步（`checkAllButtonPressed` 里那句 `isIsclicked()`）。
+    pressButtonOnly(w, e.abandon)
+    expect(e.heroEquipment, '这一步该把身上那件脱下来').toBeNull()
+    expect(e.abandon.isDraw, '状态：这一步就该关掉').toBe(false)
+    expect(drawn(), '画面：这一帧还该画着 —— 原版是在画完之后才关的').toBe(true)
+
+    // 下一帧（松开那一步）才真的不见。
+    releaseButtonOnly(w, e.abandon)
+    expect(drawn()).toBe(false)
+
+    // 反过来也一样：穿上那一帧还没有，下一帧才有。
+    selectEquipRow(w, item.name)
+    pressButtonOnly(w, e.use)
+    expect(e.heroEquipment, '这一步该穿上').toBe(item.name)
+    expect(e.abandon.isDraw, '状态：这一步就该打开').toBe(true)
+    expect(drawn(), '画面：这一帧还不该有').toBe(false)
+    releaseButtonOnly(w, e.use)
+    expect(drawn()).toBe(true)
+  })
+
   it('背包列表：名字与数量各一行，行距 22', () => {
     const item = EQUIPMENT_LISTS.weapon.find((i) => i.user === 0)!
     const w = world([

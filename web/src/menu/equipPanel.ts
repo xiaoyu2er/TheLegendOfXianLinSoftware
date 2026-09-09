@@ -107,6 +107,17 @@ export interface EquipPanelState {
    * ⚠️ 「使用」那一颗**没有**这个问题：改它 `isDraw` 的 `isMoveIn()` 是
    * `checkAllButtonMoveIn()` 调的，跑在事件里、paint 之前。唯一在 paint
    * **中途**改按钮的只有 `drawHeroStuff()` 这一处。
+   *
+   * ## 为什么不像战斗那样单开一层 `PaintState`
+   *
+   * 战斗那边把"只有画面看得见、状态层不记"的东西收进 `battle/render/paint.ts`
+   * 的 `PaintState`，因为那里有**四样**且都带惯性或自由相位（血条每拍走 1 px、
+   * 怒气与游标的轮播、按钮三态图）。菜单这边到今天**只有这一个布尔**，为它
+   * 铺一层 `MenuPaintState` + `stepMenuWithPaint` 是 Speculative Generality。
+   * 再有第二样时就该搬过去 —— 那时这个字段是现成的搬运对象。
+   *
+   * 它不进 `snapshotEquip()`（那个函数逐字段列举，不 spread），所以
+   * `menuTrace.test.ts` 的 `equip` 那一组不会多出一列没人核的字段。
    */
   abandonDrawn: boolean
 }

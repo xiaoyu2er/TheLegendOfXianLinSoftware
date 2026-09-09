@@ -16,7 +16,7 @@ import type { MenuDrawOp } from './drawList'
  * 全在 `drawList.ts` 那个纯函数里，进得了 `pnpm test`；这里只剩"把一张纹理贴
  * 到 (x,y)"这件在浏览器里才做得成的事，因此**没有测试缝** —— 给它硬加缝只会
  * 得到一堆断言"我调用了 setTexture"的实现细节测试。真实像素由跨端逐帧比对
- * 兜底，而 menu 那条流水线由 **xl-6lo.14** 接上。
+ * 兜底，而 menu 那条流水线**已经由 xl-6lo.14 接上了**。
  *
  * **不与战斗那一份抽公共件**（xl-6lo.2 §模块边界）：两边今天确实像，但都还没
  * 长成，现在抽是在猜共性，而且会让 M3 每张票都去动战斗模块、并行度归零。
@@ -55,8 +55,10 @@ export interface MenuRenderer {
  * ⚠️ **它在闭包外面，是为了有一条缝**。这个文件其余部分是"把纹理贴到 (x,y)"
  * —— 没有测试缝，由跨端逐帧比对兜底（见文件头注）。但**分流是个决定**，
  * 不是贴图：把 `battle:` 那一支错接到主包上，表现是奇术页动画 404，而
- * 逐帧比对今天还没接 menu（xl-6lo.14），一个判据都碰不到它。实测这条篡改
- * 在闭包里时是**绿的**。判据在 `menuRenderer.test.ts`。
+ * 逐帧比对当时还没接 menu，一个判据都碰不到它。实测这条篡改在闭包里时是
+ * **绿的**。判据在 `menuRenderer.test.ts` —— 它仍然是这一条唯一的守卫，
+ * xl-6lo.14 把流水线接上之后也一样：`menu-magic` 那 45 帧奇术页真的取到了图，
+ * 但"404 之后画不出来"在浏览器里是抛异常、不是差异像素。
  */
 export async function menuAssetUrl(id: AssetId): Promise<string> {
   const battle = id.startsWith('battle:') ? id.slice('battle:'.length) : null

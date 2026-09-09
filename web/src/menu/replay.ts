@@ -18,6 +18,11 @@ import type { MenuWorld } from './types'
  * 那是这条流水线最不能有的形状。
  */
 export function replayMenuSetup(setup: MenuConfig): MenuWorld {
+  // ⚠️ **四个字段是挑出来的，不是把 `setup` 整个转手。** `MenuConfig` 还有
+  // `live`（队伍此刻的等级与血）与 `audio`（两个音频开关）—— 回放真值时那两样
+  // **一个都不能喂**：它们是状态，喂进去等于让真值给自己打分。剧本里今天没有
+  // 这两个键，所以整个转手今天结果相同；哪天剧本多写一个 `live`，整个转手会
+  // 悄悄把它接上，而那正是这一层唯一要挡住的事。
   return createMenuWorld({
     party: setup.party,
     fullHeal: setup.fullHeal,

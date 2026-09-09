@@ -417,12 +417,18 @@ web 侧还装配不出来的剧本 4 条 —— 这一趟它们一帧都没比�
 
 ### 篡改验证（2026-09-06 实测，每一条都真跑过）
 
+⚠️ **下面这张表拿 menu 当"还没实现的驱动器"举例，而 xl-6lo.14 之后 menu 已经
+实现了 —— 表里前两行与最后一行照原样重跑是复现不出来的**（注入点变成了仓库的
+真实状态）。判据本身没变，换 `shop` 举例即可：`shop-trade` 是今天唯一一条
+装配不出来的剧本。两个方向在 xl-6lo.14 那天各自真跑过一次，读数附在每行后面。
+
 | 伪造的假象 | 怎么造 | 结果 |
 |---|---|---|
-| 「菜单已经实现了」 | 往 `IMPLEMENTED_DRIVERS` 里加 `'menu'` | `pnpm typecheck` 报 **TS2741**（装配表少了 `menu` 这个键）；`unassembled.test.ts` 同时红两条，报「menu-equip 的表态还写着 unassembled，可取图页已经装得出 driver=menu 了」 |
-| 「这份真值是场景导出的」 | 把 `tools/traces/compare/menu-equip/java/frames.json` 的判别字段改成 `"scene"` | 退出码 **2**，`menu-equip 的表态还写着 unassembled…可取图页已经装得出 driver=scene 了` |
-| 同上，改的是 trace 那一头 | 把 `…/java/trace.json` 的判别字段改成 `"battle"` | 退出码 **2**，`帧清单说 driver=scene，旁边那份 trace.json 说 driver=battle` |
-| 「面板做好了」 | 把 `expected.ts` 里 menu-equip 的表态改成 `match` 或 `gap` | 抛，`装配不出 driver=menu` |
+| 「商店已经实现了」（xl-6lo.14 实测） | 往 `IMPLEMENTED_DRIVERS` 里加 `'shop'` | `pnpm typecheck` 报 **TS2741**（`Property 'shop' is missing in type '{ scene; battle; menu }'`）；`unassembled.test.ts` 报「shop-trade 的表态还写着 unassembled（一帧都比不了），可取图页已经装得出 driver=shop 了」 |
+| 「菜单其实还没实现」（xl-6lo.14 实测的反向） | 把 `'menu'` 从 `IMPLEMENTED_DRIVERS` 里删掉 | `pnpm typecheck` **3 条 TS 错**；`unassembled.test.ts` 红，报「menu-equip 的表态是 gap，但取图页装配不出 driver=menu（取图页实现了：battle、scene）」 |
+| 「表态忘了跟着改」（xl-6lo.14 实测） | 把 `expected.ts` 里 `menu-func` 的表态改回 `unassembled` | `unassembled.test.ts` 红两条，报「menu-func 的表态还写着 unassembled（一帧都比不了），可取图页已经装得出 driver=menu 了」 |
+| 「这份真值是场景导出的」 | 把 `tools/traces/compare/shop-trade/java/frames.json` 的判别字段改成 `"scene"` | 退出码 **2**，表态与判别名对不上 |
+| 同上，改的是 trace 那一头 | 把 `…/java/trace.json` 的判别字段改成 `"battle"` | 退出码 **2**，`帧清单说 driver=…，旁边那份 trace.json 说 driver=battle` |
 
 **改判别字段必须绕开 `tools/compare-frames.sh` 直接跑
 `pnpm exec vite-node scripts/compare.ts -- <剧本> --skip-capture`** —— 那个外壳
@@ -433,19 +439,21 @@ web 侧还装配不出来的剧本 4 条 —— 这一趟它们一帧都没比�
 `--self-check` 在没有可比剧本时原先空循环全过（现在硬失败）；`frames.json` 缺
 `driver` 字段时原先一路走到装配才炸（现在读清单时就报）。
 
-### 接线不在 xl-1vu 那张票里，战斗那一支已经接上了（xl-rh9.9）
+### 接线不在 xl-1vu 那张票里，战斗与菜单两支都已经接上了（xl-rh9.9 / xl-6lo.14）
 
 **非场景驱动器的跨端逐帧比对，要等各自的里程碑在 web 侧把面板建起来才接得上：**
-战斗 **M2 / xl-rh9.9（已接）**、菜单 **M3 / xl-6lo**、商店 **M4 / xl-knp**。
+战斗 **M2 / xl-rh9.9（已接）**、菜单 **M3 / xl-6lo.14（已接）**、商店 **M4 / xl-knp**。
 `xl-1vu` 这个 SPEC **不做接线** —— 它交付的是真值与"装配不出来必须响亮"这条
 判据。面板做好之后要动的是两处：`implemented.ts` 里加判别名（装配表跟着补，
 不补就编译不过），以及 `expected.ts` 里那条剧本的表态换成 `match` 或**真量出来的**
 `gap`；只改一处的话上面那套对撞会红。
 
-上面那一段实测输出是 xl-1vu.7 当天的（2026-09-06），**战斗那四行已经过期**：
-`battle-min` / `battle-em3-box` / 三条打输剧本现在都真的在比。今天照原样重跑
-`tools/compare-frames.sh --self-check`，装不出来的只剩 `menu-equip`、
-`menu-magic`、`shop-trade` 三条。
+上面那一段实测输出是 xl-1vu.7 当天的（2026-09-06），**战斗与菜单那几行都已经
+过期**：`battle-min` / `battle-em3-box` / 三条打输剧本、以及五条 `menu-*`
+现在都真的在比。**别照抄"还剩几条装不出来"这个数** —— 它已经过期过两次；
+照原样重跑 `tools/compare-frames.sh --self-check`，报告最后那一段自己会数
+（2026-09-09 现数剧本的 `driver` 字段：24 条里只有 `shop-trade` 一条是 `shop`，
+也就是只剩它一条装不出来 —— 这是从剧本数出来的，不是跑一整轮读来的）。
 
 ## 战斗接上之后量到的（2026-09-07，xl-rh9.9）
 
