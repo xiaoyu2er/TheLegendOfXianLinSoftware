@@ -21,7 +21,7 @@
 | `scene` | 一个 tick | `dorm-walk` `bigmap-walk` `dorm-intro` `dorm-exit` `milestone` | `SceneDriver.java` |
 | `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `tools/traces/scripts/battle-*.json`（这一列原先是写死的五个名字，xl-rh9.11 加了一份、xl-rh9.14 又加了六份都没跟上 —— 名单在磁盘上，别再抄一份） | `BattleDriver.java` |
 | `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
-| `shop` | 一次输入事件 | `shop-trade` | `ShopDriver.java` |
+| `shop` | 一次输入事件 | `shop-trade` `shop-categories` `shop-edges` | `ShopDriver.java` |
 
 **「剧本」这一列里写出来的名字是 2026-09-07 的读数，不是名单。** 权威的名单在
 磁盘上，每份剧本自报 `driver`（缺省算 `scene`）；现数一遍：
@@ -1020,3 +1020,5 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `battle-menus` | 战斗（`driver` = `battle`） | 点得下去的「技」与「物」（xl-rh9.11）：与 `battle-min` 同一场遭遇、换一颗种子。文敏那一回合先点「物」翻药品菜单（存货全是 0，点金创药走 `Reminder.show(19)`，也就是 `20.png`），返回后点「技」用技能2 追星破月 → 自己挂「敏捷提升」（type 1 @ 800,150，speed 10→11），到期那一拍又退回去（speed 11→10）；张小凡那一回合用技能2 浪里寻花 → 第 3 槽那只怪挂「体力下降」（type 8 @ 60,330）。三张提示图的文件号实测是 **20 / 7 / 2**，三条来路各不相同 |
 | `battle-victory` | 战斗（`driver` = `battle`） | **打赢之后的结算**（xl-rh9.13，837 步）：与 `battle-em3-box` 同一行 Fight 数据（`脚本20.txt` 第 3 行），而**陆雪琪压到 1 级** —— 这一场 1190 点经验对 10 级的张小凡与文敏差得远（升一级要 14462），对 1 级的陆雪琪却够（700），于是结算的两条路在同一份真值里都走到：第一页三个人、第二页只有升了级的那一个、属性一项项滚上去、`timeCode` 数到 55 才 `switchTo("scene")`。它是 `victory.ts`（xl-rh9.5）的**第一份行为真值覆盖** |
 | `shop-trade` | 商店（`driver` = `shop`） | 药店与装备超市各走一条完整的买卖：买 2 份金创药 → 钱不够被拒（金钱与背包一个数都没动） → 卖回 1 份 → 装备超市买月苗刀 → 切到鞋子那栏卖掉皮靴 → 切回武器栏确认刚买的还在。加减按钮的两端也都走到了 |
+| `shop-categories` | 商店（`driver` = `shop`） | 装备自选超市六类全走一遍（weapon → helmet → armor → glove → shoe → decoration → 回 weapon，25 步）。它钉的是**那 62 次掷骰的次数与顺序** —— `shop-trade` 只看得见 weapon 与 shoe 两栏，抽多抽少或换序时另外四栏错位它一个字都看不见。顺带把装备店店主对白的三个价位档（`<10000` / `<30000` / `<100000`，原版没有 else）一次走完（xl-knp.3） |
+| `shop-edges` | 商店（`driver` = `shop`） | 原版有分支而 `shop-trade` 一次都没走到的两条路，两个面板各一遍（36 步）：**买一件存货是 0 的**（药店 灵神天药、装备店 茶罗骨环）与**卖一件背包里一份都没有的**（姜黄粉、踏风草鞋）。两处原版都是 `temp=Math.min(要几件, 另一侧还剩几件)`，后果是"这一行什么都没发生、只有 purchase 被清零"—— 与"压根没点"几乎一样，所以每次都**同时给另一行也加一件**，真值里于是看得见"一次点击里一行动了一行没动"，而不是整单被拒。药店店主的两个价位档（以 6000 分档）也在这条里走完（xl-knp.3） |
