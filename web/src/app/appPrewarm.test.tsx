@@ -35,6 +35,8 @@ vi.mock('../game/useGame', () => ({
     dialogue: null,
     panel: panel.current,
     battleLoading: false,
+    menuLoading: false,
+    menuInput: () => {},
     click: () => {},
     scene: null,
     restart: () => {},

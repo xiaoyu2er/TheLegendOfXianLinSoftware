@@ -15,7 +15,18 @@ import type { InputEvent, World } from '../state/types'
 import { battleClick } from './battleInput'
 import { enemyNamesOf, enemySpriteSize, prepareEnemySprites, spritesReady } from './enemySprites'
 import { toInputEvent } from './keyboard'
-import { advanceSession, createSession, currentBgm, enterScene, isRunning } from './session'
+import {
+  advanceSession,
+  createSession,
+  currentBgm,
+  enterScene,
+  isRunning,
+  openMenu,
+} from './session'
+import { menuDrawList } from '../menu/render/drawList'
+import { menuTextureIds } from '../menu/render/assets'
+import type { MenuRenderer } from '../menu/render/menuRenderer'
+import type { MenuInput } from '../menu/step'
 import type { Panel, Session, SessionDeps } from './session'
 
 /**
@@ -51,6 +62,8 @@ export interface GameView {
   readonly panel: Panel
   /** 战斗贴图还在载入 —— 这几十毫秒里战斗那张画布是空的。 */
   readonly battleLoading: boolean
+  /** 菜单贴图还在载入 —— 另外三页的整屏背景走按需加载，翻页时会有这几十毫秒。 */
+  readonly menuLoading: boolean
   /**
    * 舞台**逻辑坐标**里的一次点击。战斗面板才用得到；别的面板收下就丢掉。
    *
@@ -59,6 +72,13 @@ export interface GameView {
    * 套 —— 中间多一次换算，就多一处"点得中点不中"说不清的地方。
    */
   readonly click: (x: number, y: number) => void
+  /**
+   * 菜单里的一次鼠标事件（舞台**逻辑坐标**）。菜单没开着时收下就丢掉。
+   *
+   * 与 `click` 分开是因为菜单要的是**三种事件**（按下 / 松开 / 移动），
+   * 而战斗那一侧只认按下 —— 合成一个入口就得在这一层猜"这一下算哪种"。
+   */
+  readonly menuInput: (input: MenuInput) => void
   /**
    * 世界此刻在哪个场景（注册表名，如 `大地图`）。
    *
@@ -116,14 +136,20 @@ export function useGame(
   /** 现在该在哪个场景。`null` = 还没开局，停在标题上（xl-q7f）。 */
   sceneName: string | null,
   battleRenderer: BattleRenderer | null = null,
+  menuRenderer: MenuRenderer | null = null,
 ): GameView {
   const sessionRef = useRef<Session | null>(null)
   const queueRef = useRef<InputEvent[]>([])
   const clicksRef = useRef<BattleInput[]>([])
+  /** 菜单里的鼠标事件，攒到下一拍。**没有键盘那一种。** */
+  const menuInputRef = useRef<MenuInput[]>([])
+  /** 按 ESC 那一下：下一拍开菜单。原版 `ScenePanel.keyPressed` 的那句。 */
+  const openMenuRef = useRef(false)
   const [dialogue, setDialogue] = useState<DialogueState | null>(null)
   const [scene, setScene] = useState<string | null>(null)
   const [panel, setPanel] = useState<Panel>('start')
   const [battleLoading, setBattleLoading] = useState(false)
+  const [menuLoading, setMenuLoading] = useState(false)
   /** 第几局。`restart()` 让它涨一，建会话的 effect 就整个重来。 */
   const [generation, setGeneration] = useState(0)
   const signatureRef = useRef<string | null>(null)
@@ -132,6 +158,9 @@ export function useGame(
   /** 已经载过贴图的那个战斗世界（按引用比）。换一场就要重载。 */
   const loadedBattleRef = useRef<BattleWorld | null>(null)
   const battleLoadingRef = useRef(false)
+  /** 已经载过贴图的那一份菜单名单（按内容比）。翻页要重载当前页的背景。 */
+  const loadedMenuRef = useRef<string | null>(null)
+  const menuLoadingRef = useRef(false)
 
   // 换场景 = 换一个世界。主角回到脚本里的出生格。**`sceneName` 是 `null` 就
   // 一个世界都不建**（xl-q7f）：开机、以及开发用选择器拨回「标题」那一项，
@@ -147,6 +176,8 @@ export function useGame(
     sessionRef.current = createSession(SESSION_DEPS)
     queueRef.current = []
     clicksRef.current = []
+    menuInputRef.current = []
+    openMenuRef.current = false
     signatureRef.current = null
     sceneRef.current = null
     loadedBattleRef.current = null
@@ -154,6 +185,9 @@ export function useGame(
     setDialogue(null)
     setScene(null)
     setBattleLoading(false)
+    loadedMenuRef.current = null
+    menuLoadingRef.current = false
+    setMenuLoading(false)
     // 载入那几十毫秒里显示的是**场景**（"正在载入 X…"），不是标题。
     //
     // **这一点跟原版是一致的**，而 xl-w16 的票面写反了（它说"原版是
@@ -210,6 +244,17 @@ export function useGame(
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // ESC 开菜单 —— 原版 `ScenePanel.keyPressed` 里那句
+      // `if (keyCode == VK_ESCAPE) switchTo("menu")`。**只有场景那一屏认它**，
+      // 而这一句就是那件事的全部：`openMenu` 自己会挡住别的面板。
+      //
+      // ⚠️ 菜单开着的时候按 ESC **出不去** —— 那是原版的死代码，是复刻不是
+      // 缺陷（`menu/step.ts` 的 `menuWantsScene`）。别"顺手修好"它。
+      if (event.type === 'keydown' && event.key === 'Escape') {
+        event.preventDefault()
+        openMenuRef.current = true
+        return
+      }
       const input = toInputEvent({
         type: event.type === 'keydown' ? 'keydown' : 'keyup',
         key: event.key,
@@ -346,10 +391,19 @@ export function useGame(
       }
       const elapsed = now - last
       last = now
-      const input = { scene: queueRef.current, battle: clicksRef.current }
+      const input = {
+        scene: queueRef.current,
+        battle: clicksRef.current,
+        menu: menuInputRef.current,
+      }
       queueRef.current = []
       clicksRef.current = []
-      const next = advanceSession(session, input, elapsed)
+      menuInputRef.current = []
+      // 按 ESC 开菜单。**在推进之前**：晚一拍开的话那一拍的方向键还会被场景
+      // 收走，表现为"按了 ESC 主角又多走一步"。
+      const opening = openMenuRef.current
+      openMenuRef.current = false
+      const next = advanceSession(opening ? openMenu(session) : session, input, elapsed)
       sessionRef.current = next
       bgmRef.current?.sync(currentBgm(next))
       if (next.panel !== panelRef.current) {
@@ -357,6 +411,7 @@ export function useGame(
         setPanel(next.panel)
       }
       drawBattle(next)
+      drawMenu(next)
       // 战斗面板显示的时候场景那张画布看不见，画它是白费；而**世界照样在推**
       // （原版那条线程没停），所以这里跳的只有绘制。
       if (next.panel !== 'scene') return
@@ -399,9 +454,35 @@ export function useGame(
       battleRenderer.draw(battleDrawList(world, next.battle.paint))
     }
 
+    /**
+     * 菜单那张画布。与战斗那半同构：贴图要先载齐才画得动，空窗里不画。
+     *
+     * **按世界的引用比**，不按面板名：每次开菜单都新建一份世界
+     * （`session.openMenu`），所以换一次菜单就要重载一次当前页的背景 ——
+     * 另外三页的背景走按需加载，翻到哪一页才取哪一张。
+     */
+    function drawMenu(next: Session): void {
+      if (!menuRenderer || next.panel !== 'menu' || next.menu === null) return
+      const world = next.menu.world
+      const wanted = menuTextureIds(world).join('\u0000')
+      if (loadedMenuRef.current !== wanted) {
+        loadedMenuRef.current = wanted
+        menuLoadingRef.current = true
+        setMenuLoading(true)
+        void menuRenderer.load(menuTextureIds(world)).then(() => {
+          if (loadedMenuRef.current !== wanted) return
+          menuLoadingRef.current = false
+          setMenuLoading(false)
+        })
+        return
+      }
+      if (menuLoadingRef.current) return
+      menuRenderer.draw(menuDrawList(world))
+    }
+
     const id = window.setInterval(pump, TICK_MS)
     return () => window.clearInterval(id)
-  }, [renderer, battleRenderer])
+  }, [renderer, battleRenderer, menuRenderer])
 
   const click = (x: number, y: number): void => {
     const world = sessionRef.current?.battle?.world
@@ -409,12 +490,23 @@ export function useGame(
     clicksRef.current.push(battleClick(world, x, y))
   }
 
+  /**
+   * 菜单里的一次鼠标事件（舞台**逻辑坐标**）。
+   *
+   * 三种都要送：`press` / `release` / `move`。只送 `press` 的话按钮永远停在
+   * 「按下」那一张贴图上（`isclicked` 也不清），而那看起来像"点了一下就卡住"。
+   */
+  const menuInput = (input: MenuInput): void => {
+    if (sessionRef.current?.panel !== 'menu') return
+    menuInputRef.current.push(input)
+  }
+
   const restart = (): void => {
     resetParty()
     setGeneration((n) => n + 1)
   }
 
-  return { dialogue, scene, panel, battleLoading, click, restart }
+  return { dialogue, scene, panel, battleLoading, menuLoading, click, menuInput, restart }
 }
 
 /**

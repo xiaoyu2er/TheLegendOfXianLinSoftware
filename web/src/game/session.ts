@@ -1,9 +1,15 @@
 import { advanceBattle, createBattleTicker } from '../battle/loop'
+import { advanceMenu, createMenuTicker } from '../menu/loop'
+import type { MenuTicker } from '../menu/loop'
+import { menuWantsScene } from '../menu/step'
+import type { MenuInput } from '../menu/step'
+import { createMenuWorld } from '../menu/world'
 import type { BattleTicker } from '../battle/loop'
 import { createBattle } from '../battle/world'
 import type { BattleConfig } from '../battle/world'
 import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
+import type { MenuWorld } from '../menu/types'
 import type { PartyKey } from '../battle/units'
 import { getParty, rememberParty } from '../fakes/party'
 import { TITLE_BGM } from '../start/assets'
@@ -58,7 +64,7 @@ import type { InputEvent, World } from '../state/types'
  *    状态）建一场战斗塞进会话里，跑到结算结束，看会话回没回场景、经验有没有
  *    记进队伍。
  */
-export type Panel = 'scene' | 'battle' | 'start'
+export type Panel = 'scene' | 'battle' | 'start' | 'menu'
 
 /** 会话跟外界打交道的三样东西。全是入参，所以整个模块可以在 node 上跑。 */
 export interface SessionDeps {
@@ -98,6 +104,16 @@ export interface Session {
   readonly scene: Ticker | null
   /** 战斗那一侧。`null` = 这一局还没打过架，或者上一场已经收了。 */
   readonly battle: BattleTicker | null
+  /**
+   * 菜单那一侧。`null` = 菜单没开着。
+   *
+   * **每次开菜单都新建一份**，而不是像原版那样留一个从开机活到关机的
+   * `MenuPanel`。原版留着它是因为它顺手当了状态的家（三个人的引用、背包、
+   * 已装备的东西全挂在上面）；这一层的那些状态另有出处（`fakes/party.ts`），
+   * 而 `switchTo("menu")` 那三句 `refreshValue()` 说的正是「每次打开都按最新
+   * 的属性重算一遍」—— 新建一份就是它最直白的对应物。
+   */
+  readonly menu: MenuTicker | null
   readonly deps: SessionDeps
 }
 
@@ -116,9 +132,14 @@ export interface RunningSession extends Session {
 export interface SessionInput {
   readonly scene: readonly InputEvent[]
   readonly battle: readonly BattleInput[]
+  /** 菜单里的鼠标事件。**没有键盘那一种** —— 见 `menu/step.ts` 的 `menuWantsScene`。 */
+  readonly menu: readonly MenuInput[]
 }
 
-export const NO_INPUT: SessionInput = { scene: [], battle: [] }
+export const NO_INPUT: SessionInput = { scene: [], battle: [], menu: [] }
+
+/** 场景收不到键的那几拍喂它。常量，省得每拍新建一个数组。 */
+const NO_KEYS: readonly InputEvent[] = []
 
 /**
  * 起手态：**停在标题上，还没开局**（xl-q7f）。
@@ -145,7 +166,7 @@ export const NO_INPUT: SessionInput = { scene: [], battle: [] }
  * 我们自己的一秒黑屏。
  */
 export function createSession(deps: SessionDeps): Session {
-  return { panel: 'start', scene: null, battle: null, deps }
+  return { panel: 'start', scene: null, battle: null, menu: null, deps }
 }
 
 /**
@@ -169,7 +190,35 @@ export function isRunning(session: Session): session is RunningSession {
  * 战斗那一侧一并清掉：原版这一下 `new` 的是一整套面板。
  */
 export function enterScene(session: Session, world: World): RunningSession {
-  return { ...session, panel: 'scene', scene: createTicker(world), battle: null }
+  return { ...session, panel: 'scene', scene: createTicker(world), battle: null, menu: null }
+}
+
+/**
+ * 按 ESC 开菜单 —— 原版 `ScenePanel.keyPressed` 里那句
+ * `if (keyCode == VK_ESCAPE) GameLauncher.switchTo("menu")`。
+ *
+ * **只有场景那一屏进得去**：那句 ESC 在 `ScenePanel` 里，而顶层的 `keyPressed`
+ * 只把键分发给场景 / 存档 / 战斗三家。菜单开着的时候当前面板是菜单，一个分支
+ * 都不命中 —— 于是**进了菜单按 ESC 出不来**，出口只有天书页的「返回」
+ * （`menu/step.ts` 的 `menuWantsScene`）。这是复刻，不是缺陷，缺陷登记 xl-1dv.*。
+ *
+ * 三个人的属性从队伍现读：`switchTo("menu")` 那三句 `refreshValue()` 说的
+ * 就是「打开的那一刻看到的是最新的」。
+ */
+export function openMenu(session: RunningSession, carry = getParty()): RunningSession {
+  if (session.panel !== 'scene') return session
+  const world = createMenuWorld({
+    // 原版这三个标志位归存档（`SaveAndLoad.zhang/lu/wen`），今天没有存档，
+    // 所以照原版三个类的处境给：三个人都在。⚠️ 玉洁那一位的键是 `wen`。
+    party: ['zhang', 'lu', 'wen'],
+    fullHeal: false,
+    live: {
+      zhang: { level: carry.zhang.level, hp: carry.zhang.hp, mp: carry.zhang.mp },
+      lu: { level: carry.lu.level, hp: carry.lu.hp, mp: carry.lu.mp },
+      yu: { level: carry.yu.level, hp: carry.yu.hp, mp: carry.yu.mp },
+    },
+  })
+  return { ...session, panel: 'menu', menu: createMenuTicker(world) }
 }
 
 /**
@@ -237,13 +286,48 @@ export function advanceSession(
   if (session.scene === null) return session
   let panel = session.panel
   let battle = session.battle
+  let menu = session.menu
 
   // ——— 场景那条线程 ———
+  //
+  // ⚠️ **菜单开着的时候场景照跑不误** —— 与战斗期间一样，理由也一样：
+  // `ScenePanel.run()` 是 `while(true){ step(); sleep(10); }` 一条线程，
+  // `switchTo("menu")` 只换 `CardLayout` 显示的是谁（`GameLauncher.switchTo`
+  // 的 case "menu" 只有 `switcher.show` + `currentPanel=` + 三句
+  // `refreshValue()`），**不停那条线程**。
+  //
+  // ⚠️⚠️ **这一条与 xl-6lo.8 的票面写反了。** 票面与 xl-6lo.2 都写着「菜单
+  // 打开时背后的场景停住 / 场景在背后是冻住的」，实测不成立：那两处是从
+  // 「CardLayout 八面板之一」推出来的，而 CardLayout 管的是画谁，不是谁在跑。
+  // 唯一读「现在显示的是谁」的地方是 `ScenePanel.step()` 第 1 步那个旁白判据
+  // （`GameLauncher.currentPanel.equals(GameLauncher.scenePanel)`），所以这里
+  // 照战斗那一份把 `showing` 喂过去就够了。冻住场景是更省事的写法，但那会让
+  // 「翻完菜单回来 NPC 站在哪」与原版分家，而 ADR-0001 说复刻原版。
+  // 判据在 `session.test.ts`「菜单开着时场景照跑」那一条（连同从 GBK 源码
+  // 现读 `switchTo` 的 case "menu" 里没有任何停线程的动作）。
   const before: Ticker = {
     ...session.scene,
     world: { ...session.scene.world, showing: panel === 'scene' },
   }
-  const scene = advance(before, input.scene, elapsedMs, deps.scenes, deps.random)
+  // ⚠️ **不显示的时候一个键都收不到** —— `GameLauncher` 那个 KeyListener 的
+  // `keyPressed` / `keyReleased` 两个方法都从 `if(currentPanel==scenePanel)`
+  // 起手。所以菜单（以及战斗）开着的时候主角**站住不动**，而地图上的 NPC、
+  // 对话定时器照走。
+  //
+  // **这才是票面那句「场景停步」的真正内容**，而它只对了一半：停的是玩家的
+  // 输入，不是那条线程。（本票起先把整句都判成假的，是 /code-review 的 Spec
+  // 轴把另一半找回来的。）
+  //
+  // ⚠️ 顺带复刻一个坑：按住方向键的时候开菜单，那一下**松手事件也被吃掉**
+  // （`keyReleased` 同一个门），于是回到场景主角还在往那边走，要再按一次
+  // 那个键才停。原版就是这样，ADR-0001 说照抄。
+  const scene = advance(
+    before,
+    panel === 'scene' ? input.scene : NO_KEYS,
+    elapsedMs,
+    deps.scenes,
+    deps.random,
+  )
   const request = scene.world.battleRequest
 
   if (request !== null && panel === 'scene') {
@@ -273,7 +357,16 @@ export function advanceSession(
     }
   }
 
-  return { ...session, panel, scene, battle }
+  // ——— 菜单那四条线程 ———
+  if (panel === 'menu' && menu !== null) {
+    menu = advanceMenu(menu, input.menu, elapsedMs)
+    if (menuWantsScene(menu.world)) {
+      panel = 'scene'
+      menu = null
+    }
+  }
+
+  return { ...session, panel, scene, battle, menu }
 }
 
 /**
@@ -297,6 +390,11 @@ export function currentBgm(session: Session): string | null {
   // 少了它下面那句就得写 `!`。
   if (session.panel === 'start' || session.scene === null) return TITLE_BGM
   return session.scene.world.audio.bgm
+}
+
+/** 菜单世界，菜单没开着就是 `null`。渲染层要它。 */
+export function menuWorldOf(session: Session): MenuWorld | null {
+  return session.panel === 'menu' && session.menu !== null ? session.menu.world : null
 }
 
 /** 战斗世界，没在打架就是 `null`。渲染层要它。 */

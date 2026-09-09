@@ -7,6 +7,7 @@ import type { ScalingMode } from '../stage/scaling'
 import { useFullscreen } from '../stage/useFullscreen'
 import { useSceneRenderer } from '../scene/useSceneRenderer'
 import { useBattleRenderer } from '../battle/render/useBattleRenderer'
+import { useMenuRenderer } from '../menu/render/useMenuRenderer'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { useGame } from '../game/useGame'
 import { StartPanel } from '../start/StartPanel'
@@ -31,6 +32,7 @@ export function App() {
   const shellRef = useRef<HTMLDivElement>(null)
   const sceneHostRef = useRef<HTMLDivElement>(null)
   const battleHostRef = useRef<HTMLDivElement>(null)
+  const menuHostRef = useRef<HTMLDivElement>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
   /**
    * **现在该在哪个场景**，`null` = 还没开局、停在标题上（xl-q7f）。
@@ -78,16 +80,23 @@ export function App() {
   const shownScene = game.scene ?? sceneName ?? START_SCENE
   const { status, renderer } = useSceneRenderer(sceneHostRef, shownScene)
   const battleRenderer = useBattleRenderer(battleHostRef)
+  const menuRenderer = useMenuRenderer(menuHostRef)
   // 方向键走动、按住 Ctrl（或 Shift）跑动、空格搭话。世界的推进与画面无关，
   // 见 useGame；对话框是它交出来的那份状态的投影。
   //
   // **渲染器没就绪就不给它**：场景正在换的那几十毫秒里，世界已经在新场景里，
   // 而渲染器手上还是旧地图。这时候推进世界就得往旧渲染器上画，撞它那道
   // NPC 条数的校验。停一拍就是原版 `initiation` 读盘时停的那一拍。
-  const view = useGame(status.kind === 'ready' ? renderer : null, sceneName, battleRenderer)
+  const view = useGame(
+    status.kind === 'ready' ? renderer : null,
+    sceneName,
+    battleRenderer,
+    menuRenderer,
+  )
   const dialogue = view.dialogue
   if (view.scene !== game.scene) setGame({ scene: view.scene })
   const inBattle = view.panel === 'battle'
+  const inMenu = view.panel === 'menu'
   /**
    * 标题画面。**两条路走到它**：
    *
@@ -155,14 +164,31 @@ export function App() {
    * `offsetX`：后者在有 CSS 缩放时给的是**缩放后**的像素，点得越靠右偏得
    * 越多，而画面看起来完全正常。
    */
+  const stagePoint = (event: ReactMouseEvent<HTMLDivElement>): { x: number; y: number } | null => {
+    const box = event.currentTarget.getBoundingClientRect()
+    if (box.width === 0 || box.height === 0) return null
+    return {
+      x: Math.round(((event.clientX - box.left) / box.width) * STAGE_WIDTH),
+      y: Math.round(((event.clientY - box.top) / box.height) * STAGE_HEIGHT),
+    }
+  }
+
   const onStageClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!inBattle) return
-    const box = event.currentTarget.getBoundingClientRect()
-    if (box.width === 0 || box.height === 0) return
-    view.click(
-      Math.round(((event.clientX - box.left) / box.width) * STAGE_WIDTH),
-      Math.round(((event.clientY - box.top) / box.height) * STAGE_HEIGHT),
-    )
+    const at = stagePoint(event)
+    if (at) view.click(at.x, at.y)
+  }
+
+  /**
+   * 菜单是**纯鼠标**的，三种事件都要送：按下 / 松开 / 移动。
+   *
+   * 只送按下的话按钮会永远停在「按下」那张贴图上（`isclicked` 也不清），
+   * 而列表的选中整个走的是 `mouseMoved` —— 少送移动等于选不中任何东西。
+   */
+  const onMenuMouse = (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!inMenu) return
+    const at = stagePoint(event)
+    if (at) view.menuInput({ e, x: at.x, y: at.y })
   }
 
   return (
@@ -175,7 +201,7 @@ export function App() {
             <div
               className="stage-panel"
               ref={sceneHostRef}
-              hidden={inBattle || atTitle}
+              hidden={inBattle || inMenu || atTitle}
               data-testid="scene-host"
             />
             <div
@@ -185,22 +211,36 @@ export function App() {
               onMouseDown={onStageClick}
               data-testid="battle-host"
             />
+            <div
+              className="stage-panel"
+              ref={menuHostRef}
+              hidden={!inMenu}
+              onMouseDown={onMenuMouse('press')}
+              onMouseUp={onMenuMouse('release')}
+              onMouseMove={onMenuMouse('move')}
+              data-testid="menu-host"
+            />
           </>
         }
         overlay={
           <>
-            {status.kind === 'ready' || inBattle || atTitle ? null : (
+            {status.kind === 'ready' || inBattle || inMenu || atTitle ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
             {atTitle ? <StartPanel onNewGame={onNewGame} /> : null}
+            {inMenu && view.menuLoading ? (
+              <p className="stage-notice stage-notice--loading" role="status">
+                正在载入菜单…
+              </p>
+            ) : null}
             {inBattle && view.battleLoading ? (
               <p className="stage-notice stage-notice--loading" role="status">
                 正在载入战斗…
               </p>
             ) : null}
-            {dialogue && !inBattle ? <DialogueBox dialogue={dialogue} /> : null}
+            {dialogue && !inBattle && !inMenu ? <DialogueBox dialogue={dialogue} /> : null}
           </>
         }
       />
@@ -234,7 +274,9 @@ export function App() {
             ? '开始界面：点「起」重开一局（读档要等 M6 存档）'
             : inBattle
               ? '战斗中：点「击」再点怪物；技、防、物同理'
-              : '方向键走动，按住 Ctrl 或 Shift 跑动，空格搭话／推进对话，回车跳过逐字打印'}
+              : inMenu
+                ? '菜单：点顶栏切页；出去只有天书页的「返回」——按 ESC 出不去，原版就是这样'
+                : '方向键走动，按住 Ctrl 或 Shift 跑动，空格搭话／推进对话，回车跳过逐字打印，ESC 开菜单'}
         </p>
         <button
           type="button"
