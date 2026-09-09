@@ -40,10 +40,9 @@ import javax.imageio.ImageIO;
  * 那个 n 有三层，后面的盖前面的：{@link #DEFAULT_EVERY} → 剧本自报的
  * {@code every} → 命令行 {@code --every}。
  *
- * 为什么让剧本自报：密度不是跑的人的偏好，是**剧本自己的性质**。事件驱动的
- * 菜单剧本一步就是一次输入事件，每一步画面都不一样，按缺省 25 采样等于
- * 一条 47 步的剧本只出 2 帧 —— 而它照样打印"比过了"。靠人记得敲
- * {@code --every 1} 不算判据：会忘，而忘了的样子和没忘一模一样。
+ * 为什么让剧本自报（正典在 {@code docs/trace-format.md} 菜单那一节，这里只留
+ * 一句）：密度不是跑的人的偏好，是**剧本自己的性质**，而"记得敲 --every 1"
+ * 不算判据 —— 忘了的样子和没忘一模一样。
  *
  * <b>回显进 trace 头的是剧本自报的那个值，不是最终生效的值。</b>
  * trace.json 必须与命令行怎么敲无关 —— {@code tools/compare-frames.sh} 会拿
@@ -190,8 +189,8 @@ public final class ExportTrace {
         b.append("{\n");
         b.append("  \"format\": \"xianlin-trace/1\",\n");
         b.append("  \"driver\": ").append(Json.str(kind)).append(",\n");
-        // 只在剧本真的自报了的时候写这一行。缺省不写：一个字段全 21 份真值都
-        // 加一遍，等于把一次「谁都没改」的重导做成一次 21 份的 diff。
+        // 只在剧本真的自报了的时候写这一行。缺省不写：一个恒有的字段会让**每一份**
+        // 真值都多一行，等于把一次「谁都没改」的重导做成一次全量 diff。
         if (everyFromScript > 0) {
             b.append("  \"every\": ").append(everyFromScript).append(",\n");
         }
@@ -368,6 +367,19 @@ public final class ExportTrace {
         // 一帧都没采到还照样写一份清单，等于交出一份"比 0 帧、全绿"的比对基准 ——
         // 那种失败长得和成功一模一样。宽高也只能从真存下来的那张图上取。
         if (sampled.isEmpty()) die(scriptName + "：开了 --frames 却一帧都没采到");
+        // 采样点必须是 0, every, 2*every, … —— 独立于上面那句 steps % every == 0
+        // 重算一遍。它守的是"密度定夺完了，取样却用了别的数"：dumpFrame 的条件
+        // 里换成 DEFAULT_EVERY、或者少加一层覆盖，帧数看着仍然像模像样（还是
+        // 一份合法清单、还是一堆能解码的 PNG），而 frames.json 整个目录不入库，
+        // 没有任何 git diff 会说话。实测：把那个条件换成 DEFAULT_EVERY，
+        // menu-magic 当场 exit=2 并说"第 1 张采在第 25 步，按密度 1 应当是第 1 步"。
+        for (int i = 0; i < sampled.size(); i++) {
+            int want = i * every;
+            if (sampled.get(i) != want) {
+                die(scriptName + "：第 " + i + " 张采在第 " + sampled.get(i)
+                        + " 步，按密度 " + every + " 应当是第 " + want + " 步");
+            }
+        }
         StringBuilder b = new StringBuilder();
         b.append("{\n");
         b.append("  \"format\": \"xianlin-frames/1\",\n");

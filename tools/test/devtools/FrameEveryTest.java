@@ -25,9 +25,9 @@ import java.util.Map;
  *
  * <h2>为什么不真跑一次导出</h2>
  *
- * 四支驱动器**一支都跑不起来**：{@code ScenePanel} / {@code MenuPanel} 建构造
- * 里就 {@code createCustomCursor}，在 {@code -Djava.awt.headless=true} 下当场
- * 抛 {@code HeadlessException}（2026-09-08 实测，scene 与 menu 各验一次）。
+ * {@code ScenePanel} 与 {@code MenuPanel} 建构造里就 {@code createCustomCursor}，
+ * 在 {@code -Djava.awt.headless=true} 下当场抛 {@code HeadlessException}
+ * （2026-09-08 实测，这两支各验一次；battle / shop 没验过，别当成已知）。
  * 而 {@code tools/test.sh} 那个 headless 开关是**故意**的（本地跑在 CI 的条件
  * 下）。所以这里钉的是定夺逻辑本身，加上「坏值必须在建驱动器之前就炸」——
  * 后者顺带把顺序也钉住了：真把密度挪到 pickDriver 之后，下面那三条子进程
@@ -54,10 +54,11 @@ public final class FrameEveryTest {
         // 这一条是整张表里唯一分得开「命令行赢」与「剧本赢」的：上面三条在
         // 两种实现下读数相同。
         Checks.eq("两边都给 → 命令行压掉剧本", 3, ExportTrace.resolveEvery(3, 7));
-        // 兜底值不是这里手写的 25，而是导出器自己那个常量 —— 两处各写一个
-        // 数字的话，改了一处另一处照样绿。
-        Checks.eq("兜底值就是 ExportTrace.DEFAULT_EVERY",
-                ExportTrace.DEFAULT_EVERY, ExportTrace.resolveEvery(0, 0));
+        // 第一条**故意**写死 25 而不是引 ExportTrace.DEFAULT_EVERY：引常量那条
+        // 按构造恒真（resolveEvery 最后一行字面就是 return DEFAULT_EVERY），
+        // 一次都不可能红。实测过 —— 把 DEFAULT_EVERY 改成 26，写死 25 的那条
+        // 当场红，引常量的那条是绿的。见 docs/agents/dispatch.md 纪律 3 底下
+        // 「断言本身按构造成立」那一族。
     }
 
     /** 剧本自报值的读取：写了就读出来，没写是 0（而不是 25 —— 0 才分得开"没写"）。 */
