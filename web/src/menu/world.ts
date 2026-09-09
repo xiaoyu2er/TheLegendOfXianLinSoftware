@@ -1,4 +1,5 @@
 import { menuButton } from './buttons'
+import { createEquipPanel } from './equipPanel'
 import { createFuncButtons } from './funcButtons'
 import { createDrugPack, createDrugPanelState } from './drugPanel'
 import { createMagicState } from './magic'
@@ -42,6 +43,14 @@ export interface MenuConfig {
    * `CAN_PLAY_MUSIC = 1`），也是导出真值那个干净 JVM 的起手态。
    */
   readonly audio?: Readonly<MenuAudioSettings> | undefined
+  /**
+   * 剧本 `setup.equipment` —— 开局往背包里放的那几件装备。
+   *
+   * **它是开局状态，不是期望值**：原版六张装备表的持有量全是 0，不给点东西的话
+   * 装备页永远是空的（`MenuScript` 的注释里写着同一句）。而它加进去的时机是
+   * **面板建好之后**，见 `createEquipPanel`。
+   */
+  readonly equipment?: readonly { readonly name: string; readonly count: number }[] | undefined
 }
 
 /**
@@ -91,7 +100,7 @@ function createScoll(): ScollState {
   return scoll
 }
 
-function createSubPanel(name: MenuPanelName): MenuSubPanel {
+function createSubPanel(name: MenuPanelName, config: MenuConfig): MenuSubPanel {
   return {
     name,
     currentX: 0,
@@ -106,12 +115,13 @@ function createSubPanel(name: MenuPanelName): MenuSubPanel {
     // 长得一样了。
     drug: name === 'thingPanel' ? createDrugPanelState() : null,
     magic: name === 'magicPanel' ? createMagicState() : null,
+    equip: name === 'equipPanel' ? createEquipPanel(config.equipment) : null,
   }
 }
 
 export function createMenuWorld(config: MenuConfig): MenuWorld {
   const panels = {} as Record<MenuPanelName, MenuSubPanel>
-  for (const name of MENU_PANEL_ORDER) panels[name] = createSubPanel(name)
+  for (const name of MENU_PANEL_ORDER) panels[name] = createSubPanel(name, config)
 
   const tabs = {} as Record<MenuTabKey, ReturnType<typeof menuButton>>
   for (const tab of TABS) {

@@ -1,5 +1,6 @@
 import { visibleDrugs } from './drugPanel'
 import { drawnFuncButtons } from './funcButtons'
+import { snapshotEquip } from './equipPanel'
 import { MENU_PANEL_ORDER } from './world'
 import type { FuncButtonsState } from './funcButtons'
 import { magicSnapshot } from './magic'
@@ -14,10 +15,10 @@ import type { MenuWorld } from './types'
  * ## 这里**只出已经实现的那几组**，这是有意的
  *
  * 真值一行有九组可断言的列（`music` / `panel` / `hero` / `heroes` / `equip` /
- * `drug` / `magic` / `func` / `mouse`），而这里只出**已经有人实现的**那几组：
- * 骨架那五组加上天书页的 `func`（xl-6lo.12）。还没做的三页不在这里编一份
- * 占位值 —— 编出来的占位值会被逐字段比对当成"实现了但是错的"，而它其实是
- * "还没做"，两者的处置完全不同。
+ * `drug` / `magic` / `func` / `mouse`），**五页的组现在都有人实现了**
+ * （xl-6lo.9/.10/.11/.12）。⚠️ 没实现的组不在这里编占位值 —— 编出来的
+ * 占位值会被逐字段比对当成"实现了但是错的"，而它其实是"还没做"，
+ * 两者的处置完全不同。
  *
  * 谁做完了、谁还欠着，由 `menuTrace.test.ts` 那张**按字段组的手写登记表**说，
  * 并与真值现出的那份分母对撞。
@@ -58,6 +59,10 @@ export function snapshotMenu(w: MenuWorld): Record<string, unknown> {
     // 奇术页是**它自己那一份状态**，不是当前页的：真值 `magic` 那一列记的
     // 永远是 `magicPanel` 上那十五颗按钮与那条动画，哪怕现在显示的是别的页。
     magic: magicSnapshot(magicOf(w)),
+    // 装备页那一列。⚠️ **它取的是 `equipPanel` 自己的那一份，不是当前页的** ——
+    // 真值也一样（`MenuDriver.equipJson()` 直接找 `mp.equipPanel`）：人在物品页
+    // 时装备页的状态照记，`menu-equip` 第 19..23 步就是这么读的。
+    equip: snapshotEquip(equipOf(w)),
     mouse,
   }
 }
@@ -97,4 +102,12 @@ function magicOf(w: MenuWorld): MagicState {
   // 长得一样。
   if (!magic) throw new Error('奇术页没有 magic 状态')
   return magic
+}
+
+function equipOf(w: MenuWorld) {
+  const equip = w.panels.equipPanel.equip
+  // 建世界时装备页一定有这一摊；没有的话下面那一整列会安静地缺席，而
+  // 「这一列还没做」与「这一列全对」在逐字段比对里长得不一样但指向错的地方。
+  if (!equip) throw new Error('equipPanel 没有装备页状态')
+  return equip
 }

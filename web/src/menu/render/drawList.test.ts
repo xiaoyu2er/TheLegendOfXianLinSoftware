@@ -152,15 +152,33 @@ describe('菜单那六层绘制', () => {
     )
   })
 
-  it('只剩装备页的 page 层是空的 —— 归 xl-6lo.9', () => {
-    // ⚠️ 物品页（xl-6lo.10）与奇术页（xl-6lo.11）**不再**在这条里，那两层都
-    // 画上了，见下面各自那一组。这条剩的是还欠着的装备页。
+  it('四页的 page 层现在都不空了 —— 这条一红就说明哪一页的绘制掉了', () => {
+    // ⚠️ 这条原先是反过来写的（「还没做的那几页 page 层是空的」）。四页做完之后
+    // 那个对象不存在了，而**留着它等于留一条按构造成立的断言**：没有任何一页
+    // 还该是空的。换成正向之后，「这一页归别人」与「menuDrawList 的 page 层
+    // 整个坏了」不再长得一样。
+    for (const [tabX, panel] of [
+      [411, 'thingPanel'],
+      [619, 'magicPanel'],
+      [515, 'equipPanel'],
+      [723, 'funcPanel'],
+    ] as const) {
+      const w = world()
+      if (panel !== 'thingPanel') stepMenu(w, [{ e: 'press', x: tabX, y: 62 }])
+      expect(w.panel).toBe(panel)
+      expect(menuDrawList(w).filter((op) => op.layer === 'page'), `${panel} 的 page 层`).not.toEqual(
+        [],
+      )
+    }
+  })
+
+  it('装备页 page 层不空了（xl-6lo.9）—— 上面那两条才有分辨力', () => {
+    // 没有这一条的话，「这一页归别人」与「menuDrawList 的 page 层整个坏了」
+    // 长得一样：两者都是空数组。
     const w = world()
     stepMenu(w, [{ e: 'press', x: 515, y: 62 }])
     expect(w.panel).toBe('equipPanel')
-    expect(menuDrawList(w).filter((op) => op.layer === 'page'), 'equipPanel 的 page 层').toEqual([])
-    // 反方向：物品页那一层**不是**空的 —— 都空的话上面那条按构造成立。
-    expect(menuDrawList(world()).filter((op) => op.layer === 'page')).not.toEqual([])
+    expect(menuDrawList(w).filter((op) => op.layer === 'page').length).toBeGreaterThan(0)
   })
 
   it('不在出战名单里的头像不画；张小凡一个人时只画一颗', () => {

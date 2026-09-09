@@ -116,3 +116,30 @@ export function createMenuHeroes(
     }
   })
 }
+
+/**
+ * `Hero.refreshValue()`，只留菜单真值记得到的那四个派生值。
+ *
+ * 与 `battle/units.ts` 的 `refreshValue` 是同一套算式，但**不能直接复用它**：
+ * 那一份要求对象上有 `sprit` 与全部七个派生值（`hurt` / `skillHurt` / `speed`），
+ * 而 `MenuHero` 只有四个、且那一项拼的是 `spirit`。硬凑出三个没人核的字段，
+ * 等于在状态层里放一份"看起来有人在核"的假数据。
+ *
+ * ⚠️ 那两句夹回上限**是有观测后果的**：`menu-equip` 第 8 步弃用月苗刀，精气
+ * 11→10、`mpMax` 330→300，而 `mp` 那时正是 330 —— 真值里它被夹成了 300，
+ * 而第 13 步换回武器时 `mpMax` 回到 330，`mp` **不会**跟着回去（只夹不补）。
+ */
+export function refreshMenuHero(h: MenuHero): void {
+  const d = derive({
+    physicalPower: h.physicalPower,
+    agile: h.agile,
+    strength: h.strength,
+    sprit: h.spirit,
+  })
+  h.hpMax = d.hpMax
+  h.mpMax = d.mpMax
+  h.defense = d.defense
+  h.skillDefense = d.skillDefense
+  if (h.hp >= h.hpMax) h.hp = h.hpMax
+  if (h.mp >= h.mpMax) h.mp = h.mpMax
+}

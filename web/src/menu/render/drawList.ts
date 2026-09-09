@@ -11,6 +11,7 @@ import {
   tabId,
   useButtonId,
 } from './assets'
+import { equipDrawOps } from './equipDraw'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
 import { MAGIC_HEROES } from '../magic'
 import {
@@ -46,11 +47,8 @@ import type { MenuSubPanel, MenuWorld } from '../types'
  * —— 它贴 `sources/菜单/主人公4人2.png`，而**那个文件根本不在那个路径下**
  * （实际在 `天书/` 下，原版已知缺陷 **xl-a7m**），所以原版自己也画不出来。
  * 两件事分开记：三页是真空的，天书页那一张欠在 xl-a7m 上。
- * `page` 层里**物品页（xl-6lo.10）、天书页（xl-6lo.8/.12）、奇术页（xl-6lo.11）
- * 都画上了**，只剩装备页空着，归 xl-6lo.9。空着而不是抛 ——
- * 骨架那一票的验收就是"四页的骨架画得出来"，抛会让它一帧都画不出来。
- * ⚠️ 代价是「这一页还没做」与「这一页本来就没有内容」在画面上长得一样，
- * 而分开它们的是逐帧比对那张表（xl-6lo.14 接）。
+ * `page` 层**四页现在都画上了**：物品 xl-6lo.10 / 装备 xl-6lo.9 /
+ * 奇术 xl-6lo.11 / 天书 xl-6lo.8+.12。
  *
  * **天书页那一层是例外，必须画**：出菜单唯一那条路（「返回」）就在上面，而
  * 菜单里的 ESC 是死代码 —— 不画等于玩家出不去。`func` 那一组的**状态**仍然
@@ -178,12 +176,16 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
 
   // `drawThisPanel` —— 四页各自的。
   //
-  // 只剩装备页空着（归 xl-6lo.9）；奇术页见下面 `magicOps`；**天书页不能空**：出菜单唯一
+  // 四页现在都画得出来：物品见下面 `drawDrugPanel`、奇术见 `magicOps`、
+  // 装备由 `equipDraw.ts` 接（xl-6lo.9）；**天书页尤其不能空**：出菜单唯一
   // 那条路（「返回」）就是这一层画出来的，空着的话 ESC 又是死代码，玩家一点
   // 出去的办法都没有。所以那一页照 `FuncButtons.drawFuncButtons()` 画：
-  // 先五颗主按钮，再四组子按钮。物品页见下面的 `drawDrugPanel`。
+  // 先五颗主按钮，再四组子按钮。
   if (panel.drug) drawDrugPanel(ops, w, panel)
   if (panel.magic) ops.push(...magicOps(panel.magic))
+  if (panel.equip && panel.scoll) {
+    ops.push(...equipDrawOps(panel.equip, w.heroes, panel.scoll.whichHero))
+  }
   if (panel.funcButtons) {
     const fb = panel.funcButtons
     for (const key of FUNC_MAIN_ORDER) {

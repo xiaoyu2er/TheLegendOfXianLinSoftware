@@ -1,4 +1,11 @@
 import { moveInButton, pressButton, releaseButton } from './buttons'
+import {
+  clearEquipWarnings,
+  equipCheckMoveIn,
+  equipCheckPressed,
+  equipCheckReleased,
+  paintEquip,
+} from './equipPanel'
 import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased } from './funcButtons'
 import { drugPanelMoveIn, drugPanelPressed, drugPanelReleased } from './drugPanel'
 import {
@@ -38,7 +45,22 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
   // 音效是**这一步**的（`MusicTap` 每步取走一次），所以每步开头清空。
   // 不清的话它会越积越长，而"这一步响了"与"上一步响过"就分不开了。
   w.music = []
+  // 两个拒绝旗标同理：由**这一步**的输入置位。原版清它们的是紧接着那次
+  // `drawWarning()`，而真值是在 paint **之前**抓的 —— 也就是"这一步置的位"
+  // 看得见、下一步就没了。清在这里，不会把它们抹成永远的 false
+  // （`equipPanel.ts` 的 `paintEquip` 注释）。
+  //
+  // ⚠️ **与原版等价是有条件的**，条件写在这里免得下一个人以为它无条件成立：
+  // 这里是**每一步都清、不看当前是哪一页**，原版只在装备页真的被画时清。
+  // 两者今天结果相同，**因为置位的只有装备页自己的 `checkAllButtonPressed`**
+  // —— 而它只在装备页是当前页时才跑，那一步末尾原版必定画它。哪天有别处
+  // 置这两个位，这条等价就不成立了。
+  const equip = w.panels.equipPanel.equip
+  if (equip) clearEquipWarnings(equip)
   for (const input of inputs) applyMenuInput(w, input)
+  // 原版的 `paint()` **有状态副作用**，而 `MenuDriver` 每一步都真的画一次
+  // 当前页（`current().paint(sink)`）。照办 —— 少了它，装备页的
+  // `abandonDraw` 与 `diff` 两列永远对不上。
   paintCurrentPanel(w)
   w.tick++
   return w
@@ -65,6 +87,7 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
  */
 function paintCurrentPanel(w: MenuWorld): void {
   const p = currentPanel(w)
+  if (p.equip) paintEquip(p.equip, w.music)
   if (p.magic && p.scoll) magicDrawThisPanel(p.magic, p.scoll.whichHero)
 }
 
@@ -117,6 +140,7 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
   if (p.scoll) {
     for (const { field } of SCOLL_HEROES) releaseButton(p.scoll[field], p.currentX, p.currentY)
   }
+  if (p.equip) equipCheckReleased(p.equip, p.currentX, p.currentY)
   if (p.funcButtons) funcCheckReleased(p.funcButtons, p.currentX, p.currentY)
   drugPanelReleased(p)
   // 奇术页的松开**扫全部三组**，不只当前角色那一组（原版就是这么写的）。
@@ -137,6 +161,9 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
   drugPanelMoveIn(w, p)
   // 奇术页的悬停**只扫当前角色那一组**（`checkAllButtonMoveIn` 的 switch）。
   if (p.magic && p.scoll) magicCheckMoveIn(p.magic, p.scoll.whichHero, p.currentX, p.currentY)
+  // `EquipPanel.checkAllButtonMoveIn()`：`isMoveIn()`（挑列表的第几行）在前，
+  // 八颗按钮的命中判据在后。
+  if (p.equip) equipCheckMoveIn(p.equip, p.currentX, p.currentY)
 }
 
 /**
@@ -172,6 +199,11 @@ function commandCheckPressed(w: MenuWorld): void {
  */
 function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   scollCheckPressed(w, p)
+  // 装备页那一段在 `scoll.checkPressed()` **之后** —— 它头三段读的正是刚被
+  // 置位的 `scoll.heroN.isclicked`（换人时把背包与列表整个拨回那个人的武器）。
+  if (p.equip && p.scoll) {
+    equipCheckPressed(p.equip, p.scoll, w.heroes, p.currentX, p.currentY, w.music)
+  }
   // 天书页没有卷轴，它的 `checkAllButtonPressed` 只有 `fb.checkPressed()` 一句。
   //
   // 页签那一项要现读：原版第一段读的是 `command.buttonList` 里有没有哪一颗

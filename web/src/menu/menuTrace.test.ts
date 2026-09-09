@@ -59,39 +59,34 @@ const NON_STATE_COLUMNS: readonly string[] = ['t', 'ip', 'input']
  * "谁已经有人对齐了"这份需要人签字的登记。
  */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
-  // ⚠️ 下面这三条新剧本（xl-6lo.7 落的：menu-func / menu-hero / menu-scroll）
-  // 的格子，**归属是跑出来的、不是判断出来的**：它们一入库这张表先红了一次
-  // （27 个格子两边都没登记），把 27 格全填进 ALIGNED 跑一遍，红的正好 6 格，
-  // 其余 21 格照绿 —— 那 6 格全在装备页那一片（见 PENDING）。
+  // **九组 × 五条剧本，45 个格子全部对齐了**（M3 的五张页票做完之后）。
+  //
+  // ⚠️ 这份「全满」是**跑出来的，不是宣布的**：主干合并 xl-6lo.9 时把 45 格
+  // 全填进来跑了一遍，逐格用例一条都没红。别把「全满」读成「这张表没用了」——
+  // 它现在守的是两件事：
+  //   1. 新真值进来时先红一次（xl-6lo.7 落三条新剧本那次就红了 27 格）；
+  //   2. 谁把某一组改回去时那一格立刻红。
+  // 下面 PENDING 与 BLOCKED_AT 都空着，那是**当前的读数**，不是这张表的形状。
+  music: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
   panel: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
   hero: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
-  mouse: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
-  // ⚠️ `heroes` 只对齐了 `menu-magic` 一条。`menu-equip` 从第 8 步起就在改
-  // 三个人的属性（弃用 → 换装 → 喝药），而那三件事分别归装备页与物品页 ——
-  // 见下面 `PENDING.heroes`。票面写的是"本票对齐 panel / mouse / heroes 三组"，
-  // 实测这一组横跨两张后续的票，所以按格子登记，只签得下其中一格。
-  heroes: ['menu-magic', 'menu-func', 'menu-scroll'],
-  // `drug` 两条剧本都签下了（xl-6lo.10）。⚠️ **`menu-magic` 那一格是常量**
-  // ——那条剧本 `setup.drugs` 是空的，30 拍里 `drug` 一列一个字都没变过。
-  // 它守的是"别凭空冒出清单来"，真正会红的那一格是 `menu-equip`：第 21 步
-  // 选中、第 22 步喝掉一瓶，数量 2→1。
+  // `heroes` 是 xl-6lo.9 与 .10 合起来才齐的：装备页的弃用/换装归 .9，
+  // 物品页第 22 步喝药那一下 700→1000 归 .10 —— 两张票各自都对不齐这一组。
+  heroes: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
+  // 装备页那 13 个字段（六个槽位 / 选中 / 属性差值 / 两条拒绝提示 /
+  // 可用可弃两个绘制旗标 / 背包列表），xl-6lo.9。
+  equip: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
+  // xl-6lo.10。⚠️ 五条里只有 `menu-equip` 那一格真的会动（第 21 步选中、
+  // 第 22 步 2→1）；其余四条 `setup.drugs` 是空的，守的是"别凭空冒出清单来"。
   drug: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
-  // 天书页整页（xl-6lo.12）。⚠️ **这两条真值里 `func.drawn` 从头到尾没变过**
-  // —— 两条剧本都没点过天书页的按钮，所以这一格证明的是"开局那六颗对得上、
-  // 而且没有谁被别处的操作偷偷改掉"，**证不到子菜单的展开收起**。展开收起
-  // 那一半的判据在 `funcButtons.test.ts`：从 GBK 源码里现读 `checkPressed()`
-  // 的每一段，把 `isDraw` 赋值解出来当期望值（同样零手写；段数由解析器现数，
-  // 别在这里写一个会过期的数字）。
-  // 逐次相等的真值要等 **xl-6lo.7** 那条「天书设定」剧本落地 —— 它一入库，
-  // 这张表的对撞会先红一次（新剧本两边都没登记），那正是提醒。
-  func: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
-  // 奇术页整组，两条剧本都签（xl-6lo.11）。`menu-equip` 也签得下 —— 它
-  // 第 24 步切进奇术页那一次按下同样会把动画清空、把按钮按 skillNumber
-  // 关掉，那正是这一组两处判据里的一处。
+  // xl-6lo.11。`menu-equip` 也签得下 —— 它第 24 步切进奇术页那一次按下同样会
+  // 把动画清空、把按钮按 skillNumber 关掉。
   magic: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
-  // ⚠️ `music` 只签 `menu-magic` 一条。`menu-equip` 还有装备页那五声
-  // （禁止 / 弃用 / 武器 / 盔甲 / 命+），归 xl-6lo.9 —— 见 `PENDING.music`。
-  music: ['menu-magic', 'menu-func'],
+  // xl-6lo.12。⚠️ `menu-equip` / `menu-magic` 两条里 `func.drawn` 从头到尾没变过
+  // （没点过天书页），它们守的是"开局那六颗对得上、没被别处偷偷改掉"。
+  // **子菜单展开收起的逐次相等靠 `menu-func`** —— 那条剧本是 xl-6lo.7 补的。
+  mouse: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
+  func: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
 }
 
 /**
@@ -101,14 +96,37 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
  * 一列没人登记，下面第一条用例立刻红。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // 装备页从第 8 步起改三个人的属性；物品页第 22 步喝药改 hp。第一处分歧在
-  // 装备页，票号按第一处分歧记。
-  heroes: { 'menu-equip': 'xl-6lo.9', 'menu-hero': 'xl-6lo.9' },
-  // 音效：切页那一声（`换list.wav`）与奇术页技能那一声（xl-6lo.11）已经
-  // 出得对，`menu-equip` 还欠装备页那五声 —— 禁止 / 弃用 / 武器 / 盔甲 / 命+。
-  music: { 'menu-equip': 'xl-6lo.9', 'menu-hero': 'xl-6lo.9', 'menu-scroll': 'xl-6lo.9' },
-  equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9',
-           'menu-func': 'xl-6lo.9', 'menu-hero': 'xl-6lo.9', 'menu-scroll': 'xl-6lo.9' },
+}
+
+/**
+ * **`PENDING` 里那些「前半截已经对上了」的格子 —— 手写登记，写明卡在哪。**
+ *
+ * 光有 `PENDING` 的话，"第 8 步就开始错"与"一直对到第 22 步、卡在别人那张票上"
+ * 长得一模一样：两者都只是"还没对上"。而 xl-6lo.9 的验收标准恰恰落在那中间
+ * 一段（弃用后属性跌回去、穿上盔甲后气血上限 700→1050），没有这张表就一条
+ * 会红的判据都没有。
+ *
+ * 卡住的那一步**不写步号**，写成一句真值自己认得出的话（"物品页上按下「使用」
+ * 的第一步"）—— 步号会随着剧本改动整体平移，而那种失效是安静的。
+ */
+interface BlockedAt {
+  /** 那一步显示着哪一页。 */
+  readonly panel: string
+  /** 那一步的输入事件与它点的东西。 */
+  readonly event: string
+  readonly target: string
+  /** 卡住的原因，一句话。 */
+  readonly why: string
+}
+
+const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {
+  // 空的。xl-6lo.9 落地时这里有两条（heroes × menu-equip、music × menu-equip，
+  // 都卡在物品页喝药那一下），而 xl-6lo.10 恰好把那一步做了 —— 两张票各自都
+  // 对不齐这两组，合到一起就齐了。主干合并时把 45 个格子全填进 ALIGNED 跑了
+  // 一遍：逐格用例一条都没红，红的只有「BLOCKED_AT 里有、PENDING 里却没有」
+  // 这条一致性检查，于是把这两条撤掉。
+  //
+  // ⚠️ 撤掉不等于这张表没用了：下一条新真值进来时，某一组多半又会只对到半截。
 }
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */
@@ -155,20 +173,26 @@ function snapshotsOf(name: string): Record<string, unknown>[] {
   return snaps
 }
 
-/** 这一格逐步全对上了吗。给"还欠着"那半边用 —— 它要的是**不对上**。 */
-function cellMatches(name: string, group: string): boolean {
+/** 这一格**第一处**对不上的那一步；全对上时返回 `ticks.length`。 */
+function firstDivergence(name: string, group: string): number {
   const trace = traceOf(name)
   const snaps = snapshotsOf(name)
-  return trace.ticks.every((tick, i) => {
+  const at = trace.ticks.findIndex((tick, i) => {
     const got = snaps[i]![group]
-    if (got === undefined) return false
+    if (got === undefined) return true
     try {
       expect(got).toEqual(tick[group])
-      return true
-    } catch {
       return false
+    } catch {
+      return true
     }
   })
+  return at === -1 ? trace.ticks.length : at
+}
+
+/** 这一格逐步全对上了吗。给"还欠着"那半边用 —— 它要的是**不对上**。 */
+function cellMatches(name: string, group: string): boolean {
+  return firstDivergence(name, group) === traceOf(name).ticks.length
 }
 
 describe('菜单状态层对齐行为真值', () => {
@@ -249,7 +273,65 @@ describe('菜单状态层对齐行为真值', () => {
     }
   }
 
+  describe('「前半截已经对上了」的格子：卡住的那一步就是登记里写的那一步', () => {
+    // ⚠️ `BLOCKED_AT` 空着的时候这个 describe 一条用例都不生成，而
+    // **「一条都没生成」与「都过了」在测试报告里长得一样**（vitest 会为空 suite
+    // 报错，那是它替我们兜的底，别指望它一直兜）。所以放一条明写当前读数的
+    // 用例在这里：今天是空的，非空时它自己就没了。
+    if (Object.keys(BLOCKED_AT).length === 0) {
+      it('今天没有「只对到半截」的格子 —— 这是读数，不是这张表的形状', () => {
+        expect(BLOCKED_AT).toEqual({})
+      })
+    }
+    for (const [group, byTrace] of Object.entries(BLOCKED_AT)) {
+      for (const [name, blocked] of Object.entries(byTrace)) {
+        it(`${name} · ${group}：一路对到「${blocked.panel} 上 ${blocked.event} ${blocked.target}」那一步`, () => {
+          // 先核这一格确实还挂在 PENDING 上 —— 两张表说的必须是同一件事。
+          expect(
+            PENDING[group]?.[name],
+            `BLOCKED_AT 里有 ${group} × ${name}，PENDING 里却没有`,
+          ).toBeTruthy()
+
+          // 卡住的那一步**从真值里认**，不写步号：步号会随剧本改动整体平移。
+          const trace = traceOf(name)
+          const want = trace.ticks.findIndex(
+            (tick) =>
+              tick['panel'] === blocked.panel &&
+              tick.input.some(
+                (e) => e.e === blocked.event && 'target' in e && e.target === blocked.target,
+              ),
+          )
+          // ⚠️ 两件事分开断言：`findIndex` 的 -1（找不到）与命中第 0 步是两回事，
+          // 并成一档 `toBeGreaterThan(0)` 的话，报错文案只说得出其中一件
+          // （/code-review 的 Standards 轴提的）。
+          expect(
+            want,
+            `${name} 里找不到「${blocked.panel} 上 ${blocked.event} ${blocked.target}」这一步 ——` +
+              ` 剧本改了，这条登记要跟着改`,
+          ).not.toBe(-1)
+          expect(
+            want,
+            `${name} 卡在第 0 步 —— 那等于前半截一格都没对上，这条登记就没有意义了`,
+          ).toBeGreaterThan(0)
+
+          // 正题：第一处分歧**恰好**是那一步。早一步 → 这一票自己做错了；
+          // 晚一步或没有 → 已经全对上了，该挪进 ALIGNED。
+          expect(
+            firstDivergence(name, group),
+            `${blocked.why}`,
+          ).toBe(want)
+        })
+      }
+    }
+  })
+
   describe('反方向：登记成「还欠着」的格子必须真的还没对上', () => {
+    // 同上：`PENDING` 空着时这个 describe 也是零用例。
+    if (Object.keys(PENDING).length === 0) {
+      it('今天没有「还欠着」的格子 —— 九组 × 五条剧本全对齐了', () => {
+        expect(PENDING).toEqual({})
+      })
+    }
     for (const [group, byTrace] of Object.entries(PENDING)) {
       for (const [name, issue] of Object.entries(byTrace)) {
         it(`${name} · ${group}（${issue}）还没对上`, () => {
