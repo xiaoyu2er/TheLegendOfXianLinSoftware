@@ -224,6 +224,49 @@ describe('装备店的源码参照模型：期望值从 EquipmentShopPanel.java 
   })
 
   /**
+   * ⚠️ **篡改矩阵露出来的那一格：价位那三支「没有 else」在实现上没人守。**
+   *
+   * 上面那条 (d) 数的是**源码**里 `messageplus=` 出现了几次 —— 源码没变，
+   * 所以给**实现**补一个 `?? '绝对是当世之宝器,'` 兜底之后它照样绿，而其余
+   * 每一条也绿：六张表最贵的是 80000，`>=100000` 那一路一件商品都走不到，
+   * 于是"照抄了"与"补了兜底"推出来的读数完全相同（dispatch.md「篡改了却是
+   * 绿的」第三种）。
+   *
+   * 补法：**把那一路造出来**。上界从源码现读，然后把某一行的价钱抬到它以上
+   * —— `price` 是店里那一列自己的状态（原版 `Equipment` 对象上那个字段），
+   * 造它不用改任何数据文件。
+   */
+  it('⚠️ 价钱超过最高那一档时 messagePlus **留着上一件那句** —— 那一路数据里走不到，造出来', () => {
+    const tops = [...MOVE_IN.matchAll(/\.getReduceMoney\(\)<(\d+)\)/g)].map((m) => Number(m[1]))
+    expect(tops.length, 'isMoveIn 里一个价位上界都没解析出来').toBeGreaterThan(0)
+    const top = Math.max(...tops)
+
+    // 先确认这一路**真的**是数据走不到的 —— 否则这条用例与上面那一圈重复，
+    // 而"重复"与"守着一条别人守不到的路"长得不一样。
+    const dearest = Math.max(...EQUIP_SLOTS.flatMap((s) => EQUIPMENT_LISTS[s]).map((e) => e.reduceMoney))
+    expect(dearest, `数据里已经有价钱 >= ${top} 的装备了，这条路不用造`).toBeLessThan(top)
+
+    const world = equipWorld()
+    switchTo(world, 'weapon')
+    // 垫一句出来：第 0 行的价钱在最低那一档里。
+    hover(world, 0)
+    const before = (snapshotShop(world)['message'] as { plus: string | null }).plus
+    expect(before, '垫不出一句 plus').not.toBeNull()
+
+    // 把第 1 行抬到最高那一档以上，再停到它上头。
+    const row = world.equipment.rows['weapon'][1]!
+    row.price = top
+    hover(world, 1)
+    const after = snapshotShop(world)['message'] as { plus: string | null; message: string }
+    expect(
+      after.plus,
+      `价钱 ${top} 落在三支 else-if 之外，messagePlus 该一个字都不动 —— 有人给它补了 else？`,
+    ).toBe(before)
+    // 而第一行**确实换了**（否则"没变"是因为整个 hover 没生效）。
+    expect(after.message).toContain(`${EQUIPMENT_LISTS['weapon'][1]!.addSpirit}`)
+  })
+
+  /**
    * **手签登记：源码里那四段，哪几段任何数据都走不到。**
    *
    * ⚠️ 这张表**必须手写**（dispatch.md 纪律 3：分母现数、登记手签）。写成
