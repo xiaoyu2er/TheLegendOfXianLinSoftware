@@ -217,6 +217,10 @@ describe('资产逻辑 ID', () => {
       'menu:',
       // 装备页那两张图的素材（xl-234），在 `sources/Shop/装备/<类>/` 下。
       'equip:',
+      // 商店素材（xl-knp.5），`sources/Shop/` 下除 `装备/`、`药品/回复类/`
+      // 与那几张数据表之外的那批。**没有代码引用的 13 张不在这张表里**，
+      // 它们照烘但不进主包 —— 见 `shop/shopAssets.ts`。
+      'shop:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })

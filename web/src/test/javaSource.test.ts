@@ -39,6 +39,8 @@ const ALLOWED: Record<string, string> = {
     '**生产代码**，要进浏览器包（helper 用 node:fs 读磁盘），且它收的是字节不是路径',
   'src/menu/equipment.test.ts':
     '读的是 sources/Shop/ 下那六份装备表，与 drugs.test.ts 同一个理由：游戏**数据文件**而非 Java 源码（同一个文件里读 Java 源码那一半走的正是 helper）',
+  'src/shop/shopReferences.ts':
+    '烘焙器的一部分（Node 侧），而 helper 从 `import.meta.url` 算死了仓库根 —— 这个扫描器收 `repoRoot` 做参数，正是为了让 `shopAssets.test.ts` 把它指向临时目录里的假源码树，把每一种失败真造出来',
   'src/menu/defaultWeapons.test.ts':
     '读的是 sources/Shop/武器.txt，与 drugs.test.ts 同一个理由：游戏**数据文件**而非 Java 源码（同一个文件里读 Java 源码那一半走的正是 helper）',
 }
