@@ -110,6 +110,29 @@ describe('useGame 接线', () => {
    * 用 `脚本4`：它的 `Dialogue` 段触发码是 `-1`，也就是**进场自动播**
    * （`DialogueEvent.checkAutoDialogue`），不用先把主角走到谁跟前。
    */
+  /**
+   * ESC 开菜单（xl-6lo.8）。接线断了的表现是"按 ESC 没反应"，而
+   * `game/session.ts` 的 `openMenu` 与整个 `menu/` 的测试**都还是绿的** ——
+   * 这条缝只有在这里才看得见。
+   */
+  it('按 ESC 开菜单；进了菜单再按 ESC 出不去（原版就是这样坏的）', async () => {
+    const { result } = await mount()
+    expect(result.current.panel).toBe('scene')
+    press('Escape')
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS)
+    })
+    expect(result.current.panel).toBe('menu')
+
+    // ⚠️ 复刻的死代码：菜单里那个 keyPressed(ESC) 一个分支都不命中。
+    // Web 上按 ESC 关面板是肌肉记忆，别"顺手修好"它 —— 改了真值就对不上。
+    press('Escape')
+    act(() => {
+      vi.advanceTimersByTime(10 * TICK_MS)
+    })
+    expect(result.current.panel).toBe('menu')
+  })
+
   it('自动对话会走到 React 手里，空格能把它推下去', async () => {
     const scene = getScene('脚本4')
     const sentences = scene.dialogue![0]!
