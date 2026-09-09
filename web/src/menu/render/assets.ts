@@ -1,8 +1,8 @@
 import { menuAssetId } from '../../assets/menuAssets'
 import { battleAssetId } from '../../assets/battleAssets'
 import type { AssetId } from '../../assets/ids'
+import { EQUIP_SLOTS } from '../equipment'
 import type { EquipSlot } from '../equipment'
-import { equipTextureIds } from './equipDraw'
 import type { ButtonImage, MenuPanelName, MenuTabKey, MenuWorld } from '../types'
 import type { FuncMainKey, FuncSubKey } from '../funcButtons'
 
@@ -197,4 +197,26 @@ export function showValueDigitId(digit: number, down: boolean): AssetId {
     throw new Error(`升降数字只有 0..9，收到 ${digit}`)
   }
   return battleAssetId(`image/伤害值数字/${down ? '回复' : '伤害'}/${digit}.png`)
+}
+
+/**
+ * 装备页那一页要用到的全部按钮 / 提示 / 升降数字贴图。
+ *
+ * 与 `funcButtonIds()` 同形、也放在同一个文件里：**ID 这件事整个归这一层**。
+ * 放到 `equipDraw.ts` 里会让 `assets.ts` 反过来进口它，而那两个模块本来就是
+ * `equipDraw → assets` 的单向依赖 —— 绕成环之后谁都说不清哪一边先初始化。
+ */
+export function equipTextureIds(): AssetId[] {
+  const ids: AssetId[] = []
+  for (const key of [...EQUIP_SLOTS, 'use' as const, 'abandon' as const]) {
+    for (const image of Object.keys(STATE_SUFFIX) as ButtonImage[]) {
+      ids.push(equipButtonId(key, image))
+    }
+  }
+  ids.push(warningId('equipped'), warningId('cannotUse'))
+  for (const down of [false, true]) {
+    ids.push(showValueArrowId(down))
+    for (let digit = 0; digit <= 9; digit++) ids.push(showValueDigitId(digit, down))
+  }
+  return [...new Set(ids)]
 }

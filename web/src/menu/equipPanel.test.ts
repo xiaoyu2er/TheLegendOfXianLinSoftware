@@ -19,13 +19,19 @@ import {
   USE_BUTTON_X,
   USE_BUTTON_Y,
   WORN_IMAGE_X,
-  equipList,
 } from './equipPanel'
 import { MENU_HERO_ORDER } from './heroes'
 import { snapshotMenu } from './snapshot'
 import { stepMenu } from './step'
 import { SCOLL_HEROES } from './types'
 import { createMenuWorld } from './world'
+import {
+  clickButton,
+  clickScollHead,
+  pressButtonOnly,
+  releaseButtonOnly,
+  selectEquipRow,
+} from '../test/menuClicks'
 import type { MenuWorld } from './types'
 
 /**
@@ -123,37 +129,6 @@ function worldOnEquipPage(equipment: readonly { name: string; count: number }[] 
   return w
 }
 
-/** 点一颗按钮：按下一步、松开一步，与真值里每条指令展开的那两步同形。 */
-function click(w: MenuWorld, x: number, y: number): void {
-  stepMenu(w, [{ e: 'press', x, y }])
-  stepMenu(w, [{ e: 'release', x, y }])
-}
-
-/**
- * 把鼠标移到当前列表里那一件所在的行 —— 落点算法与 `MenuDriver.move()` 同一套
- * （行高 22，命中带从 `y_start_point-22` 起）。
- */
-function selectRow(w: MenuWorld, name: string): void {
-  const e = w.panels.equipPanel.equip!
-  const index = equipList(e).findIndex((i) => i.name === name)
-  if (index < 0) throw new Error(`当前列表里没有「${name}」`)
-  stepMenu(w, [
-    {
-      e: 'move',
-      x: EQUIP_X_START + 1,
-      y: EQUIP_Y_START - EQUIP_ROW_H + EQUIP_ROW_H * index + Math.floor(EQUIP_ROW_H / 2),
-    },
-  ])
-  if (e.currentEquipment !== name) {
-    throw new Error(`想选「${name}」，实际选中的是「${e.currentEquipment}」`)
-  }
-}
-
-/** 按钮中心。命中框比画出来的位置偏左 15、偏上 6（`buttons.ts` 第 1 条）。 */
-function center(b: { x: number; y: number; width: number; height: number }): [number, number] {
-  return [b.x - 15 + Math.floor(b.width / 2), b.y - 6 + Math.floor(b.height / 2)]
-}
-
 describe('两条 menu 真值今天盖不到的路径', () => {
   /**
    * ⚠️ **换人这一整段零真值覆盖**：`menu-equip` 与 `menu-magic` 全程
@@ -167,14 +142,10 @@ describe('两条 menu 真值今天盖不到的路径', () => {
     const e = w.panels.equipPanel.equip!
 
     // 先切到盔甲页，好看出"换人一律把列表拨回武器"这件事。
-    click(w, ...center(e.slots.armor))
+    clickButton(w, e.slots.armor)
     expect(e.currentList).toBe('armor')
 
-    // ⚠️ 二号与四号的头像开局 `isDraw=No`，`Scoll.checkMoveIn()` 才按出战名单
-    // 把它们打开 —— 不先移一下鼠标，`isPressedButton` 整个跳过，这一点就是空的。
-    const [hx, hy] = center(scoll.hero2)
-    stepMenu(w, [{ e: 'move', x: hx, y: hy }])
-    click(w, hx, hy)
+    clickScollHead(w, scoll.hero2)
 
     expect(scoll.whichHero).toBe(2)
     expect(e.currentPackHero).toBe(2)
@@ -233,22 +204,21 @@ describe('两条 menu 真值今天盖不到的路径', () => {
   it('鼠标事件只送当前页 —— 别的页上同一个落点点不动', () => {
     const w = worldOnEquipPage([{ name: DEFAULT_WEAPONS.zhang.name, count: 1 }])
     const e = w.panels.equipPanel.equip!
-    click(w, ...center(e.slots.weapon))
-    selectRow(w, DEFAULT_WEAPONS.zhang.name)
+    clickButton(w, e.slots.weapon)
+    selectEquipRow(w, DEFAULT_WEAPONS.zhang.name)
     expect(e.use.isDraw, '选中之后「使用」该画着了').toBe(true)
 
-    const [ux, uy] = center(e.use)
     const before = snapshotMenu(w)['equip']
     w.panel = 'thingPanel'
-    stepMenu(w, [{ e: 'press', x: ux, y: uy }])
+    pressButtonOnly(w, e.use)
     expect(snapshotMenu(w)['equip'], '在物品页上点，装备页不该有任何反应').toEqual(before)
-    stepMenu(w, [{ e: 'release', x: ux, y: uy }])
+    releaseButtonOnly(w, e.use)
 
     // 正向控制：同一个落点，翻回装备页就点得动。没有它的话，上面那句在
     // "这个落点本来就点不中"的情况下也是绿的。
     // ⚠️ 要在**按下那一步**看：拒绝旗标只活这一步，松开那一步就清了。
     w.panel = 'equipPanel'
-    stepMenu(w, [{ e: 'press', x: ux, y: uy }])
+    pressButtonOnly(w, e.use)
     expect(snapshotMenu(w)['equip']).not.toEqual(before)
   })
 
@@ -267,13 +237,12 @@ describe('两条 menu 真值今天盖不到的路径', () => {
     // 开局张小凡身上就穿着 `DEFAULT_WEAPONS.zhang`，再给背包放一把同样的。
     const w = worldOnEquipPage([{ name: DEFAULT_WEAPONS.zhang.name, count: 1 }])
     const e = w.panels.equipPanel.equip!
-    click(w, ...center(e.slots.weapon))
-    selectRow(w, DEFAULT_WEAPONS.zhang.name)
+    clickButton(w, e.slots.weapon)
+    selectEquipRow(w, DEFAULT_WEAPONS.zhang.name)
     expect(e.heroEquipment, '武器槽本来就满着').toBe(DEFAULT_WEAPONS.zhang.name)
     const zhangBefore = { ...w.heroes[0]! }
 
-    const [ux, uy] = center(e.use)
-    stepMenu(w, [{ e: 'press', x: ux, y: uy }])
+    pressButtonOnly(w, e.use)
     expect(snapshotMenu(w)['equip']).toMatchObject({
       warnEquipped: true,
       // 另一条不许跟着亮 —— 两条是互斥的。
@@ -287,7 +256,7 @@ describe('两条 menu 真值今天盖不到的路径', () => {
     expect(w.heroes[0], '被拒绝了，属性一个字都不该动').toEqual(zhangBefore)
 
     // 旗标只活这一步。
-    stepMenu(w, [{ e: 'release', x: ux, y: uy }])
+    releaseButtonOnly(w, e.use)
     expect(snapshotMenu(w)['equip']).toMatchObject({ warnEquipped: false })
   })
 
@@ -312,16 +281,17 @@ describe('两条 menu 真值今天盖不到的路径', () => {
     const e = w.panels.equipPanel.equip!
 
     for (const slot of EQUIP_SLOTS) {
-      click(w, ...center(e.slots[slot]))
+      clickButton(w, e.slots[slot])
       // 武器槽开局就穿着东西，先弃用；`abandon.isDraw` 说明它画不画得出来。
-      if (e.abandon.isDraw) click(w, ...center(e.abandon))
-      selectRow(w, usable[slot])
-      click(w, ...center(e.use))
+      if (e.abandon.isDraw) clickButton(w, e.abandon)
+      selectEquipRow(w, usable[slot])
+      clickButton(w, e.use)
     }
 
+    // 串槽的话某一槽会是别人的东西 —— 上面这一句就是那条判据。
     expect(snapshotMenu(w)['equip']).toMatchObject({ equipped: usable })
-    // 反向：串槽的话某一槽会是别人的东西，而六个名字都合法。所以再核一遍
-    // 六件东西两两不同（六张表里没有重名）。
+    // 而它有分辨力的前提是**六件东西两两不同**：真撞了名字，串槽就看不出来了。
+    // （这一句核的只是这件事，不是串槽本身。）
     expect(new Set(Object.values(usable)).size).toBe(EQUIP_SLOTS.length)
   })
 })

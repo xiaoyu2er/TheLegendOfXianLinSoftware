@@ -6,19 +6,38 @@ import bakeStamp from '../../generated/bakeStamp.json'
 import { javaSource } from '../../test/javaSource'
 import { repoPath } from '../../test/repoPath'
 import { EQUIPMENT_LISTS, EQUIP_SLOTS } from '../equipment'
-import { CURRENT_IMAGE_Y, CURRENT_IMAGE_X, WORN_IMAGE_X } from '../equipPanel'
+import {
+  CURRENT_IMAGE_X,
+  CURRENT_IMAGE_Y,
+  EQUIP_ROW_H,
+  EQUIP_X_START,
+  EQUIP_Y_START,
+  WORN_IMAGE_X,
+} from '../equipPanel'
 import { DEFAULT_WEAPONS } from '../defaultWeapons'
 import { stepMenu } from '../step'
 import { createMenuWorld } from '../world'
+import {
+  clickScollHead,
+  pressButtonOnly,
+  releaseButtonOnly,
+  selectEquipRow,
+} from '../../test/menuClicks'
 import { menuDrawList } from './drawList'
 import {
   CURRENT_PICTURE_ANCHOR,
   WORN_PICTURE_ANCHOR,
   equipIntroText,
-  equipTextureIds,
   showValueDigits,
 } from './equipDraw'
-import { equipButtonId, menuTextureIds, showValueArrowId, showValueDigitId, warningId } from './assets'
+import {
+  equipButtonId,
+  equipTextureIds,
+  menuTextureIds,
+  showValueArrowId,
+  showValueDigitId,
+  warningId,
+} from './assets'
 import type { MenuDrawOp } from './drawList'
 import type { MenuWorld } from '../types'
 
@@ -167,6 +186,10 @@ describe('⚠️ 登记：两张装备图今天烘不出来', () => {
     // 缺的就是这两张：这一页画出来的图里，没有任何一张落在那两个点上。
     const w = world([{ name: DEFAULT_WEAPONS.zhang.name, count: 1 }])
     const images = pageOps(w).filter((op) => op.kind === 'image')
+    // ⚠️ **正向控制**：这一页真的画了图。少了这一句，`equipDrawOps` 整个返回
+    // 空数组时下面那两条也是绿的 —— "缺口还在"与"这一层坏了"长得一模一样
+    // （/code-review 的 Standards 轴提的）。
+    expect(images.length, '这一页一张图都没画 —— 下面那两条就成了恒真').toBeGreaterThan(0)
     for (const anchor of [CURRENT_PICTURE_ANCHOR, WORN_PICTURE_ANCHOR]) {
       expect(images.some((op) => op.x === anchor.x && op.y === anchor.y)).toBe(false)
     }
@@ -198,7 +221,10 @@ describe('装备页画出来的那几段', () => {
       { name: item.name, count: 2 },
       { name: DEFAULT_WEAPONS.lu.name, count: 1 },
     ])
-    const rows = texts(pageOps(w)).filter((t) => t.y >= 177 && t.y < 250)
+    // 列表那几行的 y 带：起点与行高都从常量来，不写死 177/250。
+    const rows = texts(pageOps(w)).filter(
+      (t) => t.y >= EQUIP_Y_START && t.y < EQUIP_Y_START + 4 * EQUIP_ROW_H,
+    )
     // 两件东西 × （名字 + 数量）= 四行。数量那一行的三个空格照抄原版。
     expect(rows.map((r) => r.text)).toEqual([
       DEFAULT_WEAPONS.lu.name,
@@ -207,11 +233,13 @@ describe('装备页画出来的那几段', () => {
       '   2',
     ])
     expect(rows.map((r) => [r.x, r.y])).toEqual([
-      [548, 177],
-      [698, 177],
-      [548, 199],
-      [698, 199],
+      [EQUIP_X_START, EQUIP_Y_START],
+      [EQUIP_X_START + 150, EQUIP_Y_START],
+      [EQUIP_X_START, EQUIP_Y_START + EQUIP_ROW_H],
+      [EQUIP_X_START + 150, EQUIP_Y_START + EQUIP_ROW_H],
     ])
+    // 常量本身不是自证的：`equipPanel.test.ts` 把它们对回了 GBK 源码。
+    expect([EQUIP_X_START, EQUIP_Y_START, EQUIP_ROW_H]).toEqual([548, 177, 22])
     expect(new Set(rows.map((r) => r.size))).toEqual(new Set([20]))
   })
 
@@ -282,8 +310,8 @@ describe('装备页画出来的那几段', () => {
     // ⚠️ 这一条是篡改矩阵逼出来的：原先只核 `equipTextureIds()` 自己，把它从
     // `menuTextureIds` 里摘掉照样全绿 —— 而那正是"载不到纹理"的样子。
     const w = world([{ name: DEFAULT_WEAPONS.lu.name, count: 1 }])
-    stepMenu(w, [{ e: 'move', x: 549, y: 188 - 22 }])
-    stepMenu(w, [{ e: 'press', x: 897, y: 444 }])
+    selectEquipRow(w, DEFAULT_WEAPONS.lu.name)
+    pressButtonOnly(w, w.panels.equipPanel.equip!.use)
     const used = new Set(
       menuDrawList(w).flatMap((op) => (op.kind === 'image' ? [op.id] : [])),
     )
@@ -300,12 +328,7 @@ describe('装备页画出来的那几段', () => {
     const w = createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true })
     w.panel = 'equipPanel'
     const scoll = w.panels.equipPanel.scoll!
-    // 二号头像开局 isDraw=No，先移一下鼠标让 `Scoll.checkMoveIn()` 打开它。
-    const head = scoll.hero2
-    const [hx, hy] = [head.x - 15 + Math.floor(head.width / 2), head.y - 6 + Math.floor(head.height / 2)]
-    stepMenu(w, [{ e: 'move', x: hx, y: hy }])
-    stepMenu(w, [{ e: 'press', x: hx, y: hy }])
-    stepMenu(w, [{ e: 'release', x: hx, y: hy }])
+    clickScollHead(w, scoll.hero2)
     expect(scoll.whichHero).toBe(2)
 
     const bars = texts(pageOps(w)).filter((t) => t.color === '#0000ff')
@@ -327,8 +350,7 @@ describe('装备页画出来的那几段', () => {
 
   it('选中之后：说明换成那件的，四个升降数字画出来', () => {
     const w = world([{ name: DEFAULT_WEAPONS.lu.name, count: 1 }])
-    // 移到第 0 行选中它。
-    stepMenu(w, [{ e: 'move', x: 549, y: 188 - 22 }])
+    selectEquipRow(w, DEFAULT_WEAPONS.lu.name)
     const ops = pageOps(w)
     const spec = EQUIPMENT_LISTS.weapon.find((i) => i.name === DEFAULT_WEAPONS.lu.name)!
     expect(texts(ops).map((t) => t.text)).toContain(spec.name)
@@ -345,15 +367,16 @@ describe('装备页画出来的那几段', () => {
 
   it('拒绝提示只在置了旗标的那一步画，落点 (800,330)', () => {
     const w = world([{ name: DEFAULT_WEAPONS.zhang.name, count: 1 }])
-    stepMenu(w, [{ e: 'move', x: 549, y: 188 - 22 }])
+    const e = w.panels.equipPanel.equip!
+    selectEquipRow(w, DEFAULT_WEAPONS.zhang.name)
     expect(pageOps(w).map((op) => (op.kind === 'image' ? op.id : ''))).not.toContain(
       warningId('equipped'),
     )
-    stepMenu(w, [{ e: 'press', x: 897, y: 444 }])
+    pressButtonOnly(w, e.use)
     const shown = pageOps(w).filter((op) => op.kind === 'image' && op.id === warningId('equipped'))
     expect(shown).toHaveLength(1)
     expect([shown[0]!.kind === 'image' && shown[0]!.x, shown[0]!.kind === 'image' && shown[0]!.y]).toEqual([800, 330])
-    stepMenu(w, [{ e: 'release', x: 897, y: 444 }])
+    releaseButtonOnly(w, e.use)
     expect(pageOps(w).map((op) => (op.kind === 'image' ? op.id : ''))).not.toContain(
       warningId('equipped'),
     )

@@ -39,8 +39,14 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
   w.music = []
   // 两个拒绝旗标同理：由**这一步**的输入置位。原版清它们的是紧接着那次
   // `drawWarning()`，而真值是在 paint **之前**抓的 —— 也就是"这一步置的位"
-  // 看得见、下一步就没了。清在这里，与清在 paint 里等价而且不会把它们抹成
-  // 永远的 false（`equipPanel.ts` 的 `paintEquip` 注释）。
+  // 看得见、下一步就没了。清在这里，不会把它们抹成永远的 false
+  // （`equipPanel.ts` 的 `paintEquip` 注释）。
+  //
+  // ⚠️ **与原版等价是有条件的**，条件写在这里免得下一个人以为它无条件成立：
+  // 这里是**每一步都清、不看当前是哪一页**，原版只在装备页真的被画时清。
+  // 两者今天结果相同，**因为置位的只有装备页自己的 `checkAllButtonPressed`**
+  // —— 而它只在装备页是当前页时才跑，那一步末尾原版必定画它。哪天有别处
+  // 置这两个位，这条等价就不成立了。
   const equip = w.panels.equipPanel.equip
   if (equip) clearEquipWarnings(equip)
   for (const input of inputs) applyMenuInput(w, input)
@@ -168,18 +174,7 @@ function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   // 装备页那一段在 `scoll.checkPressed()` **之后** —— 它头三段读的正是刚被
   // 置位的 `scoll.heroN.isclicked`（换人时把背包与列表整个拨回那个人的武器）。
   if (p.equip && p.scoll) {
-    const scoll = p.scoll
-    equipCheckPressed(
-      p.equip,
-      {
-        whichHero: scoll.whichHero,
-        buttons: { 1: scoll.hero1, 2: scoll.hero2, 4: scoll.hero4 },
-      },
-      w.heroes,
-      p.currentX,
-      p.currentY,
-      w.music,
-    )
+    equipCheckPressed(p.equip, p.scoll, w.heroes, p.currentX, p.currentY, w.music)
   }
   // 天书页没有卷轴，它的 `checkAllButtonPressed` 只有 `fb.checkPressed()` 一句。
   if (p.funcButtons) funcCheckPressed(p.funcButtons, p.currentX, p.currentY, w.music)

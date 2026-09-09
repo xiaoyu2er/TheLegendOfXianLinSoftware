@@ -69,6 +69,9 @@ describe('六类装备的全表对齐原版数据', () => {
 
   it('只有武器有使用者限制 —— 「不是这个人能用的」那条拒绝路径只可能发生在武器上', () => {
     for (const slot of EQUIP_SLOTS) {
+      // 每一槽自己带分母：表空了的话下面那条 `toEqual([])` 就是恒真，
+      // 而"这张表没有使用者限制"与"这张表根本没读到"长得一样。
+      expect(EQUIPMENT_LISTS[slot].length, `${slot} 那张表是空的`).toBeGreaterThan(0)
       const restricted = EQUIPMENT_LISTS[slot].filter((e) => e.user !== 0)
       if (slot === 'weapon') {
         expect(restricted.length, '武器表里一件带使用者限制的都没有').toBeGreaterThan(0)

@@ -1,4 +1,4 @@
-import { EQUIP_SLOTS, EQUIPMENT_LISTS } from '../equipment'
+import { EQUIP_SLOTS } from '../equipment'
 import type { EquipSlot, EquipmentSpec } from '../equipment'
 import {
   CURRENT_IMAGE_X,
@@ -7,14 +7,15 @@ import {
   EQUIP_X_START,
   EQUIP_Y_START,
   WORN_IMAGE_X,
+  equipCount,
   equipList,
-  heroOf,
+  menuHeroOf,
   specOf,
 } from '../equipPanel'
 import type { EquipPanelState } from '../equipPanel'
 import type { MenuHero } from '../heroes'
 import type { ScollHero } from '../types'
-import { equipButtonId, showValueDigitId, showValueArrowId, warningId } from './assets'
+import { equipButtonId, showValueArrowId, showValueDigitId, warningId } from './assets'
 import type { MenuDrawOp } from './drawList'
 import type { AssetId } from '../../assets/ids'
 
@@ -183,7 +184,7 @@ export function equipDrawOps(
   const list = equipList(e)
   let y = EQUIP_Y_START
   for (const item of list) {
-    const count = e.owned[e.currentList][EQUIPMENT_LISTS[e.currentList].indexOf(item)]
+    const count = equipCount(e, e.currentList, item.name)
     ops.push(text(item.name, EQUIP_X_START, y, LIST_FONT, WHITE))
     // `g.drawString("   "+e.getNumberGOT(), x+150, y)` —— 三个空格照抄。
     ops.push(text(`   ${count}`, EQUIP_X_START + COUNT_DX, y, LIST_FONT, WHITE))
@@ -237,7 +238,7 @@ export function equipDrawOps(
   })
 
   // 6. drawValueBar()：当前那个人的四项属性。
-  const hero = heroOf(heroes, whichHero)
+  const hero = menuHeroOf(heroes, whichHero)
   VALUE_LABEL.forEach((row, i) => {
     ops.push(
       text(`${row.label}${row.of(hero)}`, VALUE_X, VALUE_Y + VALUE_VGAP * i, VALUE_FONT, BLUE),
@@ -245,22 +246,6 @@ export function equipDrawOps(
   })
 
   return ops
-}
-
-/** 这一页画得出来的全部贴图 —— 渲染器 `load()` 的入参。 */
-export function equipTextureIds(): AssetId[] {
-  const ids: AssetId[] = []
-  for (const slot of [...EQUIP_SLOTS, 'use' as const, 'abandon' as const]) {
-    for (const state of ['normal', 'waitclick', 'pressed'] as const) {
-      ids.push(equipButtonId(slot, state))
-    }
-  }
-  ids.push(warningId('equipped'), warningId('cannotUse'))
-  for (const down of [false, true]) {
-    ids.push(showValueArrowId(down))
-    for (let d = 0; d <= 9; d++) ids.push(showValueDigitId(d, down))
-  }
-  return [...new Set(ids)]
 }
 
 /**

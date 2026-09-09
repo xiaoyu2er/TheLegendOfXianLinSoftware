@@ -5,7 +5,7 @@ import { DEFAULT_WEAPONS } from './defaultWeapons'
 import { refreshMenuHero } from './heroes'
 import type { MenuHero } from './heroes'
 import { SCOLL_HEROES } from './types'
-import type { MenuButtonState, ScollHero } from './types'
+import type { MenuButtonState, ScollHero, ScollState } from './types'
 
 /**
  * 装备页的状态层 —— `src/menu/EquipPanel.java`（1107 行，原版菜单里最大的一个）
@@ -133,7 +133,8 @@ export function equipList(e: EquipPanelState): readonly EquipmentSpec[] {
   return EQUIPMENT_LISTS[e.currentList].filter((_, i) => counts[i]! > 0)
 }
 
-function countOf(e: EquipPanelState, slot: EquipSlot, name: string): number {
+/** 一件装备的持有数（`Equipment.numberGOT`）。 */
+export function equipCount(e: EquipPanelState, slot: EquipSlot, name: string): number {
   const i = indexIn(slot, name)
   if (i < 0) throw new Error(`${slot} 表里没有「${name}」`)
   return e.owned[slot][i]!
@@ -253,8 +254,7 @@ function reselectFirst(e: EquipPanelState): void {
 function applyBonus(heroes: MenuHero[], who: ScollHero, spec: EquipmentSpec, sign: 1 | -1): void {
   // `switch(scoll.whichHero)` 的 default 是空的 —— 到不了，因为 whichHero
   // 的取值域就是那三个。
-  const h = heroes[heroIndexOf(who)]
-  if (!h) throw new Error(`没有 ${who} 号`)
+  const h = menuHeroOf(heroes, who)
   h.agile += sign * spec.addAgile
   h.strength += sign * spec.addStrength
   h.spirit += sign * spec.addSpirit
@@ -273,7 +273,7 @@ function applyBonus(heroes: MenuHero[], who: ScollHero, spec: EquipmentSpec, sig
  */
 export function equipCheckPressed(
   e: EquipPanelState,
-  scoll: { whichHero: ScollHero; buttons: Readonly<Record<ScollHero, MenuButtonState>> },
+  scoll: ScollState,
   heroes: MenuHero[],
   x: number,
   y: number,
@@ -282,8 +282,9 @@ export function equipCheckPressed(
   // 1. 三个换人分支。**并列的 if，不是 if-else**，照抄。
   //    ⚠️ 换人一律把列表拨回武器（`CURRENTLIST=WEAPON`），并且**不出声** ——
   //    那一声「换头像.wav」是 `Scoll.checkPressed()` 出的，不是这里。
-  for (const { hero } of SCOLL_HEROES) {
-    if (!scoll.buttons[hero]!.isclicked) continue
+  //    「编号 → 卷轴上的字段名」这张表由 `types.ts` 一处owns，调用方不重建。
+  for (const { hero, field } of SCOLL_HEROES) {
+    if (!scoll[field].isclicked) continue
     e.currentPackHero = hero
     e.heroEquipment = e.packs[hero]!.weapon
     e.abandon.isDraw = e.heroEquipment !== null
@@ -317,7 +318,7 @@ export function equipCheckPressed(
     if (e.heroEquipment === null) throw new Error('「弃用」被点中，但身上什么都没穿')
     const worn = specOf(e.currentList, e.heroEquipment)
     music.push('弃用.wav')
-    setCount(e, e.currentList, worn.name, countOf(e, e.currentList, worn.name) + 1)
+    setCount(e, e.currentList, worn.name, equipCount(e, e.currentList, worn.name) + 1)
     applyBonus(heroes, scoll.whichHero, worn, -1)
     e.heroEquipment = null
     e.packs[e.currentPackHero]![e.currentList] = null
@@ -365,7 +366,7 @@ function doUseButton(
   if (e.currentEquipment === null) throw new Error('doUseButton 没有选中的装备')
   const spec = specOf(e.currentList, e.currentEquipment)
   e.warnEquipped = false
-  const left = countOf(e, e.currentList, spec.name) - 1
+  const left = equipCount(e, e.currentList, spec.name) - 1
   setCount(e, e.currentList, spec.name, left)
   // ⚠️ **只有减到 0 才 signal=0**，而 `currentEquipment` 留在原处不动 ——
   // 真值里于是出现 `selected: -1` 配 `selectedName: "月苗刀"`：选中的那件
@@ -468,7 +469,7 @@ export function snapshotEquip(e: EquipPanelState): Record<string, unknown> {
   return {
     tab: e.currentList,
     packHero: e.currentPackHero,
-    list: list.map((item) => ({ name: item.name, count: countOf(e, e.currentList, item.name) })),
+    list: list.map((item) => ({ name: item.name, count: equipCount(e, e.currentList, item.name) })),
     // 选中那件**不在列表里**时是 -1（刚穿上、存货减到 0 的那一步），而
     // `selectedName` 照样留着名字。两列分开记，就是为了让这件事看得见。
     selected: e.currentEquipment === null ? -1 : names.indexOf(e.currentEquipment),
@@ -501,21 +502,19 @@ export function clearEquipWarnings(e: EquipPanelState): void {
 }
 
 /**
- * 卷轴上的编号 → `heroes[]` 里的下标。
+ * 三个人里的某一个，按**卷轴上的编号**（1/2/4）取。
  *
  * ⚠️ `SCOLL_HEROES`（1/2/4）与 `MENU_HERO_ORDER`（张 / 陆 / 玉）**必须同序**，
  * 否则"给张小凡穿的东西加到了陆雪琪身上"，而两个人的属性都是合法数字。
  * 同序这件事由 `equipPanel.test.ts` 核。
+ *
+ * 名字里带 `menu` 是为了和 `battle/snapshot.ts` 那个同名但不相干的 `heroOf`
+ * 分开 —— 两个都进过同一个文件的进口清单时，认错一个不会有任何提示。
  */
-export function heroIndexOf(who: ScollHero): number {
+export function menuHeroOf(heroes: MenuHero[], who: ScollHero): MenuHero {
   const index = SCOLL_HEROES.findIndex((h) => h.hero === who)
   if (index < 0) throw new Error(`卷轴上没有 ${who} 号`)
-  return index
-}
-
-/** 三个人里的某一个，按卷轴上的编号取。 */
-export function heroOf(heroes: MenuHero[], who: ScollHero): MenuHero {
-  const h = heroes[heroIndexOf(who)]
+  const h = heroes[index]
   if (!h) throw new Error(`没有 ${who} 号`)
   return h
 }
