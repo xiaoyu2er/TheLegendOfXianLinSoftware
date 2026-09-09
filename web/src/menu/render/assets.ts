@@ -69,6 +69,22 @@ export function mouseId(frame: number): AssetId {
 }
 
 /**
+ * 物品页「使用」按钮的三态贴图（`DrugPanel.addButton()` 里那三行
+ * `new ImageIcon("sources/菜单/物品/使用N.png")`）。
+ *
+ * `物品/` 整个目录在骨架那一半里（首页的整屏背景就在它下面），所以这三张
+ * **随主包一起到手**，不走按需加载。
+ */
+export function useButtonId(image: ButtonImage): AssetId {
+  return id(`物品/使用${STATE_SUFFIX[image]}.png`)
+}
+
+/** 物品页那一页额外要用到的贴图 —— 今天就是「使用」按钮那三态。 */
+export function thingButtonIds(): AssetId[] {
+  return (Object.keys(STATE_SUFFIX) as ButtonImage[]).map((image) => useButtonId(image))
+}
+
+/**
  * 天书页那批按钮的贴图词干，按原版 `FuncButtons.addButton()` 里读图那几行。
  *
  * **走按需加载**（`天书/` 整个目录在 `menuAssets` 那条边界的内容那一半），
@@ -131,5 +147,8 @@ export function menuTextureIds(w: MenuWorld): AssetId[] {
   // 天书页那一排按钮 —— 出菜单唯一那条路（「返回」）就在上面，**画不出来
   // 等于玩家出不去**（/code-review 的 Spec 轴提的）。
   if (w.panel === 'funcPanel') ids.push(...funcButtonIds())
+  // 物品页那颗「使用」按钮。⚠️ 按 `isDraw` 决定画不画是绘制清单的事，
+  // 贴图这一头一律先要过来 —— 选中一瓶药之后再去取图，那一帧会缺一颗按钮。
+  if (w.panel === 'thingPanel') ids.push(...thingButtonIds())
   return ids
 }

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
 import { MENU_LAYERS, menuDrawList } from './drawList'
 import type { MenuDrawOp, MenuLayer } from './drawList'
-import { MENU_BACKGROUND, funcButtonId, mouseId, tabId } from './assets'
+import { MENU_BACKGROUND, funcButtonId, menuTextureIds, mouseId, tabId, useButtonId } from './assets'
+import { DRUG_LIST_X, DRUG_LIST_Y, DRUG_ROW_H } from '../drugPanel'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
 import { SCOLL_HEROES } from '../types'
 import { MENU_HERO_ORDER } from '../heroes'
@@ -142,11 +143,20 @@ describe('菜单那六层绘制', () => {
     )
   })
 
-  it('别的三页 page 层是空的 —— 那三页归 xl-6lo.9 / .10 / .11', () => {
-    const w = world()
-    expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
-    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
-    expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
+  it('装备页与奇术页的 page 层还是空的 —— 那两页归 xl-6lo.9 / .11', () => {
+    // ⚠️ 物品页**不再**在这条里：xl-6lo.10 把那一层画上了，见下面
+    // 「物品页那一层」那一组。这条剩的是还欠着的那两页。
+    for (const [tabX, panel] of [
+      [619, 'magicPanel'],
+      [515, 'equipPanel'],
+    ] as const) {
+      const w = world()
+      stepMenu(w, [{ e: 'press', x: tabX, y: 62 }])
+      expect(w.panel).toBe(panel)
+      expect(menuDrawList(w).filter((op) => op.layer === 'page'), `${panel} 的 page 层`).toEqual([])
+    }
+    // 反方向：物品页那一层**不是**空的 —— 两页都空的话上面那条按构造成立。
+    expect(menuDrawList(world()).filter((op) => op.layer === 'page')).not.toEqual([])
   })
 
   it('不在出战名单里的头像不画；张小凡一个人时只画一颗', () => {
@@ -185,6 +195,154 @@ describe('菜单那六层绘制', () => {
     noZhang.panels.thingPanel.scoll!.whichHero = 4
     expect(menuDrawList(noZhang).find((op) => op.kind === 'text' && op.layer === 'scoll')).toMatchObject({
       text: String(yuLevel),
+    })
+  })
+
+  it('special 层今天一条 op 都不出，而四页里只有三页的 drawSpecialImage 真是空的', () => {
+    // ⚠️ 这一条守的是文件头注里那句话。原先写的是「四页都是空的」，实测
+    // `FuncPanel` 那个不是 —— 它贴 `主人公4人2.png`（xl-a7m：文件不在那个
+    // 路径下，原版自己也画不出来）。注释与实现分岔时，注释永远是绿的。
+    const empty = ['DrugPanel', 'EquipPanel', 'MagicPanel'].map((file) => {
+      const src = javaSource(`src/menu/${file}.java`)
+      const body = /public void drawSpecialImage\(Graphics g\) \{([\s\S]*?)\n\t\}/.exec(src)
+      expect(body, `${file}.drawSpecialImage 的方法体没解出来`).not.toBeNull()
+      // 去掉空白与 `// TODO` 那行注释之后什么都不剩。
+      return body![1]!.replace(/\/\/[^\n]*/g, '').trim()
+    })
+    expect(empty).toEqual(['', '', ''])
+    const func = javaSource('src/menu/FuncPanel.java')
+    expect(func).toContain('sources/菜单/主人公4人2.png')
+
+    for (const panel of ['thingPanel', 'magicPanel', 'funcPanel', 'equipPanel'] as const) {
+      const w = world()
+      w.panel = panel
+      expect(menuDrawList(w).filter((op) => op.layer === 'special'), `${panel} 的 special 层`).toEqual([])
+    }
+  })
+
+  describe('物品页那一层（xl-6lo.10）', () => {
+    /** 剧本 `menu-equip` 的开局：金创药 2 瓶。 */
+    function thing(): MenuWorld {
+      return createMenuWorld({ party: ['zhang'], fullHeal: true, drugs: [{ name: '金创药', count: 2 }] })
+    }
+    const pageText = (w: MenuWorld) =>
+      menuDrawList(w).filter((op) => op.kind === 'text' && op.layer === 'page')
+
+    it('清单：每种药一行，名字与数量分两列，行距 32', () => {
+      const w = createMenuWorld({
+        party: ['zhang'],
+        fullHeal: true,
+        drugs: [
+          { name: '金创药', count: 2 },
+          { name: '还魄丹', count: 7 },
+        ],
+      })
+      const rows = pageText(w).slice(0, 4)
+      expect(rows.map((op) => (op.kind === 'text' ? [op.text, op.x, op.y] : null))).toEqual([
+        ['金创药', DRUG_LIST_X, DRUG_LIST_Y],
+        ['2', DRUG_LIST_X + 180, DRUG_LIST_Y],
+        ['还魄丹', DRUG_LIST_X, DRUG_LIST_Y + DRUG_ROW_H],
+        ['7', DRUG_LIST_X + 180, DRUG_LIST_Y + DRUG_ROW_H],
+      ])
+    })
+
+    it('存货为 0 的那几种一行都不画 —— 六种药里今天只有一种在包里', () => {
+      const w = thing()
+      expect(w.drugPack.length).toBeGreaterThan(1)
+      const names = pageText(w).map((op) => (op.kind === 'text' ? op.text : ''))
+      for (const stock of w.drugPack) {
+        if (stock.count > 0) expect(names).toContain(stock.name)
+        else expect(names).not.toContain(stock.name)
+      }
+    })
+
+    it('「使用」按钮：没选中不画，选中之后画，贴的是当前那一态', () => {
+      const w = thing()
+      const images = (x: MenuWorld) =>
+        menuDrawList(x).filter((op) => op.kind === 'image' && op.layer === 'page')
+      expect(images(w)).toEqual([])
+      // 第一行的命中带：y 从 y_start_point-32 起，x 在 (448, 578)。
+      stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+      expect(images(w)).toEqual([
+        { kind: 'image', layer: 'page', id: useButtonId('normal'), x: 820, y: 418 },
+      ])
+      // 按在按钮上 → 第三张贴图。
+      stepMenu(w, [{ e: 'press', x: 865, y: 432 }])
+      expect(images(w)).toEqual([
+        { kind: 'image', layer: 'page', id: useButtonId('pressed'), x: 820, y: 418 },
+      ])
+    })
+
+    it('三行说明：选中与没选中走两支，**字号也不一样**', () => {
+      const src = javaSource('src/menu/DrugPanel.java')
+      // 24 号那一句在 `if(currentDrug!=null)` 里面 —— 从源码里核一遍这件事，
+      // 抹平成一个字号在画面上是"字大了一点"，没人会发现。
+      const branch = /if\(currentDrug!=null\)\{([\s\S]*?)\}else \{/.exec(src)
+      expect(branch, 'currentDrug!=null 那一支没解出来').not.toBeNull()
+      expect(branch![1]).toContain('Font.BOLD, 24')
+      expect(branch![1]).not.toContain('Font.BOLD, 26')
+
+      const w = thing()
+      const before = pageText(w).slice(-5, -2)
+      expect(before.map((op) => (op.kind === 'text' ? [op.text, op.x, op.size] : null))).toEqual([
+        ['没药了...', 510, 26],
+        ['快去药店买点吧~', 615, 26],
+        ['', 775, 26],
+      ])
+
+      stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+      const after = pageText(w).slice(-5, -2)
+      expect(after.map((op) => (op.kind === 'text' ? [op.text, op.x, op.size] : null))).toEqual([
+        ['金创药', 510, 24],
+        [': 生命 +300', 615, 24],
+        ['魔法 +0', 775, 24],
+      ])
+    })
+
+    it('血条：读的是物品页自己那个卷轴选中的人', () => {
+      const w = createMenuWorld({ party: ['zhang', 'wen'], fullHeal: true })
+      const zhang = w.heroes[0]!
+      const yu = w.heroes[2]!
+      // 两个人的血不同，这一条才观测得到。
+      expect(zhang.hpMax).not.toBe(yu.hpMax)
+      expect(pageText(w).slice(-2).map((op) => (op.kind === 'text' ? op.text : ''))).toEqual([
+        `生命值:${zhang.hp}/${zhang.hpMax}`,
+        `魔法值:${zhang.mp}/${zhang.mpMax}`,
+      ])
+      // ⚠️ 改的是**物品页**那个卷轴，不是装备页那个 —— 四页各有一个。
+      w.panels.thingPanel.scoll!.whichHero = 4
+      expect(pageText(w).slice(-2).map((op) => (op.kind === 'text' ? op.text : ''))).toEqual([
+        `生命值:${yu.hp}/${yu.hpMax}`,
+        `魔法值:${yu.mp}/${yu.mpMax}`,
+      ])
+      // 反方向：装备页那个卷轴动了，物品页这一层一个字都不该变。
+      const other = createMenuWorld({ party: ['zhang', 'wen'], fullHeal: true })
+      other.panels.equipPanel.scoll!.whichHero = 4
+      expect(pageText(other).slice(-2).map((op) => (op.kind === 'text' ? op.text : ''))).toEqual([
+        `生命值:${zhang.hp}/${zhang.hpMax}`,
+        `魔法值:${zhang.mp}/${zhang.mpMax}`,
+      ])
+    })
+
+    it('血条的坐标 / 字号 / 颜色对回 drawValueBar()', () => {
+      const src = javaSource('src/menu/DrugPanel.java')
+      expect(src).toContain('int x_value=107;')
+      expect(src).toContain('int y_value=320;')
+      expect(src).toContain('g.drawString(s2, x_value, y_value+45)')
+      expect(src).toContain('g.setColor(Color.blue)')
+      const bar = pageText(thing()).slice(-2)
+      expect(bar[0]).toMatchObject({ x: 107, y: 320, size: 20, color: '#0000ff' })
+      expect(bar[1]).toMatchObject({ x: 107, y: 365, size: 20, color: '#0000ff' })
+    })
+
+    it('物品页那三张「使用」贴图跟着当前页一起要 —— 翻到别页就不要了', () => {
+      const w = thing()
+      for (const image of ['normal', 'waitclick', 'pressed'] as const) {
+        expect(menuTextureIds(w)).toContain(useButtonId(image))
+      }
+      stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+      expect(w.panel).toBe('magicPanel')
+      expect(menuTextureIds(w)).not.toContain(useButtonId('normal'))
     })
   })
 
