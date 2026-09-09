@@ -1,4 +1,5 @@
 import { menuButton } from './buttons'
+import { createFuncButtons } from './funcButtons'
 import { createMenuHeroes } from './heroes'
 import { HEAD_H, HEAD_POS, HEAD_W, TABS, TAB_H, TAB_W, TAB_Y, tabX } from './layout'
 import type { MenuPanelName, MenuSubPanel, MenuTabKey, MenuWorld, ScollState } from './types'
@@ -67,6 +68,7 @@ function createSubPanel(name: MenuPanelName): MenuSubPanel {
     // 天书页没有卷轴：`FuncPanel` 的构造函数不建 `Scoll`，所以真值里它的
     // `hero` 是 `null`。给它编一个卷轴出来，那一列就再也不会是 null 了。
     scoll: name === 'funcPanel' ? null : createScoll(),
+    funcButtons: name === 'funcPanel' ? createFuncButtons() : null,
   }
 }
 

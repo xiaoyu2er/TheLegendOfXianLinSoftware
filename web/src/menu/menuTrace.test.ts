@@ -258,6 +258,8 @@ describe('菜单状态层对齐行为真值', () => {
       'trace.ts',
       'world.ts',
       'buttons.ts',
+      'funcButtons.ts',
+      'loop.ts',
       'heroes.ts',
       'layout.ts',
       'types.ts',

@@ -1,3 +1,4 @@
+import type { FuncButtonsState } from './funcButtons'
 import type { MenuHero } from './heroes'
 
 /**
@@ -65,6 +66,8 @@ export interface MenuSubPanel {
   currentY: number
   mouse: MouseState
   scoll: ScollState | null
+  /** 天书页那一排按钮。**只有 `funcPanel` 有**，其余三页是 `null`。 */
+  funcButtons: FuncButtonsState | null
 }
 
 export interface MenuWorld {

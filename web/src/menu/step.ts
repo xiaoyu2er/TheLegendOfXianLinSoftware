@@ -1,4 +1,5 @@
 import { moveInButton, pressButton, releaseButton } from './buttons'
+import { funcCheckPressed, funcCheckReleased } from './funcButtons'
 import { MENU_PANEL_ORDER, PANEL_OF_TAB, TAB_PRIORITY } from './world'
 import type { MenuSubPanel, MenuWorld } from './types'
 
@@ -84,6 +85,7 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
       releaseButton(b, p.currentX, p.currentY)
     }
   }
+  if (p.funcButtons) funcCheckReleased(p.funcButtons, p.currentX, p.currentY)
 }
 
 function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
@@ -123,6 +125,8 @@ function commandCheckPressed(w: MenuWorld): void {
  */
 function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   scollCheckPressed(w, p)
+  // 天书页没有卷轴，它的 `checkAllButtonPressed` 只有 `fb.checkPressed()` 一句。
+  if (p.funcButtons) funcCheckPressed(p.funcButtons, p.currentX, p.currentY, w.music)
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */
@@ -193,4 +197,19 @@ function updateMouse(p: MenuSubPanel): void {
 
 export function currentPanel(w: MenuWorld): MenuSubPanel {
   return w.panels[w.panel]
+}
+
+/**
+ * 玩家点了天书页的「返回」吗 —— **出菜单唯一的那条路**。
+ *
+ * 进菜单是场景侧的 ESC（`game/keyboard.ts`），出菜单**只有这一颗按钮**。
+ * `MenuPanel` 里那个 `keyPressed(ESC) → switchTo("scene")` 是**死代码**：
+ * 顶层的 `keyPressed` 只分发给场景 / 存档 / 战斗三家，当前面板是菜单时一个
+ * 分支都不命中 —— 也就是**进了菜单按 ESC 出不来**。按 ADR-0001 照样复刻，
+ * 缺陷登记在 xl-1dv.*（xl-6lo.2 §输入）。
+ *
+ * ⚠️ **Web 上按 ESC 关面板是肌肉记忆，不要"顺手修好"它** —— 改了真值就对不上。
+ */
+export function menuWantsScene(w: MenuWorld): boolean {
+  return w.panels.funcPanel.funcButtons?.exitToScene === true
 }
