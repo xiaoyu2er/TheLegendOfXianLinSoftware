@@ -60,25 +60,30 @@ const NON_STATE_COLUMNS: readonly string[] = ['t', 'ip', 'input']
  * "谁已经有人对齐了"这份需要人签字的登记。
  */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
-  // **19 / 30 格**。这份名单是**跑出来的，不是宣布的**：先把 10 组 × 3 条剧本
-  // 全填进来跑了一遍，红的那 11 格挪进了下面的 `PENDING`（2026-09-09，
-  // xl-knp.6 落地时的读数）。
+  // **30 / 30 格 —— 满了**。这份名单是**跑出来的，不是宣布的**：
+  // xl-knp.6 落地时是 19/30（10 组 × 3 条剧本全填进去跑了一遍，红的 11 格
+  // 挪进了当时的 `PENDING`）；xl-knp.7 做完药店那半边之后仍然是 19/30 ——
+  // 那 11 格里每一格的第一处分歧都**整体挪到了装备店**，一格都没翻过来
+  // （两条剧本各自横跨两家店）。xl-knp.8 接上装备店那半边之后这 11 格一起
+  // 转绿，`PENDING` 与 `BLOCKED_AT` 因此都空了（2026-09-09 的读数）。
   //
-  // 骨架这一票做的是：掷存货（62 次，顺序即规格）、金钱与背包的开局、
-  // 两个面板的按钮表与命中框、落点与行号、换店、切分类、图标框换图。
-  music: ['shop-categories'],
+  // ⚠️ **两张表空掉不等于这套判据没用了**：下面那两个 describe 各留了一条
+  // 明写当前读数的用例（为空时它在、非空时它自己就没了），而真正的判据是
+  // 每一格逐步的 `toEqual` —— 30 条，一条一格。真值目录里冒出第四条剧本、
+  // 或者导出器多记一列，第一条用例立刻红。
+  music: ['shop-categories', 'shop-edges', 'shop-trade'],
   shop: ['shop-categories', 'shop-edges', 'shop-trade'],
   category: ['shop-categories', 'shop-edges', 'shop-trade'],
-  coins: ['shop-categories'],
+  coins: ['shop-categories', 'shop-edges', 'shop-trade'],
   cursor: ['shop-categories', 'shop-edges', 'shop-trade'],
-  // ⚠️ `list` 只有 `shop-categories` 那一格签得下，而它**恰恰是最要紧的一格**：
-  // 那条剧本六栏全走了一遍，`stock` 那一排数字是原版自己摇出来的 —— 掷骰的
-  // 次数与顺序（`world.ts` 的 `STOCK_ROLL_ORDER`）唯一的判据就在这里。
-  // 另外两条剧本走到装备店那一栏就分岔，归 xl-knp.8。
-  list: ['shop-categories'],
+  // ⚠️ `list` 那三格里 `shop-categories` **最要紧**：那条剧本六栏全走了一遍，
+  // `stock` 那一排数字是原版自己摇出来的 —— 掷骰的次数与顺序
+  // （`world.ts` 的 `STOCK_ROLL_ORDER`）唯一的判据就在这里。
+  list: ['shop-categories', 'shop-edges', 'shop-trade'],
   icon: ['shop-categories', 'shop-edges', 'shop-trade'],
+  message: ['shop-categories', 'shop-edges', 'shop-trade'],
   pressed: ['shop-categories', 'shop-edges', 'shop-trade'],
-  pack: ['shop-categories'],
+  pack: ['shop-categories', 'shop-edges', 'shop-trade'],
 }
 
 /**
@@ -87,55 +92,26 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
  * 这两张表是**对撞**的：真值目录里冒出一份两边都没有的剧本，或者真值多出
  * 一列没人登记，下面第一条用例立刻红。
  *
+ * ⚠️ **今天它是空的，那是读数不是形状。** 十组 × 三条剧本全部对齐了
+ * （xl-knp.8 收口）。留着这张表与它下面那两个 describe，是因为下一条商店
+ * 真值（或者原版多记一列）进来时它仍然是登记该走的地方 —— 而"这一格还没做"
+ * 与"这一格没人对"必须继续分得开。
+ *
  * ⚠️ 票号写的是**第一处分歧落在哪家店**，不是"这一格全做完要几张票"：
- * `shop-edges` 与 `shop-trade` 两条剧本各自都横跨两家店，所以下面每一格
- * 其实都要 xl-knp.7 与 xl-knp.8 两张一起做完才对得齐（菜单那边
- * `heroes × menu-equip` 是同一个形状）。挑第一处分歧那一张，是因为它**查得
- * 出来**：`BLOCKED_AT` 底下那批用例逐格核的正是"第一处分歧恰好是登记里写的
- * 那一步"。
+ * `shop-edges` 与 `shop-trade` 两条剧本各自都横跨两家店。
  */
-const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // 店主说的那两三行话。药店那两行是 xl-knp.7 做的（`step.ts` 的
-  // `drugHoverMessage`），装备店那三行（属性加成 / 价位三档 / 谁能用）还没做。
-  message: {
-    'shop-categories': 'xl-knp.8',
-    'shop-edges': 'xl-knp.8',
-    'shop-trade': 'xl-knp.8',
-  },
-  // 加减 / 买卖那四声（`click.wav` × 2、`Clip986.wav` × 2）。切分类那声
-  // `换list.wav` 与药店那四声都已经有了，剩下装备店那四声。
-  music: {
-    'shop-edges': 'xl-knp.8',
-    'shop-trade': 'xl-knp.8',
-  },
-  coins: {
-    'shop-edges': 'xl-knp.8',
-    'shop-trade': 'xl-knp.8',
-  },
-  // 分岔的只有 `purchase` 那一列（加减按钮）与买卖之后的 `stock` / `held`。
-  list: {
-    'shop-edges': 'xl-knp.8',
-    'shop-trade': 'xl-knp.8',
-  },
-  pack: {
-    'shop-edges': 'xl-knp.8',
-    'shop-trade': 'xl-knp.8',
-  },
-}
+const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {}
 
 /**
  * **`PENDING` 里那些「前半截已经对上了」的格子 —— 手写登记，写明卡在哪。**
  *
  * 光有 `PENDING` 的话，"第 2 步就开始错"与"一直对到第 13 步、卡在别人那张票上"
- * 长得一模一样：两者都只是"还没对上"。而这一票的成果恰恰全在那前半截里
- * （开局的存货 / 金钱 / 背包、落点、按钮、换店、切分类），没有这张表就没有
- * 一条判据在守它。
+ * 长得一模一样：两者都只是"还没对上"。
  *
- * 卡住的那一步**不写步号**，写成一句真值自己认得出的话（"装备店上松开 buy 的
- * 第一步"）—— 步号会随着剧本改动整体平移，而那种失效是安静的。
- *
- * ⚠️ 十一格全在这里，一格不落：`PENDING` 里有而这里没有的格子，等于放弃了
- * "前半截对到哪儿"这条判据，而它与"前半截压根没对上"长得一样。
+ * ⚠️ **今天它也是空的，同上：这是读数。** 它在 xl-knp.6 → xl-knp.7 之间做过
+ * 一件别的判据做不到的事 —— 药店那半边做完时 `PENDING` 一格没少，是这张表
+ * 里十一行「第一处分歧从 `drug` 挪到了 `equipment`」把那一票的成果记了下来。
+ * `PENDING` 里有而这里没有的格子，等于放弃了"前半截对到哪儿"这条判据。
  */
 interface BlockedAt {
   /** 那一步开着哪一家店。 */
@@ -147,44 +123,7 @@ interface BlockedAt {
   readonly why: string
 }
 
-/** 十一格里反复出现的那几种卡法，写一处。 */
-const HOVER_ROW_NO_MESSAGE = '装备店的店主对白还没做：第一次把鼠标停到某一行上，那三行话就该换了'
-const STEP_NO_PURCHASE = '装备店的加减按钮还没接：松开加号那一下，这一行的 purchase 该变'
-const STEP_NO_SOUND = '装备店的加减按钮还没接：松开那一下该出一声 click.wav'
-const BUY_NO_EFFECT = '装备店的买入还没接：松开购买那一下，金钱与背包该动'
-
-/**
- * ⚠️ **十一格全卡在装备店上，一格不落 —— 这就是 xl-knp.7 的成果。**
- *
- * xl-knp.6 落地时，`shop-edges` / `shop-trade` 那八格全都指着**药店**（`drug`
- * 店上的第一次 hover / 第一下加减 / 第一次购买）；药店那半边做完之后，第一处
- * 分歧整体挪到了装备店。这张表是这件事**唯一**会红的判据：药店做错任何一步，
- * `firstDivergence` 就退回药店那一步，与这里写的对不上 —— 而"药店做完了"与
- * "药店压根没做"在只看 `PENDING` 时长得一模一样。
- */
-const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {
-  message: {
-    'shop-categories': { shop: 'equipment', event: 'move', target: 'row:6', why: HOVER_ROW_NO_MESSAGE },
-    'shop-edges': { shop: 'equipment', event: 'move', target: 'row:1', why: HOVER_ROW_NO_MESSAGE },
-    'shop-trade': { shop: 'equipment', event: 'move', target: 'row:6', why: HOVER_ROW_NO_MESSAGE },
-  },
-  music: {
-    'shop-edges': { shop: 'equipment', event: 'release', target: 'plus:1', why: STEP_NO_SOUND },
-    'shop-trade': { shop: 'equipment', event: 'release', target: 'plus:6', why: STEP_NO_SOUND },
-  },
-  coins: {
-    'shop-edges': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
-    'shop-trade': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
-  },
-  list: {
-    'shop-edges': { shop: 'equipment', event: 'release', target: 'plus:1', why: STEP_NO_PURCHASE },
-    'shop-trade': { shop: 'equipment', event: 'release', target: 'plus:6', why: STEP_NO_PURCHASE },
-  },
-  pack: {
-    'shop-edges': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
-    'shop-trade': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
-  },
-}
+const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {}
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */
 const traceCache = new Map<string, ShopTrace>()
