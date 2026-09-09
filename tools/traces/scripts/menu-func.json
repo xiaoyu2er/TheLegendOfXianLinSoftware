@@ -1,0 +1,24 @@
+{
+  "driver": "menu",
+  "name": "menu-func",
+  "description": "天书页设定子菜单的展开与收起，外加 BGM 开关（xl-6lo.7）。func.drawn 记的就是 FuncButtons 上每颗按钮的 isDraw，而「展开/收起」在原版里干的事**正是改 isDraw** —— 所以这一页的状态全在这个字段里。走的路线：进天书页（画得出来的是 存档/提取/设定/返回/退出 五颗，外加下面说的 setKey）→ 点「设定」展开 背景音乐/特殊音效 两颗 → 点「背景音乐」再展开 开/关 两颗 → 点「关」（真的 closeBGM）→ 点「开」（真的 openBGM）→ 点「特殊音效」，BGM 那一排收起、音效那一排展开 → 点「关」音效 → 点「退出」，设定那一排整片收起、换成 确认离开/重新开始 → 点「设定」把退出那排收起、设定那排回来 → 切去装备页再切回来，命令栏那一击把**所有**子按钮收干净（FuncButtons.checkPressed 的第一个循环）。\n\n⚠️ func.drawn 里恒有一个 setKey，而屏幕上**看不到它**：drawFuncButtons 只画 buttonList 与四格 subButtonList，setKey 一格都不在，可它的 isDraw 由 MenuButton 构造函数置成 Yes 且从没人改过。这个字段记的是 isDraw、不是「这一帧真画了」，所以照记不改（缺陷登记 xl-1dv.16）。\n\n⚠️ 关特殊音效那一步（t=12）的 music 是**空的**，而别的每一次按下都有一声 换list.wav —— 原版 off_click 那一支就是不出声，与 on_click 不对称。这不是漏记。\n\n⚠️ 四颗按钮**故意不点**，理由逐条写在 MenuScript.FUNC_FORBIDDEN 里，最要紧的一条是「确认离开」直接 System.exit(0) —— 导出器会在写文件之前消失而退出码是 0，一次「什么都没导出」长得和成功一模一样。\n\n⚠️ 「开背景音乐」这一步在导出环境里走的是**异常分支**：MusicReader.openBGM() 调 background.play(currentPlayingBGM)，而导出全程没播过 BGM，那个字段是 null，于是 new File(\"sources/BGM/null\") 打不开、printStackTrace 到 stderr。真值不受影响（没有任何字段观察 BGM 状态，音效名走的是 MusicReader.readmusic 入口那个观察点），但 stderr 上那一段是预期内的，不是回归。",
+  "setup": {
+    "party": ["zhang"],
+    "fullHeal": true
+  },
+  "maxSteps": 200,
+  "every": 1,
+  "steps": [
+    { "op": "tab", "name": "func" },
+    { "op": "func", "name": "set" },
+    { "op": "func", "name": "setBGM" },
+    { "op": "func", "name": "offBGM" },
+    { "op": "func", "name": "onBGM" },
+    { "op": "func", "name": "setClick" },
+    { "op": "func", "name": "offClick" },
+    { "op": "func", "name": "exit" },
+    { "op": "func", "name": "set" },
+    { "op": "tab", "name": "equip" },
+    { "op": "tab", "name": "func" }
+  ]
+}

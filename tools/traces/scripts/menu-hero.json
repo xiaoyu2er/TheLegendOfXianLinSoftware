@@ -1,0 +1,43 @@
+{
+  "driver": "menu",
+  "name": "menu-hero",
+  "description": "在三个人之间换人看属性，顺带把装备页**点得到的四个槽**都走一遍（xl-6lo.7）。现有的两条真值全程 hero=1，换人这条路一个字段都没有。走的路线：进装备页（张小凡）→ 给他戴 金刚斗笠、穿 皮靴 → 点陆雪琪的头像（hero 1→2，背包整个换成她的，分类被原版拨回武器）→ 给她穿 铁甲、踏风草鞋 → 点文敏的头像（hero 2→4）→ 给她穿 棉布衣、戴 武兜 → 点回张小凡（hero 4→1），确认背包与身上那几件都回到他自己的。heroes[] 三个人的属性逐拍都在真值里，每一次穿戴前后各取得到一次读数。\n\n三个人开局身上就各有一把武器：EquipPack 的构造函数直接给了 张小凡 月苗刀 / 陆雪琪 藏璎环 / 文敏 鸳鸯刀，不是这份剧本装上去的（第 0 拍的 equip.equipped 就写着）。所以这条剧本挑的是三个**空着的**槽（头盔 / 鞋 / 盔甲），装得上；武器槽在原版里得先「弃用」才换得掉，那条路 menu-equip 已经走过。\n\n六个槽只走得到四个：护臂（glove）与饰品（decoration）在原版里**根本没有按钮** —— EquipPanel 声明了 gloveButton / decorationButton，addButton() 从没 new 过它们，judgeCurrentPack 里那两支 else-if 因此永远不成立。所以那两槽在菜单里既进不去也穿不上，equip.equipped 的那两格恒为 null。这不是本剧本没走到，是原版走不到。\n\n换人的按钮在开局是**画不出来的**：Scoll.hero2/hero4 的 isDraw 由构造函数置成 No，只有 drawScoll()（也就是一次 paint）看见 SaveAndLoad.lu/wen 才置成 Yes。所以剧本必须先有一步把装备页画出来，才点得动头像 —— 这一条由驱动器 click() 那句 isDraw 断言守着。\n\n每件装备只给 1 件是有意的：doUseButton() 每装备一次就把 numberGOT 减一，减到 0 那件就从列表里消失 —— 于是后面每一步的行号都是「前一步真的把东西穿走了」的直接后果，抄错一步立刻在 select 的核对上炸。",
+  "setup": {
+    "party": ["zhang", "lu", "wen"],
+    "fullHeal": true,
+    "equipment": [
+      { "name": "金刚斗笠", "count": 1 },
+      { "name": "武兜", "count": 1 },
+      { "name": "皮靴", "count": 1 },
+      { "name": "踏风草鞋", "count": 1 },
+      { "name": "棉布衣", "count": 1 },
+      { "name": "铁甲", "count": 1 }
+    ]
+  },
+  "maxSteps": 200,
+  "every": 1,
+  "steps": [
+    { "op": "tab", "name": "equip" },
+    { "op": "slot", "name": "helmet" },
+    { "op": "select", "index": 0 },
+    { "op": "use" },
+    { "op": "slot", "name": "shoe" },
+    { "op": "select", "index": 0 },
+    { "op": "use" },
+    { "op": "hero", "n": 2 },
+    { "op": "slot", "name": "armor" },
+    { "op": "select", "index": 1 },
+    { "op": "use" },
+    { "op": "slot", "name": "shoe" },
+    { "op": "select", "index": 0 },
+    { "op": "use" },
+    { "op": "hero", "n": 4 },
+    { "op": "slot", "name": "armor" },
+    { "op": "select", "index": 0 },
+    { "op": "use" },
+    { "op": "slot", "name": "helmet" },
+    { "op": "select", "index": 0 },
+    { "op": "use" },
+    { "op": "hero", "n": 1 }
+  ]
+}

@@ -59,19 +59,23 @@ const NON_STATE_COLUMNS: readonly string[] = ['t', 'ip', 'input']
  * "谁已经有人对齐了"这份需要人签字的登记。
  */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
-  panel: ['menu-equip', 'menu-magic'],
-  hero: ['menu-equip', 'menu-magic'],
-  mouse: ['menu-equip', 'menu-magic'],
+  // ⚠️ 下面这三条新剧本（xl-6lo.7 落的：menu-func / menu-hero / menu-scroll）
+  // 的格子，**归属是跑出来的、不是判断出来的**：它们一入库这张表先红了一次
+  // （27 个格子两边都没登记），把 27 格全填进 ALIGNED 跑一遍，红的正好 6 格，
+  // 其余 21 格照绿 —— 那 6 格全在装备页那一片（见 PENDING）。
+  panel: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
+  hero: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
+  mouse: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
   // ⚠️ `heroes` 只对齐了 `menu-magic` 一条。`menu-equip` 从第 8 步起就在改
   // 三个人的属性（弃用 → 换装 → 喝药），而那三件事分别归装备页与物品页 ——
   // 见下面 `PENDING.heroes`。票面写的是"本票对齐 panel / mouse / heroes 三组"，
   // 实测这一组横跨两张后续的票，所以按格子登记，只签得下其中一格。
-  heroes: ['menu-magic'],
+  heroes: ['menu-magic', 'menu-func', 'menu-scroll'],
   // `drug` 两条剧本都签下了（xl-6lo.10）。⚠️ **`menu-magic` 那一格是常量**
   // ——那条剧本 `setup.drugs` 是空的，30 拍里 `drug` 一列一个字都没变过。
   // 它守的是"别凭空冒出清单来"，真正会红的那一格是 `menu-equip`：第 21 步
   // 选中、第 22 步喝掉一瓶，数量 2→1。
-  drug: ['menu-equip', 'menu-magic'],
+  drug: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
   // 天书页整页（xl-6lo.12）。⚠️ **这两条真值里 `func.drawn` 从头到尾没变过**
   // —— 两条剧本都没点过天书页的按钮，所以这一格证明的是"开局那六颗对得上、
   // 而且没有谁被别处的操作偷偷改掉"，**证不到子菜单的展开收起**。展开收起
@@ -80,14 +84,14 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 别在这里写一个会过期的数字）。
   // 逐次相等的真值要等 **xl-6lo.7** 那条「天书设定」剧本落地 —— 它一入库，
   // 这张表的对撞会先红一次（新剧本两边都没登记），那正是提醒。
-  func: ['menu-equip', 'menu-magic'],
+  func: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
   // 奇术页整组，两条剧本都签（xl-6lo.11）。`menu-equip` 也签得下 —— 它
   // 第 24 步切进奇术页那一次按下同样会把动画清空、把按钮按 skillNumber
   // 关掉，那正是这一组两处判据里的一处。
-  magic: ['menu-equip', 'menu-magic'],
+  magic: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll'],
   // ⚠️ `music` 只签 `menu-magic` 一条。`menu-equip` 还有装备页那五声
   // （禁止 / 弃用 / 武器 / 盔甲 / 命+），归 xl-6lo.9 —— 见 `PENDING.music`。
-  music: ['menu-magic'],
+  music: ['menu-magic', 'menu-func'],
 }
 
 /**
@@ -99,11 +103,12 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // 装备页从第 8 步起改三个人的属性；物品页第 22 步喝药改 hp。第一处分歧在
   // 装备页，票号按第一处分歧记。
-  heroes: { 'menu-equip': 'xl-6lo.9' },
+  heroes: { 'menu-equip': 'xl-6lo.9', 'menu-hero': 'xl-6lo.9' },
   // 音效：切页那一声（`换list.wav`）与奇术页技能那一声（xl-6lo.11）已经
   // 出得对，`menu-equip` 还欠装备页那五声 —— 禁止 / 弃用 / 武器 / 盔甲 / 命+。
-  music: { 'menu-equip': 'xl-6lo.9' },
-  equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9' },
+  music: { 'menu-equip': 'xl-6lo.9', 'menu-hero': 'xl-6lo.9', 'menu-scroll': 'xl-6lo.9' },
+  equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9',
+           'menu-func': 'xl-6lo.9', 'menu-hero': 'xl-6lo.9', 'menu-scroll': 'xl-6lo.9' },
 }
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */

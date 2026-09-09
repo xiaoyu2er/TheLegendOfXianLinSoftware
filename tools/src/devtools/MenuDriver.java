@@ -173,6 +173,7 @@ public final class MenuDriver implements TraceDriver {
             case "use":     return click("use", useButton());
             case "abandon": return click("abandon", field(equipPanel(), "abandon_button"));
             case "skill":   return click("skill:" + in.n, skillButton(in.n));
+            case "func":    return click("func:" + in.target, funcButton(in.target));
             case "tick":
                 tick();
                 return sub == in.n - 1;
@@ -393,9 +394,7 @@ public final class MenuDriver implements TraceDriver {
      */
     @SuppressWarnings("unchecked")
     private Object skillButton(int n) {
-        if (!panelName().equals("magicPanel")) {
-            fail("skill 只能用在奇术页，当前是 " + panelName());
-        }
+        requirePanel("skill", "magicPanel", "奇术页");
         int who = getInt(field(current(), "scoll"), "whichHero");
         String list;
         switch (who) {
@@ -407,6 +406,23 @@ public final class MenuDriver implements TraceDriver {
         List<Object> bs = (List<Object>) field(magicPanel(), list);
         if (n > bs.size()) fail("第 " + n + " 个技能按钮不存在，" + list + " 只有 " + bs.size() + " 个");
         return bs.get(n - 1);
+    }
+
+    /**
+     * 天书页的一颗按钮。名字到字段的映射由 {@link MenuScript#funcField} 管，
+     * 那份白名单同时挡住了几颗**点得响但导不出真值**的按钮（System.exit、
+     * 空的 GameLauncher、会真的开音频设备的那一颗）—— 理由逐条写在那里。
+     *
+     * 这里只多核一件事：那颗按钮当前画不画得出来。子按钮的 isDraw 是天书页
+     * 唯一的状态，剧本次序错了（还没点「设定」就去点「开背景音乐」）的表现
+     * 是点在一颗 isDraw=No 的按钮上 —— 交给 {@link #click} 那条 isDraw 断言
+     * 当场报出来，而不是安安静静地导出一份什么都没发生的真值。
+     */
+    private Object funcButton(String name) {
+        requirePanel("func", "funcPanel", "天书页");
+        String fieldName = MenuScript.funcField(name);
+        if (fieldName == null) fail("没有这颗天书按钮：" + name);
+        return field(field(funcPanel(), "fb"), fieldName);
     }
 
     // ================= 起手 =================
@@ -516,6 +532,17 @@ public final class MenuDriver implements TraceDriver {
 
     private Object funcPanel() { return field(mp, "funcPanel"); }
 
+    /**
+     * 这条指令只能在某一页上发。三条指令（slot / skill / func）各自只对一个
+     * 面板有意义，走错页的表现本来会是"在别的面板上找一个不存在的字段"——
+     * 那是一个反射异常，读起来跟剧本写错了毫无关系。
+     */
+    private void requirePanel(String op, String panel, String human) {
+        if (!panelName().equals(panel)) {
+            fail(op + " 只能用在" + human + "，当前是 " + panelName());
+        }
+    }
+
     private Object tabButton(String name) {
         Object command = field(mp, "command");
         switch (name) {
@@ -528,9 +555,7 @@ public final class MenuDriver implements TraceDriver {
     }
 
     private Object slotButton(String name) {
-        if (!panelName().equals("equipPanel")) {
-            fail("slot 只能用在装备页，当前是 " + panelName());
-        }
+        requirePanel("slot", "equipPanel", "装备页");
         return field(equipPanel(), name + "Button");
     }
 

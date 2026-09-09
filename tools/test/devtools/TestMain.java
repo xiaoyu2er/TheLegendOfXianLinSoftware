@@ -49,6 +49,7 @@ public final class TestMain {
             "ReadImageWarningTest",// 9  fix(diag) 的缺图警告
             "RequireKindTest",     // 10 判别名的形状校验
             "FrameEveryTest",      // xl-6lo.3 取帧密度的三层定夺
+            "MenuFuncOpTest",      // xl-6lo.7 func 指令的两道拒绝与那张表的分母
     };
 
     public static void main(String[] args) {
