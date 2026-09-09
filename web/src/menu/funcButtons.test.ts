@@ -9,8 +9,10 @@ import {
   FUNC_SUB_ORDER,
   createFuncButtons,
   drawnFuncButtons,
+  funcButtonOf,
 } from './funcButtons'
 import type { FuncMainKey, FuncSubKey } from './funcButtons'
+import { menuHitCenter } from '../test/menuHit'
 import { hits } from './buttons'
 import { menuWantsScene, stepMenu } from './step'
 import { createMenuWorld } from './world'
@@ -129,8 +131,7 @@ describe('天书页骨架', () => {
       w.panel = 'funcPanel'
       const fb = w.panels.funcPanel.funcButtons!
       const b = fb.main[key]
-      const x = b.x - 15 + Math.floor(b.width / 2)
-      const y = b.y - 6 + Math.floor(b.height / 2)
+      const { x, y } = menuHitCenter(b)
       expect(hits(b, x, y), `${key} 的落点没打中`).toBe(true)
       stepMenu(w, [{ e: 'press', x, y }])
       expect(menuWantsScene(w), `点 ${key} 之后`).toBe(key === 'returnButton')
@@ -338,11 +339,6 @@ describe('天书页 · 设定与退出子菜单', () => {
     }
   }
 
-  const centerOf = (b: { x: number; y: number; width: number; height: number }) => ({
-    x: b.x - 15 + Math.floor(b.width / 2),
-    y: b.y - 6 + Math.floor(b.height / 2),
-  })
-
   /** 覆盖登记：每条用例走过哪几段，最后拿解析出来的段落数当分母对撞。 */
   const walked = new Set<string>()
 
@@ -361,15 +357,12 @@ describe('天书页 · 设定与退出子菜单', () => {
     const ref = initialModel()
     expect(new Set(drawnFuncButtons(fb)), '开局那一份对不上').toEqual(ref.drawn)
 
-    const buttonOf = (k: string) =>
-      k in fb.main ? fb.main[k as FuncMainKey] : fb.sub[k as FuncSubKey]
-
     for (const key of clicks) {
       walked.add(key)
-      const { x, y } = centerOf(buttonOf(key))
+      const { x, y } = menuHitCenter(funcButtonOf(fb, key as FuncMainKey | FuncSubKey))
       expect(ref.drawn.has(key), `${key} 这时候画不出来，点不着`).toBe(true)
       const alsoHit = FUNC_ALL_KEYS.map(String).filter(
-        (k) => k !== key && ref.drawn.has(k) && hits(buttonOf(k), x, y),
+        (k) => k !== key && ref.drawn.has(k) && hits(funcButtonOf(fb, k as FuncMainKey | FuncSubKey), x, y),
       )
       expect(alsoHit, `点 ${key} 的落点同时打中了别的按钮，一次点击不止一段`).toEqual([])
 
@@ -427,14 +420,14 @@ describe('天书页 · 设定与退出子菜单', () => {
     w.panel = 'funcPanel'
     const fb = w.panels.funcPanel.funcButtons
     if (!fb) throw new Error('funcPanel 没有 funcButtons')
-    const set = centerOf(fb.main.setButton)
+    const set = menuHitCenter(fb.main.setButton)
     stepMenu(w, [{ e: 'press', ...set }])
     stepMenu(w, [{ e: 'release', ...set }])
     expect(drawnFuncButtons(fb)).toContain('setBGM')
 
     // 点「天书」页签（当前就在天书页）：`command.checkPressed` 把它置 isclicked，
     // 紧接着 `FuncButtons.checkPressed` 开头那一段就把子菜单全收起来。
-    const tab = centerOf(w.tabs.func)
+    const tab = menuHitCenter(w.tabs.func)
     stepMenu(w, [{ e: 'press', ...tab }])
     const ref = initialModel()
     applyOps(ref.drawn, sectionOf('tabs').ops)
@@ -479,7 +472,7 @@ describe('天书页 · 设定与退出子菜单', () => {
     const fb = w.panels.funcPanel.funcButtons
     if (!fb) throw new Error('funcPanel 没有 funcButtons')
     expect(fb.sub.setKey.isDraw, 'setKey 开局就该是 Yes，否则这条用例证不到东西').toBe(true)
-    const at = centerOf(fb.sub.setKey)
+    const at = menuHitCenter(fb.sub.setKey)
     expect(hits(fb.sub.setKey, at.x, at.y), '落点没打中「键盘设定」').toBe(true)
 
     const before = drawnFuncButtons(fb)

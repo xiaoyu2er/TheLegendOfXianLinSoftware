@@ -19,6 +19,8 @@ import {
 import type { RunningSession, SessionDeps } from './session'
 import type { MenuInput } from '../menu/step'
 import type { MenuButtonState } from '../menu/types'
+import type { FuncButtonsState } from '../menu/funcButtons'
+import { menuHitCenter } from '../test/menuHit'
 
 /**
  * 「点天书页那颗『背景音乐 关』，声音真的停」这一整条 —— 从鼠标落点一路走到
@@ -49,13 +51,8 @@ function inScene(name: string): RunningSession {
   return enterScene(createSession(DEPS), createWorld(getScene(name)))
 }
 
-/** 与导出器 `MenuDriver.center()` 同一条公式（命中框偏左 15、偏上 6）。 */
-function centerOf(b: MenuButtonState) {
-  return { x: b.x - 15 + Math.floor(b.width / 2), y: b.y - 6 + Math.floor(b.height / 2) }
-}
-
 function click(b: MenuButtonState): MenuInput[] {
-  const { x, y } = centerOf(b)
+  const { x, y } = menuHitCenter(b)
   return [
     { e: 'press', x, y },
     { e: 'release', x, y },
@@ -71,14 +68,28 @@ function tap(session: RunningSession, pick: (w: NonNullable<ReturnType<typeof me
   return advanceSession(session, { ...NO_INPUT, menu: click(button) }, 0)
 }
 
+/**
+ * 当前这个会话里天书页那一排按钮。
+ *
+ * 每一步都**现取**，不缓存：`advanceSession` 每一拍还一个新的会话对象出来，
+ * 而菜单世界是就地改的 —— 缓存一份的话读到的是不是最新的，全看那两件事哪个
+ * 先变，而"读到旧的"与"这一步什么都没发生"长得一样。
+ */
+function funcButtonsOf(session: RunningSession): FuncButtonsState {
+  const w = menuWorldOf(session)
+  if (!w) throw new Error('菜单没开着')
+  const fb = w.panels.funcPanel.funcButtons
+  if (!fb) throw new Error('funcPanel 没有 funcButtons')
+  return fb
+}
+
 /** 走到「设定 → 背景音乐」那一层，两颗开 / 关都画得出来。 */
 function openBgmSubmenu(): RunningSession {
   let s = openMenu(inScene('宿舍'))
   s = tap(s, (w) => w.tabs.func)
   expect(menuWorldOf(s)!.panel).toBe('funcPanel')
-  const fb = () => menuWorldOf(s)!.panels.funcPanel.funcButtons!
-  s = tap(s, () => fb().main.setButton)
-  s = tap(s, () => fb().sub.setBGM)
+  s = tap(s, () => funcButtonsOf(s).main.setButton)
+  s = tap(s, () => funcButtonsOf(s).sub.setBGM)
   return s
 }
 
@@ -110,21 +121,21 @@ describe('天书页的「背景音乐 开 / 关」真的开关背景音乐', () 
     // 每一条都会在 null === null 上恒真。
     expect(scene, '宿舍这一场没有背景音乐，这条用例证不了任何东西').not.toBeNull()
 
-    s = tap(s, () => menuWorldOf(s)!.panels.funcPanel.funcButtons!.sub.off_BGM)
+    s = tap(s, () => funcButtonsOf(s).sub.off_BGM)
     expect(menuWorldOf(s)!.audio.bgm).toBe(false)
     expect(getAudioSettings().bgm, '会话没把那个开关记回去').toBe(false)
     expect(currentBgm(s), '关掉之后还在声明要放曲子').toBeNull()
     // 场景那边**一个字没变** —— 关的是播放，不是"该放哪首"。
     expect(s.scene.world.audio.bgm).toBe(scene)
 
-    s = tap(s, () => menuWorldOf(s)!.panels.funcPanel.funcButtons!.sub.on_BGM)
+    s = tap(s, () => funcButtonsOf(s).sub.on_BGM)
     expect(currentBgm(s), '重新打开之后没放回同一首').toBe(scene)
   })
 
   it('关掉之后回场景照样是关的 —— 原版那两个开关是 static，活得比菜单久', () => {
     let s = openBgmSubmenu()
-    s = tap(s, () => menuWorldOf(s)!.panels.funcPanel.funcButtons!.sub.off_BGM)
-    s = tap(s, () => menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.returnButton)
+    s = tap(s, () => funcButtonsOf(s).sub.off_BGM)
+    s = tap(s, () => funcButtonsOf(s).main.returnButton)
     expect(s.panel, '「返回」没回到场景').toBe('scene')
     expect(currentBgm(s), '回了场景曲子自己又响了').toBeNull()
 
@@ -156,12 +167,12 @@ describe('天书页的「背景音乐 开 / 关」真的开关背景音乐', () 
     expect(player.playing(), '开着的时候没在放').not.toBeNull()
     expect(calls).toEqual(['play'])
 
-    s = tap(s, () => menuWorldOf(s)!.panels.funcPanel.funcButtons!.sub.off_BGM)
+    s = tap(s, () => funcButtonsOf(s).sub.off_BGM)
     player.sync(currentBgm(s))
     expect(calls, '点了「关」播放器没停').toEqual(['play', 'pause'])
     expect(player.playing()).toBeNull()
 
-    s = tap(s, () => menuWorldOf(s)!.panels.funcPanel.funcButtons!.sub.on_BGM)
+    s = tap(s, () => funcButtonsOf(s).sub.on_BGM)
     player.sync(currentBgm(s))
     expect(calls, '点了「开」播放器没放回来').toEqual(['play', 'pause', 'play'])
     player.destroy()
@@ -170,10 +181,9 @@ describe('天书页的「背景音乐 开 / 关」真的开关背景音乐', () 
   it('「特殊音效 关」不碰背景音乐 —— 两个开关是两个字段', () => {
     let s = openMenu(inScene('宿舍'))
     s = tap(s, (w) => w.tabs.func)
-    const fb = () => menuWorldOf(s)!.panels.funcPanel.funcButtons!
-    s = tap(s, () => fb().main.setButton)
-    s = tap(s, () => fb().sub.setClick)
-    s = tap(s, () => fb().sub.off_click)
+    s = tap(s, () => funcButtonsOf(s).main.setButton)
+    s = tap(s, () => funcButtonsOf(s).sub.setClick)
+    s = tap(s, () => funcButtonsOf(s).sub.off_click)
     expect(menuWorldOf(s)!.audio.sfx).toBe(false)
     expect(menuWorldOf(s)!.audio.bgm, '关音效把背景音乐一起关了').toBe(true)
     expect(currentBgm(s)).not.toBeNull()

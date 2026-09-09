@@ -128,9 +128,21 @@ function subGroup(fb: FuncButtonsState, n: number): MenuButtonState[] {
   return group.map((key) => fb.sub[key])
 }
 
+/**
+ * `subButtonList[1..4]` 全体，按组次序。
+ *
+ * 原版每一处都写死 `for(int i=1;i<5;i++)`，而这里上界从 `FUNC_SUB_GROUPS`
+ * **现算** —— 分组表多一组时写死的 5 会把它静默漏掉，而"漏掉一组"的表现是
+ * 那两颗按钮点不响、也收不起来，跟"本来就没有它们"长得一模一样
+ * （`docs/agents/dispatch.md` 纪律 3）。
+ */
+function allSubButtons(fb: FuncButtonsState): MenuButtonState[] {
+  return FUNC_SUB_GROUPS.flatMap((group) => group.map((key) => fb.sub[key]))
+}
+
 /** `for(int i=1;i<5;i++) for(MenuButton b:subButtonList[i]) b.isDraw=Yes/No;` */
 function setAllGroups(fb: FuncButtonsState, isDraw: boolean): void {
-  for (let n = 1; n < 5; n++) for (const b of subGroup(fb, n)) b.isDraw = isDraw
+  for (const b of allSubButtons(fb)) b.isDraw = isDraw
 }
 
 /** `for(MenuButton button:subButtonList[n]) button.isDraw=Yes/No;` */
@@ -147,12 +159,13 @@ function setGroup(fb: FuncButtonsState, n: number, isDraw: boolean): void {
  * UTF-16 序在纯 ASCII 上与 Java 的 `String.compareTo` 一致。
  */
 export function drawnFuncButtons(fb: FuncButtonsState): string[] {
-  return FUNC_ALL_KEYS.filter((key) => buttonOf(fb, key).isDraw)
+  return FUNC_ALL_KEYS.filter((key) => funcButtonOf(fb, key).isDraw)
     .map((key) => String(key))
     .sort()
 }
 
-function buttonOf(fb: FuncButtonsState, key: FuncMainKey | FuncSubKey): MenuButtonState {
+/** 按字段名取一颗按钮 —— 主按钮与子按钮分在两个 record 里，取的时候不必知道。 */
+export function funcButtonOf(fb: FuncButtonsState, key: FuncMainKey | FuncSubKey): MenuButtonState {
   return key in fb.main
     ? fb.main[key as FuncMainKey]
     : fb.sub[key as FuncSubKey]
@@ -215,7 +228,7 @@ export function funcCheckPressed(
   }
 
   // ——— 子按钮的命中判据。**只有 subButtonList[1..4]**，`setKey` 不在其中 ———
-  for (let n = 1; n < 5; n++) for (const b of subGroup(fb, n)) pressButton(b, x, y)
+  for (const b of allSubButtons(fb)) pressButton(b, x, y)
 
   // ——— 第 3..11 段：并列的 `if`，不是 if-else。多颗同时命中时全都跑 ———
 
@@ -305,11 +318,11 @@ export function funcCheckPressed(
  */
 export function funcCheckReleased(fb: FuncButtonsState, x: number, y: number): void {
   for (const key of FUNC_MAIN_ORDER) releaseButton(fb.main[key], x, y)
-  for (let n = 1; n < 5; n++) for (const b of subGroup(fb, n)) releaseButton(b, x, y)
+  for (const b of allSubButtons(fb)) releaseButton(b, x, y)
 }
 
 /** `FuncButtons.checkMoveIn`：同上的名单。三态贴图的「待点」那一态靠它。 */
 export function funcCheckMoveIn(fb: FuncButtonsState, x: number, y: number): void {
   for (const key of FUNC_MAIN_ORDER) moveInButton(fb.main[key], x, y)
-  for (let n = 1; n < 5; n++) for (const b of subGroup(fb, n)) moveInButton(b, x, y)
+  for (const b of allSubButtons(fb)) moveInButton(b, x, y)
 }
