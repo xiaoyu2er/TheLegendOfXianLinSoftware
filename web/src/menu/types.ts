@@ -97,6 +97,24 @@ export interface MenuSubPanel {
   funcButtons: FuncButtonsState | null
 }
 
+/**
+ * 音频的两个开关 —— `MusicPlayer.CAN_PLAY_BGM` / `CAN_PLAY_MUSIC`。
+ *
+ * 原版是两个 **static** 字段，从开机活到关机；这一层把它们放在世界上，由会话
+ * 在开菜单时喂进来、每一拍再记回去（`game/audioSettings.ts`），与队伍那一份
+ * （`fakes/party.ts`）同一个手法。放在世界上而不是直接读写一个模块级全局，
+ * 是为了让状态层保持纯的 —— `menuTrace.test.ts` 一条真值跑两遍必须同结果。
+ *
+ * **真值不记这两列**（`MenuDriver.snapshotState` 里没有），所以它们不进
+ * `snapshotMenu`。守着它们的是 `funcButtons.test.ts` 与 `session.test.ts`。
+ */
+export interface MenuAudioSettings {
+  /** `CAN_PLAY_BGM == YES`。`false` 时 `currentBgm()` 返回 `null`，播放器停。 */
+  bgm: boolean
+  /** `CAN_PLAY_MUSIC == YES`。今天没有音效播放器（xl-8l2），只是记着。 */
+  sfx: boolean
+}
+
 export interface MenuWorld {
   /** `MenuPanel.currentPanel` 的名字。 */
   panel: MenuPanelName
@@ -113,6 +131,14 @@ export interface MenuWorld {
   readonly party: Readonly<Record<'zhang' | 'lu' | 'wen', boolean>>
   /** **这一步**请求播放的音效，按调用先后。每步开头清空（对应 `MusicTap`）。 */
   music: string[]
+  /**
+   * 音频那两个开关。天书页的「背景音乐 开 / 关」改的就是它。
+   *
+   * ⚠️ **它不影响 `music` 那一列**：真值的观察点是 `MusicReader.readmusic` 的
+   * **入口**，而 `CAN_PLAY_MUSIC` 的判断在再下一层的 `playmusic` 里 ——
+   * 关掉音效之后文件名照样记得到。把 `music` 也一起关掉的话，真值当场对不上。
+   */
+  audio: MenuAudioSettings
   /** 已经推了几步。真值那一列 `t`。 */
   tick: number
 }

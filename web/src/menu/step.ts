@@ -1,5 +1,5 @@
 import { moveInButton, pressButton, releaseButton } from './buttons'
-import { funcCheckPressed, funcCheckReleased } from './funcButtons'
+import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased } from './funcButtons'
 import { MENU_PANEL_ORDER, PANEL_OF_TAB, TAB_PRIORITY } from './world'
 import { SCOLL_HEROES } from './types'
 import type { MenuSubPanel, MenuWorld } from './types'
@@ -95,6 +95,9 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
   p.currentX = x
   p.currentY = y
   scollCheckMoveIn(w, p)
+  // `FuncPanel.checkAllButtonMoveIn` 只有 `fb.checkMoveIn()` 一句 —— 三态贴图
+  // 的「待点」那一态靠它。真值不记 `image`，所以这一条由逐帧比对守（xl-6lo.14）。
+  if (p.funcButtons) funcCheckMoveIn(p.funcButtons, p.currentX, p.currentY)
 }
 
 /**
@@ -124,14 +127,19 @@ function commandCheckPressed(w: MenuWorld): void {
  * `FatherPanel.checkAllButtonPressed` 里**四页共有**的那一句 ——
  * `scoll.checkPressed()`（天书页没有卷轴，所以它那一支整个没有）。
  *
- * 各页自己那部分（装备的六个分类与使用 / 弃用、物品的使用、奇术的技能按钮、
- * 天书的五颗）**不在这一票里**，见 `menuTrace.test.ts` 那张按字段组的登记表：
- * equip → xl-6lo.9、drug → xl-6lo.10、magic → xl-6lo.11、func → xl-6lo.12。
+ * 各页自己那部分见 `menuTrace.test.ts` 那张按字段组的登记表：equip →
+ * xl-6lo.9、drug → xl-6lo.10、magic → xl-6lo.11；**func 已经对齐**（xl-6lo.12）。
  */
 function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   scollCheckPressed(w, p)
   // 天书页没有卷轴，它的 `checkAllButtonPressed` 只有 `fb.checkPressed()` 一句。
-  if (p.funcButtons) funcCheckPressed(p.funcButtons, p.currentX, p.currentY, w.music)
+  //
+  // 页签那一项要现读：原版第一段读的是 `command.buttonList` 里有没有哪一颗
+  // `isclicked` —— 而 `commandCheckPressed` 刚刚在同一次事件里跑过。
+  if (p.funcButtons) {
+    const tabsClicked = TAB_PRIORITY.some((key) => w.tabs[key].isclicked)
+    funcCheckPressed(p.funcButtons, tabsClicked, p.currentX, p.currentY, w.music, w.audio)
+  }
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */

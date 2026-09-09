@@ -12,6 +12,7 @@ import type { BattleWorld } from '../battle/types'
 import type { MenuWorld } from '../menu/types'
 import type { PartyKey } from '../battle/units'
 import { getParty, rememberParty } from '../fakes/party'
+import { getAudioSettings, rememberAudioSettings } from './audioSettings'
 import { TITLE_BGM } from '../start/assets'
 import { advance, createTicker } from '../state/loop'
 import type { Ticker } from '../state/loop'
@@ -217,6 +218,8 @@ export function openMenu(session: RunningSession, carry = getParty()): RunningSe
       lu: { level: carry.lu.level, hp: carry.lu.hp, mp: carry.lu.mp },
       yu: { level: carry.yu.level, hp: carry.yu.hp, mp: carry.yu.mp },
     },
+    // 原版那两个开关是 static，活得比菜单久（`game/audioSettings.ts`）。
+    audio: getAudioSettings(),
   })
   return { ...session, panel: 'menu', menu: createMenuTicker(world) }
 }
@@ -360,6 +363,10 @@ export function advanceSession(
   // ——— 菜单那四条线程 ———
   if (panel === 'menu' && menu !== null) {
     menu = advanceMenu(menu, input.menu, elapsedMs)
+    // 天书页那两颗「背景音乐 开 / 关」改的是菜单世界上的开关，而原版改的是
+    // 两个 static。**每一拍都记回去**，不是等关菜单时记 —— 关菜单那条路只有
+    // 「返回」一条，而 BGM 该在按下那一拍就停（原版 `closeBGM()` 是同步的）。
+    rememberAudioSettings(menu.world.audio)
     if (menuWantsScene(menu.world)) {
       panel = 'scene'
       menu = null
@@ -381,6 +388,11 @@ export function advanceSession(
  * 一个轮询循环的手法，而这里没有那个循环。
  */
 export function currentBgm(session: Session): string | null {
+  // 天书页把背景音乐关掉了（`MusicPlayer.CAN_PLAY_BGM = NO`）。原版那一位
+  // 关的是播放线程 —— 下一个缓冲块就 break，声音当场停，而"该放哪首"那个
+  // 字段一个字没变；`openBGM()` 再把**同一首**放回去。这一层的对应物就是
+  // 让声明值变成 `null`：播放器收到 `null` 就 `pause()`，收到曲名再 `play()`。
+  if (!getAudioSettings().bgm) return null
   if (session.panel === 'battle' && session.battle !== null) return session.battle.world.bgm
   // 标题那一屏放主题曲。**还没开局与全灭回标题走的是同一句**，原版也是同一句
   // （`switchTo("start")` 里那个 `readBGM("主题曲.mp3")`），两条路都到得了它。

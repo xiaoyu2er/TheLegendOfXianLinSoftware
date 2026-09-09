@@ -67,6 +67,14 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 见下面 `PENDING.heroes`。票面写的是"本票对齐 panel / mouse / heroes 三组"，
   // 实测这一组横跨两张后续的票，所以按格子登记，只签得下其中一格。
   heroes: ['menu-magic'],
+  // 天书页整页（xl-6lo.12）。⚠️ **这两条真值里 `func.drawn` 从头到尾没变过**
+  // —— 两条剧本都没点过天书页的按钮，所以这一格证明的是"开局那六颗对得上、
+  // 而且没有谁被别处的操作偷偷改掉"，**证不到子菜单的展开收起**。展开收起
+  // 那一半的判据在 `funcButtons.test.ts`：从 GBK 源码里现读 `checkPressed()`
+  // 的十一段，把每一段的 `isDraw` 赋值解出来当期望值（同样零手写）。
+  // 逐次相等的真值要等 **xl-6lo.7** 那条「天书设定」剧本落地 —— 它一入库，
+  // 这张表的对撞会先红一次（新剧本两边都没登记），那正是提醒。
+  func: ['menu-equip', 'menu-magic'],
 }
 
 /**
@@ -86,7 +94,6 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9' },
   drug: { 'menu-equip': 'xl-6lo.10', 'menu-magic': 'xl-6lo.10' },
   magic: { 'menu-equip': 'xl-6lo.11', 'menu-magic': 'xl-6lo.11' },
-  func: { 'menu-equip': 'xl-6lo.12', 'menu-magic': 'xl-6lo.12' },
 }
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */

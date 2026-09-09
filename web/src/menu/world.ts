@@ -5,7 +5,14 @@ import type { LiveParty } from './heroes'
 import type { PartyKey } from '../battle/units'
 import { HEAD_H, HEAD_POS, HEAD_W, TABS, TAB_H, TAB_W, TAB_Y, tabX } from './layout'
 import { SCOLL_HEROES } from './types'
-import type { MenuPanelName, MenuSubPanel, MenuTabKey, MenuWorld, ScollState } from './types'
+import type {
+  MenuAudioSettings,
+  MenuPanelName,
+  MenuSubPanel,
+  MenuTabKey,
+  MenuWorld,
+  ScollState,
+} from './types'
 
 /**
  * 建一份菜单世界。参数就是**菜单剧本**里 `setup` 那几行
@@ -20,6 +27,13 @@ export interface MenuConfig {
    * **回放真值时不喂** —— 见 `heroes.ts` 的 `LiveParty`。
    */
   readonly live?: Readonly<Partial<Record<PartyKey, LiveParty>>> | undefined
+  /**
+   * 音频那两个开关的**当前值**（`MusicPlayer` 的两个 static）。
+   *
+   * 不喂就是两个都开着 —— 那是原版那两个字段的初值（`CAN_PLAY_BGM = 1`、
+   * `CAN_PLAY_MUSIC = 1`），也是导出真值那个干净 JVM 的起手态。
+   */
+  readonly audio?: Readonly<MenuAudioSettings> | undefined
 }
 
 /**
@@ -104,6 +118,8 @@ export function createMenuWorld(config: MenuConfig): MenuWorld {
       wen: config.party.includes('wen'),
     },
     music: [],
+    // 不喂就是原版那两个 static 的初值：两个都开着。
+    audio: { bgm: config.audio?.bgm ?? true, sfx: config.audio?.sfx ?? true },
     tick: 0,
   }
 }
