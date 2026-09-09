@@ -12,10 +12,10 @@ import java.util.TreeSet;
 /**
  * Java 侧单元测试的入口。用法：{@code tools/test.sh}（必须在仓库根目录运行）。
  *
- * 这一套只钉一件事：**两条重导对比看不见的那七处**（清单与它们各自的篡改点见
- * {@code docs/java-side-test-gap.md}）。原版 {@code src/} 是冻结的规范，
- * 不为它建套件 —— 它的行为已经被 96×26 的字段契约与逐步行为真值覆盖在移植端
- * 真正消费的那一层上。
+ * 这一套只钉一件事：**两条重导对比看不见的那些处**（xl-f8y 数出来的七处，清单与
+ * 它们各自的篡改点见 {@code docs/java-side-test-gap.md}；之后每补一处就加一个类）。
+ * 原版 {@code src/} 是冻结的规范，不为它建套件 —— 它的行为已经被 96×26 的字段契约
+ * 与逐步行为真值覆盖在移植端真正消费的那一层上。
  *
  * <h2>登记与分母要对撞</h2>
  *
@@ -36,8 +36,9 @@ public final class TestMain {
     private static final File TEST_DIR = new File("tools/test/devtools");
 
     /**
-     * 登记：这七个类各自钉住一处「重导对比看不见」的缺口。
-     * 括号里是 {@code docs/java-side-test-gap.md} 复现表里的编号。
+     * 登记：每个类各自钉住一处「重导对比看不见」的缺口。
+     * 括号里是 {@code docs/java-side-test-gap.md} 复现表里的编号 —— 那张表是
+     * xl-f8y 那一趟数出来的十个篡改点，后来补的缺口没有编号，写票号。
      */
     private static final String[] SUITE = {
             "NormalizePathTest",   // 4  fix(path) 的反斜杠归一化
@@ -47,6 +48,7 @@ public final class TestMain {
             "ClockTest",           // 8  Clock 的缩放、下限与冻结
             "ReadImageWarningTest",// 9  fix(diag) 的缺图警告
             "RequireKindTest",     // 10 判别名的形状校验
+            "FrameEveryTest",      // xl-6lo.3 取帧密度的三层定夺
     };
 
     public static void main(String[] args) {

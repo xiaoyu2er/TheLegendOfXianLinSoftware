@@ -34,6 +34,21 @@ import javax.imageio.ImageIO;
  * frames.json 清单。这份清单是跨端逐帧比对（xl-9bd.8）里"比哪些帧"的
  * **唯一来源**：Web 侧照着同一组 tick 出图，两边帧数对不上就是硬失败，
  * 而不是各挑各的帧然后比个寂寞。
+ *
+ * <h2>取帧密度谁说了算（xl-6lo.3）</h2>
+ *
+ * 那个 n 有三层，后面的盖前面的：{@link #DEFAULT_EVERY} → 剧本自报的
+ * {@code every} → 命令行 {@code --every}。
+ *
+ * 为什么让剧本自报：密度不是跑的人的偏好，是**剧本自己的性质**。事件驱动的
+ * 菜单剧本一步就是一次输入事件，每一步画面都不一样，按缺省 25 采样等于
+ * 一条 47 步的剧本只出 2 帧 —— 而它照样打印"比过了"。靠人记得敲
+ * {@code --every 1} 不算判据：会忘，而忘了的样子和没忘一模一样。
+ *
+ * <b>回显进 trace 头的是剧本自报的那个值，不是最终生效的值。</b>
+ * trace.json 必须与命令行怎么敲无关 —— {@code tools/compare-frames.sh} 会拿
+ * 现导的 trace 与入库真值 {@code cmp}，写进生效值的话 {@code --every 5} 跑一次
+ * 就会把那条 cmp 判成"原版侧行为已偏离"。
  */
 public final class ExportTrace {
 
@@ -46,9 +61,17 @@ public final class ExportTrace {
     private String scriptJson = "null";
     private String driverKind = "?";
 
+    /** 剧本没自报、命令行也没给时的兜底取帧密度。 */
+    static final int DEFAULT_EVERY = 25;
+
     // ---- 帧导出（--frames，默认关闭；关闭时下面这几个字段一个都不读） ----
     private File framesDir;
-    private int every = 25;
+    /** 命令行 {@code --every} 给的值；没给是 0。 */
+    private int everyFromCli;
+    /** 剧本自报的值；没自报是 0。回显进 trace 头的是它。 */
+    private int everyFromScript;
+    /** 真正生效的密度，{@link #resolveEvery} 定夺。 */
+    private int every = DEFAULT_EVERY;
     private final List<Integer> sampled = new ArrayList<>();
     private int frameW;
     private int frameH;
@@ -94,8 +117,8 @@ public final class ExportTrace {
                     break;
                 case "--every":
                     if (++i >= args.length) die("--every 后面要跟正整数");
-                    t.every = Integer.parseInt(args[i]);
-                    if (t.every <= 0) die("--every 必须为正整数，收到 " + args[i]);
+                    t.everyFromCli = Integer.parseInt(args[i]);
+                    if (t.everyFromCli <= 0) die("--every 必须为正整数，收到 " + args[i]);
                     break;
                 default:
                     die("不认识的参数 " + args[i]);
@@ -121,7 +144,17 @@ public final class ExportTrace {
     // ================= 主流程 =================
 
     private String run() throws Exception {
-        TraceDriver driver = pickDriver();
+        // 剧本只在这里读一遍原始 JSON：driver 与 every 都是「导出器自己要看」的
+        // 字段，四个剧本类都不认识它们。
+        java.util.Map<String, Object> root = JsonIn.obj(JsonIn.parse(new String(
+                java.nio.file.Files.readAllBytes(scriptFile.toPath()),
+                StandardCharsets.UTF_8)), "剧本");
+        // 密度在建驱动器**之前**定夺，坏值也在这里就炸：一份写着 "every": 0 的
+        // 剧本要在跑起来之前非零退出，而不是先跑 47 步再发现一帧都没采到。
+        everyFromScript = declaredEvery(root, scriptFile.getPath());
+        every = resolveEvery(everyFromCli, everyFromScript);
+
+        TraceDriver driver = pickDriver(root);
         String kind = requireKind(driver);
         driverKind = kind;
         prepareFramesDir();
@@ -157,6 +190,11 @@ public final class ExportTrace {
         b.append("{\n");
         b.append("  \"format\": \"xianlin-trace/1\",\n");
         b.append("  \"driver\": ").append(Json.str(kind)).append(",\n");
+        // 只在剧本真的自报了的时候写这一行。缺省不写：一个字段全 21 份真值都
+        // 加一遍，等于把一次「谁都没改」的重导做成一次 21 份的 diff。
+        if (everyFromScript > 0) {
+            b.append("  \"every\": ").append(everyFromScript).append(",\n");
+        }
         b.append("  \"script\": ").append(scriptJson).append(",\n");
         b.append("  \"tickCount\": ").append(steps).append(",\n");
         b.append("  \"ticks\": [\n").append(body).append("\n  ]\n");
@@ -173,12 +211,8 @@ public final class ExportTrace {
      * 字段之前写的，给它们补一个字段等于改剧本回显，五份真值要跟着重导。
      * 默认值是**唯一**的宽容之处 —— 认不出的名字一律硬失败，绝不猜。
      */
-    private TraceDriver pickDriver() throws Exception {
-        String want = JsonIn.strOr(
-                JsonIn.obj(JsonIn.parse(new String(
-                        java.nio.file.Files.readAllBytes(scriptFile.toPath()),
-                        StandardCharsets.UTF_8)), "剧本"),
-                "driver", "scene");
+    private TraceDriver pickDriver(java.util.Map<String, Object> root) throws Exception {
+        String want = JsonIn.strOr(root, "driver", "scene");
         switch (want) {
             case "scene": {
                 TraceScript s = TraceScript.load(scriptFile);
@@ -245,6 +279,41 @@ public final class ExportTrace {
                     + "，判别名必须匹配 [a-z][a-z0-9-]*");
         }
         return kind;
+    }
+
+    // ================= 取帧密度 =================
+
+    /**
+     * 剧本自报的取帧密度，没自报返回 0。
+     *
+     * 包内可见：{@code tools/test} 下的 {@code FrameEveryTest} 要够得着它。
+     *
+     * <b>0 与负数是硬失败，不是"当没写"。</b> {@code "every": 0} 会让
+     * {@code steps % every} 直接 ArithmeticException，而 {@code -1} 会让
+     * 一帧都采不到 —— 后者更坏：它走到 writeFrameManifest 才被拦下来，
+     * 而在这个字段还没有人核的时候，"采了 0 帧"与"采全了"在退出码上一模一样。
+     */
+    static int declaredEvery(java.util.Map<String, Object> root, String where) {
+        if (root.get("every") == null) return 0;
+        int n = JsonIn.i(root, "every");
+        if (n <= 0) die(where + " 的 every 必须为正整数，收到 " + n);
+        return n;
+    }
+
+    /**
+     * 三层里谁说了算：命令行 &gt; 剧本自报 &gt; {@link #DEFAULT_EVERY}。
+     *
+     * 命令行在最上面是**为了能压掉剧本**：调密一点看某一段、调稀一点快跑一趟，
+     * 都不该逼人去改剧本文件（改了就得重导真值）。剧本在缺省之上，是因为
+     * 缺省 25 对事件驱动的剧本从来就不对。
+     *
+     * @param fromCli    命令行给的，没给传 0
+     * @param declared   剧本自报的，没自报传 0
+     */
+    static int resolveEvery(int fromCli, int declared) {
+        if (fromCli > 0) return fromCli;
+        if (declared > 0) return declared;
+        return DEFAULT_EVERY;
     }
 
     // ================= 帧导出 =================

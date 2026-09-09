@@ -1,6 +1,7 @@
 {
   "format": "xianlin-trace/1",
   "driver": "menu",
+  "every": 1,
   "script": {"name":"menu-equip","description":"菜单四页各进各出，装备页走完一整条换装：拒绝（已装备）→ 弃用（属性掉）→ 拒绝（不是这个人能用的）→ 换回武器（属性回）→ 穿上盔甲（体力 10→15，血上限 700→1050）→ 回物品页喝药（血 700→1000）。两条拒绝路径与装备前后的属性值全在真值里。","setup":{"party":["zhang"],"fullHeal":true,"equipment":[{"name":"藏璎环","count":1},{"name":"铁甲","count":1}],"drugs":[{"name":"金创药","count":2}]},"maxSteps":200,"steps":[{"op":"tab","name":"thing"},{"op":"tab","name":"equip"},{"op":"slot","name":"weapon"},{"op":"use"},{"op":"abandon"},{"op":"use"},{"op":"select","index":1},{"op":"use"},{"op":"slot","name":"armor"},{"op":"use"},{"op":"tab","name":"thing"},{"op":"select","index":0},{"op":"use"},{"op":"tab","name":"magic"},{"op":"tab","name":"func"},{"op":"tab","name":"equip"}]},
   "tickCount": 30,
   "ticks": [

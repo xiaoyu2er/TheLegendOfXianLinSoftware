@@ -1,6 +1,7 @@
 {
   "format": "xianlin-trace/1",
   "driver": "menu",
+  "every": 1,
   "script": {"name":"menu-magic","description":"奇术页与那条 100ms 循环的逐帧真值（xl-1vu.9）：先在物品页空推 2 拍，开局就挂在 MagicPanel 上的那条文敏第 5 技能动画照样往前走（四条 run 线程不管哪一页在显示都在跑）→ 进奇术页，那一次按下把 currentAnimation 清成 null（checkAllButtonPressed 的第一件事）→ 空推 3 拍 → 点张小凡第 1 个技能 → 推满 36 拍走完 37 帧那条动画，末帧时 code 拨回 1、动画撤下 → 再推 2 拍确认没有动画时只剩鼠标在动。43 拍覆盖鼠标帧的一整轮绕回：第 0 张只在开局出现一次，第 7 张连画两帧（code==8 那一拍只把 code 拨回 1、不换图）。","setup":{"party":["zhang"],"fullHeal":true,"equipment":[],"drugs":[]},"maxSteps":200,"steps":[{"op":"tick","n":2},{"op":"tab","name":"magic"},{"op":"tick","n":3},{"op":"skill","n":1},{"op":"tick","n":36},{"op":"tick","n":2}]},
   "tickCount": 47,
   "ticks": [

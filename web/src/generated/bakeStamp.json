@@ -3205,8 +3205,8 @@
     "tools/traces/out/dorm-exit.trace.json": "a04203235625aa6f1af6746eb4791b7e4fdecc60fc7cd6d2ffef6a748f208787",
     "tools/traces/out/dorm-intro.trace.json": "0c792ae3262f7dee47be16b9d6e7e49bd863acb78cc3a3dc8df14a70b964c92d",
     "tools/traces/out/dorm-walk.trace.json": "48518c77d7ffbd19a4d5397d44ab92e354d4948aeb2cb7de3c366f678813d89d",
-    "tools/traces/out/menu-equip.trace.json": "a9a6e982a7bd49c859b480720ac0562787fab0faa1babdfd57d8c776cdd9f3b8",
-    "tools/traces/out/menu-magic.trace.json": "40eb0db3d6cd84c505c7938c941729819bda9fc3ef3966f6e92a5ceafa09c1bf",
+    "tools/traces/out/menu-equip.trace.json": "9394da7ee68b5017b1a5c7fae2b7499d0d579231827f7d2633132befdd77ac64",
+    "tools/traces/out/menu-magic.trace.json": "27f4c9b0da5b5d87a5c5eab9b01838dbce0e3dad52736fa366eb4084b195ed40",
     "tools/traces/out/milestone.trace.json": "c2479bfe99c3756a1e1d0579ade175236bfd459eebb61cc744d440391fbe7bbf",
     "tools/traces/out/shop-trade.trace.json": "bd4352850dc227d07d07137665fe83015ba6e6c1d25590dda5ab5b54418c7756"
   }
