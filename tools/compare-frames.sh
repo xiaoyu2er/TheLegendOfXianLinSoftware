@@ -3,7 +3,7 @@
 #
 #   tools/compare-frames.sh                     # 跑 tools/traces/scripts 下的全部剧本
 #   tools/compare-frames.sh dorm-walk           # 只跑一份
-#   tools/compare-frames.sh --every 50          # 每 50 个 tick 取一帧（默认 25）
+#   tools/compare-frames.sh --every 50          # 每 50 个 tick 取一帧（压掉剧本自报值）
 #   tools/compare-frames.sh --threshold 0.001   # 一帧里超过千分之一的像素偏了才算偏离
 #   tools/compare-frames.sh dorm-walk --self-check  # 故意改坏一处渲染，验流水线响不响
 #
@@ -27,7 +27,10 @@ cd "$(dirname "$0")/.."
 
 SCRIPTS=tools/traces/scripts
 OUT=tools/traces/compare
-every=25
+# 空 = 不传给导出器，让**剧本自报的密度**说了算（剧本没写才落到导出器里的 25）。
+# 从前这里写死 25 并且总是传下去，等于命令行永远在压剧本。理由与实测读数见
+# docs/trace-format.md 菜单那一节（xl-6lo.3）。
+every=""
 names=()
 pass=()   # 透传给 web 侧比对器的参数
 
@@ -48,7 +51,11 @@ fi
 tools/build.sh >/dev/null
 CP="tools/build/classes:jl1.0.jar:mp3spi1.9.4.jar:tritonus_share.jar"
 
-echo "原版侧：$every 个 tick 取一帧"
+if [ -n "$every" ]; then
+  echo "原版侧：$every 个 tick 取一帧（命令行给的，压掉剧本自报值）"
+else
+  echo "原版侧：取帧密度由各剧本自报（剧本没写则 25 个 tick 取一帧）"
+fi
 for n in "${names[@]}"; do
   [ -f "$SCRIPTS/$n.json" ] || { echo "找不到剧本 $SCRIPTS/$n.json" >&2; exit 2; }
   mkdir -p "$OUT/$n/java"
@@ -59,7 +66,7 @@ for n in "${names[@]}"; do
     --add-opens java.base/java.lang=ALL-UNNAMED \
     -Dapple.awt.UIElement=true -Djava.awt.headless=false -cp "$CP" \
     devtools.ExportTrace "$SCRIPTS/$n.json" "$OUT/$n/java/trace.json" \
-    --frames "$OUT/$n/java" --every "$every" | sed 's/^/  /'
+    --frames "$OUT/$n/java" ${every:+--every "$every"} | sed 's/^/  /'
 
   # 顺手拿入库的行为真值当校验：这一次导出的 trace 必须与 tools/traces/out/
   # 里那份逐字节一致。不一致意味着原版侧的行为变了 —— 那是比"某一帧画得不像"

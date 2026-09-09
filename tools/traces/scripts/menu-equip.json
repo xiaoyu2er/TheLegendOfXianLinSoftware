@@ -12,6 +12,7 @@
     "drugs": [{ "name": "金创药", "count": 2 }]
   },
   "maxSteps": 200,
+  "every": 1,
   "steps": [
     { "op": "tab", "name": "thing" },
     { "op": "tab", "name": "equip" },

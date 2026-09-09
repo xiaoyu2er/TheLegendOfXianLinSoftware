@@ -13,11 +13,16 @@
 ```bash
 tools/compare-frames.sh                          # 全部剧本
 tools/compare-frames.sh dorm-walk                # 只跑一份
-tools/compare-frames.sh --every 50               # 每 50 个 tick 取一帧（默认 25）
+tools/compare-frames.sh --every 50               # 每 50 个 tick 取一帧（压掉剧本自报值）
 tools/compare-frames.sh --threshold 0.001        # 一帧里超过千分之一的像素偏了才算偏离
 tools/compare-frames.sh dorm-walk --self-check   # 故意改坏一处渲染，验流水线响不响
 tools/speed-probe.sh                             # 两端时间加速的实测线性度
 ```
+
+**不带 `--every` 时密度由剧本自报**（xl-6lo.3）：剧本 JSON 里可选的 `every`
+字段说了算，剧本没写才落到 25。菜单那两份剧本自报的是 1 —— 它们是事件驱动的，
+一步就是一次输入事件，按 25 采样等于 47 步只出 2 帧，**却照样打印"比过了"**。
+字段的定义见 `docs/trace-format.md` 的剧本字段表。
 
 需要 Java（`brew install openjdk@17`）与本机的 Chrome（`CHROME=…` 可指定路径）。
 两样都不在 CI 里，所以这条流水线不在 CI 里；进 CI 的是它的**判据**
