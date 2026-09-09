@@ -1,7 +1,8 @@
 import { equipPictureAssetId } from '../assets/ids'
 import type { AssetId } from '../assets/ids'
-import { SLOT_FILE } from './equipment'
+import { EQUIPMENT_LISTS, EQUIP_SLOTS, SLOT_FILE } from './equipment'
 import type { EquipSlot } from './equipment'
+import { specOf } from './equipPanel'
 
 /**
  * 装备页那两张图的素材层（xl-234）。
@@ -50,11 +51,21 @@ import type { EquipSlot } from './equipment'
  * 票面明写「分包放哪一边要量，不要照抄」。**量的是这一趟自己的读数**
  * （2026-09-09，同一台机器上跑 `pnpm build`）：
  *
- *   构型                        index-*.js   对基线      gzip       对基线
- *   基线（装备图一张都不烘）      851.24 kB      —      229.55 kB      —
- *   **59 张全进主包**            862.81 kB  **+11.57 kB** 232.48 kB **+2.93 kB**
+ *   构型                          index-*.js   对基线       gzip       对基线
+ *   基线（这一枝的代码都在，
+ *   只把 59 条映射与产物拿掉）      852.30 kB      —       229.89 kB      —
+ *   **59 张全进主包**              862.81 kB  **+10.51 kB** 232.49 kB **+2.60 kB**
  *
  * 产物 **821,292 B**（59 张，源 1,210,500 B，`-lossless` 压到 67.9%）。
+ *
+ * ⚠️ **这一对读数是同一棵树上量的，而第一次量的那一对不是。** 头一趟拿的
+ * 基线是**改动之前**的树（851.24 kB / gzip 229.55 kB），于是 +11.57 kB 里
+ * 混进了这一枝新写的代码（这个模块、绘制层与分流那几处改动）约 1.06 kB
+ * —— 那不是"多了 59 条映射"的代价。要量一件事的代价，两个读数之间只许差
+ * 那一件事。（这一枝相对 master 整棵树确实涨 11.57 kB，但那是另一个问题。）
+ *
+ * ⚠️ gzip 那一列末位会抖：同一份产物连跑三次打过 232.47 / 232.48 / 232.49，
+ * 拿它比 0.01 kB 的差别没有意义。
  *
  * 为什么不学 `装备/` 那 28 张菜单贴图走按需：**两条路的下载行为是一样的**。
  * 进主包走的是 `resolve.ts` 那条 `?url` 的 eager glob —— 进 JS 的只有**路径
@@ -72,14 +83,16 @@ import type { EquipSlot } from './equipment'
 export const EQUIP_PICTURE_ROOT = 'sources/Shop/装备'
 
 /**
- * 要烘的扩展名。**登记**，不是分母 —— 判据在 `equipmentPictures.test.ts`：
- * 六张表点名的扩展名集合必须恰好等于它。
+ * 要烘的扩展名。**登记**，不是分母。对撞它的是 `equipmentPictures.test.ts`
+ * 里那条「六张表点名的扩展名集合恰好等于它」—— 那一头的分母是**数据**
+ * （56 行第 6 列现读），与这份手写名单彼此独立。
  */
 export const EQUIP_PICTURE_EXTENSIONS: readonly string[] = ['.png']
 
 /**
  * 磁盘上有、而原版读不到的扩展名（美术源文件）。**登记**，理由见头注。
- * 磁盘上出现这两份名单之外的扩展名 → 烘焙硬失败。
+ * 磁盘上出现这两份名单之外的扩展名 → 烘焙硬失败（`reconcileEquipPictures`
+ * 第 1 条，在 `equipmentPictures.test.ts` 里喂一份假目录清单真造过一次）。
  */
 export const EQUIP_PICTURE_IGNORED_EXTENSIONS: readonly string[] = ['.bmp']
 
@@ -95,8 +108,9 @@ export interface MissingEquipPicture {
 }
 
 /**
- * 已知缺失的装备图。两条都是**数据里的名字和文件名差一个字**，
- * 而两个字都念得通，所以十三年没人发现。
+ * 已知缺失的装备图。**三条都是**「数据里的名字和文件名差一个字」，而两个字
+ * 都念得通，所以十三年没人发现。条数不写死在别处 —— 判据用的是
+ * `KNOWN_MISSING_EQUIP_PICTURES.length`。
  */
 export const KNOWN_MISSING_EQUIP_PICTURES: readonly MissingEquipPicture[] = [
   // xl-234 —— 磁盘上是 颀崟巨环.png（山字头的「崟」），数据写的是「鉴」。
@@ -117,9 +131,106 @@ export function equipPictureSource(slot: EquipSlot, picture: string): string {
   return `${EQUIP_PICTURE_ROOT}/${SLOT_FILE[slot]}/${picture}`
 }
 
-/** 这张图是不是那两条已知缺失之一。 */
+/** 这张图在不在已知缺失名单上。 */
 export function isKnownMissingEquipPicture(slot: EquipSlot, picture: string): boolean {
   return KNOWN_MISSING_EQUIP_PICTURES.some((m) => m.slot === slot && m.picture === picture)
+}
+
+/**
+ * 这个文件的扩展名（小写，带点；没有点就是空串）。入参是**相对
+ * `EQUIP_PICTURE_ROOT` 的路径**（`武器/月苗刀.png`）。
+ *
+ * 三处判断（要烘 / 登记为不烘 / 没登记过）共用这一个口径 —— 烘焙器、ID 普查、
+ * 绘制层判据原先各抄了一遍 `slice(lastIndexOf('.')).toLowerCase()`，抄岔了
+ * 就是"某一批悄悄没烘"，而那与"本来就没有"长得一样。
+ */
+export function equipPictureExtension(file: string): string {
+  const dot = file.lastIndexOf('.')
+  return dot < 0 ? '' : file.slice(dot).toLowerCase()
+}
+
+/** 要烘的那批。 */
+export function isBakedEquipPicture(file: string): boolean {
+  return EQUIP_PICTURE_EXTENSIONS.includes(equipPictureExtension(file))
+}
+
+/** 登记为不烘的那批（美术源文件）。 */
+export function isIgnoredEquipPicture(file: string): boolean {
+  return EQUIP_PICTURE_IGNORED_EXTENSIONS.includes(equipPictureExtension(file))
+}
+
+/**
+ * 装备图的**全部对账**，摊成一串问题字符串（空 = 全过）。
+ *
+ * 纯函数：磁盘清单与"这张烘出来了吗"都从外面注进来，所以
+ * `equipmentPictures.test.ts` 能喂它假的目录状态，把五种失败**每一种都真造
+ * 出来看一眼**。只在真仓库上跑一遍全绿，跟"这几条根本没写对"长得一模一样。
+ * 烘焙器只负责把真磁盘喂进来、再把问题打出去。
+ *
+ * 五条，每一条都是某条登记「两头都验」的那一头：
+ *
+ * 1. 磁盘上出现两份扩展名登记之外的文件；
+ * 2. 磁盘上的类目录与 `SLOT_FILE` 那六个对不上（多一个 / 少一个）；
+ * 3. 表里点名的图烘不出来，而它不在已知缺失名单里；
+ * 4. 已知缺失名单里的图**烘得出来了**（数据修好了却没来销账）；
+ * 5. 已知缺失名单里的图**没有任何一行点名**（多半是抄错了字）。
+ *
+ * `missing` 有默认值，只为让第 5 条**造得出失败**：它读的要是模块级常量，
+ * 那一支就只能靠"今天恰好没人抄错字"保持绿，而那与"这一支写坏了"长得一模
+ * 一样。生产侧一个调用方都不传它。
+ */
+export function reconcileEquipPictures(
+  files: readonly string[],
+  isBaked: (slot: EquipSlot, picture: string) => boolean,
+  missing: readonly MissingEquipPicture[] = KNOWN_MISSING_EQUIP_PICTURES,
+): string[] {
+  const problems: string[] = []
+
+  for (const f of files) {
+    if (isBakedEquipPicture(f) || isIgnoredEquipPicture(f)) continue
+    problems.push(
+      `${EQUIP_PICTURE_ROOT}/${f} 的扩展名没登记过（要烘的是 ` +
+        `${EQUIP_PICTURE_EXTENSIONS.join(' / ')}、登记为不烘的是 ` +
+        `${EQUIP_PICTURE_IGNORED_EXTENSIONS.join(' / ')}）`,
+    )
+  }
+
+  const onDisk = [...new Set(files.map((f) => f.split('/')[0]!))].sort()
+  const wanted = EQUIP_SLOTS.map((slot) => SLOT_FILE[slot]).sort()
+  if (onDisk.join('\u0000') !== wanted.join('\u0000')) {
+    problems.push(
+      `${EQUIP_PICTURE_ROOT} 下的类目录是 ${onDisk.join(' / ') || '（空）'}，` +
+        `而六张装备表要的是 ${wanted.join(' / ')}`,
+    )
+  }
+
+  const named = new Set<string>()
+  for (const slot of EQUIP_SLOTS) {
+    for (const item of EQUIPMENT_LISTS[slot]) {
+      const key = `${slot}\u0000${item.picture}`
+      const known = missing.some((m) => m.slot === slot && m.picture === item.picture)
+      if (known) named.add(key)
+      const baked = isBaked(slot, item.picture)
+      if (baked && known) {
+        problems.push(
+          `已知缺失名单过期：${equipPictureSource(slot, item.picture)} 现在烘得出来了，` +
+            `请从 equipmentPictures.ts 的 KNOWN_MISSING_EQUIP_PICTURES 删掉`,
+        )
+      } else if (!baked && !known) {
+        problems.push(
+          `装备图 ${equipPictureSource(slot, item.picture)} 烘不出来（${slot} 表「${item.name}」那一行）`,
+        )
+      }
+    }
+  }
+  for (const m of missing) {
+    if (!named.has(`${m.slot}\u0000${m.picture}`)) {
+      problems.push(
+        `已知缺失名单里的 ${equipPictureSource(m.slot, m.picture)} 没有任何一行点名 —— 多半是抄错了字`,
+      )
+    }
+  }
+  return problems
 }
 
 /**
@@ -133,4 +244,15 @@ export function isKnownMissingEquipPicture(slot: EquipSlot, picture: string): bo
 export function equipPictureId(slot: EquipSlot, picture: string): AssetId | null {
   if (isKnownMissingEquipPicture(slot, picture)) return null
   return equipPictureAssetId(SLOT_FILE[slot], picture)
+}
+
+/**
+ * **按装备名**取图的 ID（已知缺失同样返回 `null`）。
+ *
+ * 绘制层与贴图名单层原先各自重做「`specOf(slot, name).picture` →
+ * `equipPictureId`」这一串。两边分家的表现是"画得出来的那张不在 load 名单
+ * 里"，而守这件事的那条判据只覆盖当前这一帧 —— 换个背包就未必撞得到。
+ */
+export function equipPictureIdOf(slot: EquipSlot, name: string): AssetId | null {
+  return equipPictureId(slot, specOf(slot, name).picture)
 }

@@ -15,10 +15,11 @@ import {
   WORN_IMAGE_X,
 } from '../equipPanel'
 import {
-  EQUIP_PICTURE_EXTENSIONS,
+  EQUIP_PICTURE_ROOT,
   KNOWN_MISSING_EQUIP_PICTURES,
   equipPictureId,
   equipPictureSource,
+  isBakedEquipPicture,
   isKnownMissingEquipPicture,
 } from '../equipmentPictures'
 import { listFiles } from '../../assets/listFiles'
@@ -226,8 +227,8 @@ describe('装备页的贴图 ID，对回原版那几处读图', () => {
 describe('两张装备图（xl-234）', () => {
   it('`sources/Shop/装备/` 进了烘焙管线，指纹里认得到它', () => {
     // 分母现扫：目录里有什么就该有什么进指纹。
-    const dirs = readdirSync(repoPath('sources/Shop/装备'))
-    expect(dirs.length, 'sources/Shop/装备 下一个目录都没有').toBeGreaterThan(0)
+    const dirs = readdirSync(repoPath(EQUIP_PICTURE_ROOT))
+    expect(dirs.length, `${EQUIP_PICTURE_ROOT} 下一个目录都没有`).toBeGreaterThan(0)
 
     const inputs = Object.keys(bakeStamp.inputs)
     // **正向控制**：药品介绍图走的是同一条路（`sources/Shop/` 下、不在 `image/`
@@ -238,12 +239,10 @@ describe('两张装备图（xl-234）', () => {
     ).toBeGreaterThan(0)
     // 烘出来那 59 张**每一张**都要在指纹里：改了素材不重烘，`bakeStamp.test.ts`
     // 才红得起来。分母从磁盘算，不写死 59。
-    const png = listFiles(repoPath('sources/Shop/装备')).filter((f) =>
-      EQUIP_PICTURE_EXTENSIONS.includes(f.slice(f.lastIndexOf('.')).toLowerCase()),
-    )
-    expect(png.length, '装备图目录下一张 .png 都没有').toBeGreaterThan(0)
-    const stamped = new Set(inputs.filter((p) => p.startsWith('sources/Shop/装备/')))
-    expect(png.filter((f) => !stamped.has(`sources/Shop/装备/${f}`))).toEqual([])
+    const png = listFiles(repoPath(EQUIP_PICTURE_ROOT)).filter(isBakedEquipPicture)
+    expect(png.length, '装备图目录下一张烘得动的图都没有').toBeGreaterThan(0)
+    const stamped = new Set(inputs.filter((p) => p.startsWith(`${EQUIP_PICTURE_ROOT}/`)))
+    expect(png.filter((f) => !stamped.has(`${EQUIP_PICTURE_ROOT}/${f}`))).toEqual([])
   })
 
   it('落点与原版那两句 drawImage 对得上，而且真的画出了图', () => {

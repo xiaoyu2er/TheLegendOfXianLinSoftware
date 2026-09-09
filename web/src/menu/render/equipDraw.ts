@@ -15,7 +15,7 @@ import type { EquipPanelState } from '../equipPanel'
 import { rowBaseline, visibleRange } from '../scroll'
 import type { MenuHero } from '../heroes'
 import type { ScollHero } from '../types'
-import { equipPictureId } from '../equipmentPictures'
+import { equipPictureIdOf } from '../equipmentPictures'
 import { equipButtonId, showValueArrowId, showValueDigitId, warningId } from './assets'
 import { scrollbarOps } from './scrollbar'
 import type { MenuDrawOp } from './drawList'
@@ -209,7 +209,7 @@ export function equipDrawOps(
     // `g.drawImage(currentEquipment.getPicture(), x_currentImage, y_currentImage, this)`
     // —— 升降数字那四行之后，两行说明之前。
     const spec = specOf(e.currentList, e.currentEquipment)
-    const currentPicture = equipPictureId(e.currentList, spec.picture)
+    const currentPicture = equipPictureIdOf(e.currentList, e.currentEquipment)
     if (currentPicture !== null) {
       ops.push(image(currentPicture, CURRENT_PICTURE_ANCHOR.x, CURRENT_PICTURE_ANCHOR.y))
     }
@@ -237,7 +237,7 @@ export function equipDrawOps(
   //    同序；y 从 `y_value-7*vgap` 起，每行 `vgap`。
   //    图画在六行之前，因为原版那句 `drawImage` 就在方法开头。
   if (e.heroEquipment !== null) {
-    const wornPicture = equipPictureId(e.currentList, specOf(e.currentList, e.heroEquipment).picture)
+    const wornPicture = equipPictureIdOf(e.currentList, e.heroEquipment)
     if (wornPicture !== null) {
       ops.push(image(wornPicture, WORN_PICTURE_ANCHOR.x, WORN_PICTURE_ANCHOR.y))
     }

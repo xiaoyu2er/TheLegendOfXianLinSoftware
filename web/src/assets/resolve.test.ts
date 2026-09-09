@@ -20,9 +20,9 @@ import { DEFERRED_TOP_DIRS, IMAGE_ROOT, isDeferredBattleAsset } from './battleAs
 import { MENU_ROOT, isDeferredMenuAsset } from './menuAssets'
 import { listFiles } from './listFiles'
 import {
-  EQUIP_PICTURE_EXTENSIONS,
-  EQUIP_PICTURE_IGNORED_EXTENSIONS,
   EQUIP_PICTURE_ROOT,
+  isBakedEquipPicture,
+  isIgnoredEquipPicture,
 } from '../menu/equipmentPictures'
 import { repoPath } from '../test/repoPath'
 
@@ -64,13 +64,11 @@ function bundledMenuFilesInRepo(): number {
  */
 function equipPictureFilesInRepo(): number {
   const all = listFiles(repoPath(EQUIP_PICTURE_ROOT))
-  const known = (f: string) => {
-    const ext = f.slice(f.lastIndexOf('.')).toLowerCase()
-    return EQUIP_PICTURE_EXTENSIONS.includes(ext) || EQUIP_PICTURE_IGNORED_EXTENSIONS.includes(ext)
-  }
-  expect(all.filter((f) => !known(f)), '装备图目录下有没登记过的扩展名').toEqual([])
-  return all.filter((f) => EQUIP_PICTURE_EXTENSIONS.includes(f.slice(f.lastIndexOf('.')).toLowerCase()))
-    .length
+  expect(
+    all.filter((f) => !isBakedEquipPicture(f) && !isIgnoredEquipPicture(f)),
+    '装备图目录下有没登记过的扩展名',
+  ).toEqual([])
+  return all.filter(isBakedEquipPicture).length
 }
 
 describe('资产逻辑 ID', () => {
@@ -93,7 +91,7 @@ describe('资产逻辑 ID', () => {
       equipPictureAssetId('武器', '月苗刀.png'.replace('/', '\\')),
     )
     // 正向控制：今天磁盘上确实一对重名都没有 —— 所以上面那条只能这么问。
-    const png = listFiles(repoPath(EQUIP_PICTURE_ROOT)).filter((f) => f.endsWith('.png'))
+    const png = listFiles(repoPath(EQUIP_PICTURE_ROOT)).filter(isBakedEquipPicture)
     const names = png.map((f) => f.slice(f.lastIndexOf('/') + 1))
     expect(new Set(names).size, '磁盘上出现重名了 —— 那烘焙器那道 ID 撞车的守卫该响了').toBe(
       names.length,

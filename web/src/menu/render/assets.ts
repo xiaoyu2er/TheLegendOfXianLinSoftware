@@ -4,8 +4,8 @@ import { battleAssetId } from '../../assets/battleAssets'
 import type { AssetId } from '../../assets/ids'
 import { EQUIP_SLOTS } from '../equipment'
 import type { EquipSlot } from '../equipment'
-import { equipPictureId } from '../equipmentPictures'
-import { equipList, specOf } from '../equipPanel'
+import { equipPictureIdOf } from '../equipmentPictures'
+import { equipList } from '../equipPanel'
 import type { ButtonImage, MenuPanelName, MenuTabKey, MenuWorld } from '../types'
 import type { FuncMainKey, FuncSubKey } from '../funcButtons'
 
@@ -193,7 +193,7 @@ export function equipPictureIds(w: MenuWorld): AssetId[] {
   if (e.heroEquipment !== null) names.add(e.heroEquipment)
   const ids: AssetId[] = []
   for (const name of names) {
-    const id = equipPictureId(e.currentList, specOf(e.currentList, name).picture)
+    const id = equipPictureIdOf(e.currentList, name)
     if (id !== null) ids.push(id)
   }
   return ids
