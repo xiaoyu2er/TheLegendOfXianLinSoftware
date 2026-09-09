@@ -145,7 +145,7 @@ describe('存货：六种药全在包里，没有的那几种是 0', () => {
  * "清单空了要关按钮"、"喝给卷轴上那个人"、"下标按过滤后的清单算"这三件事
  * 换成错的照样绿。
  */
-describe('两条真值走不到的三条路', () => {
+describe('两条真值走不到的四条路', () => {
   /** `sources/Shop/drug.txt` 里下标不是 0 的一种药 —— 下面第三条要它。 */
   const LATER = DRUGS[2]!
 
@@ -176,6 +176,26 @@ describe('两条真值走不到的三条路', () => {
     stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
     stepMenu(w, [{ e: 'press', x: 865, y: 432 }])
     expect(w.heroes.map((h) => h.hp)).toEqual([0, 0, DRUGS[0]!.addHp])
+  })
+
+  it('喝一口药，三个人的派生值都跟着重算 —— 不只是喝的那一个', () => {
+    // `addValue()` 头三句是 `hero1/hero2/hero4.refreshValue()`。今天它们全是
+    // 空操作（`createMenuHeroes` 建出来的人属性与派生值本来就自洽），所以
+    // 「只刷一个」与「刷三个」观测不出差别 —— 篡改矩阵第 15 条实测全绿。
+    //
+    // 要观测得到，得先把某个**不喝药的人**的属性与派生值弄失配，而那正是
+    // 装备页（xl-6lo.9）将来会造出的状态：穿一件加体力的装备，hpMax 要等
+    // 下一次 refreshValue 才跟上。
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true, drugs: [{ name: DRUGS[0]!.name, count: 1 }] })
+    const other = w.heroes[2]!
+    const staleHpMax = other.hpMax
+    other.physicalPower += 5
+    // 前置：此刻它确实还是失配的，否则下面那条按构造成立。
+    expect(other.hpMax).toBe(staleHpMax)
+
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+    stepMenu(w, [{ e: 'press', x: 865, y: 432 }])
+    expect(other.hpMax, '喝药的是一号，可四号的 hpMax 也该被那三句刷到').toBe(staleHpMax + 5 * 70)
   })
 
   it('`selected` 是过滤后清单里的下标，不是六种药那张全表里的', () => {
