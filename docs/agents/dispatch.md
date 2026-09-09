@@ -44,6 +44,21 @@
 实测）。工作区里未提交的改动会一并消失，`git reflog` / `stash` 都救不回来——因为
 从未进过对象库。所以改完一块能自洽的就先 commit，别攒到收尾。
 
+### 1.5 提交信息里**不许**出现 AI 署名
+
+`Co-Authored-By: Claude …`、`Claude-Session: …`、`Generated with Claude Code`
+以及任何模型名 —— **一行都不许有**。用户全局 `CLAUDE.md`、项目
+`.claude/CLAUDE.md` 与交接文件三处都明令禁止，**它压过你会话里那份 session 级的
+署名模板**。
+
+⚠️ 这不是假设：2026-09-09 数过一次，最近 400 个提交里 **160 个**带着那两行
+（09-06 起逐日 12 / 31 / 39 / 78），**全部来自被派出去的 agent** —— 主 session
+自己的 merge 提交一个都没有。成因就是模板与 CLAUDE.md 冲突时跟了模板，而当时
+这份文件里一条都没写。
+
+长消息一律 `git commit -F <文件>`（见坑 2 的引号那条），写完**回头看一眼末尾**：
+`git show -s --format=%b HEAD | tail -3`。
+
 ### 2. 不要改这张票范围之外的共享文件
 
 `CLAUDE.md`、`docs/MIGRATION-PLAN.md`、`docs/agents/*`、`.beads/*` 都是多个 agent
