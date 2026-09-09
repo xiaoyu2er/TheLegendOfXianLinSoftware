@@ -1,6 +1,13 @@
 import { moveInButton, pressButton, releaseButton } from './buttons'
 import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased } from './funcButtons'
 import { drugPanelMoveIn, drugPanelPressed, drugPanelReleased } from './drugPanel'
+import {
+  magicCheckMoveIn,
+  magicCheckPressed,
+  magicCheckReleased,
+  magicDrawThisPanel,
+  magicUpdate,
+} from './magic'
 import { MENU_PANEL_ORDER, PANEL_OF_TAB, TAB_PRIORITY } from './world'
 import { SCOLL_HEROES } from './types'
 import type { MenuSubPanel, MenuWorld } from './types'
@@ -32,8 +39,33 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
   // 不清的话它会越积越长，而"这一步响了"与"上一步响过"就分不开了。
   w.music = []
   for (const input of inputs) applyMenuInput(w, input)
+  paintCurrentPanel(w)
   w.tick++
   return w
+}
+
+/**
+ * **原版的绘制有副作用，而真值是在绘制之后抓的。**
+ *
+ * `MenuDriver.step()` 每一步的末尾都是一句 `current().paint(sink)`，之后才
+ * 快照。`FatherPanel.paint()` 里那六层中有两层会改状态：`drawScoll()` 打开
+ * 二号 / 四号头像的 `isDraw`，`MagicPanel.drawThisPanel()` 按当前角色的
+ * `skillNumber` 现设十五颗技能按钮的 `isDraw`。**后者真值记着**
+ * （`magic.visible` 那一列），所以它必须在状态层里跑一遍 —— 少了这一句，
+ * 那一列会**一直停在开局的十五个 true 上**，而"从没翻到过奇术页"与"翻到了
+ * 但一颗按钮都没关掉"长得一样。
+ *
+ * 前者（`drawScoll()` 那三句）不在这里：真值不记头像的 `isDraw`，而绘制层
+ * 已经把它折算成"或上出战名单"了（`render/drawList.ts`）。两处的分界是
+ * **真值记不记**，不是"原版写在哪个方法里"。
+ *
+ * ⚠️ **只画当前页**，与原版一致：`CardLayout` 盖住的三页 `repaint()` 不会
+ * 真画。四页全画的话，从没翻到过的奇术页也会把按钮关掉 —— `menu-equip`
+ * 前 24 步的 `visible` 当场就红。
+ */
+function paintCurrentPanel(w: MenuWorld): void {
+  const p = currentPanel(w)
+  if (p.magic && p.scoll) magicDrawThisPanel(p.magic, p.scoll.whichHero)
 }
 
 export function applyMenuInput(w: MenuWorld, input: MenuInput): void {
@@ -87,6 +119,8 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
   }
   if (p.funcButtons) funcCheckReleased(p.funcButtons, p.currentX, p.currentY)
   drugPanelReleased(p)
+  // 奇术页的松开**扫全部三组**，不只当前角色那一组（原版就是这么写的）。
+  if (p.magic) magicCheckReleased(p.magic, p.currentX, p.currentY)
 }
 
 function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
@@ -101,6 +135,8 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
   // 的「待点」那一态靠它。真值不记 `image`，所以这一条由逐帧比对守（xl-6lo.14）。
   if (p.funcButtons) funcCheckMoveIn(p.funcButtons, p.currentX, p.currentY)
   drugPanelMoveIn(w, p)
+  // 奇术页的悬停**只扫当前角色那一组**（`checkAllButtonMoveIn` 的 switch）。
+  if (p.magic && p.scoll) magicCheckMoveIn(p.magic, p.scoll.whichHero, p.currentX, p.currentY)
 }
 
 /**
@@ -145,6 +181,9 @@ function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
     funcCheckPressed(p.funcButtons, tabsClicked, p.currentX, p.currentY, w.music, w.audio)
   }
   drugPanelPressed(w, p)
+  // 奇术页：技能按钮 + 那一句无条件的 `currentAnimation=null`。它跑在
+  // `scoll.checkPressed()` **之后** —— 切人与清动画同一拍时，先切人。
+  if (p.magic && p.scoll) magicCheckPressed(p.magic, p.scoll.whichHero, p.currentX, p.currentY, w.music)
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */
@@ -185,8 +224,13 @@ function scollCheckMoveIn(w: MenuWorld, p: MenuSubPanel): void {
  */
 export function tickMenu(w: MenuWorld): void {
   for (const name of MENU_PANEL_ORDER) {
-    // `update()`：四页里只有奇术页有实质动作（技能动画），归 xl-6lo.11。
-    updateMouse(w.panels[name])
+    const p = w.panels[name]
+    // 循环体是 `update(); mouse.update();` 两句，次序照抄。四页里只有奇术页
+    // 的 `update()` 有实质动作 —— 技能动画就是靠它往前走的，**与有没有输入
+    // 无关**：`menu-magic` 从第 9 步起连推 35 拍一次输入都没有，而动画每拍
+    // 加一帧。
+    if (p.magic) magicUpdate(p.magic)
+    updateMouse(p)
   }
 }
 

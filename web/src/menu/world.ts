@@ -1,6 +1,7 @@
 import { menuButton } from './buttons'
 import { createFuncButtons } from './funcButtons'
 import { createDrugPack, createDrugPanelState } from './drugPanel'
+import { createMagicState } from './magic'
 import { createMenuHeroes } from './heroes'
 import type { LiveParty } from './heroes'
 import type { PartyKey } from '../battle/units'
@@ -104,6 +105,7 @@ function createSubPanel(name: MenuPanelName): MenuSubPanel {
     // 给它们编一个出来的话"这一页没有物品"与"这一页有个点不着的按钮"就
     // 长得一样了。
     drug: name === 'thingPanel' ? createDrugPanelState() : null,
+    magic: name === 'magicPanel' ? createMagicState() : null,
   }
 }
 

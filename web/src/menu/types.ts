@@ -1,5 +1,6 @@
 import type { FuncButtonsState } from './funcButtons'
 import type { MenuHero } from './heroes'
+import type { MagicState } from './magic'
 
 /**
  * 菜单状态层的世界。**与场景 / 战斗平级的一块面板**，不是覆盖层
@@ -119,6 +120,8 @@ export interface MenuSubPanel {
   funcButtons: FuncButtonsState | null
   /** 物品页那一份。**只有 `thingPanel` 有**，其余三页是 `null`。 */
   drug: DrugPanelState | null
+  /** 奇术页那十五颗技能按钮与十五条动画。**只有 `magicPanel` 有**。 */
+  magic: MagicState | null
 }
 
 /**

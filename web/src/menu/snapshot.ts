@@ -2,6 +2,8 @@ import { visibleDrugs } from './drugPanel'
 import { drawnFuncButtons } from './funcButtons'
 import { MENU_PANEL_ORDER } from './world'
 import type { FuncButtonsState } from './funcButtons'
+import { magicSnapshot } from './magic'
+import type { MagicState } from './magic'
 import type { MenuWorld } from './types'
 
 /**
@@ -53,6 +55,9 @@ export function snapshotMenu(w: MenuWorld): Record<string, unknown> {
      * 导出器那边取的也是 `funcPanel().fb`。
      */
     func: { drawn: drawnFuncButtons(funcButtons(w)) },
+    // 奇术页是**它自己那一份状态**，不是当前页的：真值 `magic` 那一列记的
+    // 永远是 `magicPanel` 上那十五颗按钮与那条动画，哪怕现在显示的是别的页。
+    magic: magicSnapshot(magicOf(w)),
     mouse,
   }
 }
@@ -84,4 +89,12 @@ function funcButtons(w: MenuWorld): FuncButtonsState {
   // 给它编一个空的 `drawn: []` 出来，与"这一页一颗都没画"长得一模一样。
   if (!fb) throw new Error('funcPanel 没有 funcButtons —— 世界建坏了')
   return fb
+}
+
+function magicOf(w: MenuWorld): MagicState {
+  const magic = w.panels.magicPanel.magic
+  // 空转要响：拿不到时给一份空的占位，等于让"没建出来"与"建了但全关着"
+  // 长得一样。
+  if (!magic) throw new Error('奇术页没有 magic 状态')
+  return magic
 }

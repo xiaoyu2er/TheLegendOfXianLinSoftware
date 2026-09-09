@@ -12,6 +12,12 @@ import {
   useButtonId,
 } from './assets'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
+import { MAGIC_HEROES } from '../magic'
+import {
+  MAGIC_SKILL_DESCRIPTIONS,
+  magicAnimationFrameId,
+  magicSkillButtonId,
+} from './magicSkills'
 import { SCOLL_HEROES } from '../types'
 import { DRUG_LIST_X, DRUG_LIST_Y, DRUG_ROW_H, heroIndexOnScoll, visibleDrugs } from '../drugPanel'
 import { DRUGS } from '../../battle/drugs'
@@ -40,8 +46,8 @@ import type { MenuSubPanel, MenuWorld } from '../types'
  * —— 它贴 `sources/菜单/主人公4人2.png`，而**那个文件根本不在那个路径下**
  * （实际在 `天书/` 下，原版已知缺陷 **xl-a7m**），所以原版自己也画不出来。
  * 两件事分开记：三页是真空的，天书页那一张欠在 xl-a7m 上。
- * `page` 层里**物品页已经画上了**
- * （xl-6lo.10），装备页与奇术页仍空着，归 xl-6lo.9 / .11。空着而不是抛 ——
+ * `page` 层里**物品页（xl-6lo.10）、天书页（xl-6lo.8/.12）、奇术页（xl-6lo.11）
+ * 都画上了**，只剩装备页空着，归 xl-6lo.9。空着而不是抛 ——
  * 骨架那一票的验收就是"四页的骨架画得出来"，抛会让它一帧都画不出来。
  * ⚠️ 代价是「这一页还没做」与「这一页本来就没有内容」在画面上长得一样，
  * 而分开它们的是逐帧比对那张表（xl-6lo.14 接）。
@@ -172,11 +178,12 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
 
   // `drawThisPanel` —— 四页各自的。
   //
-  // 装备页与奇术页仍空着（归 xl-6lo.9 / .11）；**天书页不能空**：出菜单唯一
+  // 只剩装备页空着（归 xl-6lo.9）；奇术页见下面 `magicOps`；**天书页不能空**：出菜单唯一
   // 那条路（「返回」）就是这一层画出来的，空着的话 ESC 又是死代码，玩家一点
   // 出去的办法都没有。所以那一页照 `FuncButtons.drawFuncButtons()` 画：
   // 先五颗主按钮，再四组子按钮。物品页见下面的 `drawDrugPanel`。
   if (panel.drug) drawDrugPanel(ops, w, panel)
+  if (panel.magic) ops.push(...magicOps(panel.magic))
   if (panel.funcButtons) {
     const fb = panel.funcButtons
     for (const key of FUNC_MAIN_ORDER) {
@@ -311,4 +318,87 @@ function scollLevel(w: MenuWorld, scoll: NonNullable<MenuSubPanel['scoll']>): nu
   // `MENU_HERO_ORDER` 与 `SCOLL_HEROES` 是同一个次序（张 / 陆 / 玉），
   // 判据在 `drawList.test.ts`。
   return w.heroes[w.party.zhang ? 0 : index]!.level
+}
+
+/**
+ * 奇术页那条动画的几何与字体。**四个数在 `MagicPanel.addMagicAnimation()` 的
+ * 局部变量里（`x`/`y`/`a`/`b`/`vgap`），三个在 `MagicAnimation
+ * .drawMagicAnimation()` 里（字号 27、第二行 +34、白色）** —— 两处，不是一处。
+ *
+ * 导出是为了给判据用：`drawList.test.ts` 从 GBK 源码里把这七个现读出来对。
+ * 不导出的话期望值那一侧只能重抄一遍同样的字面量，**两侧都是这一次的转写，
+ * 抄错了两边一起错**（/code-review 的 Standards 轴提的；顶栏那行字的判据
+ * 一直是这么写的，这里漏了）。
+ */
+export const MAGIC_LAYOUT = {
+  /** `new MagicAnimation(..., x, y, ...)` 的 `int x=70+32,y=10;` —— 动画贴图的左上角。 */
+  animX: 70 + 32,
+  animY: 10,
+  /** `a` —— 说明两行的 x（`drawString` 的起点）。 */
+  textX: 538,
+  /** `b` —— 第一招说明的基线 y。 */
+  textY: 202,
+  /** `vgap` —— 招与招之间说明差多少。 */
+  textVgap: 64,
+  /** `y_discription+34` —— 第二行比第一行低多少。 */
+  textLine: 34,
+  /** `new Font("文鼎粗钢笔行楷", Font.BOLD, 27)`。 */
+  fontSize: 27,
+  /** `g.setColor(Color.white)`。 */
+  color: '#ffffff',
+} as const
+
+/**
+ * `MagicPanel.drawThisPanel()` 的后半段：**先十五颗按钮，再那条动画**。
+ *
+ * 前半段（那个 `switch(whichHero)` 现设 `isDraw`）**不在这里** —— 它改的是
+ * 真值记着的状态，已经跑在状态层的 paint 相里（`menu/step.ts`）。这一层只读
+ * `isDraw`，所以它仍然是纯函数。
+ *
+ * ⚠️ **说明那两行画在动画里，不是画在按钮上**：原版 `drawMagicAnimation()`
+ * 先 `drawString` 两行再 `drawImage`，三条都挂在 `currentAnimation` 上。
+ * 也就是说**没有动画在放时，说明文字一个字都不画**，而不是"画当前选中那一招
+ * 的说明"。两者在有动画时长得一模一样。
+ *
+ * ⚠️ 说明的落点由**招号**决定（`b + (招号-1)*64`），不是由"第几颗按钮亮着"
+ * 决定 —— 张小凡菜单上只有一颗按钮，点它出来的说明照样画在第一行的位置上。
+ */
+function magicOps(magic: NonNullable<MenuSubPanel['magic']>): MenuDrawOp[] {
+  const ops: MenuDrawOp[] = []
+  for (const { hero } of MAGIC_HEROES) {
+    magic.buttons[hero].forEach((b, i) => {
+      if (!b.isDraw) return
+      ops.push({
+        kind: 'image',
+        layer: 'page',
+        id: magicSkillButtonId(hero, i + 1, b.image),
+        x: b.x,
+        y: b.y,
+      })
+    })
+  }
+  const anim = magic.current
+  if (!anim) return ops
+  const lines = MAGIC_SKILL_DESCRIPTIONS[anim.hero][anim.skill - 1]
+  if (!lines) throw new Error(`${anim.hero} 号没有第 ${anim.skill} 招的说明`)
+  const y = MAGIC_LAYOUT.textY + (anim.skill - 1) * MAGIC_LAYOUT.textVgap
+  lines.forEach((text, line) => {
+    ops.push({
+      kind: 'text',
+      layer: 'page',
+      text,
+      x: MAGIC_LAYOUT.textX,
+      y: y + line * MAGIC_LAYOUT.textLine,
+      size: MAGIC_LAYOUT.fontSize,
+      color: MAGIC_LAYOUT.color,
+    })
+  })
+  ops.push({
+    kind: 'image',
+    layer: 'page',
+    id: magicAnimationFrameId(anim.hero, anim.skill, anim.code),
+    x: MAGIC_LAYOUT.animX,
+    y: MAGIC_LAYOUT.animY,
+  })
+  return ops
 }

@@ -81,6 +81,13 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 逐次相等的真值要等 **xl-6lo.7** 那条「天书设定」剧本落地 —— 它一入库，
   // 这张表的对撞会先红一次（新剧本两边都没登记），那正是提醒。
   func: ['menu-equip', 'menu-magic'],
+  // 奇术页整组，两条剧本都签（xl-6lo.11）。`menu-equip` 也签得下 —— 它
+  // 第 24 步切进奇术页那一次按下同样会把动画清空、把按钮按 skillNumber
+  // 关掉，那正是这一组两处判据里的一处。
+  magic: ['menu-equip', 'menu-magic'],
+  // ⚠️ `music` 只签 `menu-magic` 一条。`menu-equip` 还有装备页那五声
+  // （禁止 / 弃用 / 武器 / 盔甲 / 命+），归 xl-6lo.9 —— 见 `PENDING.music`。
+  music: ['menu-magic'],
 }
 
 /**
@@ -93,12 +100,10 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // 装备页从第 8 步起改三个人的属性；物品页第 22 步喝药改 hp。第一处分歧在
   // 装备页，票号按第一处分歧记。
   heroes: { 'menu-equip': 'xl-6lo.9' },
-  // 音效：切页那一声（`换list.wav`）这一票已经出得对，但两条剧本里都还有
-  // 别的页发的声 —— `menu-equip` 有 禁止 / 弃用 / 武器 / 盔甲 / 命+，
-  // `menu-magic` 有技能那一声。
-  music: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.11' },
+  // 音效：切页那一声（`换list.wav`）与奇术页技能那一声（xl-6lo.11）已经
+  // 出得对，`menu-equip` 还欠装备页那五声 —— 禁止 / 弃用 / 武器 / 盔甲 / 命+。
+  music: { 'menu-equip': 'xl-6lo.9' },
   equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9' },
-  magic: { 'menu-equip': 'xl-6lo.11', 'menu-magic': 'xl-6lo.11' },
 }
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */

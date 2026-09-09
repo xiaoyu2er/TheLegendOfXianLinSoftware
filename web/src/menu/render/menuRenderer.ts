@@ -1,5 +1,7 @@
 import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
 import { isDeferredMenuAsset, menuAssetId } from '../../assets/menuAssets'
+import { isDeferredBattleAsset } from '../../assets/battleAssets'
+import { resolveDeferredBattleAsset } from '../../assets/deferredBattle'
 import { resolveDeferredMenuAsset } from '../../assets/deferredMenu'
 import { resolveAsset } from '../../assets/resolve'
 import type { AssetId } from '../../assets/ids'
@@ -37,6 +39,39 @@ export interface MenuRenderer {
   /** 画一帧：执行这份清单。 */
   draw(ops: readonly MenuDrawOp[]): void
   destroy(): void
+}
+
+/**
+ * 一个菜单素材的 URL。**进主包的走映射表，按需的走 `menuContent.json`** ——
+ * 边界由 `assets/menuAssets.ts` 定，这里只照它分流。
+ *
+ * `battle:` 是**唯一一个不带 `menu:` 前缀却要在菜单里画的**（xl-6lo.11）：
+ * 奇术页那段技能动画的帧在 `image/技能动画/<角色>技能<招号>/` 下，与战斗
+ * 用的是同一批文件、同一条按需边界 —— 菜单素材那条边界是按 `sources/菜单/`
+ * 的顶层目录切的，`image/` 根本不在那个坐标系里。**前缀是白名单**：认不出来
+ * 的一律抛，不猜。猜出来的 ID 要么查不到，要么恰好撞上别的素材（画错图，
+ * 且悄无声息）。
+ *
+ * ⚠️ **它在闭包外面，是为了有一条缝**。这个文件其余部分是"把纹理贴到 (x,y)"
+ * —— 没有测试缝，由跨端逐帧比对兜底（见文件头注）。但**分流是个决定**，
+ * 不是贴图：把 `battle:` 那一支错接到主包上，表现是奇术页动画 404，而
+ * 逐帧比对今天还没接 menu（xl-6lo.14），一个判据都碰不到它。实测这条篡改
+ * 在闭包里时是**绿的**。判据在 `menuRenderer.test.ts`。
+ */
+export async function menuAssetUrl(id: AssetId): Promise<string> {
+  const battle = id.startsWith('battle:') ? id.slice('battle:'.length) : null
+  if (battle !== null) {
+    return isDeferredBattleAsset(battle) ? resolveDeferredBattleAsset(id) : resolveAsset(id)
+  }
+  const relative = id.startsWith('menu:') ? id.slice('menu:'.length) : null
+  if (relative === null) {
+    throw new Error(`菜单渲染器只认 menu: 与 battle: 前缀的逻辑 ID，收到 ${id}`)
+  }
+  // 反向自检：ID 是从路径算出来的，算回去必须一致。不一致说明有人手写了 ID。
+  if (menuAssetId(`sources/菜单/${relative}`) !== id) {
+    throw new Error(`菜单素材 ID ${id} 不是从 sources/菜单/${relative} 算出来的`)
+  }
+  return isDeferredMenuAsset(relative) ? resolveDeferredMenuAsset(id) : resolveAsset(id)
 }
 
 export async function createMenuRenderer(host: HTMLElement): Promise<MenuRenderer> {
@@ -100,24 +135,10 @@ export async function createMenuRenderer(host: HTMLElement): Promise<MenuRendere
     return made
   }
 
-  /**
-   * 一个菜单素材的 URL。**进主包的走映射表，按需的走 `menuContent.json`** ——
-   * 边界由 `assets/menuAssets.ts` 定，这里只照它分流。
-   */
-  async function urlOf(id: AssetId): Promise<string> {
-    const relative = id.startsWith('menu:') ? id.slice('menu:'.length) : null
-    if (relative === null) throw new Error(`菜单渲染器只认 menu: 开头的 ID，收到 ${id}`)
-    // 反向自检：ID 是从路径算出来的，算回去必须一致。不一致说明有人手写了 ID。
-    if (menuAssetId(`sources/菜单/${relative}`) !== id) {
-      throw new Error(`菜单素材 ID ${id} 不是从 sources/菜单/${relative} 算出来的`)
-    }
-    return isDeferredMenuAsset(relative) ? resolveDeferredMenuAsset(id) : resolveAsset(id)
-  }
-
   async function load(ids: readonly AssetId[]): Promise<void> {
     const wanted = [...new Set(ids)].filter((id) => !textures.has(id))
     if (wanted.length === 0) return
-    const urls = await Promise.all(wanted.map(urlOf))
+    const urls = await Promise.all(wanted.map(menuAssetUrl))
     const loaded = (await Assets.load(urls)) as Record<string, Texture>
     wanted.forEach((id, i) => {
       const texture = loaded[urls[i]!]
