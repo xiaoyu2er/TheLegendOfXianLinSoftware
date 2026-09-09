@@ -199,7 +199,19 @@ describe('useGame 接线', () => {
 
     // 弄脏（一）：队伍。走的是"打完一场记回去"那条路，不是直接改字段。
     rememberParty([
-      { spec: { key: 'zhang' }, level: 9, exp: 123, hp: 1, mp: 2, isDead: true, angryValue: 5 },
+      {
+        spec: { key: 'zhang' },
+        level: 9,
+        physicalPower: 99,
+        agile: 98,
+        strength: 97,
+        sprit: 96,
+        exp: 123,
+        hp: 1,
+        mp: 2,
+        isDead: true,
+        angryValue: 5,
+      },
     ])
     expect(getParty().zhang.level).toBe(9)
 

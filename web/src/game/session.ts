@@ -10,8 +10,10 @@ import type { BattleConfig } from '../battle/world'
 import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
 import type { MenuWorld } from '../menu/types'
-import type { PartyKey } from '../battle/units'
-import { getParty, rememberParty } from '../fakes/party'
+import type { Attributes, PartyKey } from '../battle/units'
+import { getParty, rememberMenuParty, rememberParty } from '../fakes/party'
+import type { PartyMemberState } from '../fakes/party'
+import type { LiveParty } from '../menu/heroes'
 import { getAudioSettings, rememberAudioSettings } from './audioSettings'
 import { TITLE_BGM } from '../start/assets'
 import { advance, createTicker } from '../state/loop'
@@ -208,20 +210,38 @@ export function enterScene(session: Session, world: World): RunningSession {
  */
 export function openMenu(session: RunningSession, carry = getParty()): RunningSession {
   if (session.panel !== 'scene') return session
+  // 队伍那一份里**菜单看得见的那几样**（`LiveParty`）：等级、四项基础属性、
+  // 血与灵力。派生值不喂 —— `createMenuHeroes` 自己 `derive` 一遍，喂过去
+  // 等于同一个事实有两个出处。
+  const live = (m: PartyMemberState): LiveParty => ({
+    level: m.level,
+    physicalPower: m.physicalPower,
+    agile: m.agile,
+    strength: m.strength,
+    sprit: m.sprit,
+    hp: m.hp,
+    mp: m.mp,
+  })
   const world = createMenuWorld({
     // 原版这三个标志位归存档（`SaveAndLoad.zhang/lu/wen`），今天没有存档，
     // 所以照原版三个类的处境给：三个人都在。⚠️ 玉洁那一位的键是 `wen`。
     party: ['zhang', 'lu', 'wen'],
     fullHeal: false,
-    live: {
-      zhang: { level: carry.zhang.level, hp: carry.zhang.hp, mp: carry.zhang.mp },
-      lu: { level: carry.lu.level, hp: carry.lu.hp, mp: carry.lu.mp },
-      yu: { level: carry.yu.level, hp: carry.yu.hp, mp: carry.yu.mp },
-    },
+    live: { zhang: live(carry.zhang), lu: live(carry.lu), yu: live(carry.yu) },
     // 原版那两个开关是 static，活得比菜单久（`game/audioSettings.ts`）。
     audio: getAudioSettings(),
   })
   return { ...session, panel: 'menu', menu: createMenuTicker(world) }
+}
+
+/** 队伍那一份里的四项基础属性 —— `BattleConfig.attributes` 收的那个形状。 */
+function attributesOf(m: PartyMemberState): Attributes {
+  return {
+    physicalPower: m.physicalPower,
+    agile: m.agile,
+    strength: m.strength,
+    sprit: m.sprit,
+  }
 }
 
 /**
@@ -250,9 +270,17 @@ export function configFor(
   return {
     background: info[COL_BACKGROUND]!,
     party: present,
-    // 等级与其余六样出自**同一份** `carry`：分开取会让显式传 carry 的调用方
+    // 等级与其余几样出自**同一份** `carry`：分开取会让显式传 carry 的调用方
     // 拿到一份"等级是全局的、血是传进来的"的混合体。
     levels: { zhang: carry.zhang.level, yu: carry.yu.level, lu: carry.lu.level },
+    // 四项基础属性也从队伍现读（xl-6lo.16）。原版根本不用搬：那三个类的属性
+    // 字段是 `static`，菜单里穿的装备、喝的药改的就是战斗读的同一份。少了这
+    // 一行，菜单里 910 点上限的玉洁一进战斗就被 `refreshValue()` 夹回 700。
+    attributes: {
+      zhang: attributesOf(carry.zhang),
+      yu: attributesOf(carry.yu),
+      lu: attributesOf(carry.lu),
+    },
     enemies: enemySlots(info),
     // 原版这里没有种子（`Math.random()` 直调），见 `SessionDeps.random`。
     seed: Math.trunc(deps.random() * 0x7fffffff),
@@ -367,6 +395,12 @@ export function advanceSession(
     // 两个 static。**每一拍都记回去**，不是等关菜单时记 —— 关菜单那条路只有
     // 「返回」一条，而 BGM 该在按下那一拍就停（原版 `closeBGM()` 是同步的）。
     rememberAudioSettings(menu.world.audio)
+    // 三个人也**每一拍都记回去**（xl-6lo.16），理由与上面那两个开关同一条：
+    // 原版菜单里的 `hero1/hero2/hero4` 就是战斗与场景读的那三个对象，属性
+    // 字段还大半是 `static` —— 喝药那句 `addValue()` 一执行，别处当场就看得见。
+    // 等关菜单再记的话，中间那段时间队伍是陈的；而"陈的"与"对的"在只有一条
+    // 出口的今天长得一模一样，明天多一条出口（存档、装备超市回菜单）就不是了。
+    rememberMenuParty(menu.world.heroes)
     if (menuWantsScene(menu.world)) {
       panel = 'scene'
       menu = null

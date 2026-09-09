@@ -70,8 +70,32 @@ describe('队伍的出厂状态', () => {
     resetParty()
     // 先弄脏，走的是"打完一场记回去"那条正路。
     rememberParty([
-      { spec: { key: 'zhang' }, level: 9, exp: 123, hp: 1, mp: 2, isDead: true, angryValue: 5 },
-      { spec: { key: 'yu' }, level: 7, exp: 45, hp: 3, mp: 4, isDead: false, angryValue: 6 },
+      {
+        spec: { key: 'zhang' },
+        level: 9,
+        physicalPower: 99,
+        agile: 98,
+        strength: 97,
+        sprit: 96,
+        exp: 123,
+        hp: 1,
+        mp: 2,
+        isDead: true,
+        angryValue: 5,
+      },
+      {
+        spec: { key: 'yu' },
+        level: 7,
+        physicalPower: 89,
+        agile: 88,
+        strength: 87,
+        sprit: 86,
+        exp: 45,
+        hp: 3,
+        mp: 4,
+        isDead: false,
+        angryValue: 6,
+      },
     ])
     expect(getParty().zhang.level).toBe(9)
 

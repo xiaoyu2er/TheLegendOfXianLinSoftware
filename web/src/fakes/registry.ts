@@ -49,13 +49,16 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
     owner: 'xl-6lo.1',
     original: 'battle.ZhangXiaoFan / YuJie / LuXueQi 那三组静态字段',
     fakeBecause:
-      '不读也不写 save/，初值是三个类的静态字段初值（1 / 3 / 1 级），刷新页面就回到开局；' +
-      '跨战斗只记等级 / 经验 / 血 / 灵力 / 死没死 / 怒气六样，' +
-      'isGetSkill、skillNumber、装备加成那些今天在 web 端还没有来源（M3 / M4）。',
+      '不读也不写 save/，初值是三个类的静态字段初值（1 / 3 / 1 级 + 开局那三把武器的加成），' +
+      '刷新页面就回到开局；跨战斗与跨菜单只记等级 / 经验 / 血 / 灵力 / 死没死 / 怒气 / ' +
+      '四项基础属性十样，isGetSkill、skillNumber 今天在 web 端还没有来源（M3）；' +
+      '装备只记它加出来的属性，"穿的是哪一件"记不住（xl-6lo.18）。',
     exports: [
       'getParty',
       'partyLevels',
+      'partyAttributes',
       'rememberParty',
+      'rememberMenuParty',
       'expToNextLevel',
       'resetParty',
       'initialMember',

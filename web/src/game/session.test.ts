@@ -90,9 +90,19 @@ function deps(random: () => number = fixedRandom()): SessionDeps {
  */
 function levelParty(level: number): void {
   for (const key of ['zhang', 'yu', 'lu'] as PartyKey[]) {
-    const d = derive(HEROES[key].attributes(level))
+    const attrs = HEROES[key].attributes(level)
+    const d = derive(attrs)
     rememberParty([
-      { spec: { key }, level, exp: 0, hp: d.hpMax, mp: d.mpMax, isDead: false, angryValue: 0 },
+      {
+        spec: { key },
+        level,
+        ...attrs,
+        exp: 0,
+        hp: d.hpMax,
+        mp: d.mpMax,
+        isDead: false,
+        angryValue: 0,
+      },
     ])
   }
 }

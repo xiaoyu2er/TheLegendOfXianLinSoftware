@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
 import { SKILL_NUMBER } from '../battle/skills'
+import { HEROES } from '../battle/units'
 import { HEAD_H, HEAD_POS, HEAD_W } from './layout'
 import { advanceMenu, createMenuTicker } from './loop'
 import {
@@ -134,7 +135,7 @@ describe('十五条技能动画的帧数，对回原版', () => {
  */
 describe('画几颗按钮由 skillNumber 说了算，不由等级', () => {
   function magicVisible(level: number): Record<string, boolean[]> {
-    const live = { zhang: { level, hp: 99999, mp: 99999 } }
+    const live = { zhang: { level, ...HEROES.zhang.attributes(level), hp: 99999, mp: 99999 } }
     const w = createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true, live })
     // 切到奇术页：那一次按下之后紧跟着的 paint 才会现设 isDraw。
     stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
@@ -148,7 +149,7 @@ describe('画几颗按钮由 skillNumber 说了算，不由等级', () => {
     const high = createMenuWorld({
       party: ['zhang'],
       fullHeal: true,
-      live: { zhang: { level: 20, hp: 99999, mp: 99999 } },
+      live: { zhang: { level: 20, ...HEROES.zhang.attributes(20), hp: 99999, mp: 99999 } },
     })
     // 前提要自己站得住：等级真的高了、属性真的跟着变了。这两条不断言的话，
     // 下面那条"两者相等"可能只是因为 live 根本没生效。
