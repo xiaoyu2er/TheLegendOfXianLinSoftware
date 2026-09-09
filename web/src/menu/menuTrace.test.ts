@@ -67,6 +67,13 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 见下面 `PENDING.heroes`。票面写的是"本票对齐 panel / mouse / heroes 三组"，
   // 实测这一组横跨两张后续的票，所以按格子登记，只签得下其中一格。
   heroes: ['menu-magic'],
+  // 奇术页整组，两条剧本都签（xl-6lo.11）。`menu-equip` 也签得下 —— 它
+  // 第 24 步切进奇术页那一次按下同样会把动画清空、把按钮按 skillNumber
+  // 关掉，那正是这一组两处判据里的一处。
+  magic: ['menu-equip', 'menu-magic'],
+  // ⚠️ `music` 只签 `menu-magic` 一条。`menu-equip` 还有装备页那五声
+  // （禁止 / 弃用 / 武器 / 盔甲 / 命+），归 xl-6lo.9 —— 见 `PENDING.music`。
+  music: ['menu-magic'],
 }
 
 /**
@@ -79,13 +86,11 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // 装备页从第 8 步起改三个人的属性；物品页第 22 步喝药改 hp。第一处分歧在
   // 装备页，票号按第一处分歧记。
   heroes: { 'menu-equip': 'xl-6lo.9' },
-  // 音效：切页那一声（`换list.wav`）这一票已经出得对，但两条剧本里都还有
-  // 别的页发的声 —— `menu-equip` 有 禁止 / 弃用 / 武器 / 盔甲 / 命+，
-  // `menu-magic` 有技能那一声。
-  music: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.11' },
+  // 音效：切页那一声（`换list.wav`）与奇术页技能那一声（xl-6lo.11）已经
+  // 出得对，`menu-equip` 还欠装备页那五声 —— 禁止 / 弃用 / 武器 / 盔甲 / 命+。
+  music: { 'menu-equip': 'xl-6lo.9' },
   equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9' },
   drug: { 'menu-equip': 'xl-6lo.10', 'menu-magic': 'xl-6lo.10' },
-  magic: { 'menu-equip': 'xl-6lo.11', 'menu-magic': 'xl-6lo.11' },
   func: { 'menu-equip': 'xl-6lo.12', 'menu-magic': 'xl-6lo.12' },
 }
 

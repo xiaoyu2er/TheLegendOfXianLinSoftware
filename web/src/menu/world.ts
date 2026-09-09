@@ -1,5 +1,6 @@
 import { menuButton } from './buttons'
 import { createFuncButtons } from './funcButtons'
+import { createMagicState } from './magic'
 import { createMenuHeroes } from './heroes'
 import type { LiveParty } from './heroes'
 import type { PartyKey } from '../battle/units'
@@ -79,6 +80,7 @@ function createSubPanel(name: MenuPanelName): MenuSubPanel {
     // `hero` 是 `null`。给它编一个卷轴出来，那一列就再也不会是 null 了。
     scoll: name === 'funcPanel' ? null : createScoll(),
     funcButtons: name === 'funcPanel' ? createFuncButtons() : null,
+    magic: name === 'magicPanel' ? createMagicState() : null,
   }
 }
 
