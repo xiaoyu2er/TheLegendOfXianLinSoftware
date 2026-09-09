@@ -131,9 +131,9 @@ describe('商店状态层的那几步', () => {
     const body = mine.slice(mine.indexOf('function setButton('))
     const order = [
       ['分类', body.indexOf('setEquipCategory(w, p)')],
-      ['买卖那个洞', body.indexOf('pendingBuySell(w)')],
+      ['买卖', body.indexOf('buySellButtons(w)')],
       ['返回', body.indexOf("clicked(p.buttons, 'back')")],
-      ['加减那个洞', body.indexOf('pendingStepButtons(w)')],
+      ['加减', body.indexOf('stepPurchaseButtons(w)')],
       ['松手', body.indexOf('releaseButton(b,')],
     ] as [string, number][]
     for (const [name, at] of order) expect(at, `setButton 里的「${name}」`).toBeGreaterThan(-1)
