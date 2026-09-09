@@ -10,6 +10,7 @@ import { bgmAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } f
 import { knownAssetIds, resolveAsset, resolveAssetOrNull, resolveBgmOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
 import { DEFERRED_TOP_DIRS, IMAGE_ROOT, isDeferredBattleAsset } from './battleAssets'
+import { MENU_ROOT, isDeferredMenuAsset } from './menuAssets'
 import { listFiles } from './listFiles'
 import { repoPath } from '../test/repoPath'
 
@@ -32,6 +33,15 @@ function bundledBattleFilesInRepo(): number {
  */
 function drugPictureFilesInRepo(): number {
   return readdirSync(repoPath('sources/Shop/药品/回复类')).length
+}
+
+/**
+ * 菜单骨架素材的分母（xl-6lo.4），与战斗那条同形：`sources/菜单/` 下现扫，
+ * 减去按需加载的那几个目录 —— 那 146 张不在这张表里，走
+ * `resolveDeferredMenuAsset`。边界与两边的双向判据见 `menuAssets.test.ts`。
+ */
+function bundledMenuFilesInRepo(): number {
+  return listFiles(repoPath(MENU_ROOT)).filter((f) => !isDeferredMenuAsset(f)).length
 }
 
 describe('资产逻辑 ID', () => {
@@ -119,6 +129,8 @@ describe('资产逻辑 ID', () => {
     // 药品菜单的介绍图（xl-rh9.12）。它不在 `image/` 下，所以不归上面那个
     // 分母 —— 见 `assets/ids.ts` 的 `drugPictureAssetId`。
     expect(ids.filter((id) => id.startsWith('drug:'))).toHaveLength(drugPictureFilesInRepo())
+    // 菜单骨架素材（xl-6lo.4）。它在 `sources/菜单/` 下，不归上面任何一个分母。
+    expect(ids.filter((id) => id.startsWith('menu:'))).toHaveLength(bundledMenuFilesInRepo())
     // 开始界面（xl-kaa 起，xl-4si 加了六段逐帧动画）。分母是那两份表算出来
     // 的，不是手写的数：`START_IMAGES` 的类型是 `Record<StartImageName, string>`、
     // `START_SEQUENCES` 的是 `Record<StartSequenceName, …>`，少一条 typecheck
@@ -144,6 +156,9 @@ describe('资产逻辑 ID', () => {
       'drug:',
       // 开始界面（xl-kaa），在 `sources/StartPanel/` 下。
       'start:',
+      // 菜单骨架素材（xl-6lo.4），在 `sources/菜单/` 下。各页自己的那 146 张
+      // 不在这张表里，走 `resolveDeferredMenuAsset`。
+      'menu:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })
