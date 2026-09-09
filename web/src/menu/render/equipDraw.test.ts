@@ -30,6 +30,7 @@ import {
   equipIntroText,
   showValueDigits,
 } from './equipDraw'
+import type { EquipButtonKey } from './assets'
 import {
   equipButtonId,
   equipTextureIds,
@@ -80,25 +81,60 @@ function texts(ops: MenuDrawOp[]): { text: string; x: number; y: number; size: n
 describe('装备页的贴图 ID，对回原版那几处读图', () => {
   const src = javaSource('src/menu/EquipPanel.java')
 
-  it('八颗按钮的三态，对回 addButton()', () => {
-    const paths = [...src.matchAll(/new ImageIcon\("sources\/菜单\/装备\/([^"]+)"\)/g)].map(
-      (m) => m[1]!,
+  /**
+   * ⚠️ **这一条不许写成"这批文件名都在源码里出现过"。**
+   * `toContain` 一批路径是 permutation-invariant：「哪一张图归哪一颗按钮」一个字
+   * 都没核，而抄错的那个名字本来就在那一批里。实测：把「弃用」的词干抄成
+   * 「使用」，那种写法**全绿**（xl-6lo.8 也栽过同一个形状两次）。
+   *
+   * 所以这里从 `addButton()` 里**逐颗解出配对**：那段代码是「连着给 image1/2/3
+   * 赋值 → 紧接着 `xxxButton=new MenuButton(…, image1, image2, imageN, this)`」，
+   * 顺着读一遍就知道每一颗读的是哪三张。
+   */
+  it('八颗按钮各自读哪三张，对回 addButton() 里的**配对**', () => {
+    const FIELD_OF: Readonly<Record<string, EquipButtonKey>> = {
+      weaponButton: 'weapon',
+      armorButton: 'armor',
+      helmetButton: 'helmet',
+      shoeButton: 'shoe',
+      gloveButton: 'glove',
+      decorationButton: 'decoration',
+      use_button: 'use',
+      abandon_button: 'abandon',
+    }
+    // 顺着源码走：记住 image1/2/3 现在各指哪张，碰到 `new MenuButton` 就结账。
+    const loaded: Record<string, string> = {}
+    const pairs = new Map<EquipButtonKey, string[]>()
+    for (const line of src.split(/\r?\n/)) {
+      const load = /(\w+)\s*=\s*new ImageIcon\("sources\/菜单\/装备\/([^"]+)"\)/.exec(line)
+      if (load) loaded[load[1]!] = load[2]!
+      const build = /(\w+)\s*=\s*new MenuButton\((.*)$/.exec(line)
+      if (!build) continue
+      const key = FIELD_OF[build[1]!]
+      if (!key) continue
+      const args = [...build[2]!.matchAll(/\b(image[123])\b/g)].map((m) => loaded[m[1]!]!)
+      pairs.set(key, args)
+    }
+    // 零匹配与"全对"长得一样：八颗一颗都不许少。
+    expect([...pairs.keys()].sort(), 'addButton() 里没把八颗按钮都解出来').toEqual(
+      Object.values(FIELD_OF).sort(),
     )
-    // 六颗槽位按钮各两张 + 使用 / 弃用各三张 + 已装备 / 不能使用两张 = 20。
-    // 零匹配与"全对"长得一样，所以先核条数。
-    expect(paths.length, 'EquipPanel 里一句读图都没解出来').toBeGreaterThan(0)
-    for (const slot of EQUIP_SLOTS) {
-      for (const image of ['normal', 'waitclick'] as const) {
-        expect(paths, `${slot} 的 ${image}`).toContain(stem(equipButtonId(slot, image)))
-      }
+    for (const [key, [normal, waitclick, pressed]] of pairs) {
+      expect(stem(equipButtonId(key, 'normal')), `${key} 的常态图`).toBe(normal)
+      expect(stem(equipButtonId(key, 'waitclick')), `${key} 的待点图`).toBe(waitclick)
+      expect(stem(equipButtonId(key, 'pressed')), `${key} 的按下图`).toBe(pressed)
     }
-    for (const key of ['use', 'abandon'] as const) {
-      for (const image of ['normal', 'waitclick', 'pressed'] as const) {
-        expect(paths, `${key} 的 ${image}`).toContain(stem(equipButtonId(key, image)))
-      }
+  })
+
+  it('两张拒绝提示图，按变量名对回构造函数里那两句', () => {
+    // 同样不核集合：`Equiped` 与 `can_not_use` 两句一旦对调，集合完全不变。
+    const of = (field: string) => {
+      const m = new RegExp(`${field}\\s*=\\s*new ImageIcon\\("sources/菜单/装备/([^"]+)"\\)`).exec(src)
+      expect(m, `构造函数里没解出 ${field} 那一句`).not.toBeNull()
+      return m![1]!
     }
-    expect(paths).toContain(stem(warningId('equipped')))
-    expect(paths).toContain(stem(warningId('cannotUse')))
+    expect(stem(warningId('equipped'))).toBe(of('Equiped'))
+    expect(stem(warningId('cannotUse'))).toBe(of('can_not_use'))
   })
 
   it('⚠️ 六颗槽位按钮按下时贴的是常态图 —— 它们根本没有第三张', () => {
