@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
 import { SKILL_NUMBER } from '../battle/skills'
+import { HEAD_H, HEAD_POS, HEAD_W } from './layout'
 import { advanceMenu, createMenuTicker } from './loop'
 import {
   MAGIC_ANIMATION_LENGTHS,
@@ -356,5 +357,50 @@ describe('第一颗技能按钮的落点与真值一致', () => {
     stepMenu(w, [{ e: 'press', x: 20, y: 600 }])
     expect(magic.current).toBeNull()
     expect(w.music).toEqual([])
+  })
+})
+
+/**
+ * `checkAllButtonPressed` 末尾那三个 `for` 循环 **组与组之间没有 break**：
+ * 每个循环各带一个 `break`，可三个循环是并列的。于是两组同时 `isclicked` 时
+ * **后一组赢，而且两声都响**。
+ *
+ * 这条走得到，只是要绕一下：`isclicked` 只由**松开**清掉，所以一路按着不松地
+ * 换人，张小凡那一颗就一直挂着。把它做成判据的理由 —— 改成"第一组赢就收工"
+ * （三组之间加一个整体的 `return`）在**两条真值上都是绿的**，实测如此。
+ */
+describe('两组同时 isclicked 时，后一组赢、两声都响', () => {
+  it('一路不松手：按下张小凡那一颗 → 换到陆雪琪 → 再按一颗', () => {
+    const w = createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true })
+    const [bx, by] = center(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
+    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+    stepMenu(w, [{ e: 'release', x: 619, y: 62 }])
+    // 张小凡的第一颗，**按下不松** —— 往后一次松开都不发。
+    stepMenu(w, [{ e: 'press', x: bx, y: by }])
+    const magic = w.panels.magicPanel.magic!
+    expect(magic.buttons[1]![0]!.isclicked).toBe(true)
+
+    // 换人。先移一下鼠标：`checkMoveIn` 才会把二号头像的 isDraw 打开，
+    // 而 `isPressedButton` 在 `isDraw=No` 时整个跳过。
+    const head2 = HEAD_POS.find((h) => h.hero === 2)!
+    const [hx, hy] = center(head2.x, head2.y, HEAD_W, HEAD_H)
+    stepMenu(w, [{ e: 'move', x: hx, y: hy }])
+    stepMenu(w, [{ e: 'press', x: hx, y: hy }])
+    expect(w.panels.magicPanel.scoll!.whichHero).toBe(2)
+    // 张小凡那一颗仍然挂着 —— 没人松开过它，而 `isPressedButton` 没命中时
+    // 只把贴图拨回常态。
+    expect(magic.buttons[1]![0]!.isclicked).toBe(true)
+
+    // 这一按落在陆雪琪的第一颗上（换人之后那次 paint 已经把它打开了）。
+    w.music = []
+    stepMenu(w, [{ e: 'press', x: bx, y: by }])
+    expect(magic.buttons[2]![0]!.isclicked).toBe(true)
+
+    // 两声都响，次序是 张 → 陆；接上的是**后一组**。
+    // ⚠️ 头一声是「换头像.wav」：二号头像那一颗也没被松开过，所以
+    // `Scoll.checkPressed` 这一按上又认了它一次 —— 同一个 `isclicked` 只由
+    // 松开清掉的缘故，卷轴上也照样发生。
+    expect(w.music).toEqual(['换头像.wav', MAGIC_HEROES[0]!.sound, MAGIC_HEROES[1]!.sound])
+    expect(magic.current).toBe(magic.animations[2]![0])
   })
 })
