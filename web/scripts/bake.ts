@@ -89,6 +89,7 @@ import {
   shopAssetId,
   shopAssetOwner,
   shopProductPath,
+  shopUnreferencedProductPath,
 } from '../src/shop/shopAssets'
 import { scanShopReferences } from '../src/shop/shopReferences'
 import { bakeScript } from '../src/data/bakeScript'
@@ -899,7 +900,7 @@ function bakeShopAssets(manifest: Record<string, string>): {
       // 无代码引用的那批：照烘，但不进映射表、不进主包目录。产物路径仍然要
       // 唯一 —— 撞了的表现是「登记里两条只剩一份产物」，而那与「本来就只有
       // 一条」长得一样。
-      const product = shopProductPath(relative).slice(`${SHOP_BUNDLED_DIR}/`.length)
+      const product = shopUnreferencedProductPath(relative)
       unreferencedBytes += toWebp(source, resolve(unreferencedOut, product))
       unreferencedSourceBytes += statSync(source).size
       unreferenced++

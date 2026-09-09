@@ -83,9 +83,27 @@ export function shopAssetId(relative: string): AssetId {
   return `${ID_PREFIX}${normalizePath(relative)}`
 }
 
-/** 一个商店素材的**产物相对路径**（相对 `src/generated/assets/`）。 */
+/**
+ * 换成 `.webp` 的那一步，**只此一处**。两个产物路径函数与它们的判据原先各抄
+ * 一份这个正则；抄岔了的表现是某一批的产物落在一个谁都不查的路径上。
+ */
+function toWebpName(relative: string): string {
+  return normalizePath(relative).replace(/\.[^./]+$/, '.webp')
+}
+
+/** 进主包那批的**产物相对路径**（相对 `src/generated/assets/`）。 */
 export function shopProductPath(relative: string): string {
-  return `${SHOP_BUNDLED_DIR}/${normalizePath(relative).replace(/\.[^./]+$/, '.webp')}`
+  return `${SHOP_BUNDLED_DIR}/${toWebpName(relative)}`
+}
+
+/**
+ * 不进主包那批的**产物相对路径**（相对 `SHOP_UNREFERENCED_OUT`）。
+ *
+ * 两个根不同，所以是两个函数而不是一个带前缀参数的 —— 烘焙器原先拼出带
+ * `shop/` 前缀的那条再自己 `slice` 掉，那是把路径运算漏到了调用方。
+ */
+export function shopUnreferencedProductPath(relative: string): string {
+  return toWebpName(relative)
 }
 
 /** `sources/Shop/` 下由别的票烘的那几摊。 */
@@ -210,10 +228,17 @@ export function shopDataFiles(): string[] {
   return [DRUG_LIST_FILE, ...EQUIP_SLOTS.map((slot) => `${SLOT_FILE[slot]}.txt`)].sort()
 }
 
-/** 这个文件归谁：本票烘的那批、数据表、还是别的票的。 */
-export function shopAssetOwner(relative: string): 'baked' | 'data' | ShopAssetsOwnedElsewhere {
-  const owner = SHOP_ASSETS_OWNED_ELSEWHERE.find((o) => relative.startsWith(o.prefix))
-  if (owner !== undefined) return owner
+/**
+ * 这个文件归谁：本票烘的那批（`baked`）、数据表（`data`）、还是别的票的
+ * （`elsewhere`）。
+ *
+ * 返回的是三个字面量，不是命中的那条 `ShopAssetsOwnedElsewhere` 记录 ——
+ * 一个调用方都不读那条记录的 `issue` / `by`，回传它只是一个没有需求的抽象
+ * （`/code-review` Standards 轴点名的 Speculative Generality）。要报「归谁」
+ * 的地方（`reconcileShopAssets` 第 6 条）自己去遍历那份名单。
+ */
+export function shopAssetOwner(relative: string): 'baked' | 'data' | 'elsewhere' {
+  if (SHOP_ASSETS_OWNED_ELSEWHERE.some((o) => relative.startsWith(o.prefix))) return 'elsewhere'
   if (relative.toLowerCase().endsWith('.txt')) return 'data'
   return 'baked'
 }

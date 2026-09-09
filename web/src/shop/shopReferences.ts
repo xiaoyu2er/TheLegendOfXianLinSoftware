@@ -45,7 +45,12 @@ import { SHOP_ROOT } from './shopAssets'
  *   一样，接着每一张图都会被报成「没登记」。所以下面**先 `TextDecoder('gbk')`
  *   解码**，并且一条都没扫到时是**抛**，不是返回空集。
  * - **`grep 文件名` 不是判据**：那数的是出现次数。「宋大仁」在 `src/` 里有
- *   3 处命中，全是战斗侧的注释。这里认的是**那条路径被拼出来**。
+ *   3 处命中，全是战斗侧的注释。这里认的是**那条路径被拼出来**，而且
+ *   **注释先剥掉**（`codeOnly`）—— 否则注释里的一条路径会被算成「有引用」，
+ *   那条登记就哑了，而哑与「它确实有引用」长得一模一样。今天 38 条字面量
+ *   一条都不在注释里，所以这一步**不响**；而「不响」与「没查」长得一样，
+ *   正是这两张登记票（xl-1dv.17 / .18）反复点名的那个坑的镜像
+ *   （`/code-review` 的 Spec 轴提的）。
  * - **分母是 `src/` 下的每一个 `.java`**，不是 `src/shop/`。缩到 shop 包
  *   等于先假设「只有它读商店素材」，而那正是要验的事。
  */
@@ -58,9 +63,72 @@ const LITERAL = /"sources\/Shop\/([^"]*)"/g
 
 /**
  * `new ShopAnimation("<角色>", <x>, <y>, <帧数>, this)` —— 只取第 1 与第 4 个
- * 实参。空白照 `[\s\S]` 收，源码里那几行是 CRLF 且实参间有换行。
+ * 实参。
+ *
+ * `[^,]*` 吃 x 与 y：**实参里真出现逗号**（`f(a,b)` 那样）的话整条匹配不上，
+ * 于是那个角色的帧全部落进「既没引用也没登记」，`reconcileShopAssets` 第 5 条
+ * 红。失败方向是安全的 —— 漏掉一条引用会**多报**，不会少报。今天八处实参
+ * 全是字面量。
  */
 const SHOP_ANIMATION = /new\s+ShopAnimation\(\s*"([^"]+)"\s*,[^,]*,[^,]*,\s*(\d+)\s*,/g
+
+/**
+ * 把注释剥成空白，**字符串原样留着**。
+ *
+ * 不能拿正则整段削注释：Java 源码里有真实的 `"backImages//NarratageBackImages//…"`
+ * 这种**字符串里带 `//`** 的路径（`scene/Narratage.java`），削掉的话那一行连同
+ * 后面一大段就没了 —— `bakeStamp.ts` 的 `relativeSpecifiers` 头注记着同一个坑的
+ * 另一半（一句日志里的斜杠星号把 581 行削成 348 行）。所以这里逐字符扫，认
+ * 字符串、字符字面量与注释三种边界。
+ *
+ * 剥成**同长度的空白**而不是删掉，是为了让后面正则报出来的位置还对得上原文。
+ */
+export function codeOnly(source: string): string {
+  let out = ''
+  let i = 0
+  while (i < source.length) {
+    const c = source[i] as string
+    const next = source[i + 1]
+    if (c === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') {
+        out += ' '
+        i++
+      }
+      continue
+    }
+    if (c === '/' && next === '*') {
+      // 没闭合的块注释吃到文件尾 —— 与 javac 的行为一致（那种源码根本编译不过）。
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) {
+        out += source[i] === '\n' ? '\n' : ' '
+        i++
+      }
+      out += i < source.length ? '  ' : ''
+      i += 2
+      continue
+    }
+    if (c === '"' || c === "'") {
+      out += c
+      i++
+      while (i < source.length) {
+        const s = source[i] as string
+        out += s
+        i++
+        if (s === '\\') {
+          if (i < source.length) {
+            out += source[i]
+            i++
+          }
+          continue
+        }
+        if (s === c) break
+      }
+      continue
+    }
+    out += c
+    i++
+  }
+  return out
+}
 
 /** `ShopAnimation.java:24` 那句拼出来的路径。 */
 function animationFrame(role: string, frame: number): string {
@@ -88,7 +156,7 @@ export function scanShopReferences(
   const refs = new Set<string>()
   let literals = 0
   for (const relative of sources.sort()) {
-    const text = decoder.decode(readFileSync(onRead(resolve(javaRoot, relative))))
+    const text = codeOnly(decoder.decode(readFileSync(onRead(resolve(javaRoot, relative)))))
     for (const m of text.matchAll(LITERAL)) {
       const path = m[1] as string
       literals++

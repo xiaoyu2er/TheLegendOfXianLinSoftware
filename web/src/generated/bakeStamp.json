@@ -1,6 +1,6 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "9175694155af0381c677ae9ed1b4f97766ed9882b736cf8a1812a9e82f06d752",
+    "web/scripts/bake.ts": "e227e5a936aa660dc1274360392ad812882c2fe8582eea5b802fbd3b9402b942",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
     "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
@@ -36,8 +36,8 @@
     "web/src/menu/magic.ts": "c686a1c2e4c00e3bab3f4fee52d6a034bed13d73c48383c83cd80e3bb5e2723a",
     "web/src/menu/scroll.ts": "09163e72d753eac16c2d2ea8abddd114ab5514b991630b6406e99f41e4e8be34",
     "web/src/menu/types.ts": "44cc4f03f04804cc379b921e28c52d1107a239aeb3304e5ca4bf8063457df3ec",
-    "web/src/shop/shopAssets.ts": "4e89d1e153a20d474d90df16247467d8d878f98bee23edef89eb7eca0e6070e8",
-    "web/src/shop/shopReferences.ts": "c5984863a71209deda9a2575f499031f8cab46b9c633a14dbabe9a000b4e5ed1",
+    "web/src/shop/shopAssets.ts": "3c9ff0d04dad91f40a0b89731791bae1704662ffecf3d137d2aa6258b7876bcf",
+    "web/src/shop/shopReferences.ts": "d0338a2ca8692bc488ea9480490626da5f3798e89dc775c82f47b17ce0c3f5b3",
     "web/src/stage/constants.ts": "5e67338cf7b79f3e2a01b01403f2f6d1927f746e8357e33564c00228d928c481",
     "web/src/start/assets.ts": "becfbff09fb1130a90ac6306b24a2aef8903d8b74b366d881525589e7737cd20",
     "web/src/state/dialogue.ts": "314abf6abadbf594fc30cd3dc9698ea1bcac6c51e93e1ad018cc9c414ffbc41b",

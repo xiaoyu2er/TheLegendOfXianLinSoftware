@@ -19,9 +19,10 @@ import {
   shopAssetOwner,
   shopDataFiles,
   shopProductPath,
+  shopUnreferencedProductPath,
 } from './shopAssets'
 import type { UnreferencedShopAsset } from './shopAssets'
-import { scanShopReferences } from './shopReferences'
+import { codeOnly, scanShopReferences } from './shopReferences'
 
 /**
  * 商店素材那一层的判据（xl-knp.5）。
@@ -98,16 +99,16 @@ describe('商店素材：真仓库现扫', () => {
     }
   })
 
-  it('无引用的那 13 张：一条映射都没有，产物落在不进主包的那个目录里', () => {
+  it('无引用登记那批：一条映射都没有，产物落在不进主包的那个目录里', () => {
+    // ⚠️ 用例名里**不写条数**：条数是 `UNREFERENCED_SHOP_ASSETS.length`，
+    // xl-1dv.18 再登记一张，写死的那个数就开始骗人（dispatch.md 纪律 3）。
     for (const u of UNREFERENCED_SHOP_ASSETS) {
       expect(MAP[shopAssetId(u.path)], `${u.path} 不该进映射表`).toBeUndefined()
     }
     // 产物那一头：目录里有什么就是什么，与登记逐条对撞。少烘一张的表现是
     // 「源→产物」那半边缺一格，而那一格从映射表上是看不见的（它本来就不在）。
     const products = listFiles(repoPath('web', SHOP_UNREFERENCED_OUT)).sort()
-    const wanted = UNREFERENCED_SHOP_ASSETS.map((u) =>
-      u.path.replace(/\.[^./]+$/, '.webp'),
-    ).sort()
+    const wanted = UNREFERENCED_SHOP_ASSETS.map((u) => shopUnreferencedProductPath(u.path)).sort()
     expect(products).toEqual(wanted)
   })
 
@@ -294,6 +295,39 @@ describe('scanShopReferences', () => {
     expect(reconcileShopAssets(disk, scanShopReferences(after), registry).join('\n')).toContain(
       '无引用登记过期：sources/Shop/商店人物/Boss/Boss (1).png',
     )
+  })
+
+  it('注释里的路径不算引用 —— 那正是登记会哑的地方', () => {
+    const dir = fakeRepo({
+      'shop/A.java': [
+        'String a = "sources/Shop/back.png";',
+        '// String b = "sources/Shop/commented.png";',
+        '/* new ShopAnimation("Ghost", 0, 0, 8, this); */',
+        '/** String c = "sources/Shop/javadoc.png"; */',
+      ].join('\n'),
+    })
+    expect(scanShopReferences(dir)).toEqual(['back.png'])
+  })
+
+  it('字符串里的 // 不当注释 —— 原版真有这种路径', () => {
+    // `scene/Narratage.java` 里是 "backImages//NarratageBackImages//…"。拿正则
+    // 整段削注释的话，那一行连同后面一大段一起没了，而少扫到的表现是
+    // 「一批图突然都没有引用」—— 一片红，看起来像素材出了问题。
+    const dir = fakeRepo({
+      'shop/A.java': [
+        'String n = "backImages//NarratageBackImages//x.png";',
+        'String a = "sources/Shop/back.png";',
+      ].join('\n'),
+    })
+    expect(scanShopReferences(dir)).toEqual(['back.png'])
+  })
+
+  it('codeOnly 把注释剥成空白，字符串原样留着', () => {
+    expect(codeOnly('a; // b\nc;')).toBe('a;     \nc;')
+    expect(codeOnly('a; /* b */ c;')).toBe('a;         c;')
+    expect(codeOnly('String s = "a // b /* c */ d";')).toBe('String s = "a // b /* c */ d";')
+    // 转义引号不许提前收尾 —— 收早了后面整段代码会被当成字符串。
+    expect(codeOnly('String s = "a\\"b"; // x')).toBe('String s = "a\\"b";     ')
   })
 
   it('一个 .java 都没有是抛，不是返回空集', () => {
