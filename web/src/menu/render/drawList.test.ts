@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
 import { MAGIC_LAYOUT, MENU_LAYERS, menuDrawList } from './drawList'
 import type { MenuDrawOp, MenuLayer } from './drawList'
-import { MENU_BACKGROUND, funcButtonId, menuTextureIds, mouseId, tabId, useButtonId } from './assets'
+import {
+  MENU_BACKGROUND,
+  drugPictureId,
+  funcButtonId,
+  menuTextureIds,
+  mouseId,
+  tabId,
+  useButtonId,
+} from './assets'
+import { DRUGS } from '../../battle/drugs'
 import { DRUG_LIST_X, DRUG_LIST_Y, DRUG_ROW_H } from '../drugPanel'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
 import {
@@ -291,15 +300,122 @@ describe('菜单那六层绘制', () => {
         menuDrawList(x).filter((op) => op.kind === 'image' && op.layer === 'page')
       expect(images(w)).toEqual([])
       // 第一行的命中带：y 从 y_start_point-32 起，x 在 (448, 578)。
+      // ⚠️ 选中之后 `page` 层的图有**两张**：按钮，加上那瓶药的插图
+      // （xl-6lo.15）。这一条整份列出来而不是只挑按钮 —— 只挑一张的话，
+      // 哪天插图掉了这里照样绿。
       stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
       expect(images(w)).toEqual([
         { kind: 'image', layer: 'page', id: useButtonId('normal'), x: 820, y: 418 },
+        { kind: 'image', layer: 'page', id: drugPictureId(DRUGS[0]!), x: 820, y: 178 },
       ])
       // 按在按钮上 → 第三张贴图。
       stepMenu(w, [{ e: 'press', x: 865, y: 432 }])
       expect(images(w)).toEqual([
         { kind: 'image', layer: 'page', id: useButtonId('pressed'), x: 820, y: 418 },
+        { kind: 'image', layer: 'page', id: drugPictureId(DRUGS[0]!), x: 820, y: 178 },
       ])
+    })
+
+    describe('选中那瓶药的插图（xl-6lo.15）', () => {
+      /** `page` 层那一串 op 的 kind 序列 —— 插图夹在清单与三行说明中间。 */
+      const pageOps = (w: MenuWorld) => menuDrawList(w).filter((op) => op.layer === 'page')
+
+      it('落点与图路径都对回源码：x_picture / y_picture + drug.txt 第 4 列', () => {
+        const src = javaSource('src/menu/DrugPanel.java')
+        // 那一句本身：图是 `currentDrug.getPicture()`，落点是那两个字段。
+        expect(src).toContain('g.drawImage(currentDrug.getPicture(), x_picture, y_picture, this)')
+        const intField = (name: string) => {
+          const m = [...src.matchAll(new RegExp(`int\\s+${name}\\s*=\\s*(-?\\d+)\\s*;`, 'g'))]
+          expect(m, `DrugPanel.java 里没解出 int ${name}`).toHaveLength(1)
+          return Number(m[0]![1])
+        }
+        // 图路径由 `ShopReader.readDrug()` 拼 —— 前缀与列号都从 GBK 源码里现读，
+        // 免得这一层的 ID 自己证自己。
+        const shop = javaSource('src/shop/ShopReader.java')
+        const dir = /new ImageIcon\("([^"]+)"\s*\n?\s*\+ lineArray\[(\d)\]\)/.exec(shop)
+        expect(dir, 'ShopReader.readDrug 里那句拼图片路径没解出来').not.toBeNull()
+        expect(dir![1]).toBe('sources/Shop/药品/回复类/')
+        expect(Number(dir![2])).toBe(3)
+
+        const w = thing()
+        stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+        const picture = pageOps(w).filter(
+          (op) => op.kind === 'image' && op.id.startsWith('drug:'),
+        )
+        expect(picture).toEqual([
+          {
+            kind: 'image',
+            layer: 'page',
+            // `drug:` + `drug.txt` 第 4 列那个文件名，扩展名留着。
+            id: `drug:${DRUGS[0]!.picture}`,
+            x: intField('x_picture'),
+            y: intField('y_picture'),
+          },
+        ])
+      })
+
+      it('没选中的时候一张插图都不画 —— 原版那句在 if(currentDrug!=null) 里', () => {
+        const w = thing()
+        expect(w.panels.thingPanel.drug!.currentDrug).toBeNull()
+        expect(pageOps(w).filter((op) => op.kind === 'image' && op.id.startsWith('drug:'))).toEqual(
+          [],
+        )
+      })
+
+      it('换一瓶药就换一张图 —— 六种药的文件名各不相同', () => {
+        expect(new Set(DRUGS.map((d) => d.picture)).size).toBe(DRUGS.length)
+        const w = createMenuWorld({
+          party: ['zhang'],
+          fullHeal: true,
+          drugs: [
+            { name: '金创药', count: 1 },
+            { name: '灵神天药', count: 1 },
+          ],
+        })
+        const idOfPicture = () => {
+          const op = pageOps(w).find((x) => x.kind === 'image' && x.id.startsWith('drug:'))
+          return op && op.kind === 'image' ? op.id : null
+        }
+        stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+        expect(idOfPicture()).toBe(drugPictureId(DRUGS[0]!))
+        // 第二行（清单只画存货 >0 的那两种，第二行是灵神天药）。
+        stepMenu(w, [
+          { e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y + DRUG_ROW_H - DRUG_ROW_H / 2 },
+        ])
+        expect(idOfPicture()).toBe(drugPictureId(DRUGS[5]!))
+        expect(drugPictureId(DRUGS[5]!)).not.toBe(drugPictureId(DRUGS[0]!))
+      })
+
+      it('次序照原版：清单画完、三行说明之前', () => {
+        const w = thing()
+        stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+        const ops = pageOps(w)
+        const picture = ops.findIndex((op) => op.kind === 'image' && op.id.startsWith('drug:'))
+        const lastRow = ops.map((op) => (op.kind === 'text' ? op.text : '')).lastIndexOf('2')
+        // ⚠️ 认第二行说明，不认第一行 —— 第一行说明的字与清单那一行的药名
+        // **逐字相同**（都是「金创药」），拿它找下标会撞上清单那一行，
+        // 于是这条次序断言读出来是"插图排在说明后面"。
+        const message = ops.findIndex((op) => op.kind === 'text' && op.text === ': 生命 +300')
+        expect(picture, '插图没画').toBeGreaterThan(-1)
+        expect(lastRow, '清单那一行没画').toBeGreaterThan(-1)
+        expect(message, '三行说明第一行没画').toBeGreaterThan(-1)
+        expect(lastRow).toBeLessThan(picture)
+        expect(picture).toBeLessThan(message)
+      })
+
+      it('六张插图跟着物品页一起要过来，不等到选中才取', () => {
+        const w = thing()
+        const ids = menuTextureIds(w)
+        // 分母是 `DRUGS`，不是手写的六。
+        for (const drug of DRUGS) expect(ids).toContain(drugPictureId(drug))
+        // 开局一瓶都没选中，而图已经在要的名单里 —— 这一条守的正是"别等到
+        // 选中才取"。
+        expect(w.panels.thingPanel.drug!.currentDrug).toBeNull()
+        // 翻到别页就不要了。
+        stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+        expect(w.panel).toBe('magicPanel')
+        expect(menuTextureIds(w)).not.toContain(drugPictureId(DRUGS[0]!))
+      })
     })
 
     it('三行说明：坐标与两个字号都对回源码，选中与没选中走两支', () => {
