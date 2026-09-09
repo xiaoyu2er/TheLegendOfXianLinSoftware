@@ -28,7 +28,17 @@ import type {
  * （`tools/src/devtools/ShopScript.java`），一个字段都不从行为真值里读状态。
  */
 export interface ShopConfig {
-  /** `SaveAndLoad.zhang/lu/wen`。⚠️ 玉洁那一位的键是 **`wen`**，不是 `yu`。 */
+  /**
+   * **队伍名单** —— 剧本 `Role` 那一行三个数，`Reader` 把它们置进
+   * `SaveAndLoad.zhang/lu/wen`（`ShopScript.java` 写作「已入队的角色」）。
+   *
+   * ⚠️ **不是出战名单。** 出战名单是 `Fight` 那一行的第 1/2/3 列
+   * （`FightEvent.fight` 里的 `zhang` / `yu` / `lu`，见 `state/fight.ts` 的
+   * `COL_PARTY`），一场战斗一份；这一份是"谁在队里"，一个存档一份。两份
+   * 都是三个位置、第一位都叫 `zhang`，**第二三位不同** —— 所以第三位的键是
+   * `wen` 不是 `lu`，第二位是 `lu` 不是 `yu`。店里画谁读的是这一份。
+   * 判据在 `render/animation.test.ts`（两份名单各自解回源码再对撞）。
+   */
   readonly party: readonly string[]
   /** `Money.setCoins(...)`。原版那个 static 的初值是 10000。 */
   readonly coins: number

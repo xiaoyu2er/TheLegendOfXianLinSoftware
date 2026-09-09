@@ -161,7 +161,7 @@ describe('商店的绘制清单', () => {
     expect('messageRemark' in w.equipment).toBe(true)
   })
 
-  it('出战名单决定画几个人的动画与几组属性', () => {
+  it('队伍名单决定画几个人的动画与几组属性', () => {
     const one = shopDrawList(world(['zhang']), 0)
     const three = shopDrawList(world(['zhang', 'lu', 'wen']), 0)
     expect(one.filter((o) => o.kind === 'image' && o.id === animationFrameId('陆雪琪', 0))).toHaveLength(0)

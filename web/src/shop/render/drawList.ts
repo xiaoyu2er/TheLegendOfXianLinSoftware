@@ -58,7 +58,8 @@ import type { ShopWorld } from '../types'
  * Pixi、不碰 DOM**，所以顺序、坐标、贴哪一张图全都能在 `pnpm test` 里逐条
  * 断言。真实像素由跨端逐帧比对兜底，而 **shop 那条流水线还没接上**
  * （`replay/implemented.ts` 的 `IMPLEMENTED_DRIVERS` 里没有 `shop`，
- * 归 xl-knp.10）—— 也就是说今天守着这一层的**只有** `drawList.test.ts`。
+ * 归 xl-knp.10）—— 也就是说今天守着这一层的只有 `drawList.test.ts`，以及
+ * 人物动画那一小块的 `animation.test.ts`（xl-knp.9，期望值从 GBK 源码现读）。
  *
  * ## 四层的次序就是 z 序
  *
@@ -163,7 +164,8 @@ function iconOps(w: ShopWorld, frame: number): ShopDrawOp[] {
     ops.push(text('icon', ` ${row.purchase}`, LIST_X + purchaseDx, y))
   })
 
-  // 3. 出战的那几个人：动画一帧 + 四行属性。
+  // 3. 队伍里的那几个人：动画一帧 + 四行属性。⚠️ **队伍名单不是出战名单**，
+  //    见 `world.ts` 的 `ShopConfig.party` 与 `render/animation.test.ts`。
   PARTY_ROLES.forEach(({ key, role }, i) => {
     if (!w.party[key]) return
     ops.push(image('icon', animationFrameId(role, frame), PARTY_ANIMATION_X, PARTY_ANIMATION_Y[i]!))
