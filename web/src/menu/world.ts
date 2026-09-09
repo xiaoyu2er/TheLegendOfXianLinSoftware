@@ -1,6 +1,8 @@
 import { menuButton } from './buttons'
 import { createFuncButtons } from './funcButtons'
 import { createMenuHeroes } from './heroes'
+import type { LiveParty } from './heroes'
+import type { PartyKey } from '../battle/units'
 import { HEAD_H, HEAD_POS, HEAD_W, TABS, TAB_H, TAB_W, TAB_Y, tabX } from './layout'
 import type { MenuPanelName, MenuSubPanel, MenuTabKey, MenuWorld, ScollState } from './types'
 
@@ -12,6 +14,11 @@ export interface MenuConfig {
   /** `SaveAndLoad.zhang/lu/wen`。⚠️ 玉洁那一位在这里的键是 **`wen`**，不是 `yu`。 */
   readonly party: readonly string[]
   readonly fullHeal: boolean
+  /**
+   * 队伍此刻的等级与血 / 灵力（`switchTo("menu")` 那三句 `refreshValue()`）。
+   * **回放真值时不喂** —— 见 `heroes.ts` 的 `LiveParty`。
+   */
+  readonly live?: Readonly<Partial<Record<PartyKey, LiveParty>>> | undefined
 }
 
 /**
@@ -87,7 +94,7 @@ export function createMenuWorld(config: MenuConfig): MenuWorld {
     currentY: 0,
     panels,
     tabs,
-    heroes: createMenuHeroes(config.fullHeal),
+    heroes: createMenuHeroes(config.fullHeal, config.live),
     party: {
       zhang: config.party.includes('zhang'),
       lu: config.party.includes('lu'),

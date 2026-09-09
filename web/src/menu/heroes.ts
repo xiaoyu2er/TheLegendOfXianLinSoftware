@@ -65,10 +65,28 @@ export const MENU_DEFAULT_LEVEL: Readonly<Record<PartyKey, number>> = {
   yu: 3,
 }
 
+/**
+ * 队伍此刻的等级与血 / 灵力。游戏本体开菜单时喂它 —— 对应
+ * `GameLauncher.switchTo("menu")` 里那三句 `refreshValue()`：**打开的那一刻
+ * 看到的是最新属性**，而不是上一场战斗之前的旧数据。
+ *
+ * 回放真值时**不喂**（真值那几份跑的是一个干净 JVM 里的第一次开菜单），
+ * 所以这一项是可选的，缺席时这个函数一个字节都不变。
+ */
+export interface LiveParty {
+  readonly level: number
+  readonly hp: number
+  readonly mp: number
+}
+
 /** 建菜单里那三个人。`fullHeal` 就是剧本 `setup.fullHeal` 那一项。 */
-export function createMenuHeroes(fullHeal: boolean): MenuHero[] {
+export function createMenuHeroes(
+  fullHeal: boolean,
+  live?: Readonly<Partial<Record<PartyKey, LiveParty>>>,
+): MenuHero[] {
   return MENU_HERO_ORDER.map(({ key, name }) => {
-    const level = MENU_DEFAULT_LEVEL[key]
+    const now = live?.[key]
+    const level = now?.level ?? MENU_DEFAULT_LEVEL[key]
     const base = HEROES[key].attributes(level)
     const weapon = DEFAULT_WEAPONS[key]
     const attrs = {
@@ -86,9 +104,11 @@ export function createMenuHeroes(fullHeal: boolean): MenuHero[] {
       strength: attrs.strength,
       spirit: attrs.sprit,
       // 空构造函数一个字都不写，static 的 int 停在 0；`fullHeal` 才拉满。
-      hp: fullHeal ? d.hpMax : 0,
+      // 游戏本体喂了实时队伍时用它的血 —— `refreshValue()` 只把超过上限的
+      // 夹回去（`if(hp>=hpMax) hp=hpMax`），不往上补。
+      hp: now ? Math.min(now.hp, d.hpMax) : fullHeal ? d.hpMax : 0,
       hpMax: d.hpMax,
-      mp: fullHeal ? d.mpMax : 0,
+      mp: now ? Math.min(now.mp, d.mpMax) : fullHeal ? d.mpMax : 0,
       mpMax: d.mpMax,
       defense: d.defense,
       skillDefense: d.skillDefense,

@@ -23,6 +23,10 @@ import { repoPath } from './repoPath'
  * - `battle/drugs.test.ts` —— 读的是 `sources/Shop/drug.txt`，一份**游戏数据
  *   文件**，不是 Java 源码。解码方式碰巧相同，来源与含义不同；套上这个名字
  *   之后 `javaSource('sources/…')` 就不再分得出源码和数据了。
+ * - `menu/defaultWeapons.test.ts` —— 同上，读的是 `sources/Shop/武器.txt`。
+ *   ⚠️ 那个文件**同时**读 Java 源码（`EquipPanel.addPack()` 里的三个下标），
+ *   而那一半走的正是这个 helper —— 一个文件里两种来源，正好说明为什么这条
+ *   分界不能靠"解码方式相同"来收编。
  * - `data/bakeScript.ts` —— **生产代码**，要进浏览器包，而这里用 `node:fs`
  *   读磁盘；它收的又是**字节**（调用者已经拿到 `Uint8Array`）而不是路径。
  *   ⚠️ 那个文件还被 `assets/bakeStamp.test.ts` 的烘焙指纹守着，**连改一行

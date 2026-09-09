@@ -194,7 +194,7 @@ function walkUntilBattle(
   let s = session
   for (let pumps = 1; pumps <= maxPumps; pumps++) {
     const key = dirs[dir % dirs.length]!
-    s = advanceSession(s, { scene: [press(key)], battle: [] }, pumpMs)
+    s = advanceSession(s, { scene: [press(key)], battle: [], menu: [] }, pumpMs)
     // **先数格子再看面板**：起战斗的那一拍主角正好换了一格，漏掉它这个
     // 计数就恒比 `FightEvent.count` 少 1，而少 1 与"门槛写成 29"长得一样。
     const now = { x: roleTileX(s.scene.world.role), y: roleTileY(s.scene.world.role) }
@@ -206,7 +206,7 @@ function walkUntilBattle(
     if (stop(s)) return { session: s, tiles, pumps }
     if (now.x === at.x && now.y === at.y && ++stuck > 60) {
       // 撞墙了：松手换一个方向。松手是真的松（`keyReleased` 那一路）。
-      s = advanceSession(s, { scene: [release(key)], battle: [] }, pumpMs)
+      s = advanceSession(s, { scene: [release(key)], battle: [], menu: [] }, pumpMs)
       dir++
       stuck = 0
     }
@@ -223,7 +223,7 @@ function runBattleToExit(
   let s = session
   for (let pumps = 1; pumps <= maxPumps; pumps++) {
     const w = battleWorldOf(s)
-    s = advanceSession(s, { scene: [], battle: w ? autoAttackInput(w) : [] }, BATTLE_PUMP_MS)
+    s = advanceSession(s, { scene: [], menu: [], battle: w ? autoAttackInput(w) : [] }, BATTLE_PUMP_MS)
     each?.(s)
     if (s.panel !== 'battle') return { session: s, pumps }
   }
@@ -366,7 +366,7 @@ describe('场景 → 战斗 → 场景', () => {
     let s: RunningSession = { ...session, panel: 'battle', battle: createBattleTicker(world) }
 
     for (const tick of trace.ticks) {
-      s = advanceSession(s, { scene: [], battle: tick.input }, BATTLE_PUMP_MS)
+      s = advanceSession(s, { scene: [], menu: [], battle: tick.input }, BATTLE_PUMP_MS)
       if (s.panel !== 'battle') break
     }
     // 真值到胜利那一刻就停了，结算还要几十拍才走完。
@@ -400,7 +400,7 @@ describe('场景 → 战斗 → 场景', () => {
     // 自动对话弹出 + 逐字打印，然后一路空格按到底。判据是"开打了"，不是拍数。
     for (let i = 0; i < 4000 && s.panel === 'scene'; i++) {
       const key = i % 20 === 19 ? [press('space'), release('space')] : []
-      s = advanceSession(s, { scene: key, battle: [] }, SCENE_PUMP_MS)
+      s = advanceSession(s, { scene: key, battle: [], menu: [] }, SCENE_PUMP_MS)
     }
     expect(s.panel).toBe('battle')
     const w = battleWorldOf(s)!
@@ -438,7 +438,7 @@ describe('场景 → 战斗 → 场景', () => {
     expect(ready.session.panel).toBe('scene')
     expect(ready.session.scene.world.fight.count).toBe(threshold - 1)
 
-    const burst = advanceSession(ready.session, { scene: [press('right')], battle: [] }, 500)
+    const burst = advanceSession(ready.session, { scene: [press('right')], battle: [], menu: [] }, 500)
     expect(burst.panel, '起战斗那一拍被同一批的下一拍吞掉了').toBe('battle')
     expect(battleWorldOf(burst)).not.toBeNull()
     // 没跑完的那几拍留在 carryMs 里，一拍都没丢。
@@ -511,7 +511,7 @@ describe('场景 → 战斗 → 场景', () => {
 
     // 推它是**空操作**：原样的那个对象回来。写成 `toBe` 而不是 `toEqual` ——
     // 一个"每拍推一个空世界、只是恰好什么都没变"的实现 `toEqual` 也是绿的。
-    const later = advanceSession(session, { scene: [press('right')], battle: [] }, 5000)
+    const later = advanceSession(session, { scene: [press('right')], battle: [], menu: [] }, 5000)
     expect(later).toBe(session)
   })
 
