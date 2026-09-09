@@ -67,6 +67,9 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 见下面 `PENDING.heroes`。票面写的是"本票对齐 panel / mouse / heroes 三组"，
   // 实测这一组横跨两张后续的票，所以按格子登记，只签得下其中一格。
   heroes: ['menu-magic'],
+  // xl-6lo.9：装备页那 13 个字段（六个槽位 / 选中 / 属性差值 / 两条拒绝提示 /
+  // 可用可弃两个绘制旗标 / 背包列表）两条剧本各自逐步对上。
+  equip: ['menu-equip', 'menu-magic'],
 }
 
 /**
@@ -76,17 +79,57 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
  * 一列没人登记，下面第一条用例立刻红。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // 装备页从第 8 步起改三个人的属性；物品页第 22 步喝药改 hp。第一处分歧在
-  // 装备页，票号按第一处分歧记。
-  heroes: { 'menu-equip': 'xl-6lo.9' },
-  // 音效：切页那一声（`换list.wav`）这一票已经出得对，但两条剧本里都还有
-  // 别的页发的声 —— `menu-equip` 有 禁止 / 弃用 / 武器 / 盔甲 / 命+，
-  // `menu-magic` 有技能那一声。
-  music: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.11' },
-  equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9' },
+  // 装备页那几步（弃用 → 换装）xl-6lo.9 已经对上了，剩下的第一处分歧是物品页
+  // 第 22 步喝药那一下 hp 700→1000。票号跟着**第一处分歧**走 —— 见下面
+  // `BLOCKED_AT`，那一步是从真值里认出来的，不是数出来的。
+  heroes: { 'menu-equip': 'xl-6lo.10' },
+  // 音效：切页（`换list.wav`）与装备页那四声（禁止 / 弃用 / 武器 / 盔甲）
+  // 都已经出得对，`menu-equip` 剩下的只有喝药那一声 `命+.wav`；
+  // `menu-magic` 剩的是技能那一声。
+  music: { 'menu-equip': 'xl-6lo.10', 'menu-magic': 'xl-6lo.11' },
   drug: { 'menu-equip': 'xl-6lo.10', 'menu-magic': 'xl-6lo.10' },
   magic: { 'menu-equip': 'xl-6lo.11', 'menu-magic': 'xl-6lo.11' },
   func: { 'menu-equip': 'xl-6lo.12', 'menu-magic': 'xl-6lo.12' },
+}
+
+/**
+ * **`PENDING` 里那些「前半截已经对上了」的格子 —— 手写登记，写明卡在哪。**
+ *
+ * 光有 `PENDING` 的话，"第 8 步就开始错"与"一直对到第 22 步、卡在别人那张票上"
+ * 长得一模一样：两者都只是"还没对上"。而 xl-6lo.9 的验收标准恰恰落在那中间
+ * 一段（弃用后属性跌回去、穿上盔甲后气血上限 700→1050），没有这张表就一条
+ * 会红的判据都没有。
+ *
+ * 卡住的那一步**不写步号**，写成一句真值自己认得出的话（"物品页上按下「使用」
+ * 的第一步"）—— 步号会随着剧本改动整体平移，而那种失效是安静的。
+ */
+interface BlockedAt {
+  /** 那一步显示着哪一页。 */
+  readonly panel: string
+  /** 那一步的输入事件与它点的东西。 */
+  readonly event: string
+  readonly target: string
+  /** 卡住的原因，一句话。 */
+  readonly why: string
+}
+
+const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {
+  heroes: {
+    'menu-equip': {
+      panel: 'thingPanel',
+      event: 'press',
+      target: 'use',
+      why: '物品页喝药那一下把血从 700 推到 1000（xl-6lo.10）；在那之前的弃用与换装已经逐字段对上',
+    },
+  },
+  music: {
+    'menu-equip': {
+      panel: 'thingPanel',
+      event: 'press',
+      target: 'use',
+      why: '喝药那一声 命+.wav（xl-6lo.10）；切页与装备页那四声已经对上',
+    },
+  },
 }
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */
@@ -133,20 +176,26 @@ function snapshotsOf(name: string): Record<string, unknown>[] {
   return snaps
 }
 
-/** 这一格逐步全对上了吗。给"还欠着"那半边用 —— 它要的是**不对上**。 */
-function cellMatches(name: string, group: string): boolean {
+/** 这一格**第一处**对不上的那一步；全对上时返回 `ticks.length`。 */
+function firstDivergence(name: string, group: string): number {
   const trace = traceOf(name)
   const snaps = snapshotsOf(name)
-  return trace.ticks.every((tick, i) => {
+  const at = trace.ticks.findIndex((tick, i) => {
     const got = snaps[i]![group]
-    if (got === undefined) return false
+    if (got === undefined) return true
     try {
       expect(got).toEqual(tick[group])
-      return true
-    } catch {
       return false
+    } catch {
+      return true
     }
   })
+  return at === -1 ? trace.ticks.length : at
+}
+
+/** 这一格逐步全对上了吗。给"还欠着"那半边用 —— 它要的是**不对上**。 */
+function cellMatches(name: string, group: string): boolean {
+  return firstDivergence(name, group) === traceOf(name).ticks.length
 }
 
 describe('菜单状态层对齐行为真值', () => {
@@ -226,6 +275,42 @@ describe('菜单状态层对齐行为真值', () => {
       })
     }
   }
+
+  describe('「前半截已经对上了」的格子：卡住的那一步就是登记里写的那一步', () => {
+    for (const [group, byTrace] of Object.entries(BLOCKED_AT)) {
+      for (const [name, blocked] of Object.entries(byTrace)) {
+        it(`${name} · ${group}：一路对到「${blocked.panel} 上 ${blocked.event} ${blocked.target}」那一步`, () => {
+          // 先核这一格确实还挂在 PENDING 上 —— 两张表说的必须是同一件事。
+          expect(
+            PENDING[group]?.[name],
+            `BLOCKED_AT 里有 ${group} × ${name}，PENDING 里却没有`,
+          ).toBeTruthy()
+
+          // 卡住的那一步**从真值里认**，不写步号：步号会随剧本改动整体平移。
+          const trace = traceOf(name)
+          const want = trace.ticks.findIndex(
+            (tick) =>
+              tick['panel'] === blocked.panel &&
+              tick.input.some(
+                (e) => e.e === blocked.event && 'target' in e && e.target === blocked.target,
+              ),
+          )
+          expect(
+            want,
+            `${name} 里找不到「${blocked.panel} 上 ${blocked.event} ${blocked.target}」这一步 ——` +
+              ` 剧本改了，这条登记要跟着改`,
+          ).toBeGreaterThan(0)
+
+          // 正题：第一处分歧**恰好**是那一步。早一步 → 这一票自己做错了；
+          // 晚一步或没有 → 已经全对上了，该挪进 ALIGNED。
+          expect(
+            firstDivergence(name, group),
+            `${blocked.why}`,
+          ).toBe(want)
+        })
+      }
+    }
+  })
 
   describe('反方向：登记成「还欠着」的格子必须真的还没对上', () => {
     for (const [group, byTrace] of Object.entries(PENDING)) {

@@ -1,4 +1,5 @@
 import { menuButton } from './buttons'
+import { createEquipPanel } from './equipPanel'
 import { createFuncButtons } from './funcButtons'
 import { createMenuHeroes } from './heroes'
 import type { LiveParty } from './heroes'
@@ -20,6 +21,14 @@ export interface MenuConfig {
    * **回放真值时不喂** —— 见 `heroes.ts` 的 `LiveParty`。
    */
   readonly live?: Readonly<Partial<Record<PartyKey, LiveParty>>> | undefined
+  /**
+   * 剧本 `setup.equipment` —— 开局往背包里放的那几件装备。
+   *
+   * **它是开局状态，不是期望值**：原版六张装备表的持有量全是 0，不给点东西的话
+   * 装备页永远是空的（`MenuScript` 的注释里写着同一句）。而它加进去的时机是
+   * **面板建好之后**，见 `createEquipPanel`。
+   */
+  readonly equipment?: readonly { readonly name: string; readonly count: number }[] | undefined
 }
 
 /**
@@ -69,7 +78,7 @@ function createScoll(): ScollState {
   return scoll
 }
 
-function createSubPanel(name: MenuPanelName): MenuSubPanel {
+function createSubPanel(name: MenuPanelName, config: MenuConfig): MenuSubPanel {
   return {
     name,
     currentX: 0,
@@ -79,12 +88,13 @@ function createSubPanel(name: MenuPanelName): MenuSubPanel {
     // `hero` 是 `null`。给它编一个卷轴出来，那一列就再也不会是 null 了。
     scoll: name === 'funcPanel' ? null : createScoll(),
     funcButtons: name === 'funcPanel' ? createFuncButtons() : null,
+    equip: name === 'equipPanel' ? createEquipPanel(config.equipment) : null,
   }
 }
 
 export function createMenuWorld(config: MenuConfig): MenuWorld {
   const panels = {} as Record<MenuPanelName, MenuSubPanel>
-  for (const name of MENU_PANEL_ORDER) panels[name] = createSubPanel(name)
+  for (const name of MENU_PANEL_ORDER) panels[name] = createSubPanel(name, config)
 
   const tabs = {} as Record<MenuTabKey, ReturnType<typeof menuButton>>
   for (const tab of TABS) {

@@ -1,3 +1,4 @@
+import type { EquipPanelState } from './equipPanel'
 import type { FuncButtonsState } from './funcButtons'
 import type { MenuHero } from './heroes'
 
@@ -95,6 +96,14 @@ export interface MenuSubPanel {
   scoll: ScollState | null
   /** 天书页那一排按钮。**只有 `funcPanel` 有**，其余三页是 `null`。 */
   funcButtons: FuncButtonsState | null
+  /**
+   * 装备页那一大摊（六个槽位 / 背包 / 选中 / 两条拒绝 / 属性差值）。
+   * **只有 `equipPanel` 有**，其余三页是 `null`。
+   *
+   * ⚠️ 它同时是**背包的唯一落点**：那六张装备表在原版里是 `static`，弃用一件
+   * 东西三个人的列表里立刻都看得见（`equipPanel.ts` 的头注）。
+   */
+  equip: EquipPanelState | null
 }
 
 export interface MenuWorld {

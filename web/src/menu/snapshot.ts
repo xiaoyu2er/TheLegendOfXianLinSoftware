@@ -1,3 +1,4 @@
+import { snapshotEquip } from './equipPanel'
 import { MENU_PANEL_ORDER } from './world'
 import type { MenuWorld } from './types'
 
@@ -9,7 +10,7 @@ import type { MenuWorld } from './types'
  * ## 这里**只出已经实现的那几组**，这是有意的
  *
  * 真值一行有九组可断言的列（`music` / `panel` / `hero` / `heroes` / `equip` /
- * `drug` / `magic` / `func` / `mouse`），而这一票只做骨架。没实现的四页
+ * `drug` / `magic` / `func` / `mouse`），而这一票只做骨架。没实现的三页
  * 不在这里编一份占位值 —— 编出来的占位值会被逐字段比对当成"实现了但是错的"，
  * 而它其实是"还没做"，两者的处置完全不同。
  *
@@ -42,6 +43,18 @@ export function snapshotMenu(w: MenuWorld): Record<string, unknown> {
       skillDefense: h.skillDefense,
       skillNumber: h.skillNumber,
     })),
+    // 装备页那一列。⚠️ **它取的是 `equipPanel` 自己的那一份，不是当前页的** ——
+    // 真值也一样（`MenuDriver.equipJson()` 直接找 `mp.equipPanel`）：人在物品页
+    // 时装备页的状态照记，`menu-equip` 第 19..23 步就是这么读的。
+    equip: snapshotEquip(equipOf(w)),
     mouse,
   }
+}
+
+function equipOf(w: MenuWorld) {
+  const equip = w.panels.equipPanel.equip
+  // 建世界时装备页一定有这一摊；没有的话下面那一整列会安静地缺席，而
+  // 「这一列还没做」与「这一列全对」在逐字段比对里长得不一样但指向错的地方。
+  if (!equip) throw new Error('equipPanel 没有装备页状态')
+  return equip
 }

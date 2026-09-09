@@ -1,4 +1,11 @@
 import { moveInButton, pressButton, releaseButton } from './buttons'
+import {
+  clearEquipWarnings,
+  equipCheckMoveIn,
+  equipCheckPressed,
+  equipCheckReleased,
+  paintEquip,
+} from './equipPanel'
 import { funcCheckPressed, funcCheckReleased } from './funcButtons'
 import { MENU_PANEL_ORDER, PANEL_OF_TAB, TAB_PRIORITY } from './world'
 import { SCOLL_HEROES } from './types'
@@ -30,9 +37,33 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
   // 音效是**这一步**的（`MusicTap` 每步取走一次），所以每步开头清空。
   // 不清的话它会越积越长，而"这一步响了"与"上一步响过"就分不开了。
   w.music = []
+  // 两个拒绝旗标同理：由**这一步**的输入置位。原版清它们的是紧接着那次
+  // `drawWarning()`，而真值是在 paint **之前**抓的 —— 也就是"这一步置的位"
+  // 看得见、下一步就没了。清在这里，与清在 paint 里等价而且不会把它们抹成
+  // 永远的 false（`equipPanel.ts` 的 `paintEquip` 注释）。
+  const equip = w.panels.equipPanel.equip
+  if (equip) clearEquipWarnings(equip)
   for (const input of inputs) applyMenuInput(w, input)
+  // 原版的 `paint()` **有状态副作用**，而 `MenuDriver` 每一步都真的画一次
+  // 当前页（`current().paint(sink)`）。照办 —— 少了它，装备页的
+  // `abandonDraw` 与 `diff` 两列永远对不上。
+  paintCurrentPanel(w)
   w.tick++
   return w
+}
+
+/**
+ * 一次「画当前页」里**改状态**的那几笔。
+ *
+ * ⚠️ 只画**当前页** —— 与原版一致：CardLayout 盖住的面板 `repaint()` 不会真画，
+ * 于是被盖住那几页的这些副作用**停在原地**。`menu-equip` 第 19..27 步就靠这个：
+ * 人在别的页上，装备页的 `abandonDraw` 一直保持着离开时的读数。
+ *
+ * 物品 / 奇术 / 天书三页的那一份归 xl-6lo.10 / .11 / .12。
+ */
+function paintCurrentPanel(w: MenuWorld): void {
+  const p = currentPanel(w)
+  if (p.equip) paintEquip(p.equip, w.music)
 }
 
 export function applyMenuInput(w: MenuWorld, input: MenuInput): void {
@@ -84,6 +115,7 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
   if (p.scoll) {
     for (const { field } of SCOLL_HEROES) releaseButton(p.scoll[field], p.currentX, p.currentY)
   }
+  if (p.equip) equipCheckReleased(p.equip, p.currentX, p.currentY)
   if (p.funcButtons) funcCheckReleased(p.funcButtons, p.currentX, p.currentY)
 }
 
@@ -95,6 +127,9 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
   p.currentX = x
   p.currentY = y
   scollCheckMoveIn(w, p)
+  // `EquipPanel.checkAllButtonMoveIn()`：`isMoveIn()`（挑列表的第几行）在前，
+  // 八颗按钮的命中判据在后。
+  if (p.equip) equipCheckMoveIn(p.equip, p.currentX, p.currentY)
 }
 
 /**
@@ -130,6 +165,22 @@ function commandCheckPressed(w: MenuWorld): void {
  */
 function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   scollCheckPressed(w, p)
+  // 装备页那一段在 `scoll.checkPressed()` **之后** —— 它头三段读的正是刚被
+  // 置位的 `scoll.heroN.isclicked`（换人时把背包与列表整个拨回那个人的武器）。
+  if (p.equip && p.scoll) {
+    const scoll = p.scoll
+    equipCheckPressed(
+      p.equip,
+      {
+        whichHero: scoll.whichHero,
+        buttons: { 1: scoll.hero1, 2: scoll.hero2, 4: scoll.hero4 },
+      },
+      w.heroes,
+      p.currentX,
+      p.currentY,
+      w.music,
+    )
+  }
   // 天书页没有卷轴，它的 `checkAllButtonPressed` 只有 `fb.checkPressed()` 一句。
   if (p.funcButtons) funcCheckPressed(p.funcButtons, p.currentX, p.currentY, w.music)
 }
