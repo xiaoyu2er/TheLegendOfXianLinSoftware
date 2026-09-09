@@ -1,6 +1,6 @@
 import { menuAssetId } from '../../assets/menuAssets'
 import { skillAnimId } from '../../battle/render/assets'
-import { MAGIC_ANIMATION_LENGTHS, MAGIC_HEROES } from '../magic'
+import { MAGIC_ANIMATION_LENGTHS, MAGIC_HEROES, magicHero } from '../magic'
 import type { AssetId } from '../../assets/ids'
 import type { ButtonImage, ScollHero } from '../types'
 
@@ -84,9 +84,7 @@ export function magicSkillButtonId(hero: ScollHero, skill: number, image: Button
  * 而漏掉的表现是"那一页的动画不显示"。
  */
 export function magicAnimationFrameId(hero: ScollHero, skill: number, frame: number): AssetId {
-  const entry = MAGIC_HEROES.find((h) => h.hero === hero)
-  if (!entry) throw new Error(`奇术页没有 ${hero} 号角色`)
-  return skillAnimId(`${entry.animationStem}${skill}`, frame)
+  return skillAnimId(`${magicHero(hero).animationStem}${skill}`, frame)
 }
 
 /** 一条动画整条的帧 ID，1 基。预取与测试用。 */

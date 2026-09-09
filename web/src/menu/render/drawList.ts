@@ -172,16 +172,33 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
   return ops
 }
 
-/** `MagicAnimation.drawMagicAnimation()` 里那三个常量与两处坐标。 */
-const MAGIC_ANIM_X = 70 + 32
-const MAGIC_ANIM_Y = 10
-const MAGIC_TEXT_X = 538
-const MAGIC_TEXT_Y = 202
-const MAGIC_TEXT_VGAP = 64
-/** 第二行比第一行低 34 —— `y_discription+34`。 */
-const MAGIC_TEXT_LINE = 34
-const MAGIC_FONT_SIZE = 27
-const MAGIC_COLOR = '#ffffff'
+/**
+ * 奇术页那条动画的几何与字体。**四个数在 `MagicPanel.addMagicAnimation()` 的
+ * 局部变量里（`x`/`y`/`a`/`b`/`vgap`），三个在 `MagicAnimation
+ * .drawMagicAnimation()` 里（字号 27、第二行 +34、白色）** —— 两处，不是一处。
+ *
+ * 导出是为了给判据用：`drawList.test.ts` 从 GBK 源码里把这七个现读出来对。
+ * 不导出的话期望值那一侧只能重抄一遍同样的字面量，**两侧都是这一次的转写，
+ * 抄错了两边一起错**（/code-review 的 Standards 轴提的；顶栏那行字的判据
+ * 一直是这么写的，这里漏了）。
+ */
+export const MAGIC_LAYOUT = {
+  /** `new MagicAnimation(..., x, y, ...)` 的 `int x=70+32,y=10;` —— 动画贴图的左上角。 */
+  animX: 70 + 32,
+  animY: 10,
+  /** `a` —— 说明两行的 x（`drawString` 的起点）。 */
+  textX: 538,
+  /** `b` —— 第一招说明的基线 y。 */
+  textY: 202,
+  /** `vgap` —— 招与招之间说明差多少。 */
+  textVgap: 64,
+  /** `y_discription+34` —— 第二行比第一行低多少。 */
+  textLine: 34,
+  /** `new Font("文鼎粗钢笔行楷", Font.BOLD, 27)`。 */
+  fontSize: 27,
+  /** `g.setColor(Color.white)`。 */
+  color: '#ffffff',
+} as const
 
 /**
  * `MagicPanel.drawThisPanel()` 的后半段：**先十五颗按钮，再那条动画**。
@@ -216,24 +233,24 @@ function magicOps(magic: NonNullable<MenuSubPanel['magic']>): MenuDrawOp[] {
   if (!anim) return ops
   const lines = MAGIC_SKILL_DESCRIPTIONS[anim.hero][anim.skill - 1]
   if (!lines) throw new Error(`${anim.hero} 号没有第 ${anim.skill} 招的说明`)
-  const y = MAGIC_TEXT_Y + (anim.skill - 1) * MAGIC_TEXT_VGAP
+  const y = MAGIC_LAYOUT.textY + (anim.skill - 1) * MAGIC_LAYOUT.textVgap
   lines.forEach((text, line) => {
     ops.push({
       kind: 'text',
       layer: 'page',
       text,
-      x: MAGIC_TEXT_X,
-      y: y + line * MAGIC_TEXT_LINE,
-      size: MAGIC_FONT_SIZE,
-      color: MAGIC_COLOR,
+      x: MAGIC_LAYOUT.textX,
+      y: y + line * MAGIC_LAYOUT.textLine,
+      size: MAGIC_LAYOUT.fontSize,
+      color: MAGIC_LAYOUT.color,
     })
   })
   ops.push({
     kind: 'image',
     layer: 'page',
     id: magicAnimationFrameId(anim.hero, anim.skill, anim.code),
-    x: MAGIC_ANIM_X,
-    y: MAGIC_ANIM_Y,
+    x: MAGIC_LAYOUT.animX,
+    y: MAGIC_LAYOUT.animY,
   })
   return ops
 }

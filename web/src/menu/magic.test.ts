@@ -13,17 +13,13 @@ import {
   magicButtonY,
 } from './magic'
 import { snapshotMenu } from './snapshot'
+import { hitCenter } from './test/hitCenter'
 import { stepMenu } from './step'
 import { MENU_TRACE_NAMES, readMenuTrace } from './trace'
 import { createMenuWorld } from './world'
 import type { MenuWorld } from './types'
 
 const SOURCE = 'src/menu/MagicPanel.java'
-
-/** `MenuDriver.center()`：命中框中心，抄的是 `GameButton.isPressedButton` 的判据。 */
-function center(x: number, y: number, w: number, h: number): [number, number] {
-  return [x - 15 + Math.floor(w / 2), y - 6 + Math.floor(h / 2)]
-}
 
 /** 只取 `addMagicButton()` 那一段，别把 `addMagicAnimation()` 的数混进来。 */
 function methodBody(name: string): string {
@@ -80,7 +76,12 @@ describe('奇术页的按钮几何，对回原版', () => {
   it('每个人恒有五颗按钮 —— 与等级、与 skillNumber 都无关', () => {
     // 建的颗数是死的，**画得出来几颗**才由 skillNumber 说了算。两件事写在
     // 一起的话，"少建了一颗"与"少画了一颗"就分不开了。
-    expect(MAGIC_BUTTON_COUNT).toBe(5)
+    //
+    // 分母从源码推（`toBe(5)` 是字面量对字面量，源码改了它不会响）：
+    // `addMagicButton()` 建了 20 颗、四组，每组就是这个数。
+    const built = [...body.matchAll(/new MenuButton\(x,/g)].length
+    expect(built, 'addMagicButton() 里的 new MenuButton 条数').toBe(20)
+    expect(MAGIC_BUTTON_COUNT).toBe(built / 4)
   })
 })
 
@@ -266,7 +267,7 @@ describe('切进奇术页的那一次按下会把当前动画清空', () => {
   it('已经在奇术页上了，松开之后按在空处同样清空', () => {
     const w = playFirstSkill()
     const magic = w.panels.magicPanel.magic!
-    const [bx, by] = center(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
+    const [bx, by] = hitCenter(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
     stepMenu(w, [{ e: 'release', x: bx, y: by }])
     expect(magic.current).not.toBeNull()
     // 按在按钮之外的一处（技能按钮那一列在 x=332 起、宽 220 一带）。
@@ -323,7 +324,7 @@ function playFirstSkill(): MenuWorld {
   const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
   stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
   stepMenu(w, [{ e: 'release', x: 619, y: 62 }])
-  const [x, y] = center(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
+  const [x, y] = hitCenter(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
   stepMenu(w, [{ e: 'press', x, y }])
   const magic = w.panels.magicPanel.magic!
   if (!magic.current) throw new Error(`(${x},${y}) 没点中第一颗技能按钮`)
@@ -338,7 +339,7 @@ describe('第一颗技能按钮的落点与真值一致', () => {
       .filter((i): i is { e: 'press'; x: number; y: number; target?: string } => i.e === 'press')
       .filter((i) => i.target === 'skill:1')
     expect(presses, 'menu-magic 里没有 skill:1 那一按').toHaveLength(1)
-    const [x, y] = center(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
+    const [x, y] = hitCenter(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
     expect([presses[0]!.x, presses[0]!.y]).toEqual([x, y])
   })
 
@@ -350,7 +351,7 @@ describe('第一颗技能按钮的落点与真值一致', () => {
   it('松开会把 isclicked 清掉 —— 否则下一次按下会把动画凭空放第二遍', () => {
     const w = playFirstSkill()
     const magic = w.panels.magicPanel.magic!
-    const [x, y] = center(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
+    const [x, y] = hitCenter(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
     stepMenu(w, [{ e: 'release', x, y }])
     expect(magic.buttons[1]!.map((b) => b.isclicked)).toEqual([false, false, false, false, false])
     // 再在空处按一下：动画只该被清空，不该被重新接上。
@@ -372,7 +373,7 @@ describe('第一颗技能按钮的落点与真值一致', () => {
 describe('两组同时 isclicked 时，后一组赢、两声都响', () => {
   it('一路不松手：按下张小凡那一颗 → 换到陆雪琪 → 再按一颗', () => {
     const w = createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true })
-    const [bx, by] = center(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
+    const [bx, by] = hitCenter(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
     stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
     stepMenu(w, [{ e: 'release', x: 619, y: 62 }])
     // 张小凡的第一颗，**按下不松** —— 往后一次松开都不发。
@@ -383,7 +384,7 @@ describe('两组同时 isclicked 时，后一组赢、两声都响', () => {
     // 换人。先移一下鼠标：`checkMoveIn` 才会把二号头像的 isDraw 打开，
     // 而 `isPressedButton` 在 `isDraw=No` 时整个跳过。
     const head2 = HEAD_POS.find((h) => h.hero === 2)!
-    const [hx, hy] = center(head2.x, head2.y, HEAD_W, HEAD_H)
+    const [hx, hy] = hitCenter(head2.x, head2.y, HEAD_W, HEAD_H)
     stepMenu(w, [{ e: 'move', x: hx, y: hy }])
     stepMenu(w, [{ e: 'press', x: hx, y: hy }])
     expect(w.panels.magicPanel.scoll!.whichHero).toBe(2)

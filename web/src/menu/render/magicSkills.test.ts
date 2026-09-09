@@ -45,7 +45,10 @@ describe('奇术页那三张表，对回原版', () => {
     const files = new Set(readdirSync(dir))
     expect(files.size).toBeGreaterThan(0)
     const ids = magicButtonIds()
-    expect(ids).toHaveLength(15 * 3)
+    // 分母从表本身推，不写死 15×3：招数或人数一变，这里跟着变。
+    const skills = MAGIC_HEROES.reduce((n, { hero }) => n + MAGIC_SKILL_STEMS[hero].length, 0)
+    expect(ids).toHaveLength(skills * 3)
+    expect(new Set(ids).size, '十五颗按钮的三态贴图不该有重名').toBe(ids.length)
     for (const id of ids) {
       const name = id.slice(id.lastIndexOf('/') + 1)
       expect(files.has(name), `sources/菜单/奇术/${name} 不在磁盘上`).toBe(true)
@@ -59,6 +62,11 @@ describe('奇术页那三张表，对回原版', () => {
       rows.set(`${m[1]}${m[2]}${m[3]}`, m[4]!)
     }
     expect(rows.size, 'magicDiscription 里没解出赋值').toBe(30)
+    // ⚠️ 这条顺带守着**那几行空的第二行**（张小凡 1/4、玉洁 3）：源码里就是
+    // 空串，逐行相等意味着"顺手把空串当成漏抄补一句上去"当场红。为它单写
+    // 一条 `空串数 > 0` 是恒真的 —— 那个数是从下面这张表自己推出来的
+    // （/code-review 的 Standards 轴提的）。
+    expect([...rows.values()].filter((v) => v === '').length).toBeGreaterThan(0)
     const field: Readonly<Record<number, string>> = { 1: 'zhang', 2: 'lu', 4: 'yu' }
     for (const { hero } of MAGIC_HEROES) {
       const lines = MAGIC_SKILL_DESCRIPTIONS[hero]
@@ -72,14 +80,6 @@ describe('奇术页那三张表，对回原版', () => {
     }
   })
 
-  it('⚠️ 三条说明的第二行是空串 —— 原版写下的，不是没抄到', () => {
-    // 数出来的：不写死"哪三条"，只要求空串确实存在且照留。少了这一条的话，
-    // 把空串当成"漏抄"顺手删掉就没人拦得住 —— 而原版那句 drawString 是照发的。
-    const empty = MAGIC_HEROES.flatMap(({ hero }) =>
-      MAGIC_SKILL_DESCRIPTIONS[hero].filter((two) => two[1] === '').map(() => hero),
-    )
-    expect(empty.length).toBeGreaterThan(0)
-  })
 })
 
 describe('技能动画的帧 ID', () => {

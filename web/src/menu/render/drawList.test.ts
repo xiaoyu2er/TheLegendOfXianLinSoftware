@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
-import { MENU_LAYERS, menuDrawList } from './drawList'
+import { MAGIC_LAYOUT, MENU_LAYERS, menuDrawList } from './drawList'
 import type { MenuDrawOp, MenuLayer } from './drawList'
 import { MENU_BACKGROUND, funcButtonId, menuTextureIds, mouseId, tabId } from './assets'
 import { MAGIC_SKILL_DESCRIPTIONS, magicAnimationFrameId, magicSkillButtonId } from './magicSkills'
@@ -15,6 +15,7 @@ import { SCOLL_HEROES } from '../types'
 import { MENU_HERO_ORDER } from '../heroes'
 import { HEAD_H, HEAD_POS, HEAD_W } from '../layout'
 import { stepMenu } from '../step'
+import { hitCenter } from '../test/hitCenter'
 import { createMenuWorld } from '../world'
 import type { MenuWorld } from '../types'
 
@@ -218,13 +219,60 @@ describe('菜单那六层绘制', () => {
  * 摊出来的那一串**：按钮在前、说明两行、动画一帧在后。
  */
 describe('奇术页的 page 层', () => {
+  /**
+   * 一条说明的绘制条目。`skillIndex` 是 0 基的招号、`line` 是第几行 ——
+   * 落点由 `MAGIC_LAYOUT` 算，而 `MAGIC_LAYOUT` 自己由下面那条对回 GBK 源码。
+   */
+  function textOp(text: string, skillIndex: number, line: number): MenuDrawOp {
+    return {
+      kind: 'text',
+      layer: 'page',
+      text,
+      x: MAGIC_LAYOUT.textX,
+      y: MAGIC_LAYOUT.textY + skillIndex * MAGIC_LAYOUT.textVgap + line * MAGIC_LAYOUT.textLine,
+      size: MAGIC_LAYOUT.fontSize,
+      color: MAGIC_LAYOUT.color,
+    }
+  }
+
+  it('那七个数对回原版 —— 四个在 MagicPanel、三个在 MagicAnimation', () => {
+    // ⚠️ 不对源码的话，期望值那一侧只能重抄一遍同样的字面量：**两侧都是
+    // 这一次的转写，抄错了两边一起错**。顶栏那行字的判据一直是这么写的
+    // （见上面「对回 drawCommand()」那条），奇术页这一层原先漏了。
+    const panel = javaSource('src/menu/MagicPanel.java')
+    const body = panel.slice(panel.indexOf('private void addMagicAnimation'))
+    const locals = /int x=([\d+]+),y=(\d+);[\s\S]{0,80}?int a=(\d+);[\s\S]{0,40}?int b=(\d+);[\s\S]{0,40}?int vgap=(\d+);/.exec(
+      body,
+    )
+    expect(locals, 'addMagicAnimation() 里那几个局部常量没解出来').not.toBeNull()
+    const sum = (expr: string) => expr.split('+').map(Number).reduce((a, b) => a + b, 0)
+    expect(MAGIC_LAYOUT.animX).toBe(sum(locals![1]!))
+    expect(MAGIC_LAYOUT.animY).toBe(Number(locals![2]))
+    expect(MAGIC_LAYOUT.textX).toBe(Number(locals![3]))
+    expect(MAGIC_LAYOUT.textY).toBe(Number(locals![4]))
+    expect(MAGIC_LAYOUT.textVgap).toBe(Number(locals![5]))
+
+    const anim = javaSource('src/menu/MagicAnimation.java')
+    const font = /new Font\("[^"]*", Font\.BOLD, (\d+)\)/.exec(anim)
+    expect(font, 'drawMagicAnimation 里的字号没解出来').not.toBeNull()
+    expect(MAGIC_LAYOUT.fontSize).toBe(Number(font![1]))
+    const second = /y_discription\+(\d+)\)/.exec(anim)
+    expect(second, '第二行的行距没解出来').not.toBeNull()
+    expect(MAGIC_LAYOUT.textLine).toBe(Number(second![1]))
+    // 颜色只有一处 `g.setColor(Color.white)`。
+    expect(anim).toContain('g.setColor(Color.white)')
+    expect(MAGIC_LAYOUT.color).toBe('#ffffff')
+
+    // 贴图那一句用的正是 AnimationX / AnimationY，不是别的两个数。
+    expect(anim).toContain('g.drawImage(image, AnimationX, AnimationY, fp)')
+  })
+
   /** 点开奇术页并放第一招。坐标从原版的命中判据算，不手写。 */
   function playing(): MenuWorld {
     const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
     stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
     stepMenu(w, [{ e: 'release', x: 619, y: 62 }])
-    const x = MAGIC_BUTTON_X - 15 + Math.floor(MAGIC_BUTTON_W / 2)
-    const y = magicButtonY(0) - 6 + Math.floor(MAGIC_BUTTON_H / 2)
+    const [x, y] = hitCenter(MAGIC_BUTTON_X, magicButtonY(0), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
     stepMenu(w, [{ e: 'press', x, y }])
     if (!w.panels.magicPanel.magic!.current) throw new Error('没点中第一颗技能按钮')
     return w
@@ -260,14 +308,14 @@ describe('奇术页的 page 层', () => {
         x: MAGIC_BUTTON_X,
         y: magicButtonY(0),
       },
-      { kind: 'text', layer: 'page', text: lines[0], x: 538, y: 202, size: 27, color: '#ffffff' },
-      { kind: 'text', layer: 'page', text: lines[1], x: 538, y: 236, size: 27, color: '#ffffff' },
+      textOp(lines[0], 0, 0),
+      textOp(lines[1], 0, 1),
       {
         kind: 'image',
         layer: 'page',
         id: magicAnimationFrameId(anim.hero, anim.skill, anim.code),
-        x: 102,
-        y: 10,
+        x: MAGIC_LAYOUT.animX,
+        y: MAGIC_LAYOUT.animY,
       },
     ])
   })
@@ -281,15 +329,13 @@ describe('奇术页的 page 层', () => {
     stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
     stepMenu(w, [{ e: 'release', x: 619, y: 62 }])
     const head4 = HEAD_POS.find((h) => h.hero === 4)!
-    const hx = head4.x - 15 + Math.floor(HEAD_W / 2)
-    const hy = head4.y - 6 + Math.floor(HEAD_H / 2)
+    const [hx, hy] = hitCenter(head4.x, head4.y, HEAD_W, HEAD_H)
     stepMenu(w, [{ e: 'move', x: hx, y: hy }])
     stepMenu(w, [{ e: 'press', x: hx, y: hy }])
     stepMenu(w, [{ e: 'release', x: hx, y: hy }])
     expect(w.panels.magicPanel.scoll!.whichHero).toBe(4)
 
-    const x = MAGIC_BUTTON_X - 15 + Math.floor(MAGIC_BUTTON_W / 2)
-    const y = magicButtonY(1) - 6 + Math.floor(MAGIC_BUTTON_H / 2)
+    const [x, y] = hitCenter(MAGIC_BUTTON_X, magicButtonY(1), MAGIC_BUTTON_W, MAGIC_BUTTON_H)
     stepMenu(w, [{ e: 'press', x, y }])
     const anim = w.panels.magicPanel.magic!.current
     expect(anim, `(${x},${y}) 没点中玉洁的第二颗技能按钮`).not.toBeNull()
@@ -297,10 +343,7 @@ describe('奇术页的 page 层', () => {
 
     const texts = menuDrawList(w).filter((op) => op.layer === 'page' && op.kind === 'text')
     const lines = MAGIC_SKILL_DESCRIPTIONS[4][1]!
-    expect(texts).toEqual([
-      { kind: 'text', layer: 'page', text: lines[0], x: 538, y: 266, size: 27, color: '#ffffff' },
-      { kind: 'text', layer: 'page', text: lines[1], x: 538, y: 300, size: 27, color: '#ffffff' },
-    ])
+    expect(texts).toEqual([textOp(lines[0], 1, 0), textOp(lines[1], 1, 1)])
   })
 
   it('动画那一帧跟着 code 走 —— 推一拍换一张', () => {

@@ -159,7 +159,7 @@ export function createMagicState(): MagicState {
  * ⚠️ 两个循环**重叠一格**，见文件头注第二条。别"顺手修好"。
  */
 export function magicDrawThisPanel(magic: MagicState, whichHero: ScollHero): void {
-  const n = SKILL_NUMBER[partyOf(whichHero)]
+  const n = SKILL_NUMBER[magicHero(whichHero).party]
   for (const { hero } of MAGIC_HEROES) {
     const list = magic.buttons[hero]
     if (hero !== whichHero) {
@@ -263,11 +263,14 @@ export function magicUpdate(magic: MagicState): void {
   }
 }
 
-/** 卷轴编号 → 队伍键。`SKILL_NUMBER` 用的是后者。 */
-function partyOf(hero: ScollHero): PartyKey {
+/**
+ * 卷轴编号 → 那一行。查不到是**抛**，不是返回 undefined —— 返回 undefined
+ * 的话调用方多半会静静地少画一组按钮或少放一条动画。
+ */
+export function magicHero(hero: ScollHero): (typeof MAGIC_HEROES)[number] {
   const entry = MAGIC_HEROES.find((h) => h.hero === hero)
   if (!entry) throw new Error(`奇术页没有 ${hero} 号角色`)
-  return entry.party
+  return entry
 }
 
 /** 真值 `magic` 那一列的形状。`snapshot.ts` 转手给它。 */
