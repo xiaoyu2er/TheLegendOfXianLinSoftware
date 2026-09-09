@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
 import {
+  ANIMATION_FRAMES,
+  ANIMATION_INTERVAL_MS,
   BACK_BOX,
   BUY_BOX,
   CATEGORY_H,
@@ -301,6 +303,17 @@ describe('商店面板的几何，对回 GBK 源码', () => {
     expect(drug.some((s) => s.includes('messageremark'))).toBe(false)
   })
 
+  it('动画线程每格睡 120ms，两家店相同', () => {
+    for (const [what, source] of [
+      ['药店', drugShop],
+      ['装备店', equipShop],
+    ] as const) {
+      const m = [...source.matchAll(/tools\.Clock\.sleep\((\d+)\);/g)]
+      expect(m, `${what} 的 Clock.sleep`).toHaveLength(1)
+      expect(Number(m[0]![1])).toBe(ANIMATION_INTERVAL_MS)
+    }
+  })
+
   it('字号 20，两家店相同', () => {
     for (const source of [drugShop, equipShop]) {
       const fonts = [...source.matchAll(/new Font\("[^"]+", Font\.BOLD, (\d+)\)/g)]
@@ -341,8 +354,11 @@ describe('商店面板的几何，对回 GBK 源码', () => {
       // 第四条是店主 / 小妹。
       expect(Number(ani[3]![2])).toBe(KEEPER_ANIMATION_X)
       expect(Number(ani[3]![3])).toBe(KEEPER_ANIMATION_Y)
-      // 八帧，两家店四条都一样。
-      for (const m of ani) expect(Number(m[4])).toBe(8)
+      // 八帧，两家店四条都一样；鼠标图那一排也是八张。
+      for (const m of ani) expect(Number(m[4])).toBe(ANIMATION_FRAMES)
+      const mouses = [...source.matchAll(/Image\[\] mouses = new Image\[(\d+)\];/g)]
+      expect(mouses, `${what} 的 mouses`).toHaveLength(1)
+      expect(Number(mouses[0]![1])).toBe(ANIMATION_FRAMES)
     }
   })
 

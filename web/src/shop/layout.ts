@@ -173,6 +173,21 @@ export const STAT_Y0 = 30
 export const STAT_ROW_GAP = 150
 export const STAT_LINE_GAP = 20
 
+/**
+ * 鼠标图与四条人物动画都是 **8 帧**（`new ShopAnimation(…, 8, …)` 与
+ * `final Image[] mouses = new Image[8]`），由同一条线程用同一个 `i` 推着走。
+ */
+export const ANIMATION_FRAMES = 8
+
+/**
+ * 那条动画线程每格睡多久：`tools.Clock.sleep(120)`。
+ *
+ * 它推的是鼠标图与四条人物动画（同一个 `i`）。**真值里一个都不记** ——
+ * 导出时 `Clock.setFactor(1e-9)` 把这一句拉成约 3800 年，两条线程各自停在
+ * 第一次 sleep 上。所以它只服务于真的跑起来的那一版。
+ */
+export const ANIMATION_INTERVAL_MS = 120
+
 /** 一家店当前这一列有几行。`rowCount` 的唯一出处。 */
 export function shopRowCount(kind: ShopKind, category: EquipSlot): number {
   return kind === 'drug' ? DRUGS.length : EQUIPMENT_LISTS[category].length
