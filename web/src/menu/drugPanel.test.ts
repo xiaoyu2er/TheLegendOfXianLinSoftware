@@ -21,6 +21,7 @@ import type { MenuHero } from './heroes'
 import { snapshotMenu } from './snapshot'
 import { stepMenu } from './step'
 import { MENU_TRACE_NAMES, readMenuTrace, replayMenu } from './trace'
+import { createMenuWorld } from './world'
 import { SCOLL_HEROES } from './types'
 
 /**
@@ -117,6 +118,62 @@ describe('存货：六种药全在包里，没有的那几种是 0', () => {
 
   it('名字对不上当场抛 —— 静默跳过的话「这一局没那种药」与「打错字」长得一样', () => {
     expect(() => createDrugPack([{ name: '不存在的药', count: 1 }])).toThrow('不存在的药')
+  })
+})
+
+/**
+ * 真值这两条剧本**走不到**的那三条路。
+ *
+ * 三条都是篡改矩阵抓出来的真空洞（篡改了却全绿），不是补充说明：
+ * `menu-equip` 全程只有一种药、只有一号在卷轴上、清单一次都没空过，于是
+ * "清单空了要关按钮"、"喝给卷轴上那个人"、"下标按过滤后的清单算"这三件事
+ * 换成错的照样绿。
+ */
+describe('两条真值走不到的三条路', () => {
+  /** `sources/Shop/drug.txt` 里下标不是 0 的一种药 —— 下面第三条要它。 */
+  const LATER = DRUGS[2]!
+
+  it('清单空了，鼠标一动就关掉「使用」按钮', () => {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true, drugs: [{ name: DRUGS[0]!.name, count: 1 }] })
+    const p = w.panels.thingPanel
+    // 先选中，把按钮打开 —— 不打开的话下面那条"关掉了"按构造成立。
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+    expect(p.drug!.useButton.isDraw).toBe(true)
+    // 存货清零（药店卖光、读档换了一份包都会走到这儿），再动一下鼠标。
+    for (const stock of w.drugPack) stock.count = 0
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+    expect(p.drug!.useButton.isDraw).toBe(false)
+  })
+
+  it('喝给卷轴上那个人 —— 换个人就该换个人涨血', () => {
+    const w = createMenuWorld({
+      party: ['zhang', 'wen'],
+      fullHeal: false,
+      drugs: [{ name: DRUGS[0]!.name, count: 1 }],
+    })
+    const p = w.panels.thingPanel
+    // `fullHeal:false` 时三个人的 hp 都是 0（空构造函数不碰它们）——
+    // 满血的话加了血也看不出来。
+    expect(w.heroes.map((h) => h.hp)).toEqual([0, 0, 0])
+    // ⚠️ 改的是**物品页自己那个卷轴**（`Scoll` 四页各有一个）。
+    p.scoll!.whichHero = 4
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+    stepMenu(w, [{ e: 'press', x: 865, y: 432 }])
+    expect(w.heroes.map((h) => h.hp)).toEqual([0, 0, DRUGS[0]!.addHp])
+  })
+
+  it('`selected` 是过滤后清单里的下标，不是六种药那张全表里的', () => {
+    // 这一种在全表里是第 2 行，在"包里有的"那份清单里是第 0 行。两个数不同，
+    // 这条才分得开 —— `menu-equip` 那一局两者都是 0。
+    expect(DRUGS.findIndex((d) => d.name === LATER.name)).toBeGreaterThan(0)
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true, drugs: [{ name: LATER.name, count: 1 }] })
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y - DRUG_ROW_H / 2 }])
+    expect(snapshotMenu(w)['drug']).toEqual({
+      list: [{ name: LATER.name, count: 1 }],
+      selected: 0,
+      selectedName: LATER.name,
+      useDraw: true,
+    })
   })
 })
 
