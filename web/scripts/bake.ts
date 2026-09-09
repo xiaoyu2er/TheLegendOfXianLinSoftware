@@ -31,7 +31,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, relative as relativePath, resolve } from 'node:path'
+import { dirname, extname, relative as relativePath, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
@@ -64,6 +64,7 @@ import {
   narratageBgAssetId,
   npcAssetId,
   roleAssetId,
+  equipPictureAssetId,
   startAssetId,
   startFrameAssetId,
 } from '../src/assets/ids'
@@ -71,6 +72,15 @@ import { normalizePath } from '../src/assets/path'
 import { listFiles } from '../src/assets/listFiles'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
 import { DRUGS } from '../src/battle/drugs'
+import { EQUIPMENT_LISTS, EQUIP_SLOTS, SLOT_FILE } from '../src/menu/equipment'
+import {
+  EQUIP_PICTURE_EXTENSIONS,
+  EQUIP_PICTURE_IGNORED_EXTENSIONS,
+  EQUIP_PICTURE_ROOT,
+  KNOWN_MISSING_EQUIP_PICTURES,
+  equipPictureSource,
+  isKnownMissingEquipPicture,
+} from '../src/menu/equipmentPictures'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
@@ -465,12 +475,14 @@ function main(): void {
 
   const menu = bakeMenuImages(manifest)
 
+  const equip = bakeEquipPictures(manifest)
+
   bakeBgm(scenes, manifest)
 
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张 + 菜单骨架 ${menu.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes + menu.bundledBytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张 + 菜单骨架 ${menu.bundled} 张 + 装备图 ${equip.baked} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes + menu.bundledBytes + equip.bytes)}`,
   )
 
   writeStamp()
@@ -700,6 +712,135 @@ function bakeMenuImages(manifest: Record<string, string>): {
       `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
   )
   return { bundled, bundledBytes }
+}
+
+/**
+ * 装备页那两张图的素材（xl-234）：把 `sources/Shop/装备/` 下**能烘的那批**
+ * 烘成 WebP 进主包，并拿六张装备表逐条对账。
+ *
+ * 路径规则、两份扩展名登记、以及数据点名了却不存在的那两张，全在
+ * `src/menu/equipmentPictures.ts` 的头注里 —— 这里只执行它，并且**每一条
+ * 登记两头都验**：
+ *
+ * - 磁盘上出现两份登记之外的扩展名 → 硬失败（不是悄悄跳过）；
+ * - 磁盘上的类目录与 `SLOT_FILE` 那六个对不上 → 硬失败（多一个目录没人烘、
+ *   少一个目录是那一类全空，两种都只表现为"某些装备没有图"）；
+ * - 表里点名的图烘不出来、而它不在已知缺失名单里 → 硬失败；
+ * - 已知缺失名单里的图**存在了** → 硬失败（数据修好了却没来销账）；
+ * - 已知缺失名单里的图**没有任何一行点名** → 硬失败（多半是抄错了字）。
+ *
+ * 分母全部现扫：目录里有什么就数什么，表里有几行就对几行，一处都不写死。
+ */
+function bakeEquipPictures(manifest: Record<string, string>): {
+  baked: number
+  bytes: number
+} {
+  const root = resolve(REPO, EQUIP_PICTURE_ROOT)
+  const relatives = listFiles(root).sort()
+  if (relatives.length === 0) {
+    // "一个文件都没扫到"与"全烘完了"在产物上长得一模一样：两边都是零个差异。
+    console.error(`${EQUIP_PICTURE_ROOT} 下一个文件都没有 —— 装备图的分母是从这里现扫的`)
+    process.exit(1)
+  }
+
+  // 磁盘上的类目录必须恰好是那六个。多一个 / 少一个都要响。
+  const onDisk = [...new Set(relatives.map((r) => r.split('/')[0]!))].sort()
+  const wanted = EQUIP_SLOTS.map((slot) => SLOT_FILE[slot]).sort()
+  if (onDisk.join('\u0000') !== wanted.join('\u0000')) {
+    console.error(
+      `${EQUIP_PICTURE_ROOT} 下的类目录是 ${onDisk.join(' / ')}，` +
+        `而六张装备表要的是 ${wanted.join(' / ')}`,
+    )
+    process.exit(1)
+  }
+
+  // 按扩展名分三堆。第三堆非空就硬失败 —— 悄悄跳过一种新扩展名的表现是
+  // "某几件装备没有图"，而那正是查不出来的那种错。
+  const toBake: string[] = []
+  const ignored: string[] = []
+  const unknown: string[] = []
+  for (const relative of relatives) {
+    const ext = extname(relative).toLowerCase()
+    if (EQUIP_PICTURE_EXTENSIONS.includes(ext)) toBake.push(relative)
+    else if (EQUIP_PICTURE_IGNORED_EXTENSIONS.includes(ext)) ignored.push(relative)
+    else unknown.push(relative)
+  }
+  if (unknown.length > 0) {
+    console.error(
+      `${EQUIP_PICTURE_ROOT} 下有 ${unknown.length} 个没登记过的扩展名，` +
+        `要烘的是 ${EQUIP_PICTURE_EXTENSIONS.join(' / ')}、` +
+        `登记为不烘的是 ${EQUIP_PICTURE_IGNORED_EXTENSIONS.join(' / ')}：`,
+    )
+    for (const u of unknown) console.error(`  ${u}`)
+    process.exit(1)
+  }
+  if (toBake.length === 0) {
+    console.error(`${EQUIP_PICTURE_ROOT} 下一张烘得动的图都没有（共 ${relatives.length} 个文件）`)
+    process.exit(1)
+  }
+
+  // 与 `bakeMenuImages` 同一张表、同一个理由：产物路径把扩展名一律换成
+  // `.webp`，同一个目录下的 `x.png` 与 `x.jpg` 会写到同一个产物上，**后写的
+  // 静静盖掉前一张**。今天只烘 `.png` 一种，所以这条守卫不响；而"不响"和
+  // "撞了却没查"长得一样。
+  const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+  let bytes = 0
+  for (const relative of toBake) {
+    const cut = relative.indexOf('/')
+    const category = relative.slice(0, cut)
+    const file = relative.slice(cut + 1)
+    const id = equipPictureAssetId(category, file)
+    const product = `equip/${stripExtension(relative)}.webp`
+    const owner = claimed.get(product)
+    if (owner !== undefined) {
+      console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
+      process.exit(1)
+    }
+    claimed.set(product, id)
+    manifest[id] = product
+    bytes += toWebp(resolve(root, relative), resolve(ASSETS_OUT, product))
+  }
+
+  // 对账：六张表逐行，两个方向都验。
+  const problems: string[] = []
+  const named = new Set<string>()
+  let rows = 0
+  for (const slot of EQUIP_SLOTS) {
+    for (const item of EQUIPMENT_LISTS[slot]) {
+      rows++
+      const key = `${slot}\u0000${item.picture}`
+      const known = isKnownMissingEquipPicture(slot, item.picture)
+      if (known) named.add(key)
+      const baked = manifest[equipPictureAssetId(SLOT_FILE[slot], item.picture)] !== undefined
+      if (baked && known) {
+        problems.push(
+          `已知缺失名单过期：${equipPictureSource(slot, item.picture)} 现在烘得出来了，` +
+            `请从 equipmentPictures.ts 的 KNOWN_MISSING_EQUIP_PICTURES 删掉`,
+        )
+      } else if (!baked && !known) {
+        problems.push(`装备图 ${equipPictureSource(slot, item.picture)} 烘不出来（${slot} 表第 ${item.name} 行）`)
+      }
+    }
+  }
+  for (const m of KNOWN_MISSING_EQUIP_PICTURES) {
+    if (!named.has(`${m.slot}\u0000${m.picture}`)) {
+      problems.push(
+        `已知缺失名单里的 ${equipPictureSource(m.slot, m.picture)} 没有任何一行点名 —— 多半是抄错了字`,
+      )
+    }
+  }
+  if (problems.length > 0) {
+    console.error(`装备图对账 ${problems.length} 条：`)
+    for (const p of problems) console.error(`  ${p}`)
+    process.exit(1)
+  }
+
+  console.log(
+    `装备图 ${toBake.length} 张 → equip/*.webp（${kb(bytes)}）；` +
+      `另有 ${ignored.length} 个 ${EQUIP_PICTURE_IGNORED_EXTENSIONS.join(' / ')} 登记为不烘，` +
+      `${rows} 行数据对账通过（其中已知缺失 ${KNOWN_MISSING_EQUIP_PICTURES.length} 条）`,
+  )
+  return { baked: toBake.length, bytes }
 }
 
 /**

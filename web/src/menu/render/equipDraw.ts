@@ -15,6 +15,7 @@ import type { EquipPanelState } from '../equipPanel'
 import { rowBaseline, visibleRange } from '../scroll'
 import type { MenuHero } from '../heroes'
 import type { ScollHero } from '../types'
+import { equipPictureId } from '../equipmentPictures'
 import { equipButtonId, showValueArrowId, showValueDigitId, warningId } from './assets'
 import { scrollbarOps } from './scrollbar'
 import type { MenuDrawOp } from './drawList'
@@ -32,21 +33,18 @@ import type { AssetId } from '../../assets/ids'
  *     drawHeroStuff(g);    ← 身上那件的图 + 六个槽位的名字
  *     drawValueBar(g);     ← 当前那个人的四项属性
  *
- * ## ⚠️ 两张装备图今天画不出来，而且是**有意**留着的缺口
+ * ## 两张装备图（xl-234）
  *
  * `drawEquipment()` 那句 `g.drawImage(currentEquipment.getPicture(), …)` 与
  * `drawHeroStuff()` 那句 `g.drawImage(heroEquipment.getPicture(), …)` 取的是
- * `Equipment.picture`，路径是 **`sources/Shop/装备/<类>/<文件名>`**（89 张，
- * 2.8 MB）—— 那个目录**整个没进烘焙管线**，今天没有任何 AssetId 指得到它。
+ * `Equipment.picture`，路径是 **`sources/Shop/装备/<类>/<文件名>`**。
+ * 那一批素材已经进了烘焙管线（`equip:` 前缀，进主包），
+ * ID 与三张已知缺失的登记在 `menu/equipmentPictures.ts`。
  *
- * 补烘要动 `web/scripts/bake.ts` 与烘焙指纹，而 xl-6lo.2 的拆票表把烘焙那一层
- * 写成「**独占，不与任何票并行**」，而这一票是「唯一可并发的一层」里的一张、
- * 眼下另有三张兄弟票同时在跑。所以这里**不动烘焙器**，把缺口登记出来：
- * 落点与尺寸都在（(822,180) 与 (332,180)），少的只有那两张纹理。
- * 接手的票号是 **xl-234**（菜单装备图标进烘焙管线）。
- *
- * 这不是"忘了画"：`equipDraw.test.ts` 有一条判据盯着这个缺口 —— 那两张图
- * 一旦烘出来，判据会提醒把它们接上。
+ * ⚠️ **两句 `drawImage` 各自的条件不同，而它们又长得很像。**
+ * 选中那张在 `if(signal==1)` 那一支里、画在四个升降数字**之后**；
+ * 身上那张在 `drawHeroStuff()` 的 `if(heroEquipment!=null)` 里、画在六行
+ * 槽位名字**之前**。两段隔着 `drawWarning()`，所以 z 序不能合并。
  */
 
 /** `Color.white / red / blue`。 */
@@ -208,8 +206,13 @@ export function equipDrawOps(
     for (const [i, value] of [d.physicalPower, d.agile, d.strength, d.spirit].entries()) {
       ops.push(...showValueOps(value, SHOW_VALUE_Y + SHOW_VALUE_VGAP * i))
     }
-    // ⚠️ 选中那件的图（(822,180)）画不出来 —— 见文件头注那个登记。
+    // `g.drawImage(currentEquipment.getPicture(), x_currentImage, y_currentImage, this)`
+    // —— 升降数字那四行之后，两行说明之前。
     const spec = specOf(e.currentList, e.currentEquipment)
+    const currentPicture = equipPictureId(e.currentList, spec.picture)
+    if (currentPicture !== null) {
+      ops.push(image(currentPicture, CURRENT_PICTURE_ANCHOR.x, CURRENT_PICTURE_ANCHOR.y))
+    }
     message1 = spec.name
     message2 = equipIntroText(spec)
   } else {
@@ -229,9 +232,16 @@ export function equipDrawOps(
   if (e.warnEquipped) ops.push(image(warningId('equipped'), WARNING_X, WARNING_Y))
   if (e.warnCannotUse) ops.push(image(warningId('cannotUse'), WARNING_X, WARNING_Y))
 
-  // 5. drawHeroStuff()：身上那件的图（(332,180)，同样画不出来）+ 六行名字。
+  // 5. drawHeroStuff()：身上那件的图（(332,180)）+ 六行名字。
   //    ⚠️ 六行的次序是 武器 / 盔甲 / 头盔 / 战靴 / 护臂 / 饰品，与 `EQUIP_SLOTS`
   //    同序；y 从 `y_value-7*vgap` 起，每行 `vgap`。
+  //    图画在六行之前，因为原版那句 `drawImage` 就在方法开头。
+  if (e.heroEquipment !== null) {
+    const wornPicture = equipPictureId(e.currentList, specOf(e.currentList, e.heroEquipment).picture)
+    if (wornPicture !== null) {
+      ops.push(image(wornPicture, WORN_PICTURE_ANCHOR.x, WORN_PICTURE_ANCHOR.y))
+    }
+  }
   const pack = e.packs[e.currentPackHero]
   EQUIP_SLOTS.forEach((slot, i) => {
     const worn = pack[slot]
@@ -259,12 +269,11 @@ export function equipDrawOps(
 }
 
 /**
- * **登记：两张画不出来的装备图的落点。**
+ * 两张装备图的落点（xl-234 接上了真的贴图）。
  *
  * 原版那两句 `g.drawImage(<Equipment>.getPicture(), …)` 就画在这两处。
- * 素材（`sources/Shop/装备/`，89 张）还没进烘焙管线 —— 理由见文件头注。
- * 这两个常量存在，是为了让缺的东西**指得出位置**：接手的人不必再去读一遍
- * 原版，而 `equipDraw.test.ts` 那条判据也拿它当分母。
+ * 它们导出，是因为 `equipDraw.test.ts` 拿它们当分母：判据从原版那两句
+ * 现解出变量名，再对回 `EquipPanel` 里那三个坐标常量。
  */
 export const CURRENT_PICTURE_ANCHOR = { x: CURRENT_IMAGE_X, y: CURRENT_IMAGE_Y } as const
 export const WORN_PICTURE_ANCHOR = { x: WORN_IMAGE_X, y: CURRENT_IMAGE_Y } as const

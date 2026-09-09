@@ -3,6 +3,8 @@ import deferredBattle from '../../generated/battleAnimations.json'
 import deferredMenu from '../../generated/menuContent.json'
 import { resetDeferredBattleCache } from '../../assets/deferredBattle'
 import { resetDeferredMenuCache } from '../../assets/deferredMenu'
+import { EQUIPMENT_LISTS } from '../equipment'
+import { equipPictureId, isKnownMissingEquipPicture } from '../equipmentPictures'
 import { MENU_BACKGROUND, mouseId } from './assets'
 import { magicAnimationFrameId, magicSkillButtonId } from './magicSkills'
 import { menuAssetUrl } from './menuRenderer'
@@ -51,8 +53,24 @@ describe('菜单素材的 URL 分流', () => {
     expect(skeleton).not.toBe(deferred)
   })
 
+  it('装备图走**主包映射表**，不走任何一份按需名单（xl-234）', async () => {
+    // 分母不写死：随便挑一件身上穿得着的，它的图必须解得出 URL。
+    const spec = EQUIPMENT_LISTS.weapon.find(
+      (i) => !isKnownMissingEquipPicture('weapon', i.picture),
+    )!
+    const id = equipPictureId('weapon', spec.picture)!
+    const url = await menuAssetUrl(id)
+    expect(url).toContain('equip/')
+    // 反面：它**不在**两份按需名单里的任何一份。少了这两条，把 `equip:` 接到
+    // 按需那一支上照样绿 —— 而那条路的表现是装备图 404。
+    expect((deferredMenu as { files: Record<string, string> }).files[id]).toBeUndefined()
+    expect((deferredBattle as { files: Record<string, string> }).files[id]).toBeUndefined()
+  })
+
   it('认不出来的前缀是抛，不是猜', async () => {
-    await expect(menuAssetUrl('scene:宿舍/1.png')).rejects.toThrow(/只认 menu: 与 battle:/)
+    await expect(menuAssetUrl('scene:宿舍/1.png')).rejects.toThrow(
+      /只认 menu:、battle: 与 equip:/,
+    )
     // 手写的 menu: ID（算回去对不上）也要抛 —— 这里用一条反斜杠路径：
     // `menuAssetId` 会把它规范化成正斜杠，于是算回去与手写的那条不一样。
     await expect(menuAssetUrl('menu:奇术\\横剑摆渡1.png')).rejects.toThrow(/不是从 sources\/菜单\//)

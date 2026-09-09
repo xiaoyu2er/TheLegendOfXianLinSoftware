@@ -12,6 +12,11 @@ import { scanSceneAssets } from './sceneAssets'
 import { DEFERRED_TOP_DIRS, IMAGE_ROOT, isDeferredBattleAsset } from './battleAssets'
 import { MENU_ROOT, isDeferredMenuAsset } from './menuAssets'
 import { listFiles } from './listFiles'
+import {
+  EQUIP_PICTURE_EXTENSIONS,
+  EQUIP_PICTURE_IGNORED_EXTENSIONS,
+  EQUIP_PICTURE_ROOT,
+} from '../menu/equipmentPictures'
 import { repoPath } from '../test/repoPath'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
@@ -42,6 +47,23 @@ function drugPictureFilesInRepo(): number {
  */
 function bundledMenuFilesInRepo(): number {
   return listFiles(repoPath(MENU_ROOT)).filter((f) => !isDeferredMenuAsset(f)).length
+}
+
+/**
+ * 装备图的分母（xl-234）：`sources/Shop/装备/` 下现扫，**减去登记为不烘的
+ * 那些扩展名**。写死 59 的话，素材少一张这里会跟着烘焙器一起沉默；而把
+ * `EQUIP_PICTURE_EXTENSIONS` 当过滤器（"只数烘得动的"）等于让被守的东西自己
+ * 签字 —— 所以两份登记都参与：认得出的一律计数，认不出的**让它红**。
+ */
+function equipPictureFilesInRepo(): number {
+  const all = listFiles(repoPath(EQUIP_PICTURE_ROOT))
+  const known = (f: string) => {
+    const ext = f.slice(f.lastIndexOf('.')).toLowerCase()
+    return EQUIP_PICTURE_EXTENSIONS.includes(ext) || EQUIP_PICTURE_IGNORED_EXTENSIONS.includes(ext)
+  }
+  expect(all.filter((f) => !known(f)), '装备图目录下有没登记过的扩展名').toEqual([])
+  return all.filter((f) => EQUIP_PICTURE_EXTENSIONS.includes(f.slice(f.lastIndexOf('.')).toLowerCase()))
+    .length
 }
 
 describe('资产逻辑 ID', () => {
@@ -131,6 +153,9 @@ describe('资产逻辑 ID', () => {
     expect(ids.filter((id) => id.startsWith('drug:'))).toHaveLength(drugPictureFilesInRepo())
     // 菜单骨架素材（xl-6lo.4）。它在 `sources/菜单/` 下，不归上面任何一个分母。
     expect(ids.filter((id) => id.startsWith('menu:'))).toHaveLength(bundledMenuFilesInRepo())
+    // 装备页那两张图的素材（xl-234）。跟药品介绍图一样在 `sources/Shop/` 下，
+    // 不归上面任何一个分母；`.bmp` 那 30 个登记为不烘，见 `equipmentPictures.ts`。
+    expect(ids.filter((id) => id.startsWith('equip:'))).toHaveLength(equipPictureFilesInRepo())
     // 开始界面（xl-kaa 起，xl-4si 加了六段逐帧动画）。分母是那两份表算出来
     // 的，不是手写的数：`START_IMAGES` 的类型是 `Record<StartImageName, string>`、
     // `START_SEQUENCES` 的是 `Record<StartSequenceName, …>`，少一条 typecheck
@@ -159,6 +184,8 @@ describe('资产逻辑 ID', () => {
       // 菜单骨架素材（xl-6lo.4），在 `sources/菜单/` 下。各页自己的那 146 张
       // 不在这张表里，走 `resolveDeferredMenuAsset`。
       'menu:',
+      // 装备页那两张图的素材（xl-234），在 `sources/Shop/装备/<类>/` 下。
+      'equip:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })

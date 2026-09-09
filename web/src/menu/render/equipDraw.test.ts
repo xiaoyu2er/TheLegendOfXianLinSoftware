@@ -14,6 +14,14 @@ import {
   EQUIP_Y_START,
   WORN_IMAGE_X,
 } from '../equipPanel'
+import {
+  EQUIP_PICTURE_EXTENSIONS,
+  KNOWN_MISSING_EQUIP_PICTURES,
+  equipPictureId,
+  equipPictureSource,
+  isKnownMissingEquipPicture,
+} from '../equipmentPictures'
+import { listFiles } from '../../assets/listFiles'
 import { DEFAULT_WEAPONS } from '../defaultWeapons'
 import { stepMenu } from '../step'
 import { createMenuWorld } from '../world'
@@ -66,6 +74,25 @@ function stem(id: string): string {
 /** 三态贴图的**词干** —— 去掉前缀再去掉末尾那个 `1.png`。 */
 function buttonStem(key: Parameters<typeof equipButtonId>[0]): string {
   return stem(equipButtonId(key, 'normal')).replace('1.png', '')
+}
+
+/**
+ * 一件**放得进背包、画得出图、而且不是张小凡身上那把**的武器。
+ *
+ * 三个条件缺一不可：`user===0` 才穿得上（武器表是唯一有使用者限制的一份），
+ * 不在已知缺失名单里才画得出图，而**不同于身上那把**是"两个落点各画各的"
+ * 那条判据的正向控制 —— 实测第一件符合前两条的恰好就是 `月苗刀`，也就是
+ * 张小凡自带的那把，两张图于是撞成同一条，对调也看不出来。
+ */
+function otherWeapon() {
+  const item = EQUIPMENT_LISTS.weapon.find(
+    (i) =>
+      i.user === 0 &&
+      i.name !== DEFAULT_WEAPONS.zhang.name &&
+      !isKnownMissingEquipPicture('weapon', i.picture),
+  )
+  expect(item, '武器表里挑不出这样一件 —— 下面那几条就没有分辨力了').toBeTruthy()
+  return item!
 }
 
 function pageOps(w: MenuWorld): MenuDrawOp[] {
@@ -196,9 +223,9 @@ describe('装备页的贴图 ID，对回原版那几处读图', () => {
   })
 })
 
-describe('⚠️ 登记：两张装备图今天烘不出来', () => {
-  it('`sources/Shop/装备/` 整个没进烘焙管线，而药品那批进了', () => {
-    // 分母现扫：那批图确实存在于仓库里，只是没人烘。
+describe('两张装备图（xl-234）', () => {
+  it('`sources/Shop/装备/` 进了烘焙管线，指纹里认得到它', () => {
+    // 分母现扫：目录里有什么就该有什么进指纹。
     const dirs = readdirSync(repoPath('sources/Shop/装备'))
     expect(dirs.length, 'sources/Shop/装备 下一个目录都没有').toBeGreaterThan(0)
 
@@ -209,13 +236,17 @@ describe('⚠️ 登记：两张装备图今天烘不出来', () => {
       inputs.filter((p) => p.startsWith('sources/Shop/药品/回复类/')).length,
       '药品介绍图不在烘焙指纹里 —— 这条正向控制自己坏了',
     ).toBeGreaterThan(0)
-    expect(
-      inputs.filter((p) => p.startsWith('sources/Shop/装备/')),
-      '装备图标已经进烘焙了（xl-234）—— 把 equipDraw.ts 里那两个落点接上真的贴图，并删掉这条登记',
-    ).toEqual([])
+    // 烘出来那 59 张**每一张**都要在指纹里：改了素材不重烘，`bakeStamp.test.ts`
+    // 才红得起来。分母从磁盘算，不写死 59。
+    const png = listFiles(repoPath('sources/Shop/装备')).filter((f) =>
+      EQUIP_PICTURE_EXTENSIONS.includes(f.slice(f.lastIndexOf('.')).toLowerCase()),
+    )
+    expect(png.length, '装备图目录下一张 .png 都没有').toBeGreaterThan(0)
+    const stamped = new Set(inputs.filter((p) => p.startsWith('sources/Shop/装备/')))
+    expect(png.filter((f) => !stamped.has(`sources/Shop/装备/${f}`))).toEqual([])
   })
 
-  it('落点与原版那两句 drawImage 对得上，只是没有纹理', () => {
+  it('落点与原版那两句 drawImage 对得上，而且真的画出了图', () => {
     const src = javaSource('src/menu/EquipPanel.java')
     // ⚠️ 源码是 CRLF，跨行的那一句不能写成字面量去 `toContain`（用 `\n` 拼
     // 出来的串永远匹配不上，而"匹配不上"与"这一句没了"长得一样）。
@@ -228,16 +259,108 @@ describe('⚠️ 登记：两张装备图今天烘不出来', () => {
     })
     expect(CURRENT_PICTURE_ANCHOR).toEqual({ x: CURRENT_IMAGE_X, y: CURRENT_IMAGE_Y })
     expect(WORN_PICTURE_ANCHOR).toEqual({ x: WORN_IMAGE_X, y: CURRENT_IMAGE_Y })
-    // 缺的就是这两张：这一页画出来的图里，没有任何一张落在那两个点上。
-    const w = world([{ name: DEFAULT_WEAPONS.zhang.name, count: 1 }])
+
+    // 开局身上穿着张小凡那把（`heroEquipment` 非空），背包里放一件别的、
+    // 并且**选中它**，两张图才会同时在场。
+    const item = otherWeapon()
+    const w = world([{ name: item.name, count: 1 }])
+    selectEquipRow(w, item.name)
     const images = pageOps(w).filter((op) => op.kind === 'image')
-    // ⚠️ **正向控制**：这一页真的画了图。少了这一句，`equipDrawOps` 整个返回
-    // 空数组时下面那两条也是绿的 —— "缺口还在"与"这一层坏了"长得一模一样
-    // （/code-review 的 Standards 轴提的）。
-    expect(images.length, '这一页一张图都没画 —— 下面那两条就成了恒真').toBeGreaterThan(0)
-    for (const anchor of [CURRENT_PICTURE_ANCHOR, WORN_PICTURE_ANCHOR]) {
-      expect(images.some((op) => op.x === anchor.x && op.y === anchor.y)).toBe(false)
+    const at = (anchor: { x: number; y: number }) =>
+      images.filter((op) => op.x === anchor.x && op.y === anchor.y)
+    // 身上那把是张小凡开局自带的（`DEFAULT_WEAPONS.zhang`），图从表里查，
+    // 不在这里再抄一个文件名。
+    const worn = EQUIPMENT_LISTS.weapon.find((i) => i.name === DEFAULT_WEAPONS.zhang.name)!
+
+    // 两个落点各**恰好一张**，而且贴的正是那两件各自的图 —— 只断言"有图"
+    // 的话，两张对调是绿的（两个落点各一张，集合一模一样）。
+    expect(at(CURRENT_PICTURE_ANCHOR).map((op) => (op.kind === 'image' ? op.id : ''))).toEqual([
+      equipPictureId('weapon', item.picture),
+    ])
+    expect(at(WORN_PICTURE_ANCHOR).map((op) => (op.kind === 'image' ? op.id : ''))).toEqual([
+      equipPictureId('weapon', worn.picture),
+    ])
+    // 正向控制：这两件真的不是同一件，否则上面那两条对调也一样绿。
+    expect(item.picture).not.toBe(worn.picture)
+  })
+
+  it('没选中东西时只有身上那张，选中的那张一条都没有', () => {
+    // `if(signal==1)` 那一支之外，原版根本不走那句 drawImage。
+    const w = world()
+    const images = pageOps(w).filter((op) => op.kind === 'image')
+    expect(images.filter((op) => op.x === CURRENT_PICTURE_ANCHOR.x && op.y === CURRENT_PICTURE_ANCHOR.y)).toEqual([])
+    // 正向控制：身上那张在，所以"一条都没有"不是因为这一页没画图。
+    expect(
+      images.filter((op) => op.x === WORN_PICTURE_ANCHOR.x && op.y === WORN_PICTURE_ANCHOR.y),
+    ).toHaveLength(1)
+  })
+
+  it('z 序：选中那张在四个升降数字之后、两行说明之前；身上那张在六行名字之前', () => {
+    const item = otherWeapon()
+    const w = world([{ name: item.name, count: 1 }])
+    selectEquipRow(w, item.name)
+    const ops = pageOps(w)
+    const idx = (pred: (op: MenuDrawOp) => boolean) => ops.findIndex(pred)
+    const current = idx(
+      (op) => op.kind === 'image' && op.x === CURRENT_PICTURE_ANCHOR.x && op.y === CURRENT_PICTURE_ANCHOR.y,
+    )
+    const worn = idx(
+      (op) => op.kind === 'image' && op.x === WORN_PICTURE_ANCHOR.x && op.y === WORN_PICTURE_ANCHOR.y,
+    )
+    const lastArrow = ops.reduce(
+      (last, op, i) =>
+        op.kind === 'image' && (op.id === showValueArrowId(true) || op.id === showValueArrowId(false))
+          ? i
+          : last,
+      -1,
+    )
+    const firstSlotLabel = idx((op) => op.kind === 'text' && op.color === '#ff0000')
+    const intro = idx((op) => op.kind === 'text' && op.text === equipIntroText(item))
+    // 四个都要真的找到 —— `findIndex` 找不到给 −1，而 −1 < 任何下标，
+    // "没找到"会把下面每一条不等式都变成绿的。
+    expect([current, worn, lastArrow, firstSlotLabel, intro].filter((i) => i < 0)).toEqual([])
+    expect(lastArrow, '选中那张该画在四个升降数字之后').toBeLessThan(current)
+    expect(current, '选中那张该画在两行说明之前').toBeLessThan(intro)
+    expect(intro, '身上那张属于 drawHeroStuff，在 drawEquipment 的说明之后').toBeLessThan(worn)
+    expect(worn, '身上那张该画在六行槽位名字之前').toBeLessThan(firstSlotLabel)
+  })
+
+  it('数据点名了、仓库里却没有的那三张：一条都不画，而且名单两头都验', () => {
+    // 原版在那三处画的是 `new ImageIcon(<不存在的路径>).getImage()` —— 一个
+    // 宽度 −1 的空壳，`g.drawImage` 什么都不画。
+    expect(KNOWN_MISSING_EQUIP_PICTURES.length).toBeGreaterThan(0)
+    for (const m of KNOWN_MISSING_EQUIP_PICTURES) {
+      // 方向一：数据里真的有这么一行（名单没抄错字）。
+      expect(
+        EQUIPMENT_LISTS[m.slot].some((i) => i.picture === m.picture),
+        `${m.slot} 表里没有任何一行点名 ${m.picture}`,
+      ).toBe(true)
+      // 方向二：仓库里真的没有这个文件（数据修好了就该来销账）。
+      expect(
+        existsSync(repoPath(equipPictureSource(m.slot, m.picture))),
+        `${equipPictureSource(m.slot, m.picture)} 现在存在了 —— 从 KNOWN_MISSING_EQUIP_PICTURES 删掉`,
+      ).toBe(false)
+      // 方向三：而它旁边那个只差一个字的文件是在的 —— 否则"缺一张图"就成了
+      // "这一类整个没交付"，是另一回事。
+      expect(existsSync(repoPath(equipPictureSource(m.slot, m.note)))).toBe(true)
+      expect(equipPictureId(m.slot, m.picture)).toBeNull()
     }
+
+    // 画面上：穿着一件已知缺失的装备时，身上那个落点一张图都没有，
+    // 而这一页其余的图照画。
+    const missing = KNOWN_MISSING_EQUIP_PICTURES.find((m) => m.slot === 'weapon')!
+    const spec = EQUIPMENT_LISTS.weapon.find((i) => i.picture === missing.picture)!
+    const w = world([{ name: spec.name, count: 1 }])
+    selectEquipRow(w, spec.name)
+    const images = pageOps(w).filter((op) => op.kind === 'image')
+    expect(images.length, '这一页一张图都没画 —— 下面那条就成了恒真').toBeGreaterThan(0)
+    expect(
+      images.filter((op) => op.x === CURRENT_PICTURE_ANCHOR.x && op.y === CURRENT_PICTURE_ANCHOR.y),
+    ).toEqual([])
+    // 正向控制：身上穿着的那件（张小凡自带，不在缺失名单里）照画。
+    expect(
+      images.filter((op) => op.x === WORN_PICTURE_ANCHOR.x && op.y === WORN_PICTURE_ANCHOR.y),
+    ).toHaveLength(1)
   })
 })
 

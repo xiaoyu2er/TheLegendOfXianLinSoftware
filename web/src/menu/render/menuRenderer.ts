@@ -65,9 +65,14 @@ export async function menuAssetUrl(id: AssetId): Promise<string> {
   if (battle !== null) {
     return isDeferredBattleAsset(battle) ? resolveDeferredBattleAsset(id) : resolveAsset(id)
   }
+  // `equip:` 是第二个不带 `menu:` 前缀却要在菜单里画的（xl-234）：装备页中间
+  // 那两张装备图在 `sources/Shop/装备/<类>/` 下 —— 跟药品介绍图一样是商店
+  // 那一摊的数据，菜单只是借来画一下，`sources/菜单/` 那条边界的坐标系里
+  // 根本没有它。**它整批进主包**，所以直接走映射表，没有按需那一支。
+  if (id.startsWith('equip:')) return resolveAsset(id)
   const relative = id.startsWith('menu:') ? id.slice('menu:'.length) : null
   if (relative === null) {
-    throw new Error(`菜单渲染器只认 menu: 与 battle: 前缀的逻辑 ID，收到 ${id}`)
+    throw new Error(`菜单渲染器只认 menu:、battle: 与 equip: 前缀的逻辑 ID，收到 ${id}`)
   }
   // 反向自检：ID 是从路径算出来的，算回去必须一致。不一致说明有人手写了 ID。
   if (menuAssetId(`sources/菜单/${relative}`) !== id) {
