@@ -335,6 +335,21 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     // 派生值不入库（队伍只记四项基础属性），所以核的是**算出来的那个上限**。
     expect(derive(after).hpMax).toBe(zhang.hpMax)
     expect(derive(after).hpMax).toBeGreaterThan(derive(before).hpMax)
+
+    // ⚠️ **再开一次菜单，那件盔甲加的属性还在**。少了这一条，"开菜单时按等级
+    // 重算一遍属性"这个改法是绿的：这一场里等级没变，重算出来的正好等于
+    // 出厂那一份 —— 而玩家看到的是"翻了一次菜单，盔甲白穿了"。
+    s = advanceSession(
+      s,
+      { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) },
+      0,
+    )
+    const back = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.returnButton
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
+    expect(s.panel).toBe('scene')
+    s = openMenu(s)
+    expect(menuWorldOf(s)!.heroes[0]!.physicalPower).toBe(zhang.physicalPower)
+    expect(menuWorldOf(s)!.heroes[0]!.hpMax).toBe(zhang.hpMax)
   })
 
   it('下一场战斗读到的是队伍那一份属性，不是按等级重算的裸属性', () => {
