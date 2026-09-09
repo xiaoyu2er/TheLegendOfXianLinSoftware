@@ -253,9 +253,11 @@ describe('装备店的源码参照模型：期望值从 EquipmentShopPanel.java 
     const before = (snapshotShop(world)['message'] as { plus: string | null }).plus
     expect(before, '垫不出一句 plus').not.toBeNull()
 
-    // 把第 1 行抬到最高那一档以上，再停到它上头。
-    const row = world.equipment.rows['weapon'][1]!
-    row.price = top
+    // 把第 1 行抬到最高那一档以上，再停到它上头。⚠️ `price` 在 `ShopRow` 上是
+    // readonly（原版运行时也不改它），所以换的是**那一行整个对象**，不是拿
+    // 断言绕开类型 —— 店里那一列本身是可变数组（切栏就是整段换掉）。
+    const rows = world.equipment.rows['weapon']
+    rows[1] = { ...rows[1]!, price: top }
     hover(world, 1)
     const after = snapshotShop(world)['message'] as { plus: string | null; message: string }
     expect(
