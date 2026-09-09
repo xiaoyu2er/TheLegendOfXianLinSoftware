@@ -147,7 +147,7 @@ describe('⚠️ 登记：两张装备图今天烘不出来', () => {
     ).toBeGreaterThan(0)
     expect(
       inputs.filter((p) => p.startsWith('sources/Shop/装备/')),
-      '装备图标已经进烘焙了 —— 把 equipDraw.ts 里那两个落点接上真的贴图，并删掉这条登记',
+      '装备图标已经进烘焙了（xl-234）—— 把 equipDraw.ts 里那两个落点接上真的贴图，并删掉这条登记',
     ).toEqual([])
   })
 
