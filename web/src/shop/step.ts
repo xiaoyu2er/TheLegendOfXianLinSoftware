@@ -108,8 +108,8 @@ function shopMouseMoved(w: ShopWorld, x: number, y: number): void {
  * 它做两件事：换图标框里那张图，以及换店主说的那两三行话。
  *
  * 图标框那一半是骨架做的（xl-knp.6）；店主对白**按店分**：药店那两行
- * 在这里（xl-knp.7），装备店那三行归 xl-knp.8 —— 它往下面那个 `switch`
- * 里**加**自己那一支就是了，不必重排。
+ * 在这里（xl-knp.7），装备店那三行归 xl-knp.8 —— 它往下面那个 `if`
+ * 旁边**加**自己那一支就是了，不必重排。
  */
 function panelMoveIn(w: ShopWorld): void {
   const p = activePanel(w)
@@ -129,7 +129,7 @@ function panelMoveIn(w: ShopWorld): void {
  *     else                       messageplus="物美价廉，呵呵";
  *
  * ⚠️ **逗号后面那个空格与「Mp」的大小写都进真值**，差一个字符就红。
- * 分档的阈值与两句话都由 `dialogue.test.ts` 从 GBK 源码里现读，不手写。
+ * 分档的阈值与两句话都由 `drugShop.test.ts` 从 GBK 源码里现读，不手写。
  *
  * 回血回蓝那两个数不在 {@link ShopRow} 上 —— 店里那一列与 {@link DRUGS}
  * **逐下标对齐**（`world.ts` 的 `drugRows` 就是照它建的），所以按下标取。
@@ -211,14 +211,17 @@ function setEquipCategory(w: ShopWorld, p: EquipShopState): void {
 /**
  * `for(int i=0;i<6;i++)` —— 药店那三个买卖循环的上界是**字面量 6**，不是
  * `drugList.size()`。今天两者相等（`drug.txt` 六行），但抄成 `.length` 的话
- * 数据多一行时这里会安静地跟着变，而原版不会。判据在 `dialogue.test.ts`：
- * 那个 6 从 GBK 源码里现读，并与 {@link DRUGS} 的行数对撞。
+ * 数据多一行时这里会安静地跟着变，而原版不会。
+ *
+ * ⚠️ **导出它的理由与 {@link DRUG_EXPENSIVE_FROM} 一样**：`drugShop.test.ts`
+ * 从 GBK 源码里现读那个 6，如果只把它对到 {@link DRUGS} 的行数，这里改成 5
+ * 时那一条仍然是绿的 —— 判据必须对到**这个常量本身**。
  */
-const DRUG_TRADE_ROWS = 6
+export const DRUG_TRADE_ROWS = 6
 
 /**
  * 买 / 卖。**这一票只做药店**（xl-knp.7）；装备店归 xl-knp.8 —— 它往下面
- * 那个 `switch` 里加自己那一支。
+ * 那个 `if (p.kind !== 'drug') return` 旁边加自己那一支。
  *
  * 空着而不是抛：真值要从头跑到尾。抛的话整条剧本一步都跑不动，于是"这几组
  * 还没做"会伪装成"这一层崩了"，而 `shopTrace.test.ts` 反方向那半边判据
@@ -295,6 +298,9 @@ function drugSell(w: ShopWorld, p: DrugShopState): void {
   }
 }
 
+/** `drugList.get(i/2-1)` 里那个 `-1`。装备店那一支是 `-4`（`base` 是 9）。 */
+const DRUG_ROW_OFFSET = 1
+
 /**
  * 加 / 减。**这一票只做药店**；装备店归 xl-knp.8。
  *
@@ -315,8 +321,8 @@ function stepPurchaseButtons(w: ShopWorld): void {
   if (p.kind !== 'drug') return
   const base = stepBase('drug')
   for (let i = base; i < p.buttons.length; i += 2) {
-    // 原版是 `drugList.get(i/2-1)`（整除）。`base` 是 3，所以偏移是 1。
-    const row = p.rows[Math.floor(i / 2) - Math.floor(base / 2)]!
+    // 原版是 `drugList.get(i/2-1)`（整除）—— `base` 是 3，所以偏移就是 1。
+    const row = p.rows[Math.floor(i / 2) - DRUG_ROW_OFFSET]!
     if (p.buttons[i]!.isclicked) {
       w.music.push('click.wav')
       if (row.purchase > 0) row.purchase--

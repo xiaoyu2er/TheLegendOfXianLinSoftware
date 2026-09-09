@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { DRUGS } from '../battle/drugs'
 import { javaSource } from '../test/javaSource'
+import { BUY_BOX } from './layout'
+import { hitCenter } from './test/hitCenter'
 import { snapshotShop } from './snapshot'
 import { DRUG_EXPENSIVE_FROM, DRUG_TRADE_ROWS, stepShop } from './step'
 import { SHOP_TRACE_NAMES, readShopTrace, replayShop, shopInputsOf } from './trace'
@@ -108,6 +110,67 @@ describe('药店的源码参照模型：期望值从 ShopPanel.java 现读', () 
       }
     }
     expect(seen, '真值里药店店主的第二行只取到了这几句').toEqual(new Set([expensive, cheap]))
+  })
+
+  /**
+   * ⚠️ **`drugBuy` 注释里 ⚠️ 第 2 条自称"照抄"的那一句，原来一条判据都没有。**
+   *
+   * 退款循环里 `temp` 是**重算**的，而 `stock` 已经被上面那个买入循环减过了
+   * —— 买的件数超过原存货一半时就**退不干净**（原版缺陷，ADR-0001 要求照抄）。
+   * 三条真值都没走到那一路，所以把它"顺手修好"成一次退干净时**全套判据仍然
+   * 全绿**（/code-review Spec 轴实测）。这与 6000 那道坎是同一个形状的洞。
+   *
+   * 补两条，两个角度各一条：源码那一侧核**两句 `temp` 逐字相同**（这就是
+   * "重算"的全部内容），状态层那一侧核它**真的退不干净**。
+   */
+  it('⚠️ 退款循环里的 temp 与买入循环里的逐字相同 —— 那就是"重算"', () => {
+    const temps = [...SET_BUTTON.matchAll(/int temp=Math\.min\((.+?)\);/g)].map((m) =>
+      m[1]!.trim(),
+    )
+    // 分母现数：解析不出来时下面两条是恒真的。买 / 退款 / 卖，三句。
+    expect(temps.length, 'setButton 里那几句 int temp=Math.min(...) 没解析出来').toBe(3)
+    const [buyTemp, undoTemp, sellTemp] = temps as [string, string, string]
+    // 买与退款那两句**一字不差** —— 退款没有换用"买之前的存货"，所以它重算。
+    expect(undoTemp, '退款循环的 temp 与买入循环的不一样了').toBe(buyTemp)
+    // 卖那一句必须**不同**（它比的是背包，不是店里）；相同说明界标切错了段。
+    expect(sellTemp, '卖出那一句与买入的一样 —— 界标多半切错了').not.toBe(buyTemp)
+  })
+
+  it('⚠️ 买超过原存货一半又被拒时**退不干净** —— 金钱、存货与背包都回不去', () => {
+    const world = replayShop(readShopTrace(SHOP_TRACE_NAMES[0]!))
+    world.active = 'drug'
+    // 挑最贵那一行，把这一单摆成 `purchase > stock - purchase`：买入循环
+    // 成交 purchase 件、存货只剩 stock-purchase，退款那一句于是只退得回
+    // stock-purchase 件。数字随便挑，判据不是它们，是"回不去"。
+    const row = world.drug.rows[DRUGS.length - 1]!
+    const [stock, purchase] = [4, 3]
+    expect(purchase, '这一单没摆成"超过原存货一半"，下面几条就成了恒真').toBeGreaterThan(
+      stock - purchase,
+    )
+    row.stock = stock
+    row.purchase = purchase
+    const coins0 = world.coins
+    const pack0 = world.pack.drugs[DRUGS.length - 1]!
+    // 钱确实不够 —— 否则走的是成交那一路，下面核的就不是这条缺陷了。
+    expect(row.price * purchase).toBeGreaterThan(coins0)
+
+    // 按下再松开 —— `setButton` 认的是 `isclicked`，只松开一下什么都不会发生
+    // （而"什么都没发生"与"退干净了"在下面几条上长得一样，所以这两步不能省）。
+    const [bx, by] = hitCenter(BUY_BOX)
+    stepShop(world, [{ e: 'press', x: bx, y: by }])
+    stepShop(world, [{ e: 'release', x: bx, y: by }])
+    // 空转要响：这一下真的点着了买入按钮。
+    expect(world.music).toEqual(['Clip986.wav'])
+
+    // 店主那句话变了（这一半是"被拒"的正常表现）……
+    expect(world.drug.message).toBe('哎呀,小兄弟,你的钱不顾了,要省着点花啊')
+    expect(world.drug.messagePlus).toBeNull()
+    // ……而金钱、存货与背包**一个都没回到原位**。退干净的实现会让这三条全红。
+    expect(world.coins, '金钱退回原位了 —— 有人把那个原版缺陷"修好"了').not.toBe(coins0)
+    expect(row.stock, '存货退回原位了').not.toBe(stock)
+    expect(world.pack.drugs[DRUGS.length - 1], '背包退回原位了').not.toBe(pack0)
+    // 而 `purchase` 照样清零（那一句在最外面，买成了没成都清）。
+    expect(row.purchase).toBe(0)
   })
 
   it('买卖那几个循环的上界是**字面量**，且与 drug.txt 的行数相等', () => {
