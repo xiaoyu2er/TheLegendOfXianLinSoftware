@@ -447,6 +447,14 @@ describe('滚动条：翻页这件事真的做得成', () => {
     const above = { x: nowBar.track.x + 1, y: nowBar.track.y + 1 }
     stepMenu(w, [{ e: 'press', ...above }])
     expect(e.scroll).toBe(0)
+
+    // ⚠️ 槽的命中是**左上闭、右下开**：右边界外那一列不算。这一条是实测补的
+    // —— 把 `inRect` 改回两头闭区间，上面那几句全是绿的，而那时 8 像素宽的槽
+    // 会命中 9 列、越过量出来的框右内沿一列。
+    const past = { x: bar.track.x + bar.track.width, y: bar.thumb.y + bar.thumb.height + 5 }
+    expect(past.x, '槽的右边界外那一列').toBe(EQUIP_LIST_VIEW.box.right + 1)
+    stepMenu(w, [{ e: 'press', ...past }])
+    expect(e.scroll, '槽外一列按下去也翻页了').toBe(0)
   })
 
   it('一格滚轮翻几行只看方向，不看 deltaY 的大小', () => {
@@ -533,6 +541,34 @@ describe('滚动条：够得着那一半没被改掉', () => {
       DRUG_LIST_X,
       DRUG_LIST_X + DRUG_HIT_W,
     ])
+  })
+
+  /**
+   * ⚠️ 物品页那两界得**自己走一遍**，不能靠上面那条 `toEqual`：那一条核的是
+   * 「`DRUG_LIST_VIEW` 里存的是不是那两个数」，而命中判定读没读它是另一回事。
+   * 实测过 —— 把 `drugCheckMoveIn` 的右界改成 `hitRight + 400`，全套判据是
+   * 绿的（这个文件里所有物品页的落点都取 `x+1`，一次都没碰过右边那条线）。
+   *
+   * ⚠️ 命中带**比画出来的那一行窄**：数量那一列画在 `x+180`，落在带外。原版
+   * 就是这样（`drugPanel.ts` 的 `DRUG_HIT_W`），所以右界那一下不该选中任何东西。
+   */
+  it('物品页命中带的左右两界也没动过', () => {
+    const w = replayMenu(trace)
+    w.panel = 'thingPanel'
+    const d = drugOf(w)
+    const drugs = visibleDrugs(w.drugPack)
+    expect(drugs.length).toBeGreaterThan(0)
+    const y = rowBandTop(DRUG_LIST_VIEW, 0, 0) + Math.floor(DRUG_LIST_VIEW.rowHeight / 2)
+
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_VIEW.hitLeft, y }])
+    expect(d.currentDrug, '左界上不该选中').toBe(null)
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_VIEW.hitRight, y }])
+    expect(d.currentDrug, '右界上不该选中').toBe(null)
+    // 数量那一列的落点（名字右边 180）在命中带外面 —— 原版的窄命中带。
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 180, y }])
+    expect(d.currentDrug, '数量那一列落在命中带外面').toBe(null)
+    stepMenu(w, [{ e: 'move', x: DRUG_LIST_VIEW.hitLeft + 1, y }])
+    expect(d.currentDrug).toBe(drugs[0]!.name)
   })
 })
 
