@@ -357,13 +357,26 @@ describe('菜单那六层绘制', () => {
       it('没选中的时候一张插图都不画 —— 原版那句在 if(currentDrug!=null) 里', () => {
         const w = thing()
         expect(w.panels.thingPanel.drug!.currentDrug).toBeNull()
-        expect(pageOps(w).filter((op) => op.kind === 'image' && op.id.startsWith('drug:'))).toEqual(
-          [],
-        )
+        const ops = pageOps(w)
+        // ⚠️ **先立一个正面锚再断言"空"**：光断言 filter 出空数组的话，
+        // `drawDrugPanel` 整个不画也照样绿 —— "找不到东西"成了通过条件
+        // （/code-review 标准轴提的，dispatch.md 那一族）。没选中时这一页
+        // 该画的东西是「没药了...」那行说明。
+        //
+        // 实测这条对照（xl-6lo.15 的 T9）：给 `drawDrugPanel` 头上加一句
+        // `if (d.currentDrug === null) return`，**新写法红、旧写法在同一条
+        // 篡改下是绿的**。
+        expect(ops.map((op) => (op.kind === 'text' ? op.text : ''))).toContain('没药了...')
+        expect(ops.filter((op) => op.kind === 'image' && op.id.startsWith('drug:'))).toEqual([])
       })
 
       it('换一瓶药就换一张图 —— 六种药的文件名各不相同', () => {
+        // 这一条是分辨力的前提：六张图重名的话，"永远画第一张"与"跟着选中走"
+        // 就分不出来了。
         expect(new Set(DRUGS.map((d) => d.picture)).size).toBe(DRUGS.length)
+        // ⚠️ 按名字找，不写 `DRUGS[5]` —— 下标 5 是"表里第 6 行恰好是灵神天药"，
+        // 那是个会过期的事实（/code-review 标准轴提的）。
+        const last = DRUGS.find((d) => d.name === '灵神天药')!
         const w = createMenuWorld({
           party: ['zhang'],
           fullHeal: true,
@@ -382,8 +395,7 @@ describe('菜单那六层绘制', () => {
         stepMenu(w, [
           { e: 'move', x: DRUG_LIST_X + 1, y: DRUG_LIST_Y + DRUG_ROW_H - DRUG_ROW_H / 2 },
         ])
-        expect(idOfPicture()).toBe(drugPictureId(DRUGS[5]!))
-        expect(drugPictureId(DRUGS[5]!)).not.toBe(drugPictureId(DRUGS[0]!))
+        expect(idOfPicture()).toBe(drugPictureId(last))
       })
 
       it('次序照原版：清单画完、三行说明之前', () => {
