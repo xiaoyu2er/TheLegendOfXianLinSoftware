@@ -1,5 +1,5 @@
 {
-  "version": "87781eefae929ed5",
+  "version": "a67bc9de19722aa5",
   "files": {
     "menu:天书/主人公4人2.png": "menu-content/天书/主人公4人2.webp",
     "menu:天书/关1.png": "menu-content/天书/关1.webp",
@@ -115,10 +115,6 @@
     "menu:奇术/龙翔九天1.png": "menu-content/奇术/龙翔九天1.webp",
     "menu:奇术/龙翔九天2.png": "menu-content/奇术/龙翔九天2.webp",
     "menu:奇术/龙翔九天3.png": "menu-content/奇术/龙翔九天3.webp",
-    "menu:物品/使用1.png": "menu-content/物品/使用1.webp",
-    "menu:物品/使用2.png": "menu-content/物品/使用2.webp",
-    "menu:物品/使用3.png": "menu-content/物品/使用3.webp",
-    "menu:物品/物品3.png": "menu-content/物品/物品3.webp",
     "menu:装备/上升.png": "menu-content/装备/上升.webp",
     "menu:装备/下降.png": "menu-content/装备/下降.webp",
     "menu:装备/不能使用.png": "menu-content/装备/不能使用.webp",

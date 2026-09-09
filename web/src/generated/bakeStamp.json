@@ -1,13 +1,13 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "83ba5927fa6fbea5cc69c69bdf3a9757ff92e5309804da3c9d7f5d337af68541",
+    "web/scripts/bake.ts": "b654eee2747e198bfcb69d7112369dcfd6dd59918ad44b233e7a4858ba8c4842",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
     "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
     "web/src/assets/ids.ts": "1cd2197cd641610dff894e41172b6f53b3abf8145c7043f8e2476085c88bec23",
     "web/src/assets/knownMissing.ts": "38e78118acacd0c676a82b159b3410e6698ffab10d88155257dc9a3d087ca3f5",
     "web/src/assets/listFiles.ts": "fb1c2ddfb2d2834afbcd527b014bdb42e8e246182aa39f6b66b99a93b0698dec",
-    "web/src/assets/menuAssets.ts": "4232c30932a5b9cd55f218c59a21e0e114f74a8219cefffbaea8e6777e43f0d2",
+    "web/src/assets/menuAssets.ts": "09dbaedb21455d93d67a1617a57fe4c8d9e58f6761e22092899cb96ced882a18",
     "web/src/assets/path.ts": "fd7bca3604aa4326356af9dce184108035bfef2606238377ebe498c440229077",
     "web/src/assets/sceneAssets.ts": "39b03006ebf09d27b466217cf26f089baee67ecc554e5f4a49b16de480c79952",
     "web/src/battle/drugs.ts": "c1f2f869cc580584b3e43f0a8ad27a8eaa3183e686d8e67996dc067d7e4ea48e",

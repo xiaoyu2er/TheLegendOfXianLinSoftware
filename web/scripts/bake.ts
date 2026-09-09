@@ -602,8 +602,9 @@ function bakeBattleImages(
  * `public/menu-content/`（Vite 原样拷贝，不产生 JS 模块，运行时按名单动态取）。
  *
  * **分母是现扫出来的**：`sources/菜单/` 下有什么就烘什么，不写死目录名单、
- * 也不写死数量。原版 `src/menu/` 的 15 个文件里有 159 条各自拼路径的字面量
- * （`"sources/菜单/天书/存档1.png"`、`"sources/菜单/鼠标图/"+i+".png"`……），
+ * 也不写死数量。原版 `src/menu/` 的 15 个文件里有 160 处各自拼路径的字面量
+ * —— 159 条是完整带引号的（`"sources/菜单/天书/存档1.png"`），还有 1 条是拼接
+ * 出来的（`"sources/菜单/鼠标图/"+i+".png"`，`Mouse.java:31`），
  * 抄一份规则表过来等于把那批字面量重写一遍，而抄漏一条的表现是"某颗按钮
  * 取不到图"。扫目录没有这个问题：少一个文件是源素材少了，`git status`
  * 立刻看得见。
@@ -641,6 +642,14 @@ function bakeMenuImages(manifest: Record<string, string>): {
   let deferred = 0
   let deferredBytes = 0
 
+  // **两个分支都直接调 `toWebp`，一个档位参数都不传**，理由与 `battleWebp` 那个
+  // 包装相反：那边要包，是因为它有两个数（`BATTLE_LOSSY_QUALITY` / `_SNS`）要
+  // 钉住，两处各传一遍就可能分家；这边一个数都没有，包一层就只是转发，而一个
+  // 只会转发的函数读起来像"这里有个档位在管着"，其实什么都没管（`/code-review`
+  // Standards 轴点名的 Middle Man）。189 张全是 PNG，走 `toWebp` 的 `-lossless`
+  // 分支；明天真进来一张 JPG，两处都会走 `DEFAULT_LOSSY_QUALITY`，**因为两处
+  // 都没传** —— 分家不可能发生。
+  //
   // 与战斗那趟同一张表、同一个理由：`menuProductPath` 把扩展名一律换成
   // `.webp`，同一个目录下的 `x.png` 与 `x.jpg` 会写到同一个产物上，**后写的
   // 静静盖掉前一张**。今天 189 张全是 PNG，所以这条守卫不响；而"不响"和
@@ -659,14 +668,14 @@ function bakeMenuImages(manifest: Record<string, string>): {
     claimed.set(product, id)
     if (isDeferredMenuAsset(relative)) {
       const destination = resolve(publicDeferred, product.slice(MENU_DEFERRED_PUBLIC_DIR.length + 1))
-      deferredBytes += menuWebp(source, destination)
+      deferredBytes += toWebp(source, destination)
       deferredFiles[id] = product
       version.update(product).update('\0').update(readFileSync(destination))
       deferred++
       continue
     }
     manifest[id] = product
-    bundledBytes += menuWebp(source, resolve(ASSETS_OUT, product))
+    bundledBytes += toWebp(source, resolve(ASSETS_OUT, product))
     bundled++
   }
 
@@ -691,19 +700,6 @@ function bakeMenuImages(manifest: Record<string, string>): {
       `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
   )
   return { bundled, bundledBytes }
-}
-
-/**
- * 一张菜单素材转 WebP。存在的理由与 `battleWebp` 逐字相同：让**两个**调用点
- * （进主包的与按需的）不可能各自传一个档位 —— 两处传得不一样这件事的表现是
- * "某一批素材悄悄比另一批糊"，没有任何检查看得见。
- *
- * 今天 189 张全是 PNG，走 `toWebp` 的 `-lossless` 分支，所以档位参数一个都没
- * 传：在这里重抄一遍 `DEFAULT_LOSSY_QUALITY` 的话，改了默认值这一路会悄悄
- * 不跟着变。
- */
-function menuWebp(source: string, destination: string): number {
-  return toWebp(source, destination)
 }
 
 /**

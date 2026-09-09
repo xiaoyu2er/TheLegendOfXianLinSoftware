@@ -30,16 +30,16 @@ import type { DeferredMenuManifest } from './menuAssets'
  * "烘焙器扫不到任何文件"与"全烘完了"长得一模一样 —— 两边都是零个差异。
  *
  * 边界本身另有一条判据：`MENU_SKELETON_TOP_DIRS` 是一份**手签的登记**，而它
- * 记的那件事（哪几个目录是每一页都要画的）在原版 `menu/FatherPanel.paint()`
- * 里有独立答案。两者对撞，见「边界与原版的共用绘制对得上」那一条。
+ * 记的那件事（打开菜单那一刻要画哪几个目录）在原版里有独立答案 ——
+ * `FatherPanel.paint()` 的三行共用绘制，加上 `MenuPanel` 构造器指定的首页那一页
+ * 的背景。两者对撞，见「边界与原版的第一帧对得上」那一条。
  *
  * ⚠️ **那一条不是装饰，而这是量出来的，不是推的。** 上面那批双向判据的分母
  * 全都现扫自磁盘，所以一个**改了名单又重烘过**的错边界能整批骗过它们：
  * 2026-09-08 实测，把 `MENU_SKELETON_TOP_DIRS` 去掉 `鼠标图` 再跑一次
- * `pnpm bake`（产物随之变成 35 / 154），这一档 14 条里 **12 条照绿**
- * —— 只有「边界与原版的共用绘制对得上」和「只放行顶层目录逐字相等的那些」
- * 会红。换句话说，少了这一条，边界画错这件事在这里**只由几个手写的例子
- * 兜着**。
+ * `pnpm bake`（产物随之变成 39 / 150），这一档 15 条里 **13 条照绿** —— 只有
+ * 「边界与原版的第一帧对得上」和「只放行顶层目录逐字相等的那些」会红。
+ * 换句话说，少了这一条，边界画错这件事在这里**只由几个手写的例子兜着**。
  */
 
 const DEFERRED = deferred as DeferredMenuManifest
@@ -147,38 +147,78 @@ describe('打包边界', () => {
     )
   })
 
-  it('边界与原版的共用绘制对得上', () => {
+  it('边界与原版的第一帧对得上', () => {
     // `MENU_SKELETON_TOP_DIRS` 是一份**手签的登记**（dispatch.md 纪律 3）：
-    // "哪几个目录是每一页都要画的"要人去读源码才答得出，按目录名或按体积自动推
-    // 等于让被守的东西自己签字。这一条给它一个**独立的**答案来对撞 ——
-    // 从原版 `FatherPanel.paint()` 现读。
+    // "打开菜单那一刻要画哪几个目录"要人去读源码才答得出，按目录名或按体积自动
+    // 推等于让被守的东西自己签字。这一条给它一个**独立的**答案来对撞 ——
+    // 从原版现读，而且**两个从句各读一遍**。
+    const tops = new Set<string>()
+    let literals = 0
+    const dirsUsedBy = (file: string): string[] => {
+      const found: string[] = []
+      for (const m of javaSource(file).matchAll(/sources\/菜单\/([^/"]+)\//g)) {
+        found.push(m[1] as string)
+        tops.add(m[1] as string)
+        literals++
+      }
+      return found
+    }
+
+    // 从句一：`FatherPanel.paint()` 里那三行**四页共用**的绘制。
     const father = javaSource('src/menu/FatherPanel.java')
-    // 三行共用绘制。写死界标，且先断言它们真的在 —— GBK 读成 UTF-8 时正则是
-    // 零匹配，而零匹配的逐行对比恒真。
     const shared: Record<string, string> = {
       'menuPanel.command.drawCommand': 'src/menu/Command.java',
       'scoll.drawScoll': 'src/menu/Scoll.java',
       'mouse.drawMouse': 'src/menu/Mouse.java',
     }
+    // 写死界标，且先断言它们真的在 —— GBK 读成 UTF-8 时正则是零匹配，而零匹配
+    // 的逐行对比恒真。
     for (const call of Object.keys(shared)) expect(father, call).toContain(`${call}(`)
     // 各页自己的那两行也得在：少了它们，"共用"就不是一个有内容的概念了。
     for (const own of ['drawSpecialImage', 'drawThisPanel']) {
       expect(father, own).toContain(`${own}(bufferedGraphics)`)
     }
+    // 而**背景是 paint() 的第一句** —— 这正是从句二存在的理由：它不在手上，
+    // 第一帧就不是原版那一帧。这一行也断言，别让它哪天被挪到后面还没人知道。
+    expect(father).toContain('drawImage(backgroundImage, 0, 0, this)')
+    const sharedTops = new Set<string>()
+    for (const file of Object.values(shared)) for (const d of dirsUsedBy(file)) sharedTops.add(d)
 
-    // 那三个类各自吃 `sources/菜单/` 下哪几个顶层目录。
-    const tops = new Set<string>()
-    let literals = 0
-    for (const file of Object.values(shared)) {
-      for (const m of javaSource(file).matchAll(/sources\/菜单\/([^/"]+)\//g)) {
-        tops.add(m[1] as string)
-        literals++
-      }
-    }
-    // 一条都没匹配到时下面那句 `toEqual` 会红，但红在"空数组 vs 三个"上，
+    // 从句二：打开菜单看到的是哪一页，那一页的背景在哪个目录。三跳都从源码读，
+    // 一跳都不许猜：
+    //   MenuPanel 的构造器末尾 currentPanel=<字段>
+    //   → 那个字段 = new <类>(...)
+    //   → 那个类的 backgroundImage 路径
+    const menuPanel = javaSource('src/menu/MenuPanel.java')
+    const firstFields = [...menuPanel.matchAll(/currentPanel\s*=\s*(\w+)\s*;/g)].map(
+      (m) => m[1] as string,
+    )
+    // 两个构造器各写一遍。零匹配（或者哪天多出一个赋值点、两个构造器给的不是
+    // 同一页）都得响：那时"首页是哪一页"就不再是一个有答案的问题了。
+    expect(firstFields.length).toBeGreaterThan(0)
+    expect([...new Set(firstFields)]).toHaveLength(1)
+    const firstField = firstFields[0] as string
+    const ctor = menuPanel.match(new RegExp(`${firstField}\\s*=\\s*new\\s+(\\w+)\\s*\\(`))
+    expect(ctor, `${firstField} 是 new 出来的哪个类`).not.toBeNull()
+    const firstPanelClass = (ctor as RegExpMatchArray)[1] as string
+    const background = javaSource(`src/menu/${firstPanelClass}.java`).match(
+      /backgroundImage\s*=[^;]*?"(sources\/菜单\/[^"]+)"/,
+    )
+    expect(background, `${firstPanelClass} 的 backgroundImage`).not.toBeNull()
+    const firstTop = ((background as RegExpMatchArray)[1] as string)
+      .slice(`${MENU_ROOT}/`.length)
+      .split('/')[0] as string
+    tops.add(firstTop)
+    literals++
+
+    // 一条都没匹配到时下面那句 `toEqual` 会红，但红在"空数组 vs 四个"上，
     // 读起来像边界写错了。分母先自己响一次。
     expect(literals).toBeGreaterThan(0)
     expect([...tops].sort()).toEqual([...MENU_SKELETON_TOP_DIRS].sort())
+    // 首页那个目录必须**确实**是从句一之外多出来的一个 —— 它要是本来就在共用
+    // 那三个里，从句二就是个恒真的摆设，而它读起来仍然像在守什么。
+    expect(sharedTops.has(firstTop), `${firstTop} 既是共用目录又是首页目录`).toBe(false)
+    expect(sharedTops.size).toBe(tops.size - 1)
   })
 
   it('按需素材一张都没进主包的产物目录', () => {
@@ -300,9 +340,12 @@ describe('路径规范化', () => {
   it('只放行顶层目录逐字相等的那些，不是前缀匹配', () => {
     expect(isDeferredMenuAsset('天书/存档1.png')).toBe(true)
     expect(isDeferredMenuAsset('菜单/标题栏.png')).toBe(false)
+    // 首页那个目录（从句二）也在主包里。
+    expect(isDeferredMenuAsset('物品/物品3.png')).toBe(false)
     // 将来真出现一个 `菜单说明/` 目录，前缀匹配会把它一起放进主包。
     expect(isDeferredMenuAsset('菜单说明/x.png')).toBe(true)
     expect(menuProductPath('装备/装备4.png')).toBe(`${MENU_DEFERRED_PUBLIC_DIR}/装备/装备4.webp`)
     expect(menuProductPath('鼠标图/1.png')).toBe(`${MENU_BUNDLED_DIR}/鼠标图/1.webp`)
+    expect(menuProductPath('物品/物品3.png')).toBe(`${MENU_BUNDLED_DIR}/物品/物品3.webp`)
   })
 })
