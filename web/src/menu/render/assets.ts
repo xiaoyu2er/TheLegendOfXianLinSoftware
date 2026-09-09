@@ -1,4 +1,5 @@
 import { menuAssetId } from '../../assets/menuAssets'
+import { magicAnimationFrameIds, magicButtonIds } from './magicSkills'
 import type { AssetId } from '../../assets/ids'
 import type { ButtonImage, MenuPanelName, MenuTabKey, MenuWorld } from '../types'
 import type { FuncMainKey, FuncSubKey } from '../funcButtons'
@@ -131,5 +132,16 @@ export function menuTextureIds(w: MenuWorld): AssetId[] {
   // 天书页那一排按钮 —— 出菜单唯一那条路（「返回」）就在上面，**画不出来
   // 等于玩家出不去**（/code-review 的 Spec 轴提的）。
   if (w.panel === 'funcPanel') ids.push(...funcButtonIds())
+  // 奇术页那十五颗技能按钮，外加**正在放的那一条动画整条的帧**（xl-6lo.11）。
+  //
+  // ⚠️ 整条一起推，不是只推当前那一帧：`load()` 是 async 而 `draw()` 不是，
+  // 逐帧现取的话动画每一拍都要等一次网络 —— 表现是"动画卡成幻灯片"，而
+  // 每一帧最终都画得出来，看不出是漏了什么。整条 37 帧一次要齐才跟得上
+  // 100 ms 一拍。
+  const magic = w.panels.magicPanel.magic
+  if (w.panel === 'magicPanel' && magic) {
+    ids.push(...magicButtonIds())
+    if (magic.current) ids.push(...magicAnimationFrameIds(magic.current.hero, magic.current.skill))
+  }
   return ids
 }

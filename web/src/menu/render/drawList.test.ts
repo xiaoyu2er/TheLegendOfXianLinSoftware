@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
 import { MENU_LAYERS, menuDrawList } from './drawList'
 import type { MenuDrawOp, MenuLayer } from './drawList'
-import { MENU_BACKGROUND, funcButtonId, mouseId, tabId } from './assets'
+import { MENU_BACKGROUND, funcButtonId, menuTextureIds, mouseId, tabId } from './assets'
+import { MAGIC_SKILL_DESCRIPTIONS, magicAnimationFrameId, magicSkillButtonId } from './magicSkills'
+import {
+  MAGIC_BUTTON_H,
+  MAGIC_BUTTON_W,
+  MAGIC_BUTTON_X,
+  magicButtonY,
+} from '../magic'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
 import { SCOLL_HEROES } from '../types'
 import { MENU_HERO_ORDER } from '../heroes'
@@ -142,10 +149,12 @@ describe('菜单那六层绘制', () => {
     )
   })
 
-  it('别的三页 page 层是空的 —— 那三页归 xl-6lo.9 / .10 / .11', () => {
+  it('物品页与装备页的 page 层还是空的 —— 那两页归 xl-6lo.10 / .9', () => {
     const w = world()
     expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
-    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+    // 装备页。
+    stepMenu(w, [{ e: 'press', x: 515, y: 62 }])
+    expect(w.panel).toBe('equipPanel')
     expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
   })
 
@@ -198,5 +207,104 @@ describe('菜单那六层绘制', () => {
     expect(
       menuDrawList(world(), '找到大师兄').find((op) => op.kind === 'text' && op.layer === 'command'),
     ).toMatchObject({ text: '当前任务:找到大师兄' })
+  })
+})
+
+/**
+ * 奇术页那一层（xl-6lo.11）。
+ *
+ * 落点与"哪一颗亮着"由状态层说了算，这里核的是**它照着 `drawThisPanel()`
+ * 摊出来的那一串**：按钮在前、说明两行、动画一帧在后。
+ */
+describe('奇术页的 page 层', () => {
+  /** 点开奇术页并放第一招。坐标从原版的命中判据算，不手写。 */
+  function playing(): MenuWorld {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+    stepMenu(w, [{ e: 'release', x: 619, y: 62 }])
+    const x = MAGIC_BUTTON_X - 15 + Math.floor(MAGIC_BUTTON_W / 2)
+    const y = magicButtonY(0) - 6 + Math.floor(MAGIC_BUTTON_H / 2)
+    stepMenu(w, [{ e: 'press', x, y }])
+    if (!w.panels.magicPanel.magic!.current) throw new Error('没点中第一颗技能按钮')
+    return w
+  }
+
+  it('只画得出来那几颗 —— 张小凡两个 skillNumber 只亮一颗（原版那个重叠的循环）', () => {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+    const page = menuDrawList(w).filter((op) => op.layer === 'page')
+    expect(page).toEqual([
+      {
+        kind: 'image',
+        layer: 'page',
+        // 贴的是**常态**那一张：切页那一按落在页签上，技能按钮那一组
+        // `isPressedButton` 没命中，而没命中时原版把贴图拨回 normal。
+        id: magicSkillButtonId(1, 1, 'normal'),
+        x: MAGIC_BUTTON_X,
+        y: magicButtonY(0),
+      },
+    ])
+  })
+
+  it('放着动画时：按钮在前，说明两行、动画一帧在后', () => {
+    const w = playing()
+    const anim = w.panels.magicPanel.magic!.current!
+    const page = menuDrawList(w).filter((op) => op.layer === 'page')
+    const lines = MAGIC_SKILL_DESCRIPTIONS[1][anim.skill - 1]!
+    expect(page).toEqual([
+      {
+        kind: 'image',
+        layer: 'page',
+        id: magicSkillButtonId(1, 1, 'pressed'),
+        x: MAGIC_BUTTON_X,
+        y: magicButtonY(0),
+      },
+      { kind: 'text', layer: 'page', text: lines[0], x: 538, y: 202, size: 27, color: '#ffffff' },
+      { kind: 'text', layer: 'page', text: lines[1], x: 538, y: 236, size: 27, color: '#ffffff' },
+      {
+        kind: 'image',
+        layer: 'page',
+        id: magicAnimationFrameId(anim.hero, anim.skill, anim.code),
+        x: 102,
+        y: 10,
+      },
+    ])
+  })
+
+  it('动画那一帧跟着 code 走 —— 推一拍换一张', () => {
+    const w = playing()
+    const anim = w.panels.magicPanel.magic!.current!
+    const frameOf = () => {
+      const ops = menuDrawList(w).filter((op) => op.layer === 'page' && op.kind === 'image')
+      return (ops[ops.length - 1] as { id: string }).id
+    }
+    expect(frameOf()).toBe(magicAnimationFrameId(anim.hero, anim.skill, 1))
+    stepMenu(w, [{ e: 'tick' }])
+    expect(frameOf()).toBe(magicAnimationFrameId(anim.hero, anim.skill, 2))
+  })
+
+  it('没有动画在放时，说明一个字都不画', () => {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+    expect(w.panels.magicPanel.magic!.current, '切进这一页那一按会把动画清空').toBeNull()
+    expect(menuDrawList(w).filter((op) => op.layer === 'page' && op.kind === 'text')).toEqual([])
+  })
+
+  it('这一帧的贴图名单里有十五颗按钮，动画的帧整条一起要', () => {
+    const w = playing()
+    const anim = w.panels.magicPanel.magic!.current!
+    const ids = menuTextureIds(w)
+    // 清单上出现的每一张都必须在名单里 —— 少一张的表现是渲染器当场抛，
+    // 而"少推了一条"与"这一帧本来就不画它"在别处看不出来。
+    for (const op of menuDrawList(w)) {
+      if (op.kind === 'image') expect(ids, `名单里没有 ${op.id}`).toContain(op.id)
+    }
+    // 整条都在（不是只有当前那一帧）。
+    expect(ids).toContain(magicAnimationFrameId(anim.hero, anim.skill, anim.length))
+  })
+
+  it('不在奇术页时，名单里一张技能按钮都没有', () => {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    expect(menuTextureIds(w)).not.toContain(magicSkillButtonId(1, 1, 'normal'))
   })
 })

@@ -11,6 +11,12 @@ import {
   tabId,
 } from './assets'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
+import { MAGIC_HEROES } from '../magic'
+import {
+  MAGIC_SKILL_DESCRIPTIONS,
+  magicAnimationFrameId,
+  magicSkillButtonId,
+} from './magicSkills'
 import { SCOLL_HEROES } from '../types'
 import type { MenuSubPanel, MenuWorld } from '../types'
 
@@ -32,11 +38,11 @@ import type { MenuSubPanel, MenuWorld } from '../types'
  *     drawThisPanel(bufferedGraphics);                           ← page（各页自己的）
  *     mouse.drawMouse(bufferedGraphics);                         ← mouse
  *
- * `special` 层与 `page` 层的三页（物品 / 装备 / 奇术）**这一票是空的**：那是
- * 各页各自的内容，归 xl-6lo.10 / .9 / .11。空着而不是抛 —— 骨架这一票的验收
- * 就是"四页的骨架画得出来"，抛会让它一帧都画不出来。⚠️ 代价是「这一页还没做」
- * 与「这一页本来就没有内容」在画面上长得一样，而分开它们的是逐帧比对那张表
- * （xl-6lo.14 接）。
+ * `special` 层与 `page` 层的**物品 / 装备**两页**还是空的**：那是各页各自的
+ * 内容，归 xl-6lo.10 / .9。空着而不是抛 —— 骨架那一票的验收就是"四页的骨架
+ * 画得出来"，抛会让它一帧都画不出来。⚠️ 代价是「这一页还没做」与「这一页
+ * 本来就没有内容」在画面上长得一样，而分开它们的是逐帧比对那张表
+ * （xl-6lo.14 接）。**奇术页那一层 xl-6lo.11 补上了**（见下面 `magicOps`）。
  *
  * **天书页那一层是例外，必须画**：出菜单唯一那条路（「返回」）就在上面，而
  * 菜单里的 ESC 是死代码 —— 不画等于玩家出不去。`func` 那一组的**状态**仍然
@@ -142,7 +148,7 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
 
   // `drawThisPanel` —— 四页各自的。
   //
-  // 物品 / 装备 / 奇术三页这一票空着（归 xl-6lo.10 / .9 / .11）；**天书页
+  // 物品 / 装备两页还空着（归 xl-6lo.10 / .9）；奇术页见下面 `magicOps`；**天书页
   // 不能空**：出菜单唯一那条路（「返回」）就是这一层画出来的，空着的话
   // ESC 又是死代码，玩家一点出去的办法都没有。所以这一页照
   // `FuncButtons.drawFuncButtons()` 画：先五颗主按钮，再四组子按钮。
@@ -160,7 +166,75 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
     }
   }
 
+  if (panel.magic) ops.push(...magicOps(panel.magic))
+
   ops.push({ kind: 'image', layer: 'mouse', id: mouseId(panel.mouse.frame), x: panel.mouse.x, y: panel.mouse.y })
+  return ops
+}
+
+/** `MagicAnimation.drawMagicAnimation()` 里那三个常量与两处坐标。 */
+const MAGIC_ANIM_X = 70 + 32
+const MAGIC_ANIM_Y = 10
+const MAGIC_TEXT_X = 538
+const MAGIC_TEXT_Y = 202
+const MAGIC_TEXT_VGAP = 64
+/** 第二行比第一行低 34 —— `y_discription+34`。 */
+const MAGIC_TEXT_LINE = 34
+const MAGIC_FONT_SIZE = 27
+const MAGIC_COLOR = '#ffffff'
+
+/**
+ * `MagicPanel.drawThisPanel()` 的后半段：**先十五颗按钮，再那条动画**。
+ *
+ * 前半段（那个 `switch(whichHero)` 现设 `isDraw`）**不在这里** —— 它改的是
+ * 真值记着的状态，已经跑在状态层的 paint 相里（`menu/step.ts`）。这一层只读
+ * `isDraw`，所以它仍然是纯函数。
+ *
+ * ⚠️ **说明那两行画在动画里，不是画在按钮上**：原版 `drawMagicAnimation()`
+ * 先 `drawString` 两行再 `drawImage`，三条都挂在 `currentAnimation` 上。
+ * 也就是说**没有动画在放时，说明文字一个字都不画**，而不是"画当前选中那一招
+ * 的说明"。两者在有动画时长得一模一样。
+ *
+ * ⚠️ 说明的落点由**招号**决定（`b + (招号-1)*64`），不是由"第几颗按钮亮着"
+ * 决定 —— 张小凡菜单上只有一颗按钮，点它出来的说明照样画在第一行的位置上。
+ */
+function magicOps(magic: NonNullable<MenuSubPanel['magic']>): MenuDrawOp[] {
+  const ops: MenuDrawOp[] = []
+  for (const { hero } of MAGIC_HEROES) {
+    magic.buttons[hero].forEach((b, i) => {
+      if (!b.isDraw) return
+      ops.push({
+        kind: 'image',
+        layer: 'page',
+        id: magicSkillButtonId(hero, i + 1, b.image),
+        x: b.x,
+        y: b.y,
+      })
+    })
+  }
+  const anim = magic.current
+  if (!anim) return ops
+  const lines = MAGIC_SKILL_DESCRIPTIONS[anim.hero][anim.skill - 1]
+  if (!lines) throw new Error(`${anim.hero} 号没有第 ${anim.skill} 招的说明`)
+  const y = MAGIC_TEXT_Y + (anim.skill - 1) * MAGIC_TEXT_VGAP
+  lines.forEach((text, line) => {
+    ops.push({
+      kind: 'text',
+      layer: 'page',
+      text,
+      x: MAGIC_TEXT_X,
+      y: y + line * MAGIC_TEXT_LINE,
+      size: MAGIC_FONT_SIZE,
+      color: MAGIC_COLOR,
+    })
+  })
+  ops.push({
+    kind: 'image',
+    layer: 'page',
+    id: magicAnimationFrameId(anim.hero, anim.skill, anim.code),
+    x: MAGIC_ANIM_X,
+    y: MAGIC_ANIM_Y,
+  })
   return ops
 }
 

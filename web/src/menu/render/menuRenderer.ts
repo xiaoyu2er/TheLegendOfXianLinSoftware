@@ -1,5 +1,7 @@
 import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
 import { isDeferredMenuAsset, menuAssetId } from '../../assets/menuAssets'
+import { isDeferredBattleAsset } from '../../assets/battleAssets'
+import { resolveDeferredBattleAsset } from '../../assets/deferredBattle'
 import { resolveDeferredMenuAsset } from '../../assets/deferredMenu'
 import { resolveAsset } from '../../assets/resolve'
 import type { AssetId } from '../../assets/ids'
@@ -103,10 +105,23 @@ export async function createMenuRenderer(host: HTMLElement): Promise<MenuRendere
   /**
    * 一个菜单素材的 URL。**进主包的走映射表，按需的走 `menuContent.json`** ——
    * 边界由 `assets/menuAssets.ts` 定，这里只照它分流。
+   *
+   * `battle:` 是**唯一一个不带 `menu:` 前缀却要在菜单里画的**（xl-6lo.11）：
+   * 奇术页那段技能动画的帧在 `image/技能动画/<角色>技能<招号>/` 下，与战斗
+   * 用的是同一批文件、同一条按需边界 —— 菜单素材那条边界是按
+   * `sources/菜单/` 的顶层目录切的，`image/` 根本不在那个坐标系里。
+   * **前缀是白名单**：认不出来的一律抛，不猜。猜出来的 ID 要么查不到，
+   * 要么恰好撞上别的素材（画错图，且悄无声息）。
    */
   async function urlOf(id: AssetId): Promise<string> {
+    const battle = id.startsWith('battle:') ? id.slice('battle:'.length) : null
+    if (battle !== null) {
+      return isDeferredBattleAsset(battle) ? resolveDeferredBattleAsset(id) : resolveAsset(id)
+    }
     const relative = id.startsWith('menu:') ? id.slice('menu:'.length) : null
-    if (relative === null) throw new Error(`菜单渲染器只认 menu: 开头的 ID，收到 ${id}`)
+    if (relative === null) {
+      throw new Error(`菜单渲染器只认 menu: 与 battle: 前缀的逻辑 ID，收到 ${id}`)
+    }
     // 反向自检：ID 是从路径算出来的，算回去必须一致。不一致说明有人手写了 ID。
     if (menuAssetId(`sources/菜单/${relative}`) !== id) {
       throw new Error(`菜单素材 ID ${id} 不是从 sources/菜单/${relative} 算出来的`)
