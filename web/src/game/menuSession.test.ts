@@ -93,18 +93,37 @@ describe('场景 ↔ 菜单这条环路', () => {
       )
     }
 
-    let s = inScene('宿舍')
-    const startX = roleTileX(s.scene.world.role)
-    // 先证明这一场里方向键真的走得动 —— 走不动的话下面那条恒真。
-    s = advanceSession(s, { ...NO_INPUT, scene: [{ e: 'press', k: 'right', ctrl: false }] }, 1000)
-    expect(roleTileX(s.scene.world.role)).toBeGreaterThan(startX)
+    // 这条判据有两个坑，两个都是实测踩出来的（篡改矩阵第 26 条掉了个绿）：
+    //
+    // ⚠️ **按键状态留在世界里**，而且松手之后主角还会把当前那一格走完。
+    // 不松手、或者松手之后立刻量，主角本来就该继续走（原版同理，那条状态在
+    // `ScenePanel` 里），掐没掐输入门推出来的数完全相同。所以先按一下、
+    // 松开、**再空推 600 ms 停稳**，才开始量。
+    //
+    // ⚠️ **方向不能随便挑**：宿舍里往右 / 往下几步就顶到墙上，此后再按也不动
+    // （实测 right/down 的 parked 与"再按"完全相等），那时这条恒真。往左
+    // 是通的（576 → 520），正向那条控制就是用来把这件事钉住的。
+    const press = { e: 'press', k: 'left', ctrl: false } as const
+    const release = { e: 'release', k: 'left' } as const
 
-    // 开菜单，同样喂方向键：主角一格都不许动。
-    s = openMenu(s)
-    const held = roleTileX(s.scene.world.role)
-    s = advanceSession(s, { ...NO_INPUT, scene: [{ e: 'press', k: 'right', ctrl: false }] }, 1000)
-    expect(s.panel).toBe('menu')
-    expect(roleTileX(s.scene.world.role), '菜单开着时主角还在走').toBe(held)
+    /** 从宿舍起手走两步停稳，再喂 `during` 那批键，返回主角挪了几个像素。 */
+    function walk(during: readonly (typeof press | typeof release)[], openIt: boolean): number {
+      let w = inScene('宿舍')
+      w = advanceSession(w, { ...NO_INPUT, scene: [press] }, 200)
+      w = advanceSession(w, { ...NO_INPUT, scene: [release] }, 600)
+      const parked = w.scene.world.role.px
+      if (openIt) w = openMenu(w)
+      w = advanceSession(w, { ...NO_INPUT, scene: during }, 600)
+      expect(w.panel).toBe(openIt ? 'menu' : 'scene')
+      return Math.abs(w.scene.world.role.px - parked)
+    }
+
+    // 先证明**它真的停稳了** —— 没停稳的话下面两条量的都是惯性。
+    expect(walk([], false), '空推也在动，说明上一步没停稳').toBe(0)
+    // 正向：不开菜单时这批键真的把主角推动了 —— 推不动的话反向那条恒真。
+    expect(walk([press], false), '这一场里往这个方向本来就走不动').toBeGreaterThan(0)
+    // 反向：开着菜单，同样一批键，一个像素都不许动。
+    expect(walk([press], true), '菜单开着时主角还在走').toBe(0)
   })
 
   it('⚠️ 但那条线程不停 —— 菜单开着时地图上的 NPC 照走', () => {

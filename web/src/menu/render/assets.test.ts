@@ -132,6 +132,28 @@ describe('菜单骨架的贴图 ID', () => {
     }
     // 开 / 关那两对是共用的（BGM 与音效各一对），所以名单是去过重的。
     expect(new Set(funcButtonIds()).size).toBe(funcButtonIds().length)
+
+    // ⚠️ 上面两条核的都是**集合**（这批文件名都在 / 名单没重），
+    // 「哪颗按钮读的哪三张图」它们一个字都没核 —— 把 returnButton 的词干抄成
+    // 「退出」照样全绿（篡改矩阵第 29 条）。下面这条核的是**配对**：
+    // `addButton()` 里每一次赋值之前最近的那组 `image1/2/3` 读的是哪个词干。
+    const src = javaSource('src/menu/FuncButtons.java')
+    const stemOfButton = new Map<string, string>()
+    let stem: string | null = null
+    for (const line of src.split(/\r?\n/)) {
+      const img = /image1\s*=\s*new ImageIcon\("sources\/菜单\/天书\/(.+?)1\.png"\)/.exec(line)
+      if (img) stem = img[1]!
+      const assign = /^\s*(\w+)\s*=\s*new MenuButton\(/.exec(line)
+      if (assign && stem !== null) stemOfButton.set(assign[1]!, stem)
+    }
+    // 空转要响：一行都没配上时下面那个循环零轮，而零轮是恒真的。
+    expect(stemOfButton.size, 'addButton() 里一颗按钮的词干都没配上').toBeGreaterThan(10)
+    for (const [button, want] of stemOfButton) {
+      const key = button as Parameters<typeof funcButtonId>[0]
+      expect(funcButtonId(key, 'normal'), `${button} 读的应该是 ${want}1.png`).toBe(
+        `menu:天书/${want}1.png`,
+      )
+    }
   })
 
   it('天书页的按钮走按需加载，只有翻到那一页才进名单', () => {
