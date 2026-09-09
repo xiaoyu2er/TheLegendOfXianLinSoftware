@@ -47,6 +47,15 @@ import {
   isDeferredBattleAsset,
 } from '../src/assets/battleAssets'
 import {
+  MENU_BUNDLED_DIR,
+  MENU_DEFERRED_PUBLIC_DIR,
+  MENU_ROOT,
+  MENU_SKELETON_TOP_DIRS,
+  isDeferredMenuAsset,
+  menuAssetId,
+  menuProductPath,
+} from '../src/assets/menuAssets'
+import {
   bgmAssetId,
   dialogueAssetId,
   drugPictureAssetId,
@@ -184,9 +193,13 @@ const MISSING_OUT = resolve(WEB, 'src/generated/missingAssets.json')
 const DEFERRED_BGM_OUT = resolve(WEB, 'src/generated/deferredBgm.json')
 const STAMP_OUT = resolve(WEB, 'src/generated/bakeStamp.json')
 const DEFERRED_BATTLE_OUT = resolve(WEB, 'src/generated/battleAnimations.json')
+const DEFERRED_MENU_OUT = resolve(WEB, 'src/generated/menuContent.json')
 
 /** 原版战斗素材根目录，与按需产物在 `public/` 下的落点。 */
 const IMAGES = resolve(REPO, IMAGE_ROOT)
+
+/** 原版菜单素材根目录（xl-6lo.4）。按需产物与战斗那批共用 `PUBLIC_OUT`。 */
+const MENUS = resolve(REPO, MENU_ROOT)
 const PUBLIC_OUT = resolve(WEB, 'public')
 
 /** `NPCs/曾书书/9.png` 里 `NPCs/` 那一段。`sceneAssets.ts` 拼的就是这个前缀。 */
@@ -450,12 +463,14 @@ function main(): void {
 
   const battle = bakeBattleImages(scenes, manifest)
 
+  const menu = bakeMenuImages(manifest)
+
   bakeBgm(scenes, manifest)
 
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张 + 菜单骨架 ${menu.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes + menu.bundledBytes)}`,
   )
 
   writeStamp()
@@ -578,6 +593,117 @@ function bakeBattleImages(
       `、${DEFERRED_TOP_DIRS.join(' / ')} 共 ${deferred} 张按需加载进 public/${DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
   )
   return { bundled, bundledBytes }
+}
+
+/**
+ * 菜单素材（xl-6lo.4）：把 `sources/菜单/` 下的**每一个文件**烘成 WebP，并按
+ * `menuAssets.ts` 那条边界分开落盘 —— 每一页都要画的进
+ * `src/generated/assets/menu/`（随主包的 `?url` glob 走），各页自己的内容进
+ * `public/menu-content/`（Vite 原样拷贝，不产生 JS 模块，运行时按名单动态取）。
+ *
+ * **分母是现扫出来的**：`sources/菜单/` 下有什么就烘什么，不写死目录名单、
+ * 也不写死数量。原版 `src/menu/` 的 15 个文件里有 159 条各自拼路径的字面量
+ * （`"sources/菜单/天书/存档1.png"`、`"sources/菜单/鼠标图/"+i+".png"`……），
+ * 抄一份规则表过来等于把那批字面量重写一遍，而抄漏一条的表现是"某颗按钮
+ * 取不到图"。扫目录没有这个问题：少一个文件是源素材少了，`git status`
+ * 立刻看得见。
+ *
+ * ⚠️ **原版有一条路径本来就取不到图，这里不去"修好"它**：
+ * `menu/FuncPanel.java:31` 拼的是 `sources/菜单/主人公4人2.png`，而那个文件
+ * 实际躺在 `sources/菜单/天书/主人公4人2.png`。它走的是
+ * `new ImageIcon(...)`，取不到既不抛也不返回 null（跟 xl-1dv.1 那 27 帧同一
+ * 种沉默）。烘焙这一侧照目录烘，那张图有产物；**要不要在 Web 侧复刻这个
+ * 缺陷是画的那张票的事**，不是烘焙的事。
+ */
+function bakeMenuImages(manifest: Record<string, string>): {
+  bundled: number
+  bundledBytes: number
+} {
+  // 每次全量重来，与 ASSETS_OUT 同一个理由：留着上一轮的产物会让"删掉一个
+  // 素材"表现为"什么都没发生"。
+  const publicDeferred = resolve(PUBLIC_OUT, MENU_DEFERRED_PUBLIC_DIR)
+  rmSync(publicDeferred, { recursive: true, force: true })
+
+  const relatives = listFiles(MENUS).sort()
+  if (relatives.length === 0) {
+    // "一个文件都没扫到"与"全烘完了"在产物上长得一模一样：两边都是零个差异。
+    console.error(`${MENUS} 下一个文件都没有 —— 菜单素材的分母是从这里现扫的`)
+    process.exit(1)
+  }
+
+  const deferredFiles: Record<string, string> = {}
+  // 按需产物没有内容指纹（`public/` 下的文件名 Vite 原样保留），所以自己算一个
+  // 摘要当版本号。摘要吃的是**产物字节**：cwebp 是确定性的（"每次都变"的问题
+  // 只出在 afconvert 身上，见 `bake-m4a-timestamps` 那条 memory）。
+  const version = createHash('sha256')
+  let bundled = 0
+  let bundledBytes = 0
+  let deferred = 0
+  let deferredBytes = 0
+
+  // 与战斗那趟同一张表、同一个理由：`menuProductPath` 把扩展名一律换成
+  // `.webp`，同一个目录下的 `x.png` 与 `x.jpg` 会写到同一个产物上，**后写的
+  // 静静盖掉前一张**。今天 189 张全是 PNG，所以这条守卫不响；而"不响"和
+  // "撞了却没查"长得一样。判撞车不能只看 `manifest`——按需那一半根本不进去。
+  const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+
+  for (const relative of relatives) {
+    const id = menuAssetId(`${MENU_ROOT}/${relative}`)
+    const product = menuProductPath(relative)
+    const source = resolve(MENUS, relative)
+    const owner = claimed.get(product)
+    if (owner !== undefined) {
+      console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
+      process.exit(1)
+    }
+    claimed.set(product, id)
+    if (isDeferredMenuAsset(relative)) {
+      const destination = resolve(publicDeferred, product.slice(MENU_DEFERRED_PUBLIC_DIR.length + 1))
+      deferredBytes += menuWebp(source, destination)
+      deferredFiles[id] = product
+      version.update(product).update('\0').update(readFileSync(destination))
+      deferred++
+      continue
+    }
+    manifest[id] = product
+    bundledBytes += menuWebp(source, resolve(ASSETS_OUT, product))
+    bundled++
+  }
+
+  // 两边都得非空。全切出去（或一张都不切）在产物上和"边界生效了"分不开，
+  // 而它的表现只是主包大了一圈、或者打开菜单先白一屏。
+  if (bundled === 0 || deferred === 0) {
+    console.error(
+      `菜单打包边界失效：进主包 ${bundled} 张、按需 ${deferred} 张，` +
+        `而 ${MENU_SKELETON_TOP_DIRS.join(' / ')} 应当各有素材`,
+    )
+    process.exit(1)
+  }
+
+  writeFileSync(
+    DEFERRED_MENU_OUT,
+    `${JSON.stringify({ version: version.digest('hex').slice(0, 16), files: deferredFiles }, null, 2)}\n`,
+    'utf8',
+  )
+
+  console.log(
+    `菜单素材 ${relatives.length} 张 → 骨架 ${bundled} 张进 ${MENU_BUNDLED_DIR}/（${kb(bundledBytes)}）` +
+      `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
+  )
+  return { bundled, bundledBytes }
+}
+
+/**
+ * 一张菜单素材转 WebP。存在的理由与 `battleWebp` 逐字相同：让**两个**调用点
+ * （进主包的与按需的）不可能各自传一个档位 —— 两处传得不一样这件事的表现是
+ * "某一批素材悄悄比另一批糊"，没有任何检查看得见。
+ *
+ * 今天 189 张全是 PNG，走 `toWebp` 的 `-lossless` 分支，所以档位参数一个都没
+ * 传：在这里重抄一遍 `DEFAULT_LOSSY_QUALITY` 的话，改了默认值这一路会悄悄
+ * 不跟着变。
+ */
+function menuWebp(source: string, destination: string): number {
+  return toWebp(source, destination)
 }
 
 /**
