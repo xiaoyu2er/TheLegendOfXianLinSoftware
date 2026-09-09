@@ -3,11 +3,20 @@ import { EQUIPMENT_LISTS, EQUIP_SLOTS } from '../menu/equipment'
 import type { EquipSlot, EquipmentSpec } from '../menu/equipment'
 import { javaSource } from '../test/javaSource'
 import { BUY_BOX, SELL_BOX, SHOP_CATEGORIES, categoryBox, stepBox } from './layout'
+import type { ShopButtonBox } from './layout'
 import { hitCenter } from './test/hitCenter'
 import { snapshotShop } from './snapshot'
-import { EQUIP_PRICE_BANDS, EQUIP_USER_REMARKS, stepShop } from './step'
+import {
+  CATEGORY_BRANCH_ORDER,
+  DRUG_TRADE_ROWS,
+  EQUIP_PRICE_BANDS,
+  EQUIP_USER_REMARKS,
+  stepShop,
+} from './step'
 import { SHOP_TRACE_NAMES, readShopTrace, replayShop, shopInputsOf } from './trace'
-import type { ShopTrace, ShopTraceTick } from './trace'
+import type { ShopTrace } from './trace'
+import { listOf, tradesOf } from './test/trades'
+import type { Trade, TradeRow } from './test/trades'
 import { stepBase } from './world'
 import type { ShopWorld } from './types'
 
@@ -92,7 +101,7 @@ function hover(w: ShopWorld, row: number): void {
 }
 
 /** 按下再松开一颗按钮 —— `setButton` 认的是 `isclicked`，只松开什么都不会发生。 */
-function click(w: ShopWorld, box: { x: number; y: number; width: number; height: number }): void {
+function click(w: ShopWorld, box: ShopButtonBox): void {
   const [x, y] = hitCenter(box)
   stepShop(w, [{ e: 'press', x, y }])
   stepShop(w, [{ e: 'release', x, y }])
@@ -428,14 +437,17 @@ describe('装备店的源码参照模型：期望值从 EquipmentShopPanel.java 
 
     // 行为面：挑一栏行数**超过药店那个 6** 的，在第 6 行以后成交一笔。
     // 上界抄成 6 的实现在这里买不到东西。
-    const wide = SHOP_CATEGORIES.filter((c) => EQUIPMENT_LISTS[c].length > 6)
-    expect(wide.length, '六栏没有一栏超过 6 行，这条判据是恒真的').toBeGreaterThan(0)
+    // ⚠️ 「超过药店那个 6」里的 6 **引药店那个常量**，不写字面量：药店数据
+    // 改一行时那个常量会跟着改，而写死的 6 只会让这条判据的意图安静地失效
+    // （dispatch.md 纪律 3）。
+    const wide = SHOP_CATEGORIES.filter((c) => EQUIPMENT_LISTS[c].length > DRUG_TRADE_ROWS)
+    expect(wide.length, `六栏没有一栏超过 ${DRUG_TRADE_ROWS} 行，这条判据是恒真的`).toBeGreaterThan(0)
     for (const category of wide) {
       const world = equipWorld()
       switchTo(world, category)
       const rows = world.equipment.rows[category]
       const last = rows.length - 1
-      expect(last, `${category} 只有 ${rows.length} 行`).toBeGreaterThan(5)
+      expect(last, `${category} 只有 ${rows.length} 行`).toBeGreaterThanOrEqual(DRUG_TRADE_ROWS)
       rows[last]!.stock = 1
       rows[last]!.purchase = 1
       world.coins = rows[last]!.price
@@ -485,6 +497,73 @@ describe('装备店的源码参照模型：期望值从 EquipmentShopPanel.java 
       click(world, stepBox(row, false))
       expect(rows.map((r) => r.purchase)).toEqual(rows.map(() => 0))
     }
+  })
+
+  /**
+   * ⚠️ **收 `/code-review` Spec 轴：主 session 在票面评论 2 里点名要现读的那几行。**
+   *
+   * 「减到 0 再按减号什么都不发生」是**错的读法** —— `readmusic("click.wav")`
+   * 在 `if(...getPurchaseNumber()>0)` 守卫**前面**，所以数字不动、照样出声。
+   * 药店那一侧有一条行为用例守着（`drugShop.test.ts`，从真值里认出那一步），
+   * 装备店这一侧**真值里一次都没有**「装备店上减到 0 再按减号」，所以判据回到
+   * 源码上取，再补一条造出来的行为用例。
+   *
+   * ⚠️ 实现是两家店共用一份（`stepPurchaseButtons`），所以这一条今天不会红。
+   * 那正是它该在的理由：「两家店同形」在这一票里原本只是注释里的一句断言，
+   * 而假注释与真判据长得一样。
+   */
+  it('⚠️ 那一声 click.wav 在 `>0` 守卫**前面** —— 减到 0 再按减号，数字不动照样出声', () => {
+    // 源码那一侧：在加减那个 for 里，`readmusic` 的位置必须早于那个守卫。
+    const loop = SET_BUTTON.slice(SET_BUTTON.indexOf('for(int i=9;i<buttonList.size();i+=2)'))
+    expect(loop.length, '加减那个 for 没切出来').toBeGreaterThan(0)
+    const sound = loop.indexOf('MusicReader.readmusic("click.wav")')
+    const guard = loop.indexOf('.getPurchaseNumber()>0)')
+    // 两处都要真的找到 —— `indexOf` 的 -1 与"排在最前面"在 `<` 底下长得一样。
+    expect(sound, '加减那个 for 里没有 readmusic("click.wav")').not.toBe(-1)
+    expect(guard, '加减那个 for 里没有 getPurchaseNumber()>0 那个守卫').not.toBe(-1)
+    expect(sound, '那一声跑到守卫后面去了 —— 「什么都不发生」会变成真的').toBeLessThan(guard)
+
+    // 行为面：purchase 已经是 0（开局就是），按减号 —— 一个数不动，但出一声。
+    const world = equipWorld()
+    switchTo(world, 'weapon')
+    const rows = world.equipment.rows['weapon']
+    const before = rows.map((r) => r.purchase)
+    // 空转要响：这一栏此刻真的全是 0，否则走的是"减 1"那一路。
+    expect(before, '这一栏的 purchase 不全是 0，走的不是这条路').toEqual(rows.map(() => 0))
+    click(world, stepBox(0, false))
+    expect(rows.map((r) => r.purchase), '减到 0 之后又减出负数了').toEqual(before)
+    expect(world.music, '那一声不见了 —— 有人把它挪进守卫里了').toEqual(['click.wav'])
+  })
+
+  /**
+   * ⚠️ **收 `/code-review` Spec 轴：`CATEGORY_BRANCH_ORDER` 是 xl-knp.6 留下的
+   * 一份手写名单，一条判据都没有** —— 而本票是收口那一张。
+   *
+   * 它在今天**观测不出来**：六颗分类按钮互不重叠，一次最多一颗 `isclicked`，
+   * 所以次序抄错在真值上、在画面上都看不出。判据只能回到源码。
+   */
+  it('分类切换那六个 `if` 的次序从源码现读 —— 它在真值上观测不出来', () => {
+    // 六段都是同样的三句，认「哪个按钮的 isIsclicked + 紧跟一句 换list.wav」。
+    // ⚠️ `buy` / `sell` / `back` 也有 isIsclicked，它们后面不是 换list.wav。
+    const order = [
+      ...SET_BUTTON.matchAll(
+        /if\((\w+)\.isIsclicked\(\)==true\)\{?\s*\r?\n\s*MusicReader\.readmusic\("换list\.wav"\)/g,
+      ),
+    ].map((m) => m[1]!)
+    // 分母现数：一段都没解析出来时下面那条是恒真的。
+    expect(order.length, 'setButton 里一段分类切换都没解析出来').toBeGreaterThan(0)
+    expect(order.length, '解析出来的段数与那张表不一样').toBe(CATEGORY_BRANCH_ORDER.length)
+    // ⚠️ 原版那六个字段名与 web 侧的槽位名逐字相同，所以直接对。
+    expect(order, 'CATEGORY_BRANCH_ORDER 与源码里那六个 if 的先后对不上').toEqual([
+      ...CATEGORY_BRANCH_ORDER,
+    ])
+    // 而它与**按钮表的次序**（`SHOP_CATEGORIES`）确实不是同一份 —— 两份一样时
+    // 上面那条判据就退化成"随便哪一份都行"了。
+    expect([...CATEGORY_BRANCH_ORDER], '两份名单变成同一个序了 —— 那条判据失去分辨力').not.toEqual(
+      [...SHOP_CATEGORIES],
+    )
+    // 但集合必须相同：少一类 / 多一类都在这里露头。
+    expect([...CATEGORY_BRANCH_ORDER].sort()).toEqual([...SHOP_CATEGORIES].sort())
   })
 
   it('⚠️ 退款循环里的 temp 与买入循环里的逐字相同 —— 那就是"重算"', () => {
@@ -640,31 +719,8 @@ describe('装备店的源码参照模型：期望值从 EquipmentShopPanel.java 
   })
 })
 
-/** 一条真值里装备店那几步成交（松开 buy / sell 的那一步），连着它的前一步。 */
-function equipTrades(
-  trace: ShopTrace,
-): { i: number; kind: string; prev: ShopTraceTick; cur: ShopTraceTick }[] {
-  const out: { i: number; kind: string; prev: ShopTraceTick; cur: ShopTraceTick }[] = []
-  for (const [i, cur] of trace.ticks.entries()) {
-    if (i === 0 || cur['shop'] !== 'equipment') continue
-    for (const e of cur.input) {
-      if (e.e !== 'release' || !('target' in e)) continue
-      if (e.target === 'buy' || e.target === 'sell') {
-        out.push({ i, kind: e.target, prev: trace.ticks[i - 1]!, cur })
-      }
-    }
-  }
-  return out
-}
-
-interface Row {
-  readonly name: string
-  readonly price: number
-  readonly stock: number
-  readonly purchase: number
-  readonly held: number
-}
-const listOf = (tick: ShopTraceTick): readonly Row[] => tick['list'] as readonly Row[]
+/** 这一票只看装备店那几笔。药店那半边在 `drugShop.test.ts`。 */
+const equipTrades = (trace: ShopTrace): Trade[] => tradesOf(trace, 'equipment')
 
 describe('真值账本：装备店每一笔成交的金钱变化', () => {
   const ledger: string[] = []
@@ -770,7 +826,7 @@ describe('两条交叉路径：从真值里认出来，再逐字段核状态层'
         checked++
         // 回来那一步，背包里那几件**还在** —— 期望值来自我们自己的快照，
         // 而它同时也与真值那一列对齐（`shopTrace.test.ts` 的 pack 那一格）。
-        const held = (snaps[back]!['list'] as Row[]).map((r) => r.held)
+        const held = (snaps[back]!['list'] as TradeRow[]).map((r) => r.held)
         for (const { row, d } of bought) {
           const j = listOf(cur).findIndex((r) => r.name === row.name)
           expect(
@@ -779,7 +835,7 @@ describe('两条交叉路径：从真值里认出来，再逐字段核状态层'
           ).toBeGreaterThanOrEqual(d)
         }
         // 而且真值自己也这么说 —— 两边不一致时这一条会红。
-        expect(held).toEqual((trace.ticks[back]!['list'] as Row[]).map((r) => r.held))
+        expect(held).toEqual((trace.ticks[back]!['list'] as TradeRow[]).map((r) => r.held))
       }
     }
     expect(

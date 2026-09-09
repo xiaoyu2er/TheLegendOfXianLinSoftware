@@ -284,8 +284,18 @@ describe('商店状态层对齐行为真值', () => {
     // 报错，那是它替我们兜的底，别指望它一直兜）。所以放一条明写当前读数的
     // 用例在这里：为空时它在，非空时它自己就没了。
     if (Object.keys(BLOCKED_AT).length === 0) {
-      it('今天没有「只对到半截」的格子 —— 这是读数，不是这张表的形状', () => {
-        expect(BLOCKED_AT).toEqual({})
+      // ⚠️ 断言的**不是** `BLOCKED_AT` 本身（那就是上面几行那个字面量，一次都
+      // 不可能红，`/code-review` Standards 轴点出的「按构造成立」那一族）。
+      // 断的是它为空**所声称的那件事**：一格都不欠，所以每一格都在 ALIGNED 里。
+      it('今天没有「只对到半截」的格子 —— 因为一格都不欠，而这一条去核那件事', () => {
+        expect(Object.keys(PENDING), 'PENDING 非空，这条用例本不该生成').toEqual([])
+        const missing: string[] = []
+        for (const group of groupsOf(traceOf(SHOP_TRACE_NAMES[0]!))) {
+          for (const name of SHOP_TRACE_NAMES) {
+            if (!(ALIGNED[group] ?? []).includes(name)) missing.push(`${group} × ${name}`)
+          }
+        }
+        expect(missing, '有格子既不在 ALIGNED 里、也不欠着 —— 那它谁都没登记').toEqual([])
       })
     }
     for (const [group, byTrace] of Object.entries(BLOCKED_AT)) {
@@ -328,8 +338,20 @@ describe('商店状态层对齐行为真值', () => {
   describe('反方向：登记成「还欠着」的格子必须真的还没对上', () => {
     // 同上：`PENDING` 空着时这个 describe 也是零用例。
     if (Object.keys(PENDING).length === 0) {
-      it('今天没有「还欠着」的格子 —— 全部字段组 × 全部剧本都对齐了', () => {
-        expect(PENDING).toEqual({})
+      // 同上：不断 `PENDING` 那个字面量，断它为空所声称的那件事 —— 每一格都
+      // **真的**逐步对上了。这一条同时是"30/30 满格"唯一会红的判据。
+      it('今天没有「还欠着」的格子 —— 每一格都真的逐步对上了', () => {
+        const groups = groupsOf(traceOf(SHOP_TRACE_NAMES[0]!))
+        // 分母现数：零组 / 零剧本时下面那一圈是恒真的。
+        expect(groups.length).toBeGreaterThan(0)
+        expect(SHOP_TRACE_NAMES.length).toBeGreaterThan(0)
+        const unmatched: string[] = []
+        for (const group of groups) {
+          for (const name of SHOP_TRACE_NAMES) {
+            if (!cellMatches(name, group)) unmatched.push(`${group} × ${name}`)
+          }
+        }
+        expect(unmatched, '这几格对不上，却一格都没登记在 PENDING 里').toEqual([])
       })
     }
     for (const [group, byTrace] of Object.entries(PENDING)) {

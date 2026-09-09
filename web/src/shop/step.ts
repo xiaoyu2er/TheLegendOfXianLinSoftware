@@ -286,8 +286,13 @@ function setButton(w: ShopWorld): void {
  *
  * 今天观测不出次序的差别（六颗互不重叠，一次最多一颗 `isclicked`），但它们
  * 是六个独立的 `if`，真有两颗同时挂着时次序就是结果。照抄。
+ *
+ * ⚠️ **导出它是为了让它可测**（xl-knp.8 收 `/code-review` Spec 轴）：正因为
+ * 今天观测不出次序的差别，它是一份**没有任何行为判据守得住**的手写名单 ——
+ * 抄错次序在真值上、在画面上都看不出来。`equipShop.test.ts` 因此从 GBK 源码里
+ * 现读那六个 `if` 的先后，与这张表逐字对。
  */
-const CATEGORY_BRANCH_ORDER: readonly EquipSlot[] = [
+export const CATEGORY_BRANCH_ORDER: readonly EquipSlot[] = [
   'weapon',
   'armor',
   'helmet',
