@@ -19,10 +19,25 @@ import { shopDrawList } from './drawList'
  *
  * 「两个面板各站几个、站的是谁、站在哪、每个几帧、多久换一格、谁的门上有条件」
  * 这六件事，实现里是 `layout.ts` 的六个常量、`render/assets.ts` 的两张名单、
- * `render/drawList.ts` 里那个 `if (!w.party[key]) return`。**这一票之前它们
- * 一个都没有人对回源码** —— `assets.test.ts` 对上了角色名与图片路径，坐标、
- * 帧数、间隔、门上那三个标志位则是手写进 `layout.ts` 的。手写的常量与照它写出来的
- * 断言是同一次转写，绿了什么也证明不了。
+ * `render/drawList.ts` 里那个 `if (!w.party[key]) return`。
+ *
+ * ## ⚠️ 这里有一半是**复核**，不是新盖的地
+ *
+ * 写完之后拿篡改矩阵量了一遍（读数在文件末尾），**坐标、帧数、`mouses` 长度、
+ * `Clock.sleep(120)` 这四样 `layout.test.ts` 已经在守了**，角色名与图片路径
+ * `render/assets.test.ts` 已经在守了。照实说：这几条在这里是第二双眼睛，
+ * 不是这一票买到的分辨力。真正只有这个文件抓得住的是三样，各有一次实测的篡改：
+ *
+ * - **每条动画的门是哪个标志位**（把 `PARTY_ROLES` 里 `lu` / `wen` 两个 key
+ *   对调、角色名不动）—— 旧判据全绿，因为三个人还是三个人、八帧还是八帧；
+ * - **第四条是按当前这家店取的**（把 `drawList` 里 `KEEPER_ROLE[w.active]`
+ *   写死成 `KEEPER_ROLE.drug`）—— 旧判据全绿；
+ * - **那三个标志位是队伍名单而不是出战名单**（见下面那条用例）。
+ *
+ * 另外两处是把写死的分母改成现推的：`layout.test.ts` 那条写着
+ * `expect(ani).toHaveLength(4)`，这里的 4 从源码解出来的条数来；八帧那个数
+ * 在这里要求**三份独立读数同时对上**（`ani.add` 的实参、`for` 的上界、
+ * `new Image[8]`）。
  *
  * ## 为什么非要源码这一头，而不是等逐帧比对
  *
@@ -64,6 +79,32 @@ import { shopDrawList } from './drawList'
  * 也就是说：逐帧比对能守住「谁站在哪、画的是哪一张」，**守不住这八格怎么循环**
  * （它永远只看得见第 1 张）。所以循环那一半在这里对回源码，剩下那一半在
  * xl-knp.10 接线之后由像素兜底。
+ *
+ * ⚠️ 顺带一条留给 xl-knp.10 的读数：**三条商店剧本的 `setup.party` 都是
+ * `["zhang"]`**，所以陆雪琪与文敏那两条动画在逐帧比对里一帧都走不到。要盖住
+ * 它们得另补一条 party 更满的商店真值，那是补真值那一层的活，不是这一票的。
+ *
+ * ## 篡改矩阵（2026-09-09 实测，每一条都真改真跑真还原）
+ *
+ * 「新」= 只跑这个文件；「旧」= 跑 `src/shop` 但排除这个文件。**两列都要看** ——
+ * 只跑新的话，证不出这一票买到了什么。
+ *
+ * | 篡改 | 新 | 旧 | 旧那边是谁抓到的 |
+ * |---|---|---|---|
+ * | 基线（不改） | 绿 | 绿 | —— |
+ * | `PARTY_ANIMATION_Y` 160→161 | **红** | 红 | `layout.test.ts` 四条人物动画的位置 |
+ * | `KEEPER_ANIMATION_X` 364→365 | **红** | 红 | 同上 |
+ * | `ANIMATION_FRAMES` 8→6 | **红** | 红 | 同上 |
+ * | `ANIMATION_INTERVAL_MS` 120→100 | **红** | 红 | `layout.test.ts` 动画线程每格睡 120ms |
+ * | `KEEPER_ROLE.equipment` 小妹→店主 | **红** | 红 | `assets.test.ts` 人物动画的路径 |
+ * | `drawList` 里去掉 `if (!w.party[key]) return` | **红** | 红 | `drawList.test.ts` 队伍名单决定画几个人 |
+ * | **`PARTY_ROLES` 的 `lu`/`wen` 两个 key 对调**（角色名不动） | **红** | **绿** | 没人 |
+ * | **`drawList` 的 `KEEPER_ROLE[w.active]` 写死成 `.drug`** | **红** | **绿** | 没人 |
+ * | 一致地换成出战名单那套键（assets + types + world 三处同改） | **红** | 红 | `preview.test.ts` 里那句写死的 `{zhang,lu,wen}` |
+ *
+ * 最后那一行值得说一句：旧那边确实红了，但抓到它的是预览那一局**碰巧写死的
+ * 一个字面量**，不是任何一条"这两份名单不是同一份"的判据 —— 把那个字面量跟着
+ * 改一改它就绿了。这里那一条不是。
  */
 
 const PANEL_SOURCE: Readonly<Record<ShopKind, string>> = {
