@@ -2,7 +2,15 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import { javaSource } from '../test/javaSource'
-import { FUNC_MAIN_ORDER, createFuncButtons } from './funcButtons'
+import {
+  FUNC_ALL_KEYS,
+  FUNC_MAIN_ORDER,
+  FUNC_SUB_GROUPS,
+  FUNC_SUB_ORDER,
+  createFuncButtons,
+  drawnFuncButtons,
+} from './funcButtons'
+import type { FuncMainKey, FuncSubKey } from './funcButtons'
 import { hits } from './buttons'
 import { menuWantsScene, stepMenu } from './step'
 import { createMenuWorld } from './world'
@@ -149,5 +157,304 @@ describe('天书页骨架', () => {
       'press' + "' | '" + 'release' + "' | '" + 'move',
       'tick',
     ])
+  })
+})
+
+/**
+ * 天书页**整页**（xl-6lo.12）：设定与退出子菜单的展开收起、BGM 开关、
+ * 三颗空实现按钮。
+ *
+ * ## 期望值零手写：从 GBK 源码里现读 `checkPressed()`
+ *
+ * 两条 menu 真值里 `func.drawn` 从第 0 拍到末拍**一个字都没变**（两条剧本
+ * 都没点过天书页的按钮），所以真值盖不到"展开收起"这件事 —— 逐次相等的那份
+ * 真值要等 xl-6lo.7 的「天书设定」剧本。在那之前，能证明这一页的只有原版
+ * 自己：下面把 `FuncButtons.checkPressed()` 那十五段解析出来，**每一段的
+ * `isDraw` 赋值、出几声、开不开关 BGM 与音效全从源码里读**，据此建一个参照
+ * 模型，再拿真的状态层逐次点过去对。
+ *
+ * 这不是"照着实现抄一遍期望"：参照模型的每一个动作都出自
+ * `src/menu/FuncButtons.java`，实现写错一段，模型不会跟着错。
+ */
+describe('天书页 · 设定与退出子菜单', () => {
+  const raw = javaSource('src/menu/FuncButtons.java')
+  /**
+   * 先把字符串字面量与注释挖掉，再把空白收成单个空格。
+   *
+   * 三步都不能少：注释里有中文和花括号，会把下面那个括号配对带歪；字符串里
+   * 的 `/` 会被当成注释起手；而原版那几段的换行与缩进毫无规律。
+   */
+  const flat = raw
+    .replace(/"[^"\n]*"/g, '""')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    .replace(/\s+/g, ' ')
+
+  /** 从 `open` 那个 `{` 起做括号配对，返回块内文本。 */
+  function blockAt(text: string, open: number): string {
+    if (text[open] !== '{') throw new Error(`第 ${open} 个字符不是 {`)
+    let depth = 0
+    for (let i = open; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      else if (text[i] === '}') {
+        depth--
+        if (depth === 0) return text.slice(open + 1, i)
+      }
+    }
+    throw new Error('括号没配上')
+  }
+
+  function methodBody(name: string): string {
+    const m = new RegExp(`(?:public|private) void ${name}\\(\\) ?\\{`).exec(flat)
+    if (!m) throw new Error(`FuncButtons.java 里没解出 ${name}()`)
+    return blockAt(flat, m.index + m[0].length - 1)
+  }
+
+  /** 一段里的 isDraw 动作，**按源码顺序**。 */
+  type DrawOp = { kind: 'all'; on: boolean } | { kind: 'group'; n: number; on: boolean }
+
+  /** `for(int i=1;i<5;i++){ for(MenuButton b:subButtonList[i]) b.isDraw=…; …` */
+  const ALL_SRC =
+    'for\\(int i=1;i<5;i\\+\\+\\)\\s*\\{\\s*for\\(MenuButton \\w+:subButtonList\\[i\\]\\)\\s*\\w+\\.isDraw=MenuButton\\.(Yes|No);'
+  /** `for(MenuButton button:subButtonList[3]) button.isDraw=…;` —— 下标是数字。 */
+  const GROUP_SRC =
+    'for\\(MenuButton \\w+:subButtonList\\[(\\d)\\]\\)\\s*\\w+\\.isDraw=MenuButton\\.(Yes|No);'
+
+  function drawOps(block: string): DrawOp[] {
+    const found: { at: number; op: DrawOp }[] = []
+    for (const m of block.matchAll(new RegExp(ALL_SRC, 'g'))) {
+      found.push({ at: m.index, op: { kind: 'all', on: m[1] === 'Yes' } })
+    }
+    for (const m of block.matchAll(new RegExp(GROUP_SRC, 'g'))) {
+      found.push({ at: m.index, op: { kind: 'group', n: Number(m[1]), on: m[2] === 'Yes' } })
+    }
+    return found.sort((a, b) => a.at - b.at).map((f) => f.op)
+  }
+
+  interface Section {
+    /** 守卫读的那颗按钮的字段名；`tabs` 是开头那段读页签的。 */
+    readonly guard: string
+    readonly ops: readonly DrawOp[]
+    /** 这一段调了几次 `MusicReader.readmusic`。 */
+    readonly music: number
+    /** `openBGM()` → true、`closeBGM()` → false、都没有 → null。 */
+    readonly bgm: boolean | null
+    readonly sfx: boolean | null
+  }
+
+  /** 把 `checkPressed()` 拆成十五段（页签那一段 + 五颗主按钮 + 九颗子按钮）。 */
+  function sections(): Section[] {
+    const body = methodBody('checkPressed')
+    const out: Section[] = []
+    for (const m of body.matchAll(/if\((?:this\.)?(\w+)\.(?:isclicked|isIsclicked\(\))\)\s*\{/g)) {
+      const block = blockAt(body, m.index + m[0].length - 1)
+      const name = m[1]!
+      out.push({
+        guard: name === 'button' ? 'tabs' : name,
+        ops: drawOps(block),
+        music: [...block.matchAll(/MusicReader\.readmusic\(/g)].length,
+        bgm: block.includes('MusicReader.openBGM()')
+          ? true
+          : block.includes('MusicReader.closeBGM()')
+            ? false
+            : null,
+        sfx: block.includes('MusicReader.openMusic()')
+          ? true
+          : block.includes('MusicReader.closeMusic()')
+            ? false
+            : null,
+      })
+    }
+    return out
+  }
+
+  const SECTIONS = sections()
+  function sectionOf(guard: string): Section {
+    const hit = SECTIONS.find((s) => s.guard === guard)
+    if (!hit) throw new Error(`checkPressed() 里没解出 ${guard} 那一段`)
+    return hit
+  }
+
+  it('解析器空转要响：十四颗按钮 + 十五段守卫都解出来了', () => {
+    // 分母从源码现数：`MenuButton xxx;` 那批字段声明。多一颗少一颗都要响。
+    const fields = [...raw.matchAll(/^\s*MenuButton (\w+);\r?$/gm)].map((m) => m[1]!)
+    expect(fields.length, 'FuncButtons 的 MenuButton 字段没解出来').toBeGreaterThan(0)
+    expect([...fields].sort()).toEqual([...FUNC_ALL_KEYS].map(String).sort())
+
+    expect(SECTIONS.map((s) => s.guard)).toEqual([
+      'tabs',
+      'saveButton',
+      'readButton',
+      'setButton',
+      'returnButton',
+      'exitButton',
+      'setBGM',
+      'setClick',
+      'setKey',
+      'on_BGM',
+      'off_BGM',
+      'on_click',
+      'off_click',
+      'restart',
+      'exitForSure',
+    ])
+    // 每一段都得解出至少一条 isDraw 动作 —— 一条都没有的话下面整套对照恒真。
+    for (const s of SECTIONS) {
+      expect(s.ops.length, `${s.guard} 那一段一条 isDraw 都没解出来`).toBeGreaterThan(0)
+    }
+  })
+
+  it('`setKey` 那一段是死代码 —— 没有任何一条路能把它的 isclicked 置真', () => {
+    // 命中判据那两层循环只走 subButtonList[1..4]，而 setKey 一个数组都没进去；
+    // 也没有谁单独给它补一句 isPressedButton。
+    expect(/subButtonList\[\d\]\[\d\]=setKey;/.test(raw)).toBe(false)
+    expect(/setKey\.isPressedButton\(/.test(raw)).toBe(false)
+    // 而那一段本身确实存在（不是我们读漏了），且注释下面一行代码都没有。
+    expect(sectionOf('setKey').ops.length).toBeGreaterThan(0)
+    expect(raw).toContain('//重新设置键盘')
+  })
+
+  /** `MenuButton` 的构造函数把每一颗都设成 Yes，随后 `addButton()` 末尾关掉四组。 */
+  function initialModel(): { drawn: Set<string>; bgm: boolean; sfx: boolean } {
+    expect(javaSource('src/menu/MenuButton.java')).toContain('this.isDraw=MenuButton.Yes;')
+    const drawn = new Set<string>(FUNC_ALL_KEYS.map(String))
+    const tail = drawOps(methodBody('addButton'))
+    expect(tail.length, 'addButton() 末尾那两层循环没解出来').toBeGreaterThan(0)
+    applyOps(drawn, tail)
+    return { drawn, bgm: true, sfx: true }
+  }
+
+  function applyOps(drawn: Set<string>, ops: readonly DrawOp[]): void {
+    for (const op of ops) {
+      const groups = op.kind === 'all' ? [1, 2, 3, 4] : [op.n]
+      for (const n of groups) {
+        const group = FUNC_SUB_GROUPS[n - 1]
+        if (!group) throw new Error(`subButtonList 没有第 ${n} 组`)
+        for (const key of group) {
+          if (op.on) drawn.add(key)
+          else drawn.delete(key)
+        }
+      }
+    }
+  }
+
+  const centerOf = (b: { x: number; y: number; width: number; height: number }) => ({
+    x: b.x - 15 + Math.floor(b.width / 2),
+    y: b.y - 6 + Math.floor(b.height / 2),
+  })
+
+  /** 覆盖登记：每条用例走过哪几段，最后拿解析出来的段落数当分母对撞。 */
+  const walked = new Set<string>()
+
+  /**
+   * 走一串点击，每一步都拿参照模型对一遍。
+   *
+   * 每一步先断言这个落点**只**打中当前画得出来的那一颗 —— 参照模型的前提是
+   * "一次点击 = 一段"，那个前提不成立时它就默默地不对了，而画面上看不出来
+   * （原版那些子按钮的矩形确实互相重叠，只是从来不同时画）。
+   */
+  function walk(clicks: readonly string[]): Set<string> {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    w.panel = 'funcPanel'
+    const fb = w.panels.funcPanel.funcButtons
+    if (!fb) throw new Error('funcPanel 没有 funcButtons')
+    const ref = initialModel()
+    expect(new Set(drawnFuncButtons(fb)), '开局那一份对不上').toEqual(ref.drawn)
+
+    const buttonOf = (k: string) =>
+      k in fb.main ? fb.main[k as FuncMainKey] : fb.sub[k as FuncSubKey]
+
+    for (const key of clicks) {
+      walked.add(key)
+      const { x, y } = centerOf(buttonOf(key))
+      expect(ref.drawn.has(key), `${key} 这时候画不出来，点不着`).toBe(true)
+      const alsoHit = FUNC_ALL_KEYS.map(String).filter(
+        (k) => k !== key && ref.drawn.has(k) && hits(buttonOf(k), x, y),
+      )
+      expect(alsoHit, `点 ${key} 的落点同时打中了别的按钮，一次点击不止一段`).toEqual([])
+
+      stepMenu(w, [{ e: 'press', x, y }])
+      const s = sectionOf(key)
+      applyOps(ref.drawn, s.ops)
+      if (s.bgm !== null) ref.bgm = s.bgm
+      if (s.sfx !== null) ref.sfx = s.sfx
+      expect(new Set(drawnFuncButtons(fb)), `点完 ${key} 之后画得出来的那批`).toEqual(ref.drawn)
+      expect(w.music.length, `点 ${key} 出了几声`).toBe(s.music)
+      expect(w.audio.bgm, `点 ${key} 之后的 BGM 开关`).toBe(ref.bgm)
+      expect(w.audio.sfx, `点 ${key} 之后的音效开关`).toBe(ref.sfx)
+      // 松开，把 isclicked 收干净 —— 原版一次点击是按下 + 松开两个事件。
+      stepMenu(w, [{ e: 'release', x, y }])
+    }
+    return ref.drawn
+  }
+
+  it('点「设定」展开背景音乐 / 特殊音效 / 键盘设定三组子按钮', () => {
+    const drawn = walk(['setButton'])
+    expect(drawn.has('setBGM')).toBe(true)
+    expect(drawn.has('setClick')).toBe(true)
+    // ⚠️「键盘设定」在这个集合里是因为它的 isDraw 从开局起就是 Yes ——
+    // 它其实一次都没被画出来过，也点不着（见上面那条）。真值记的正是 isDraw。
+    expect(drawn.has('setKey')).toBe(true)
+  })
+
+  it('设定 → 背景音乐 → 开 / 关：BGM 开关真的跟着变', () => {
+    walk(['setButton', 'setBGM', 'off_BGM'])
+    walk(['setButton', 'setBGM', 'off_BGM', 'on_BGM'])
+  })
+
+  it('设定 → 特殊音效 → 开 / 关', () => {
+    walk(['setButton', 'setClick', 'off_click', 'on_click'])
+  })
+
+  it('点「退出」展开确认离开 / 重新开始；两颗都点得响', () => {
+    walk(['exitButton', 'exitForSure'])
+    walk(['exitButton', 'restart'])
+  })
+
+  it('存档 / 提取 / 返回：三颗都出一声换页音，且把子菜单全收起来', () => {
+    for (const key of ['saveButton', 'readButton', 'returnButton'] as const) {
+      const drawn = walk(['setButton', key])
+      for (const sub of FUNC_SUB_ORDER) {
+        expect(drawn.has(sub), `点完 ${key} 之后 ${sub} 不该还画着`).toBe(false)
+      }
+      // setKey 谁都关不掉 —— 它不在那四组里。
+      expect(drawn.has('setKey')).toBe(true)
+    }
+  })
+
+  it('按一下页签就把子菜单收起来 —— checkPressed 开头那一段', () => {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    w.panel = 'funcPanel'
+    const fb = w.panels.funcPanel.funcButtons
+    if (!fb) throw new Error('funcPanel 没有 funcButtons')
+    const set = centerOf(fb.main.setButton)
+    stepMenu(w, [{ e: 'press', ...set }])
+    stepMenu(w, [{ e: 'release', ...set }])
+    expect(drawnFuncButtons(fb)).toContain('setBGM')
+
+    // 点「天书」页签（当前就在天书页）：`command.checkPressed` 把它置 isclicked，
+    // 紧接着 `FuncButtons.checkPressed` 开头那一段就把子菜单全收起来。
+    const tab = centerOf(w.tabs.func)
+    stepMenu(w, [{ e: 'press', ...tab }])
+    const ref = initialModel()
+    applyOps(ref.drawn, sectionOf('tabs').ops)
+    expect(new Set(drawnFuncButtons(fb))).toEqual(ref.drawn)
+    walked.add('tabs')
+  })
+
+  it('「特殊音效 关」一声都不出，而「开」出一声 —— 两段的不对称照抄', () => {
+    // 两段的 isDraw 动作完全相同，唯一的差别就是出不出声：抹平了逐帧比对
+    // 也看不出来，只有这一条与上面 `walk` 里那句 `w.music.length` 拦得住。
+    expect(sectionOf('off_click').ops).toEqual(sectionOf('on_click').ops)
+    expect(sectionOf('off_click').music).toBe(0)
+    expect(sectionOf('on_click').music).toBe(1)
+  })
+
+  it('解析出来的每一段都被走过 —— 除了那段死代码', () => {
+    // 分母是**解析出来的**段落名单，不是手写的。新加一段而没人走它就红。
+    const unreached = SECTIONS.map((s) => s.guard).filter((g) => !walked.has(g) && g !== 'setKey')
+    expect(unreached, 'checkPressed() 里有段落一次都没走到').toEqual([])
+    // 反过来：`setKey` 那一段必须走不到（它是死代码），走到了说明有人"修好"了它。
+    expect(walked.has('setKey')).toBe(false)
   })
 })
