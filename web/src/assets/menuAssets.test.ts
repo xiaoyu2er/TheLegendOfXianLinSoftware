@@ -32,6 +32,14 @@ import type { DeferredMenuManifest } from './menuAssets'
  * 边界本身另有一条判据：`MENU_SKELETON_TOP_DIRS` 是一份**手签的登记**，而它
  * 记的那件事（哪几个目录是每一页都要画的）在原版 `menu/FatherPanel.paint()`
  * 里有独立答案。两者对撞，见「边界与原版的共用绘制对得上」那一条。
+ *
+ * ⚠️ **那一条不是装饰，而这是量出来的，不是推的。** 上面那批双向判据的分母
+ * 全都现扫自磁盘，所以一个**改了名单又重烘过**的错边界能整批骗过它们：
+ * 2026-09-08 实测，把 `MENU_SKELETON_TOP_DIRS` 去掉 `鼠标图` 再跑一次
+ * `pnpm bake`（产物随之变成 35 / 154），这一档 14 条里 **12 条照绿**
+ * —— 只有「边界与原版的共用绘制对得上」和「只放行顶层目录逐字相等的那些」
+ * 会红。换句话说，少了这一条，边界画错这件事在这里**只由几个手写的例子
+ * 兜着**。
  */
 
 const DEFERRED = deferred as DeferredMenuManifest
