@@ -104,6 +104,12 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
  * 两段分开是原版的形状，也是必须的：命中判据要对四颗都跑一遍（没命中的那几颗
  * 要把贴图拨回常态），换页那一步只认第一个命中的。
  */
+/**
+ * ⚠️ **`w.music` 今天没有任何人去播** —— 整个 web 端没有音效播放器
+ * （战斗那边从 M2 起同样如此，`sources/music/` 35 个文件一个都没进烘焙）。
+ * 这一列是**状态**，由 menu 真值的 `music` 那一列守着；把它变成声音是
+ * **xl-8l2**。
+ */
 function commandCheckPressed(w: MenuWorld): void {
   for (const key of TAB_PRIORITY) pressButton(w.tabs[key], w.currentX, w.currentY)
   for (const key of TAB_PRIORITY) {
