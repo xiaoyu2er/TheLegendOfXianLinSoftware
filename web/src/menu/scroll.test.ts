@@ -271,6 +271,17 @@ describe('滚动条：撑过框的那一侧（真值里的武器列表）', () =
     expect(top!.thumb.height).toBe(bottom!.thumb.height)
     expect(top!.thumb.height).toBeLessThan(track.height)
     expect(top!.thumb.height).toBeGreaterThanOrEqual(SCROLLBAR_MIN_THUMB)
+    // 滑块占槽的比例 = 一屏占整份列表的比例（差一像素以内，取整）。
+    // ⚠️ 这两句也是**实测补上的**：只核"比槽短、不比最小高矮"的话，把滑块
+    // 高度写死成最小高（12 像素）全套判据是绿的 —— 而那样的滚动条根本不告诉
+    // 玩家列表有多长。
+    const rows = viewportRows(EQUIP_LIST_VIEW)
+    expect(Math.abs(top!.thumb.height / track.height - rows / WEAPON_ROWS)).toBeLessThan(
+      1 / track.height,
+    )
+    // 列表越长滑块越短。
+    const longer = scrollbar(EQUIP_LIST_VIEW, WEAPON_ROWS * 4, 0)!
+    expect(longer.thumb.height).toBeLessThan(top!.thumb.height)
     // 滑块单调往下走，一格都不许倒着来。
     let last = -1
     for (let at = 0; at <= max; at++) {
@@ -396,6 +407,14 @@ describe('滚动条：翻页这件事真的做得成', () => {
     const before = d.currentDrug
     stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: rowBandTop(DRUG_LIST_VIEW, 0, offset) + 1 }])
     expect(d.currentDrug, '卷上去的行还点得中').toBe(before)
+
+    // 框外滚不动。⚠️ 这一句是**实测补上的**：只在框里滚的话，把物品页那个
+    // `inListBox` 守卫整个删掉，全套判据是绿的（装备页那边有同样一句，两页
+    // 各有各的守卫，一句盖不住两处）。
+    stepMenu(w, [
+      { e: 'wheel', x: DRUG_LIST_VIEW.box.left - 50, y: DRUG_LIST_VIEW.box.top + 10, rows: -offset },
+    ])
+    expect(d.scroll, '在框外滚也翻动了物品页').toBe(offset)
   })
 
   it('滚轮只送给当前显示的那一页', () => {
