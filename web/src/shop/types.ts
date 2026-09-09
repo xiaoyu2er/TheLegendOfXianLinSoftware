@@ -97,7 +97,11 @@ export interface ShopWorld {
   coins: number
   /** `DrugPack` / `EquipmentPack`，两家店共享。 */
   pack: ShopPack
-  /** 出战名单（`SaveAndLoad.zhang/lu/wen`）。**剧本回显，不是状态**。 */
+  /**
+   * **队伍名单**（剧本 `Role` 那一行 → `SaveAndLoad.zhang/lu/wen`）。
+   * **剧本回显，不是状态**。⚠️ **不是出战名单**，两份的区别见
+   * {@link ShopConfig.party} 与 `render/animation.test.ts`。
+   */
   readonly party: Readonly<Record<'zhang' | 'lu' | 'wen', boolean>>
   /** **这一步**请求播放的音效，按调用先后。每步开头清空（对应 `MusicTap`）。 */
   music: string[]

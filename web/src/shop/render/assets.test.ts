@@ -40,7 +40,7 @@ describe('商店素材的逻辑 ID', () => {
     }
   })
 
-  it('出战名单是分母：少一个人就少八帧', () => {
+  it('队伍名单是分母：少一个人就少八帧', () => {
     const one = createShopWorld({ party: ['zhang'], coins: 10000, seed: 1 })
     const three = createShopWorld({ party: ['zhang', 'lu', 'wen'], coins: 10000, seed: 1 })
     expect(shopTextureIds(three).length - shopTextureIds(one).length).toBe(2 * ANIMATION_FRAMES)

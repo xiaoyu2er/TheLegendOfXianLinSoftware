@@ -161,6 +161,10 @@ export const PURSE_Y = 0
 /**
  * 队伍那三个人的动画位置与四行属性图标 —— `new ShopAnimation(角色, 0, 0/160/320, 8, this)`
  * 与 `drawIcon()` 里 `30+i*150` 那一串。第四条动画是店主 / 小妹，(364, 515)。
+ *
+ * 下面这四个数与 {@link ANIMATION_FRAMES} / {@link ANIMATION_INTERVAL_MS}
+ * **由 `render/animation.test.ts` 逐个对回 GBK 源码那五个实参**（xl-knp.9）。
+ * 在这里手改一个数，那条判据当场红。
  */
 export const PARTY_ANIMATION_X = 0
 export const PARTY_ANIMATION_Y: readonly number[] = [0, 160, 320]
