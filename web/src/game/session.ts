@@ -275,7 +275,7 @@ export function configFor(
     levels: { zhang: carry.zhang.level, yu: carry.yu.level, lu: carry.lu.level },
     // 四项基础属性也从队伍现读（xl-6lo.16）。原版根本不用搬：那三个类的属性
     // 字段是 `static`，菜单里穿的装备、喝的药改的就是战斗读的同一份。少了这
-    // 一行，菜单里 910 点上限的玉洁一进战斗就被 `refreshValue()` 夹回 700。
+    // 一行，菜单里 1190 点上限的玉洁一进战斗就被 `refreshValue()` 夹回 980。
     attributes: {
       zhang: attributesOf(carry.zhang),
       yu: attributesOf(carry.yu),

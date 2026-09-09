@@ -47,8 +47,8 @@ import type { HeroCarry } from '../battle/world'
  * `menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)` 传的正是那三个对象）。
  *
  * 所以队伍这一份**必须记属性**，而且出厂值就要带上那三把武器：不记的话，
- * 菜单里喝药喝到 910 点气血的玉洁一进战斗就被 `refreshValue()` 夹回 700 ——
- * 而"夹回去了"和"本来就是 700"在画面上长得一样。
+ * 菜单里喝药喝到 1190 点气血的玉洁一进战斗就被 `refreshValue()` 夹回 980 ——
+ * 而"夹回去了"和"本来就是 980"在画面上长得一样。
  */
 export const FAKE = declareFake('party')
 
@@ -97,8 +97,11 @@ export const DEFAULT_LEVEL: Readonly<Record<PartyKey, number>> = {
  *    （`if(hp>=hpMax) hp=hpMax`）。
  *
  * 次序是有观测后果的，不是排版：玉洁那把鸳鸯刀 `+3` 体力，于是她的 `hpMax`
- * 是 910 而 `hp` 停在 700 —— **开局就不是满血**。倒过来做（先穿武器再
- * `hp=hpMax`）会得到 910，一个完全合法、完全错误的数。
+ * 是 1190 而 `hp` 停在 980 —— **开局就不是满血**（三级、体力 14 → 17）。
+ * 倒过来做（先穿武器再 `hp=hpMax`）会得到 1190，一个完全合法、完全错误的数。
+ * 三个人开局都有一样够不着上限：张小凡是灵力（300 / 330），陆雪琪也是
+ * （360 / 420）。这三对数是 2026-09-09 现算的读数，不是规格 —— 改了武器表
+ * 或等级公式它们就变了，判据在 `party.test.ts`（那里不写数，只写关系）。
  */
 export function initialMember(key: PartyKey): PartyMemberState {
   const level = DEFAULT_LEVEL[key]
