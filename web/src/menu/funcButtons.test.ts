@@ -450,6 +450,29 @@ describe('天书页 · 设定与退出子菜单', () => {
     expect(sectionOf('on_click').music).toBe(1)
   })
 
+  it('点「键盘设定」什么都不会发生 —— 复刻原版的空，别"顺手实现"它', () => {
+    // 上面那条只读源码，读不到"有人在 TS 这一侧给它补了一句 isPressedButton"
+    // —— 篡改验证里那一条（把 setKey 接进命中判据）当时是**绿**的，这条就是
+    // 补它的。落点真的打在「键盘设定」上，而它 isDraw 是 Yes，所以"点不着"
+    // 这件事必须由**没有任何变化**来证明，不能由"画不出来"绕过去。
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    w.panel = 'funcPanel'
+    const fb = w.panels.funcPanel.funcButtons
+    if (!fb) throw new Error('funcPanel 没有 funcButtons')
+    expect(fb.sub.setKey.isDraw, 'setKey 开局就该是 Yes，否则这条用例证不到东西').toBe(true)
+    const at = centerOf(fb.sub.setKey)
+    expect(hits(fb.sub.setKey, at.x, at.y), '落点没打中「键盘设定」').toBe(true)
+
+    const before = drawnFuncButtons(fb)
+    stepMenu(w, [{ e: 'press', x: at.x, y: at.y }])
+    // 那一段真要是跑了，`subButtonList[1]` 会展开、还会出一声 —— 两条都在这。
+    expect(drawnFuncButtons(fb), '点「键盘设定」把子菜单展开了').toEqual(before)
+    expect(w.music, '点「键盘设定」出声了').toEqual([])
+    expect(fb.sub.setKey.isclicked, 'setKey 的 isclicked 被置真了').toBe(false)
+    // 贴图也不该动：命中判据一次都没跑到它身上。
+    expect(fb.sub.setKey.image).toBe('normal')
+  })
+
   it('解析出来的每一段都被走过 —— 除了那段死代码', () => {
     // 分母是**解析出来的**段落名单，不是手写的。新加一段而没人走它就红。
     const unreached = SECTIONS.map((s) => s.guard).filter((g) => !walked.has(g) && g !== 'setKey')
