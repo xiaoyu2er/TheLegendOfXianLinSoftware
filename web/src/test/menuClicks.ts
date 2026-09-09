@@ -19,6 +19,13 @@ import type { MenuButtonState, MenuWorld } from '../menu/types'
  * 一颗按钮的中心。⚠️ **命中框比画出来的位置偏左 15、偏上 6**
  * （`GameButton.isMoveIn/isPressedButton` 里那个 `x-15` / `y-6`，见
  * `menu/buttons.ts` 的第 1 条），所以中心不是 `x+width/2`。
+ *
+ * ⚠️ **这个偏移在这里是观测不到的，别以为它有判据守着。** 实测（2026-09-09，
+ * 菜单里全部 15 颗按钮）：抹掉这两个偏移，朴素中心 `x+w/2` **仍然落在**偏移后
+ * 的命中框里，所以整套判据全绿。原因是它要求 `width>30 && height>12`，而这
+ * 15 颗最小的是 40×40 与 43×20 —— 一颗都不例外。真正守着这两个数的是
+ * `menu/buttons.test.ts` 对 `hits()` 的判据（那里点的是边缘），不是这里。
+ * 这里写全是为了让落点与原版同源，不是因为写错了会红。
  */
 export function buttonCenter(b: MenuButtonState): [number, number] {
   return [b.x - 15 + Math.floor(b.width / 2), b.y - 6 + Math.floor(b.height / 2)]
