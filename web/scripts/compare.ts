@@ -194,6 +194,7 @@ function slimTrace(json: string): string {
     tickCount: number
     ticks: {
       t: number
+      ip?: number
       input: unknown[]
     }[]
   }
@@ -208,8 +209,17 @@ function slimTrace(json: string): string {
     // 等于把两端的分歧提前抹平。`ScenePanel.step()` 那几道门也一样：两边各自
     // 留的临时口子在 xl-4rx 一起关掉了。
     // `script` 整个回显，取图页要从里面读 `isScript`——它决定进场放不放旁白。
+    // `ip` 也要透传（xl-knp.10）。它**不是状态**，是这一步走的是剧本第几条
+    // 指令 —— 与 `t` / `input` 同在 `NON_STATE_COLUMNS` 里。商店进店那一步的
+    // `input` 是空数组（原版走场景的选择事件，面板收不到鼠标事件），换的是
+    // 哪家店只能从剧本的 `open` 指令还原，而找到那条指令要靠 `ip`
+    // （`shop/replay.ts` 的 `shopInputsOfTicks`）。丢掉它的表现是取图页在
+    // 第 0 步就抛「ip=undefined」—— 实测过一次。
+    // 没有这一列的驱动器（场景 / 战斗）在这里得到 `undefined`，
+    // `JSON.stringify` 会把整个键去掉，与从前逐字节相同。
     ticks: trace.ticks.map((tick) => ({
       t: tick.t,
+      ip: tick.ip,
       input: tick.input,
     })),
   })

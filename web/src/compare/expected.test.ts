@@ -88,7 +88,21 @@ describe('跨端比对的期望表', () => {
     // 要求的状态就是一个逃生舱：以后谁想绕开上界，把 status 改成它就行了。
     // 分母从表里现数。
     const unassembled = Object.entries(EXPECTED).filter(([, e]) => e.status === 'unassembled')
-    expect(unassembled.length, '一条 unassembled 都没有了？那就把这条判据删掉').toBeGreaterThan(0)
+    // **这是一份登记，逐条签在这里**，与上面那条 unpainted 同一个套路：xl-knp.10
+    // 把最后一支驱动器（shop）接上之后，三条 shop 剧本换成了真量出来的分区表态，
+    // **这张表因此空了**。原先那句 `toBeGreaterThan(0)` 从此恒红。
+    //
+    // 为什么不是 `filter` 一下就完事（纪律 3 那条误用）：这一行两头都会红 ——
+    // 谁新表一条 unassembled（新驱动器落了真值、还没接线），它红；谁把最后一套
+    // 装配做出来了却没改这张表，它也红。写成"现扫出来的就是对的"，两件事都不响。
+    //
+    // 空着的那一侧不是没人守：`unassembled.test.ts` 拿一条**合成的** ghost 剧本
+    // 验着「表说 unassembled 而页面装得出 → 抛」两个方向，分母写死，不依赖磁盘上
+    // 碰巧还剩几条没接线的。
+    expect(
+      unassembled.map(([name]) => name),
+      '表 unassembled 的剧本变了？改这份登记，下面那几条会跟着验它',
+    ).toEqual([])
     for (const [name, e] of unassembled) {
       expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
       expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()
