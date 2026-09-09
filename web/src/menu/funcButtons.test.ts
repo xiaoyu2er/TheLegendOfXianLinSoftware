@@ -450,6 +450,25 @@ describe('天书页 · 设定与退出子菜单', () => {
     expect(sectionOf('on_click').music).toBe(1)
   })
 
+  it('第 4 段少的那句 hideAll 观测不到 —— 它把四组全显式赋了值', () => {
+    // 篡改验证里唯一一条**绿**的（给 setClick 补上开头那句 `hideAll`）。
+    // 追下去不是判据失灵：第 3 段是「先全关，再开 1、开 2」，剩下两组靠那句
+    // hideAll 定；第 4 段是「开 1、关 2、开 3、关 4」——**四组一个不落**，
+    // 于是前面再加一句全关是个恒等变换，任何判据都看不见它。
+    //
+    // 这一条把那件事变成一条会红的登记：哪天第 4 段变成只赋三组，补不补那句
+    // hideAll 就有了区别，而这条会当场红，提醒下一个人去把它照抄回来。
+    const touched = new Set(
+      sectionOf('setClick').ops.flatMap((op) => (op.kind === 'group' ? [op.n] : [1, 2, 3, 4])),
+    )
+    expect([...touched].sort()).toEqual([1, 2, 3, 4])
+    // 而第 3 段确实**不是**四组全赋 —— 两段的差别是真的，不是我们读错了。
+    const bgmTouched = new Set(
+      sectionOf('setBGM').ops.flatMap((op) => (op.kind === 'group' ? [op.n] : [])),
+    )
+    expect([...bgmTouched].sort()).not.toEqual([1, 2, 3, 4])
+  })
+
   it('点「键盘设定」什么都不会发生 —— 复刻原版的空，别"顺手实现"它', () => {
     // 上面那条只读源码，读不到"有人在 TS 这一侧给它补了一句 isPressedButton"
     // —— 篡改验证里那一条（把 setKey 接进命中判据）当时是**绿**的，这条就是
