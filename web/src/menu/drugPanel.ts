@@ -3,7 +3,7 @@ import { DRUGS } from '../battle/drugs'
 import type { DrugSpec } from '../battle/drugs'
 import type { MenuHero } from './heroes'
 import { derive } from '../battle/units'
-import { DRUG_LIST_BOX, clampScroll, inListBox, rowBandTop, trackPress } from './scroll'
+import { DRUG_LIST_BOX, clampScroll, rowBandTop } from './scroll'
 import type { ListViewport } from './scroll'
 import { SCOLL_HEROES } from './types'
 import type { DrugPanelState, DrugStock, MenuSubPanel, MenuWorld } from './types'
@@ -158,8 +158,8 @@ export function drugCheckMoveIn(w: MenuWorld, p: MenuSubPanel): void {
     for (let i = offset; i < list.length; i++) {
       const originalY = rowBandTop(DRUG_LIST_VIEW, i, offset)
       if (
-        p.currentX > DRUG_LIST_X &&
-        p.currentX < DRUG_LIST_X + DRUG_HIT_W &&
+        p.currentX > DRUG_LIST_VIEW.hitLeft &&
+        p.currentX < DRUG_LIST_VIEW.hitRight &&
         p.currentY > originalY &&
         p.currentY < originalY + DRUG_ROW_H
       ) {
@@ -170,31 +170,6 @@ export function drugCheckMoveIn(w: MenuWorld, p: MenuSubPanel): void {
   } else {
     d.useButton.isDraw = false
   }
-}
-
-/**
- * 滚轮在物品页上转了一格。与装备页那个同形（`equipWheel`），**只认落在列表框
- * 里的那一下**。
- *
- * ⚠️ 原版的数据下它永远返回 `false`：六种药装得下 11 行的框。这不是死代码 ——
- * 药品表是从 `sources/Shop/drug.txt` 读的，那张表长出第 12 行的那天它就动了。
- */
-export function drugWheel(w: MenuWorld, p: MenuSubPanel, x: number, y: number, rows: number): boolean {
-  const d = p.drug
-  if (!d) return false
-  if (!inListBox(DRUG_LIST_VIEW, x, y)) return false
-  const length = visibleDrugs(w.drugPack).length
-  const before = clampScroll(DRUG_LIST_VIEW, length, d.scroll)
-  d.scroll = clampScroll(DRUG_LIST_VIEW, length, before + rows)
-  return d.scroll !== before
-}
-
-/** 在物品页滚动条的槽里按了一下。**这一下不在槽里时什么都不做**。 */
-export function drugTrackPress(w: MenuWorld, p: MenuSubPanel, x: number, y: number): void {
-  const d = p.drug
-  if (!d) return
-  const next = trackPress(DRUG_LIST_VIEW, visibleDrugs(w.drugPack).length, d.scroll, x, y)
-  if (next !== null) d.scroll = next
 }
 
 /**

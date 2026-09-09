@@ -33,10 +33,17 @@
  *
  * ## ⚠️ 给 xl-6lo.14（menu 进逐帧比对）的登记
  *
- * 滚动条是**画在屏幕上的、原版没有的东西**。menu 那条流水线接上以后，
- * `menu-scroll` 那一条在滚动条那片矩形上必然与原版不同，而 `menu-equip` /
- * `menu-magic` 两条不会（它们的列表都装得下，滚动条整个不画）。接线的人要么
- * 给那片矩形写一条分区表态，要么让取图页把它关掉 —— **别把它当成"渲染错了"**。
+ * `menu-scroll` 接上逐帧比对之后与原版有**两片**不同，不是一片：
+ *
+ * 1. 滚动条那两块矩形 —— 原版没有的东西，画在框的右内沿上；
+ * 2. **被裁掉的第 17..20 行** —— 原版把它们照画出去（基线 529 / 551 /
+ *    573 / 595），web 侧不画。
+ *
+ * ⚠️ 第 2 片比第 1 片大得多，而且容易漏：只给滚动条那条窄矩形留分区的话，
+ * 比对照样红，而红在一片"本该有字的地方没有字"上 —— 看起来完全像渲染错了。
+ * `menu-equip` / `menu-magic` 两条都不受影响（它们的列表都装得下）。
+ *
+ * 接线的人要么给这两片各写分区表态，要么让取图页把裁剪与滚动条一起关掉。
  */
 
 /** 一处列表框的内区。**量出来的**，来源见 `LIST_BOX_MEASUREMENT`。 */
@@ -194,9 +201,17 @@ export function scrollbar(
   return { track, thumb }
 }
 
-/** 一个点在这个矩形里吗（闭区间）。 */
+/**
+ * 一个点在这个矩形里吗。**左上闭、右下开** —— 一个 `width` 宽的矩形正好盖住
+ * `width` 列像素。
+ *
+ * ⚠️ 头一版两头都写成闭区间，于是 8 像素宽的槽命中 770..778 九列，越过量出来
+ * 的框右内沿 777 一列。那里没有别的按钮，所以**没有任何功能后果** —— 也正因为
+ * 没有后果，它只会以"槽贴着右内沿"这句话与代码对不上的形式活着
+ * （/code-review 的 Spec 轴找出来的）。
+ */
 export function inRect(r: Rect, x: number, y: number): boolean {
-  return x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height
+  return x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
 }
 
 /**
@@ -219,6 +234,46 @@ export function trackPress(
   if (inRect(bar.thumb, x, y)) return clampScroll(v, length, offset)
   const rows = viewportRows(v)
   return clampScroll(v, length, offset + (y < bar.thumb.y ? -rows : rows))
+}
+
+/**
+ * 一处**存着滚动位置**的状态（装备页那一摊、物品页那一份）。
+ *
+ * 收成一个一字段的接口，是为了让下面两个动作两页共用：头一版两页各写了一份
+ * `xxxWheel` / `xxxTrackPress`，四个函数逐字同形，连注释都写着"与装备页那个
+ * 同形"（/code-review 的标准轴点名的 Duplicated Code）。**两份守卫比一份危险**
+ * —— 篡改矩阵实测过：删掉物品页那一份的 `inListBox`，装备页那条判据一点都不红。
+ */
+export interface Scrollable {
+  scroll: number
+}
+
+/**
+ * 滚轮转了一格。**只认落在列表框里的那一下** —— 框外滚不动列表，否则在属性栏
+ * 上滚也会翻背包，而那看起来像"列表自己跳了一下"。
+ */
+export function wheelScroll(
+  v: ListViewport,
+  s: Scrollable,
+  length: number,
+  x: number,
+  y: number,
+  rows: number,
+): void {
+  if (!inListBox(v, x, y)) return
+  s.scroll = clampScroll(v, length, clampScroll(v, length, s.scroll) + rows)
+}
+
+/** 在滚动条的槽里按了一下。**这一下不在槽里时什么都不做**。 */
+export function pressScrollTrack(
+  v: ListViewport,
+  s: Scrollable,
+  length: number,
+  x: number,
+  y: number,
+): void {
+  const next = trackPress(v, length, s.scroll, x, y)
+  if (next !== null) s.scroll = next
 }
 
 /** 一格滚轮翻几行。 */

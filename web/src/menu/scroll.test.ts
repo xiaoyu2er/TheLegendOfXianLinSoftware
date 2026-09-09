@@ -22,7 +22,7 @@ import {
   wheelRows,
 } from './scroll'
 import { EQUIP_LIST_VIEW, EQUIP_HIT_W, EQUIP_X_START, equipList, snapshotEquip } from './equipPanel'
-import { DRUG_LIST_VIEW, DRUG_LIST_X, visibleDrugs } from './drugPanel'
+import { DRUG_HIT_W, DRUG_LIST_VIEW, DRUG_LIST_X, visibleDrugs } from './drugPanel'
 import { stepMenu } from './step'
 import { snapshotMenu } from './snapshot'
 import type { MenuWorld } from './types'
@@ -408,9 +408,10 @@ describe('滚动条：翻页这件事真的做得成', () => {
     stepMenu(w, [{ e: 'move', x: DRUG_LIST_X + 1, y: rowBandTop(DRUG_LIST_VIEW, 0, offset) + 1 }])
     expect(d.currentDrug, '卷上去的行还点得中').toBe(before)
 
-    // 框外滚不动。⚠️ 这一句是**实测补上的**：只在框里滚的话，把物品页那个
-    // `inListBox` 守卫整个删掉，全套判据是绿的（装备页那边有同样一句，两页
-    // 各有各的守卫，一句盖不住两处）。
+    // 框外滚不动。⚠️ 这一句是**实测补上的**：头一版两页各有各的 `inListBox`
+    // 守卫，删掉物品页那一份，装备页那条判据一点都不红。守卫后来收成了一份
+    // （`scroll.ts` 的 `wheelScroll`），这一句仍然留着 —— 它现在守的是"物品页
+    // 真的走了那条共用的路"，而不再是"这一页自己的守卫还在"。
     stepMenu(w, [
       { e: 'wheel', x: DRUG_LIST_VIEW.box.left - 50, y: DRUG_LIST_VIEW.box.top + 10, rows: -offset },
     ])
@@ -528,7 +529,10 @@ describe('滚动条：够得着那一半没被改掉', () => {
       EQUIP_X_START,
       EQUIP_X_START + EQUIP_HIT_W,
     ])
-    expect([DRUG_LIST_VIEW.hitLeft, DRUG_LIST_VIEW.hitRight]).toEqual([DRUG_LIST_X, DRUG_LIST_X + 130])
+    expect([DRUG_LIST_VIEW.hitLeft, DRUG_LIST_VIEW.hitRight]).toEqual([
+      DRUG_LIST_X,
+      DRUG_LIST_X + DRUG_HIT_W,
+    ])
   })
 })
 

@@ -2,7 +2,7 @@ import { menuButton, moveInButton, pressButton, releaseButton } from './buttons'
 import { EQUIPMENT_LISTS, EQUIP_SLOTS } from './equipment'
 import type { EquipSlot, EquipmentSpec } from './equipment'
 import { DEFAULT_WEAPONS } from './defaultWeapons'
-import { EQUIP_LIST_BOX, clampScroll, inListBox, rowBandTop, trackPress } from './scroll'
+import { EQUIP_LIST_BOX, clampScroll, rowBandTop } from './scroll'
 import type { ListViewport } from './scroll'
 import { refreshMenuHero } from './heroes'
 import type { MenuHero } from './heroes'
@@ -435,33 +435,17 @@ function equipRowMoveIn(e: EquipPanelState, x: number, y: number): void {
   const offset = clampScroll(EQUIP_LIST_VIEW, list.length, e.scroll)
   for (let i = offset; i < list.length; i++) {
     const rowY = rowBandTop(EQUIP_LIST_VIEW, i, offset)
-    if (x > EQUIP_X_START && x < EQUIP_X_START + EQUIP_HIT_W && y > rowY && y < rowY + EQUIP_ROW_H) {
+    if (
+      x > EQUIP_LIST_VIEW.hitLeft &&
+      x < EQUIP_LIST_VIEW.hitRight &&
+      y > rowY &&
+      y < rowY + EQUIP_ROW_H
+    ) {
       e.currentEquipment = list[i]!.name
       e.signal = 1
       e.use.isDraw = true
     }
   }
-}
-
-/**
- * 滚轮在装备页上转了一格。**只认落在列表框里的那一下** —— 框外滚不动列表，
- * 否则在属性栏上滚也会翻背包，而那看起来像"列表自己跳了一下"。
- *
- * 返回滚没滚得动，给调用方一个可断言的读数（"滚了但没变"与"根本没认这一下"
- * 是两回事）。
- */
-export function equipWheel(e: EquipPanelState, x: number, y: number, rows: number): boolean {
-  if (!inListBox(EQUIP_LIST_VIEW, x, y)) return false
-  const length = equipList(e).length
-  const before = clampScroll(EQUIP_LIST_VIEW, length, e.scroll)
-  e.scroll = clampScroll(EQUIP_LIST_VIEW, length, before + rows)
-  return e.scroll !== before
-}
-
-/** 在装备页滚动条的槽里按了一下。**这一下不在槽里时什么都不做**。 */
-export function equipTrackPress(e: EquipPanelState, x: number, y: number): void {
-  const next = trackPress(EQUIP_LIST_VIEW, equipList(e).length, e.scroll, x, y)
-  if (next !== null) e.scroll = next
 }
 
 /** `checkAllButtonReleased()` 里装备页那一段。 */

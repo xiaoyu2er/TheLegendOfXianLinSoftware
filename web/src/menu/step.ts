@@ -2,20 +2,21 @@ import { moveInButton, pressButton, releaseButton } from './buttons'
 import {
   clearEquipWarnings,
   equipCheckMoveIn,
+  EQUIP_LIST_VIEW,
   equipCheckPressed,
   equipCheckReleased,
-  equipTrackPress,
-  equipWheel,
+  equipList,
   paintEquip,
 } from './equipPanel'
 import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased } from './funcButtons'
 import {
+  DRUG_LIST_VIEW,
   drugPanelMoveIn,
   drugPanelPressed,
   drugPanelReleased,
-  drugTrackPress,
-  drugWheel,
+  visibleDrugs,
 } from './drugPanel'
+import { pressScrollTrack, wheelScroll } from './scroll'
 import {
   magicCheckMoveIn,
   magicCheckPressed,
@@ -134,11 +135,22 @@ export function applyMenuInput(w: MenuWorld, input: MenuInput): void {
  * 每一页自己再判这一下落没落在它的列表框里 —— 落在别处一律不动。
  * ⚠️ 它**一个真值记着的字段都不碰**：不动 `Mouse` 的坐标（滚轮不移动指针）、
  * 不动选中项、不出声。
+ *
+ * ⚠️ **翻完页不重跑一次悬停判定，这是有意的**（/code-review 的 Spec 轴问到）。
+ * 后果看得见：鼠标停在列表上不动、滚一格，屏幕上那一行换了内容，而选中的
+ * 仍然是原来那一件，直到下一次 `mouseMoved`。两个理由：
+ *
+ * - 原版的选中**只由 `mouseMoved` 改**，没有第二条路。补一条等于给状态机加了
+ *   一种原版没有的转移，而它改的恰恰是真值记着的 `selected` / `selectedName`。
+ * - 「滚动不进真值」这条不变式就没了 —— 而它是这张票最好用的一条判据
+ *   （`scroll.test.ts` 最后那一组）。
+ *
+ * 真要跟手，该做的是在渲染层按当前指针位置画高亮，而不是让滚轮去改状态。
  */
 function menuWheel(w: MenuWorld, x: number, y: number, rows: number): void {
   const p = currentPanel(w)
-  if (p.equip) equipWheel(p.equip, x, y, rows)
-  if (p.drug) drugWheel(w, p, x, y, rows)
+  if (p.equip) wheelScroll(EQUIP_LIST_VIEW, p.equip, equipList(p.equip).length, x, y, rows)
+  if (p.drug) wheelScroll(DRUG_LIST_VIEW, p.drug, visibleDrugs(w.drugPack).length, x, y, rows)
 }
 
 /**
@@ -253,8 +265,12 @@ function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   // 列表框的右内沿，那片矩形上原版一颗按钮都没有（六颗槽位按钮在框上面
   // y 129..149，「使用」「弃用」在框下面），所以它既接不到别人的点击，也不会
   // 把自己的让出去。判据在 `scroll.test.ts`。
-  if (p.equip) equipTrackPress(p.equip, p.currentX, p.currentY)
-  if (p.drug) drugTrackPress(w, p, p.currentX, p.currentY)
+  if (p.equip) {
+    pressScrollTrack(EQUIP_LIST_VIEW, p.equip, equipList(p.equip).length, p.currentX, p.currentY)
+  }
+  if (p.drug) {
+    pressScrollTrack(DRUG_LIST_VIEW, p.drug, visibleDrugs(w.drugPack).length, p.currentX, p.currentY)
+  }
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */
