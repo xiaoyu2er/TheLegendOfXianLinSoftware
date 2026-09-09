@@ -394,9 +394,7 @@ public final class MenuDriver implements TraceDriver {
      */
     @SuppressWarnings("unchecked")
     private Object skillButton(int n) {
-        if (!panelName().equals("magicPanel")) {
-            fail("skill 只能用在奇术页，当前是 " + panelName());
-        }
+        requirePanel("skill", "magicPanel", "奇术页");
         int who = getInt(field(current(), "scoll"), "whichHero");
         String list;
         switch (who) {
@@ -421,9 +419,7 @@ public final class MenuDriver implements TraceDriver {
      * 当场报出来，而不是安安静静地导出一份什么都没发生的真值。
      */
     private Object funcButton(String name) {
-        if (!panelName().equals("funcPanel")) {
-            fail("func 只能用在天书页，当前是 " + panelName());
-        }
+        requirePanel("func", "funcPanel", "天书页");
         String fieldName = MenuScript.funcField(name);
         if (fieldName == null) fail("没有这颗天书按钮：" + name);
         return field(field(funcPanel(), "fb"), fieldName);
@@ -536,6 +532,17 @@ public final class MenuDriver implements TraceDriver {
 
     private Object funcPanel() { return field(mp, "funcPanel"); }
 
+    /**
+     * 这条指令只能在某一页上发。三条指令（slot / skill / func）各自只对一个
+     * 面板有意义，走错页的表现本来会是"在别的面板上找一个不存在的字段"——
+     * 那是一个反射异常，读起来跟剧本写错了毫无关系。
+     */
+    private void requirePanel(String op, String panel, String human) {
+        if (!panelName().equals(panel)) {
+            fail(op + " 只能用在" + human + "，当前是 " + panelName());
+        }
+    }
+
     private Object tabButton(String name) {
         Object command = field(mp, "command");
         switch (name) {
@@ -548,9 +555,7 @@ public final class MenuDriver implements TraceDriver {
     }
 
     private Object slotButton(String name) {
-        if (!panelName().equals("equipPanel")) {
-            fail("slot 只能用在装备页，当前是 " + panelName());
-        }
+        requirePanel("slot", "equipPanel", "装备页");
         return field(equipPanel(), name + "Button");
     }
 
