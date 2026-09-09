@@ -111,6 +111,39 @@ export function drugPictureAssetId(picture: string): AssetId {
 }
 
 /**
+ * 装备页那两张图之一（xl-234）。
+ *
+ * `category` 是 `sources/Shop/装备/` 下那一层**类目录名**（`武器` / `盔甲` /
+ * `头` / `脚` / `手` / `饰品`），`picture` 是六张表第 6 列那个文件名。原版
+ * `ShopReader.readEquipment(s)` 拼的就是 `sources/Shop/装备/<s>/<第 6 列>`，
+ * 而那个 `s` 与 `sources/Shop/<s>.txt` 是同一个字符串。
+ *
+ * **类必须进 ID**，理由是 ID 要能算回原版那条路径：原版拼的是
+ * `sources/Shop/装备/<s>/<第 6 列>`，去掉 `<s>` 这一段，两个目录里的同名文件
+ * 就算出同一个 ID —— 表现是选中 A 却画出 B，而两张图长得都像装备，没人看得
+ * 出来。
+ *
+ * ⚠️ **今天观测不到这件事，而这一点是量出来的、不是推出来的**：六个目录下
+ * 那 59 个 `.png` 的文件名两两互异（2026-09-09 现数，
+ * 拿 basename 排重一遍，`uniq -d` 一行都不打）。
+ * 所以把这一段去掉，**烘焙与映射表的分母一个都不会变**（篡改矩阵 R9 实测
+ * 全绿）。守它的因此是一条**直接的单元断言**（`resolve.test.ts` 里那条
+ * 「同名不同类算出来的 ID 不一样」），不是任何一个分母；烘焙器那边另有一道
+ * ID 撞车的硬失败兜着，哪天真进来一对重名，它会响而不是静静盖掉。
+ *
+ * **它不走 `battleAssetId` / `menuAssetId`**，与 `drugPictureAssetId` 同一个
+ * 理由：这批图在 `sources/Shop/` 下，既不在 `image/` 里也不在 `sources/菜单/`
+ * 里。硬塞进那两个前缀等于给"根目录"这个概念多一个例外，而例外不会响。
+ *
+ * **扩展名留着**，与 `npcAssetId` / `drugPictureAssetId` 同一个理由：ID 要是
+ * 数据里那一列的函数。这里还多一层必要性 —— 同一个词干在磁盘上有 `.png`
+ * 与 `.bmp` 两份（29 对），去掉扩展名它们就撞成一条。
+ */
+export function equipPictureAssetId(category: string, picture: string): AssetId {
+  return `equip:${normalizePath(category)}/${normalizePath(picture)}`
+}
+
+/**
  * 开始界面的一张图（xl-kaa）。`name` 是逻辑名，不是文件名 —— 文件名里有中文
  * （`按钮/起2.png`），而且"常态图"与"悬停图"在原版里只差一个 `2`，
  * 漏进渲染层就成了一条谁都不敢改的命名约定。映射见 `src/start/assets.ts` 的

@@ -7,6 +7,8 @@ import { DRUGS } from '../../battle/drugs'
 import type { DrugSpec } from '../../battle/drugs'
 import { EQUIP_SLOTS } from '../equipment'
 import type { EquipSlot } from '../equipment'
+import { equipPictureIdOf } from '../equipmentPictures'
+import { equipList } from '../equipPanel'
 import type { ButtonImage, MenuPanelName, MenuTabKey, MenuWorld } from '../types'
 import type { FuncMainKey, FuncSubKey } from '../funcButtons'
 
@@ -201,7 +203,33 @@ export function menuTextureIds(w: MenuWorld): AssetId[] {
   }
   // 装备页那八颗按钮 + 两张拒绝提示 + 升降数字（xl-6lo.9）。`装备/` 走按需，
   // `伤害值数字/` 在主包里（它是 `image/` 下的战斗素材）。
-  if (w.panel === 'equipPanel') ids.push(...equipTextureIds())
+  if (w.panel === 'equipPanel') ids.push(...equipTextureIds(), ...equipPictureIds(w))
+  return ids
+}
+
+/**
+ * 装备页那两张装备图（xl-234）要用到的贴图 —— **背包里这一页能选中的每一件，
+ * 加上身上穿着的那一件**。
+ *
+ * ⚠️ **不是只推"此刻选中的那一件"**，理由与奇术页那条动画同一个（见
+ * `menuTextureIds` 里那段）：`load()` 是 async 而 `draw()` 不是，逐张现取的
+ * 表现是"点中一行之后画面先空一下"—— 而选中哪一行完全由下一次输入决定。
+ * 分母是 `equipList(e)`（背包里有的那几件），**不是整张表**：选不中的东西
+ * 取回来只是白下载，而背包通常只有几件。
+ *
+ * 已知缺失的那三张 `equipPictureId` 返回 `null`，这里一并滤掉 —— 原版在那
+ * 三处画的也是一个宽度 −1 的空壳，什么都没画。
+ */
+export function equipPictureIds(w: MenuWorld): AssetId[] {
+  const e = w.panels.equipPanel.equip
+  if (!e) return []
+  const names = new Set(equipList(e).map((item) => item.name))
+  if (e.heroEquipment !== null) names.add(e.heroEquipment)
+  const ids: AssetId[] = []
+  for (const name of names) {
+    const id = equipPictureIdOf(e.currentList, name)
+    if (id !== null) ids.push(id)
+  }
   return ids
 }
 

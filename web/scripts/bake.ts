@@ -64,6 +64,7 @@ import {
   narratageBgAssetId,
   npcAssetId,
   roleAssetId,
+  equipPictureAssetId,
   startAssetId,
   startFrameAssetId,
 } from '../src/assets/ids'
@@ -71,6 +72,14 @@ import { normalizePath } from '../src/assets/path'
 import { listFiles } from '../src/assets/listFiles'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
 import { DRUGS } from '../src/battle/drugs'
+import { SLOT_FILE } from '../src/menu/equipment'
+import {
+  EQUIP_PICTURE_IGNORED_EXTENSIONS,
+  EQUIP_PICTURE_ROOT,
+  isBakedEquipPicture,
+  isIgnoredEquipPicture,
+  reconcileEquipPictures,
+} from '../src/menu/equipmentPictures'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
@@ -465,12 +474,14 @@ function main(): void {
 
   const menu = bakeMenuImages(manifest)
 
+  const equip = bakeEquipPictures(manifest)
+
   bakeBgm(scenes, manifest)
 
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
-    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张 + 菜单骨架 ${menu.bundled} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes + menu.bundledBytes)}`,
+    `映射表 ${Object.keys(manifest).length} 条（地图 ${mapCount} 张 + 主角 ${ROLE_SPRITES.walk.count + ROLE_SPRITES.run.count} 帧 + NPC ${npcFrames} 帧 + 头像 ${HEAD_COUNT} 张 + 对话框 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 旁白背景 ${BG_COUNT} 帧 + 开始界面 ${Object.keys(START_IMAGES).length} 张 + 开始界面动画 ${startFrames} 帧 + 战斗常用 ${battle.bundled} 张 + 菜单骨架 ${menu.bundled} 张 + 装备图 ${equip.baked} 张）→ WebP 共 ${kb(bytes + battle.bundledBytes + menu.bundledBytes + equip.bytes)}`,
   )
 
   writeStamp()
@@ -700,6 +711,89 @@ function bakeMenuImages(manifest: Record<string, string>): {
       `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
   )
   return { bundled, bundledBytes }
+}
+
+/**
+ * 装备页那两张图的素材（xl-234）：把 `sources/Shop/装备/` 下**能烘的那批**
+ * 烘成 WebP 进主包，并拿六张装备表逐条对账。
+ *
+ * 路径规则、两份扩展名登记、以及数据点名了却不存在的那三张，全在
+ * `src/menu/equipmentPictures.ts` 的头注里；**五条对账也在那边**
+ * （`reconcileEquipPictures`，纯函数，每一种失败都在
+ * `equipmentPictures.test.ts` 里真造出来看过）。这里只做三件事：扫盘、
+ * 把要烘的那批烘掉、把真磁盘喂进对账再把问题打出去。
+ *
+ * 分母全部现扫：目录里有什么就数什么，表里有几行就对几行，一处都不写死。
+ */
+function bakeEquipPictures(manifest: Record<string, string>): {
+  baked: number
+  bytes: number
+} {
+  const root = resolve(REPO, EQUIP_PICTURE_ROOT)
+  const relatives = listFiles(root).sort()
+  if (relatives.length === 0) {
+    // "一个文件都没扫到"与"全烘完了"在产物上长得一模一样：两边都是零个差异。
+    console.error(`${EQUIP_PICTURE_ROOT} 下一个文件都没有 —— 装备图的分母是从这里现扫的`)
+    process.exit(1)
+  }
+
+  // 按扩展名分两堆。没登记过的那一种由下面的对账点名硬失败 —— 悄悄跳过
+  // 一种新扩展名的表现是"某几件装备没有图"，那正是查不出来的那种错。
+  const toBake = relatives.filter(isBakedEquipPicture)
+  const ignored = relatives.filter(isIgnoredEquipPicture)
+  if (toBake.length === 0) {
+    console.error(`${EQUIP_PICTURE_ROOT} 下一张烘得动的图都没有（共 ${relatives.length} 个文件）`)
+    process.exit(1)
+  }
+
+  // 与 `bakeMenuImages` 同一张表、同一个理由：产物路径把扩展名一律换成
+  // `.webp`，同一个目录下的 `x.png` 与 `x.jpg` 会写到同一个产物上，**后写的
+  // 静静盖掉前一张**。今天只烘 `.png` 一种，所以这条守卫不响；而"不响"和
+  // "撞了却没查"长得一样。
+  const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+  let bytes = 0
+  for (const relative of toBake) {
+    const cut = relative.indexOf('/')
+    const category = relative.slice(0, cut)
+    const file = relative.slice(cut + 1)
+    const id = equipPictureAssetId(category, file)
+    const product = `equip/${stripExtension(relative)}.webp`
+    const owner = claimed.get(product)
+    if (owner !== undefined) {
+      console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
+      process.exit(1)
+    }
+    claimed.set(product, id)
+    // ⚠️ 上面那道守的是**产物路径**撞车，而产物路径带着类那一段，所以它看不见
+    // 「两条不同的源算出同一个 ID」。今天六个类目录下的文件名两两互异，去掉
+    // ID 里的类**一个分母都不会变**（xl-234 篡改矩阵 R9 实测全绿）—— 也就是
+    // 说这道守卫今天不响，而不响与"撞了却没查"长得一样。真进来一对重名时，
+    // 没有它的表现是映射表里后写的静静盖掉前一条：选中 A 画出 B。
+    if (manifest[id] !== undefined) {
+      console.error(`装备图 ID ${id} 撞车：${manifest[id]} 与 ${product} 算出同一个 ID`)
+      process.exit(1)
+    }
+    manifest[id] = product
+    bytes += toWebp(resolve(root, relative), resolve(ASSETS_OUT, product))
+  }
+
+  // 对账：五条一次收齐（磁盘清单与"这张烘出来了吗"都从这里喂进去）。
+  const problems = reconcileEquipPictures(
+    relatives,
+    (slot, picture) => manifest[equipPictureAssetId(SLOT_FILE[slot], picture)] !== undefined,
+  )
+  if (problems.length > 0) {
+    console.error(`装备图对账 ${problems.length} 条：`)
+    for (const p of problems) console.error(`  ${p}`)
+    process.exit(1)
+  }
+
+  console.log(
+    `装备图 ${toBake.length} 张 → equip/*.webp（${kb(bytes)}）；` +
+      `另有 ${ignored.length} 个 ${EQUIP_PICTURE_IGNORED_EXTENSIONS.join(' / ')} 登记为不烘，` +
+      `${relatives.length} 个文件对账通过`,
+  )
+  return { baked: toBake.length, bytes }
 }
 
 /**

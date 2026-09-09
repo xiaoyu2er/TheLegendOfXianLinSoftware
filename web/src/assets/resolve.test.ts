@@ -6,12 +6,24 @@ import { START_IMAGES, START_SEQUENCES, TITLE_BGM } from '../start/assets'
 import DEFERRED_BGM_IDS from '../generated/deferredBgm.json'
 import MISSING_IDS from '../generated/missingAssets.json'
 import { BG_COUNT } from '../state/narratage'
-import { bgmAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from './ids'
+import {
+  bgmAssetId,
+  equipPictureAssetId,
+  mapAssetId,
+  narratageBgAssetId,
+  npcAssetId,
+  roleAssetId,
+} from './ids'
 import { knownAssetIds, resolveAsset, resolveAssetOrNull, resolveBgmOrNull } from './resolve'
 import { scanSceneAssets } from './sceneAssets'
 import { DEFERRED_TOP_DIRS, IMAGE_ROOT, isDeferredBattleAsset } from './battleAssets'
 import { MENU_ROOT, isDeferredMenuAsset } from './menuAssets'
 import { listFiles } from './listFiles'
+import {
+  EQUIP_PICTURE_ROOT,
+  isBakedEquipPicture,
+  isIgnoredEquipPicture,
+} from '../menu/equipmentPictures'
 import { repoPath } from '../test/repoPath'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
@@ -44,7 +56,48 @@ function bundledMenuFilesInRepo(): number {
   return listFiles(repoPath(MENU_ROOT)).filter((f) => !isDeferredMenuAsset(f)).length
 }
 
+/**
+ * 装备图的分母（xl-234）：`sources/Shop/装备/` 下现扫，**减去登记为不烘的
+ * 那些扩展名**。写死 59 的话，素材少一张这里会跟着烘焙器一起沉默；而把
+ * `EQUIP_PICTURE_EXTENSIONS` 当过滤器（"只数烘得动的"）等于让被守的东西自己
+ * 签字 —— 所以两份登记都参与：认得出的一律计数，认不出的**让它红**。
+ */
+function equipPictureFilesInRepo(): number {
+  const all = listFiles(repoPath(EQUIP_PICTURE_ROOT))
+  expect(
+    all.filter((f) => !isBakedEquipPicture(f) && !isIgnoredEquipPicture(f)),
+    '装备图目录下有没登记过的扩展名',
+  ).toEqual([])
+  return all.filter(isBakedEquipPicture).length
+}
+
 describe('资产逻辑 ID', () => {
+  /**
+   * 装备图的 ID 必须带上「类」那一段（xl-234）。
+   *
+   * ⚠️ **这一条是直接断言，不是分母**，而这一点是量出来的：今天六个类目录下
+   * 那 59 个 `.png` 文件名两两互异，所以把类去掉，映射表的条数**一条都不会
+   * 变**（篡改矩阵 R9 实测全绿）。也就是说上面那条普查看不见它 ——
+   * 一个"这一场观测不到"的现成例子，判据只能自己造两件同名的来问。
+   */
+  it('同名不同类算出来的 ID 不一样 —— 类必须在 ID 里', () => {
+    expect(equipPictureAssetId('武器', '同名.png')).not.toBe(
+      equipPictureAssetId('饰品', '同名.png'),
+    )
+    // 形状也钉住：它是原版那条 `sources/Shop/装备/<s>/<第 6 列>` 的函数。
+    expect(equipPictureAssetId('武器', '月苗刀.png')).toBe('equip:武器/月苗刀.png')
+    // 反斜杠照规范化，与 `npcAssetId` / `battleAssetId` 同一个规矩。
+    expect(equipPictureAssetId('武器', '月苗刀.png')).toBe(
+      equipPictureAssetId('武器', '月苗刀.png'.replace('/', '\\')),
+    )
+    // 正向控制：今天磁盘上确实一对重名都没有 —— 所以上面那条只能这么问。
+    const png = listFiles(repoPath(EQUIP_PICTURE_ROOT)).filter(isBakedEquipPicture)
+    const names = png.map((f) => f.slice(f.lastIndexOf('/') + 1))
+    expect(new Set(names).size, '磁盘上出现重名了 —— 那烘焙器那道 ID 撞车的守卫该响了').toBe(
+      names.length,
+    )
+  })
+
   it('从地图文件名推出 ID，扩展名与目录都不参与', () => {
     expect(mapAssetId('宿舍.png')).toBe('map:宿舍')
     expect(mapAssetId('大地图.jpg')).toBe('map:大地图')
@@ -131,6 +184,9 @@ describe('资产逻辑 ID', () => {
     expect(ids.filter((id) => id.startsWith('drug:'))).toHaveLength(drugPictureFilesInRepo())
     // 菜单骨架素材（xl-6lo.4）。它在 `sources/菜单/` 下，不归上面任何一个分母。
     expect(ids.filter((id) => id.startsWith('menu:'))).toHaveLength(bundledMenuFilesInRepo())
+    // 装备页那两张图的素材（xl-234）。跟药品介绍图一样在 `sources/Shop/` 下，
+    // 不归上面任何一个分母；`.bmp` 那 30 个登记为不烘，见 `equipmentPictures.ts`。
+    expect(ids.filter((id) => id.startsWith('equip:'))).toHaveLength(equipPictureFilesInRepo())
     // 开始界面（xl-kaa 起，xl-4si 加了六段逐帧动画）。分母是那两份表算出来
     // 的，不是手写的数：`START_IMAGES` 的类型是 `Record<StartImageName, string>`、
     // `START_SEQUENCES` 的是 `Record<StartSequenceName, …>`，少一条 typecheck
@@ -159,6 +215,8 @@ describe('资产逻辑 ID', () => {
       // 菜单骨架素材（xl-6lo.4），在 `sources/菜单/` 下。各页自己的那 146 张
       // 不在这张表里，走 `resolveDeferredMenuAsset`。
       'menu:',
+      // 装备页那两张图的素材（xl-234），在 `sources/Shop/装备/<类>/` 下。
+      'equip:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })
