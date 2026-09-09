@@ -57,10 +57,14 @@ export function readMenuTrace(name: string): MenuTrace {
 /**
  * 照剧本头把菜单世界建出来。**只读 `setup`，一个状态字段都不从真值里读。**
  *
- * `setup.equipment` / `setup.drugs` 这一票不读：它们铺的是背包，而背包属于
- * 装备页与物品页（xl-6lo.9 / xl-6lo.10）。现在把它们塞进世界里，等于先建一份
- * 没人核的状态。
+ * `setup.drugs` 铺的是药品存货，物品页（xl-6lo.10）读它 —— 而它是不是铺对了
+ * 由真值 `drug.list` 那一列逐步守着。`setup.equipment` 仍然不读：装备那半边
+ * 归 xl-6lo.9，现在把它塞进世界里等于先建一份没人核的状态。
  */
 export function replayMenu(trace: MenuTrace): MenuWorld {
-  return createMenuWorld({ party: trace.script.setup.party, fullHeal: trace.script.setup.fullHeal })
+  return createMenuWorld({
+    party: trace.script.setup.party,
+    fullHeal: trace.script.setup.fullHeal,
+    drugs: trace.script.setup.drugs,
+  })
 }

@@ -1,5 +1,6 @@
 import { menuButton } from './buttons'
 import { createFuncButtons } from './funcButtons'
+import { createDrugPack, createDrugPanelState } from './drugPanel'
 import { createMenuHeroes } from './heroes'
 import type { LiveParty } from './heroes'
 import type { PartyKey } from '../battle/units'
@@ -15,6 +16,12 @@ export interface MenuConfig {
   /** `SaveAndLoad.zhang/lu/wen`。⚠️ 玉洁那一位在这里的键是 **`wen`**，不是 `yu`。 */
   readonly party: readonly string[]
   readonly fullHeal: boolean
+  /**
+   * 背包里的药（`setup.drugs`）。`DrugPack.addDrug` 是**累加**，同一个名字
+   * 写两行就是两次加。缺席等于六种药一瓶都没有 —— 而那正是一个干净进程的
+   * 样子（`ShopReader.readDrug` 不给 `numberGOT` 赋值）。
+   */
+  readonly drugs?: readonly { readonly name: string; readonly count: number }[] | undefined
   /**
    * 队伍此刻的等级与血 / 灵力（`switchTo("menu")` 那三句 `refreshValue()`）。
    * **回放真值时不喂** —— 见 `heroes.ts` 的 `LiveParty`。
@@ -79,6 +86,10 @@ function createSubPanel(name: MenuPanelName): MenuSubPanel {
     // `hero` 是 `null`。给它编一个卷轴出来，那一列就再也不会是 null 了。
     scoll: name === 'funcPanel' ? null : createScoll(),
     funcButtons: name === 'funcPanel' ? createFuncButtons() : null,
+    // 物品页那一份只有 `thingPanel` 有 —— 另外三页没有「使用」按钮，
+    // 给它们编一个出来的话"这一页没有物品"与"这一页有个点不着的按钮"就
+    // 长得一样了。
+    drug: name === 'thingPanel' ? createDrugPanelState() : null,
   }
 }
 
@@ -98,6 +109,7 @@ export function createMenuWorld(config: MenuConfig): MenuWorld {
     panels,
     tabs,
     heroes: createMenuHeroes(config.fullHeal, config.live),
+    drugPack: createDrugPack(config.drugs),
     party: {
       zhang: config.party.includes('zhang'),
       lu: config.party.includes('lu'),

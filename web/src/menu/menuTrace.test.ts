@@ -19,7 +19,7 @@ import type { MenuTrace } from './trace'
  *
  * 喂给状态层的只有两样，都不是状态：
  *
- * - 剧本回显（`setup.party` / `setup.fullHeal`）——"这是哪一局"；
+ * - 剧本回显（`setup.party` / `setup.fullHeal` / `setup.drugs`）——"这是哪一局"；
  * - 每一步的 `input`——那一步实际喂给原版的鼠标事件，或者那一下时钟脉冲。
  *
  * ## 登记按**字段组**，不按整条剧本
@@ -67,6 +67,11 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 见下面 `PENDING.heroes`。票面写的是"本票对齐 panel / mouse / heroes 三组"，
   // 实测这一组横跨两张后续的票，所以按格子登记，只签得下其中一格。
   heroes: ['menu-magic'],
+  // `drug` 两条剧本都签下了（xl-6lo.10）。⚠️ **`menu-magic` 那一格是常量**
+  // ——那条剧本 `setup.drugs` 是空的，30 拍里 `drug` 一列一个字都没变过。
+  // 它守的是"别凭空冒出清单来"，真正会红的那一格是 `menu-equip`：第 21 步
+  // 选中、第 22 步喝掉一瓶，数量 2→1。
+  drug: ['menu-equip', 'menu-magic'],
 }
 
 /**
@@ -84,7 +89,6 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // `menu-magic` 有技能那一声。
   music: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.11' },
   equip: { 'menu-equip': 'xl-6lo.9', 'menu-magic': 'xl-6lo.9' },
-  drug: { 'menu-equip': 'xl-6lo.10', 'menu-magic': 'xl-6lo.10' },
   magic: { 'menu-equip': 'xl-6lo.11', 'menu-magic': 'xl-6lo.11' },
   func: { 'menu-equip': 'xl-6lo.12', 'menu-magic': 'xl-6lo.12' },
 }
