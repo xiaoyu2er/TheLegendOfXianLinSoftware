@@ -10,7 +10,7 @@ import { FUNC_MAIN_ORDER } from '../menu/funcButtons'
 import { DRUGS } from '../battle/drugs'
 import { HEROES, derive } from '../battle/units'
 import { createBattle } from '../battle/world'
-import { DEFAULT_WEAPONS } from '../menu/defaultWeapons'
+import { DEFAULT_WEAPONS, withWeapon } from '../menu/defaultWeapons'
 import { DRUG_LIST_VIEW, DRUG_LIST_X, DRUG_ROW_H } from '../menu/drugPanel'
 import { EQUIPMENT_LISTS } from '../menu/equipment'
 import { addEquipment } from '../menu/equipPanel'
@@ -255,6 +255,10 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     let s = inScene('宿舍')
     // 把张小凡打成残血 —— 满血的话喝下去被夹回上限，`before === after` 恒真。
     getParty().zhang.hp = 1
+    // 这三样菜单改不动，末尾要拿它们对一次。给它们**非零的值**：全是 0 的话
+    // "没被动过"与"被写成了 0"长得一样。
+    Object.assign(getParty().zhang, { exp: 77, isDead: true, angryValue: 42 })
+    const untouched = { ...getParty().zhang }
     s = openMenu(s)
 
     const drug = DRUGS[0]!
@@ -287,6 +291,17 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
     expect(s.panel).toBe('scene')
     expect(getParty().zhang.hp, '关菜单把喝出来的血丢了').toBe(inMenu)
+
+    // ⚠️ `rememberMenuParty` **只记五样**，理由是"菜单里没有一条路改得动
+    // 经验 / 死没死 / 怒气"。那句话原先没有判据守着 —— 它正是"找不到东西
+    // 就算通过"那一族（/code-review 标准轴提的）。这里把它变成一条断言：
+    // 走完这一整趟，那三样一个字都不许变。哪天菜单真的动得了其中一样
+    // （读档、学技能），这条会红，提醒有人把它加进写回清单。
+    expect({
+      exp: getParty().zhang.exp,
+      isDead: getParty().zhang.isDead,
+      angryValue: getParty().zhang.angryValue,
+    }).toEqual({ exp: untouched.exp, isDead: untouched.isDead, angryValue: untouched.angryValue })
   })
 
   it('穿一件盔甲：四项属性与上限一起回到队伍', () => {
@@ -358,18 +373,24 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     const info: BattleInfo = ['迷宫1/1.jpg', 'zhang', 'yu', 'lu', '怪物1/5', 'null', 'null']
     const naked = derive(HEROES.yu.attributes(getParty().yu.level))
 
-    // 出厂就带着开局那把武器：玉洁的鸳鸯刀 +3 体力 = hpMax 高 210。
+    // 出厂就带着开局那把武器：玉洁的鸳鸯刀加体力，上限跟着高一截。
+    // 期望值走 `derive` 现算，**不写 70 那个系数** —— 写死的话 `derive` 改了
+    // 公式这里照样绿，而它正是被测的那条算式。
+    const base = HEROES.yu.attributes(getParty().yu.level)
     const fresh = createBattle(configFor(info, DEPS))
     const yu = fresh.heroes.find((h) => h.spec.key === 'yu')!
-    expect(yu.hpMax - naked.hpMax).toBe(DEFAULT_WEAPONS.yu.addPhysicalPower * 70)
-    // 反向控制：这个差不是 0，上面那条才有分辨力。
-    expect(DEFAULT_WEAPONS.yu.addPhysicalPower).toBeGreaterThan(0)
+    expect(yu.hpMax).toBe(derive(withWeapon(base, DEFAULT_WEAPONS.yu)).hpMax)
+    // 反向控制：这个差不是 0，上面那条才有分辨力（武器不加体力的话，
+    // "喂了队伍属性"与"按等级重算"算出来是同一个数）。
+    expect(yu.hpMax).toBeGreaterThan(naked.hpMax)
 
     // 再改一次队伍属性（菜单里穿装备走的就是这条路），战斗跟着变。
-    getParty().yu.physicalPower += 1
+    const bumped = { ...getParty().yu, physicalPower: getParty().yu.physicalPower + 1 }
+    getParty().yu.physicalPower = bumped.physicalPower
     const again = createBattle(configFor(info, DEPS))
     const yu2 = again.heroes.find((h) => h.spec.key === 'yu')!
-    expect(yu2.hpMax).toBe(yu.hpMax + 70)
+    expect(yu2.hpMax).toBe(derive(bumped).hpMax)
+    expect(yu2.hpMax).toBeGreaterThan(yu.hpMax)
     resetParty()
   })
 })

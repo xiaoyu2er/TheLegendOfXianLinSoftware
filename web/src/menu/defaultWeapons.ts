@@ -1,4 +1,4 @@
-import type { PartyKey } from '../battle/units'
+import type { Attributes, PartyKey } from '../battle/units'
 
 /**
  * 三个人**开局身上那把武器**，以及它加的四项属性。
@@ -31,4 +31,20 @@ export const DEFAULT_WEAPONS: Readonly<Record<PartyKey, WeaponBonus>> = {
   zhang: { index: 6, name: '月苗刀', addPhysicalPower: 0, addAgile: 1, addStrength: 2, addSpirit: 1 },
   lu: { index: 0, name: '藏璎环', addPhysicalPower: 0, addAgile: 0, addStrength: 3, addSpirit: 2 },
   yu: { index: 7, name: '鸳鸯刀', addPhysicalPower: 3, addAgile: 0, addStrength: 2, addSpirit: 0 },
+}
+
+/**
+ * `addPack()` 里那四行 `+=` —— 四项基础属性各加一次武器加成。
+ *
+ * 收成一个函数是因为**它抄了两份**：`fakes/party.ts` 的出厂状态与
+ * `menu/heroes.ts` 的开局属性走的是同一段。抄两份的表现是改一处、另一处
+ * 静默不跟，而两边算出来的都是合法数字（/code-review 标准轴 Duplicated Code）。
+ */
+export function withWeapon(base: Attributes, w: WeaponBonus): Attributes {
+  return {
+    physicalPower: base.physicalPower + w.addPhysicalPower,
+    agile: base.agile + w.addAgile,
+    strength: base.strength + w.addStrength,
+    sprit: base.sprit + w.addSpirit,
+  }
 }

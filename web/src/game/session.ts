@@ -10,8 +10,8 @@ import type { BattleConfig } from '../battle/world'
 import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
 import type { MenuWorld } from '../menu/types'
-import type { Attributes, PartyKey } from '../battle/units'
-import { getParty, rememberMenuParty, rememberParty } from '../fakes/party'
+import type { PartyKey } from '../battle/units'
+import { attributesOf, getParty, rememberMenuParty, rememberParty } from '../fakes/party'
 import type { PartyMemberState } from '../fakes/party'
 import type { LiveParty } from '../menu/heroes'
 import { getAudioSettings, rememberAudioSettings } from './audioSettings'
@@ -215,10 +215,7 @@ export function openMenu(session: RunningSession, carry = getParty()): RunningSe
   // 等于同一个事实有两个出处。
   const live = (m: PartyMemberState): LiveParty => ({
     level: m.level,
-    physicalPower: m.physicalPower,
-    agile: m.agile,
-    strength: m.strength,
-    sprit: m.sprit,
+    ...attributesOf(m),
     hp: m.hp,
     mp: m.mp,
   })
@@ -232,16 +229,6 @@ export function openMenu(session: RunningSession, carry = getParty()): RunningSe
     audio: getAudioSettings(),
   })
   return { ...session, panel: 'menu', menu: createMenuTicker(world) }
-}
-
-/** 队伍那一份里的四项基础属性 —— `BattleConfig.attributes` 收的那个形状。 */
-function attributesOf(m: PartyMemberState): Attributes {
-  return {
-    physicalPower: m.physicalPower,
-    agile: m.agile,
-    strength: m.strength,
-    sprit: m.sprit,
-  }
 }
 
 /**

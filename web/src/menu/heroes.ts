@@ -1,7 +1,8 @@
 import { HEROES, derive } from '../battle/units'
 import type { Attributes, PartyKey } from '../battle/units'
 import { SKILL_NUMBER } from '../battle/skills'
-import { DEFAULT_WEAPONS } from './defaultWeapons'
+import { DEFAULT_WEAPONS, withWeapon } from './defaultWeapons'
+import { attributesOf } from '../fakes/party'
 
 /**
  * 菜单里那三个人的**开局属性**，也就是菜单真值 `heroes[]` 那一列。
@@ -97,19 +98,7 @@ export function createMenuHeroes(
     // 喂了实时队伍就**照单全收**，不再走上面那三步：队伍那一份记的就是"此刻
     // 的四项属性"，武器加成已经算在里头了（`fakes/party.ts` 的 `initialMember`
     // 抄的正是这三步）。在它上面再加一次武器，等于开一次菜单加一把刀。
-    const attrs: Attributes = now
-      ? {
-          physicalPower: now.physicalPower,
-          agile: now.agile,
-          strength: now.strength,
-          sprit: now.sprit,
-        }
-      : {
-          physicalPower: base.physicalPower + weapon.addPhysicalPower,
-          agile: base.agile + weapon.addAgile,
-          strength: base.strength + weapon.addStrength,
-          sprit: base.sprit + weapon.addSpirit,
-        }
+    const attrs: Attributes = now ? attributesOf(now) : withWeapon(base, weapon)
     const d = derive(attrs)
     return {
       name,

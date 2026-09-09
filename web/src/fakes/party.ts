@@ -1,7 +1,7 @@
 import { declareFake } from './fake'
 import { HEROES, derive, expToLevelUp } from '../battle/units'
 import type { Attributes, PartyKey } from '../battle/units'
-import { DEFAULT_WEAPONS } from '../menu/defaultWeapons'
+import { DEFAULT_WEAPONS, withWeapon } from '../menu/defaultWeapons'
 import { MENU_HERO_ORDER } from '../menu/heroes'
 import type { MenuHero } from '../menu/heroes'
 import type { HeroCarry } from '../battle/world'
@@ -108,26 +108,44 @@ export function initialMember(key: PartyKey): PartyMemberState {
   const base = HEROES[key].attributes(level)
   // 第 1 步：血与灵力**满**，满的是穿武器之前的上限。
   const before = derive(base)
-  const w = DEFAULT_WEAPONS[key]
   const member: PartyMemberState = {
     level,
-    physicalPower: base.physicalPower + w.addPhysicalPower,
-    agile: base.agile + w.addAgile,
-    strength: base.strength + w.addStrength,
-    sprit: base.sprit + w.addSpirit,
+    ...withWeapon(base, DEFAULT_WEAPONS[key]),
     exp: 0,
     hp: before.hpMax,
     mp: before.mpMax,
     isDead: false,
     angryValue: 0,
   }
-  // 第 2 步末尾那句 `refreshValue()` 的两句夹上限。今天四个加成都非负、
-  // 上限只涨不跌，所以它是空操作 —— 照抄是因为"今天是空操作"不是"可以不写"，
-  // 哪天有减属性的装备（原版六张表里没有，但商店数据是磁盘上的）它就有用了。
+  // 第 2 步末尾那句 `refreshValue()` 的两句夹上限。**这三把开局武器**的四个
+  // 加成都非负，上限只涨不跌，所以在这个函数里它是空操作 —— 照抄是因为
+  // "今天是空操作"不是"可以不写"。
+  //
+  // ⚠️ 别把这句读成"原版没有减属性的装备"：`equipment.ts` 的武器表里就有一件
+  // 御衡镇日刀（`addSpirit: -10`、`user: 4` 玉洁穿得上），穿上它 `mpMax` 会掉，
+  // 那两句当场就有观测后果 —— 只不过那条路走的是装备页的 `refreshMenuHero`，
+  // 不是这里。（本注释原先断言"原版六张表里没有"，是错的，/code-review 标准轴
+  // 现读表抓到的。）
   const after = derive(member)
   if (member.hp >= after.hpMax) member.hp = after.hpMax
   if (member.mp >= after.mpMax) member.mp = after.mpMax
   return member
+}
+
+/**
+ * 从一个带四项属性的东西上把那四项挑出来。
+ *
+ * 有它是因为 `Attributes` 这个类型已经存在，而"逐字段展开"在这一片曾经抄了
+ * 五份（/code-review 标准轴的 Data Clumps）——抄一份的表现是将来 `Attributes`
+ * 多一项时那一份静默不跟，而少的那一项跨不过战斗 / 菜单，画面上完全正常。
+ */
+export function attributesOf(a: Attributes): Attributes {
+  return {
+    physicalPower: a.physicalPower,
+    agile: a.agile,
+    strength: a.strength,
+    sprit: a.sprit,
+  }
 }
 
 /** 原版那三个静态引用的位置：模块级单例。 */
@@ -161,10 +179,7 @@ export function rememberParty(
       // 四项属性也要记：`levelUp()` 加的是**当前值**（`levelUpDelta` 那四行
       // `+=`），不是按新等级重算。只记等级的话，一个穿着武器升了级的人下一场
       // 会退回"按等级算出来的裸属性"—— 而那个数完全合法。
-      physicalPower: h.physicalPower,
-      agile: h.agile,
-      strength: h.strength,
-      sprit: h.sprit,
+      ...attributesOf(h),
       exp: h.exp,
       hp: h.hp,
       mp: h.mp,
@@ -209,6 +224,12 @@ export function rememberMenuParty(heroes: readonly MenuHero[]): void {
     m.agile = h.agile
     m.strength = h.strength
     // ⚠️ 原版那个字段拼的是 `sprit`，菜单真值那一列叫 `spirit`（`heroes.ts`）。
+    //
+    // /code-review 的标准轴提过「把 `MenuHero.spirit` 统一成 `sprit`，这个转接
+    // 点就没了」。**实测不成立，所以没改**：`tools/traces/out/menu-equip.trace.json`
+    // 里 `"spirit"` 出现 101 次、`"sprit"` 0 次 —— 真值那一列就叫 `spirit`，
+    // 而 `snapshotMenu` 必须按那个名字出。改了名，转接点只是从这里挪进
+    // `snapshot.ts`，也就是挪进逐字段比真值的那条路上 —— 那比放在这里更糟。
     m.sprit = h.spirit
     m.hp = h.hp
     m.mp = h.mp
