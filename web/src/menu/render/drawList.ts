@@ -4,6 +4,7 @@ import {
   MENU_BACKGROUND,
   COMMAND_BAR,
   LEVEL_LABEL,
+  drugPictureId,
   funcButtonId,
   headId,
   mouseId,
@@ -23,6 +24,8 @@ import { SCOLL_HEROES } from '../types'
 import {
   DRUG_LIST_VIEW,
   DRUG_LIST_X,
+  DRUG_PICTURE_X,
+  DRUG_PICTURE_Y,
   heroIndexOnScoll,
   visibleDrugs,
 } from '../drugPanel'
@@ -236,13 +239,15 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
  *     drawEquipment(g);
  *     drawValueBar(g);
  *
- * ⚠️ **少一样东西：选中那瓶药的插图。** 原版 `drawEquipment` 里那句
- * `g.drawImage(currentDrug.getPicture(), x_picture, y_picture, this)` 取的是
- * `sources/Shop/药品/回复类/<名字>.png` —— **那是商店素材，不在 `sources/菜单/`
- * 下**，整个烘焙管线（`menuAssets.ts` 那条边界、`bake.ts` 的现扫分母、
- * `bakeStamp` 的指纹）都以 `sources/菜单/` 为根。给它开一条新的素材根是另一
- * 张票的活（**xl-6lo.15**），不是顺手加一行。这里**不画一张占位图** ——
- * 占位图会让"图没接上"与"原版这里本来就是空的"长得一样。
+ * **选中那瓶药的插图已经接上了（xl-6lo.15）** —— 原版 `drawEquipment` 里那句
+ * `g.drawImage(currentDrug.getPicture(), x_picture, y_picture, this)`。
+ *
+ * ⚠️ 这张票的票面说它要"给商店素材开一条新的烘焙根"，**那个前提是错的**：
+ * `sources/Shop/药品/回复类/` 那六张图 xl-rh9.12 早就烘进去了（战斗侧的药品
+ * 菜单在用），`bake.ts` 的 `DRUG_PICTURE_DIR` 与 `assets/ids.ts` 的
+ * `drugPictureAssetId` 都是现成的，烘焙器一个字都没动。**装备页那张插图不是
+ * 这个处境**：`sources/Shop/装备/` 一张都不在 `bakeStamp` 的 inputs 里，那才
+ * 是真要开新根，归 **xl-234**，两张票别混做。
  */
 function drawDrugPanel(ops: MenuDrawOp[], w: MenuWorld, panel: MenuSubPanel): void {
   const d = panel.drug
@@ -292,9 +297,23 @@ function drawDrugPanel(ops: MenuDrawOp[], w: MenuWorld, panel: MenuSubPanel): vo
   }
   ops.push(...scrollbarOps(DRUG_LIST_VIEW, drugs.length, d.scroll))
 
-  // 三行说明。⚠️ 字号跟着"有没有选中"走，见上面那两个常量的注释。
+  // 选中那瓶药的插图（xl-6lo.15）。**次序照原版**：清单那个 for 循环画完、
+  // 三行说明画之前 —— `drawEquipment()` 里 `g.drawImage(...)` 就夹在这两者
+  // 中间。滚动条是 Web 侧加的（ADR-0001 签过字），它跟插图在画面上不重叠，
+  // 排在哪一侧观测不到，所以就近跟着清单走。
   const spec = d.currentDrug === null ? null : DRUGS.find((x) => x.name === d.currentDrug)
   if (d.currentDrug !== null && !spec) throw new Error(`药品表里没有 ${d.currentDrug}`)
+  if (spec) {
+    ops.push({
+      kind: 'image',
+      layer: 'page',
+      id: drugPictureId(spec),
+      x: DRUG_PICTURE_X,
+      y: DRUG_PICTURE_Y,
+    })
+  }
+
+  // 三行说明。⚠️ 字号跟着"有没有选中"走，见上面那两个常量的注释。
   const messages = spec
     ? [spec.name, `: 生命 +${spec.addHp}`, `魔法 +${spec.addMp}`]
     : ['没药了...', '快去药店买点吧~', '']

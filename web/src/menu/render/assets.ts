@@ -1,7 +1,10 @@
 import { menuAssetId } from '../../assets/menuAssets'
 import { magicAnimationFrameIds, magicButtonIds } from './magicSkills'
 import { battleAssetId } from '../../assets/battleAssets'
+import { drugPictureAssetId } from '../../assets/ids'
 import type { AssetId } from '../../assets/ids'
+import { DRUGS } from '../../battle/drugs'
+import type { DrugSpec } from '../../battle/drugs'
 import { EQUIP_SLOTS } from '../equipment'
 import type { EquipSlot } from '../equipment'
 import type { ButtonImage, MenuPanelName, MenuTabKey, MenuWorld } from '../types'
@@ -89,6 +92,36 @@ export function thingButtonIds(): AssetId[] {
 }
 
 /**
+ * 选中那瓶药的插图（`DrugPanel.drawEquipment()` 里那句
+ * `g.drawImage(currentDrug.getPicture(), x_picture, y_picture, this)`，xl-6lo.15）。
+ *
+ * ⚠️ **它不在 `sources/菜单/` 下，所以不走上面那个 `id()`** —— 图路径是
+ * `sources/Shop/药品/回复类/<drug.txt 第 4 列>`，`ShopReader.readDrug()` 拼的。
+ * 走的是 `assets/ids.ts` 的 `drugPictureAssetId`，那六张**早就在烘焙里了**
+ * （`bake.ts` 的 `DRUG_PICTURE_DIR`，战斗侧的药品菜单 xl-rh9.12 先用上的），
+ * 所以这张票不必给商店素材开新根。⚠️ **装备页那张插图不是这个处境**：
+ * `sources/Shop/装备/` 一张都没进烘焙，那是 xl-234。
+ *
+ * 入参收的是**药品表那一行**而不是下标，与 `battle/render/assets.ts` 的
+ * 同名函数区分开 —— 那一支收的是药品菜单第几颗按钮，两个下标不是一回事。
+ */
+export function drugPictureId(drug: DrugSpec): AssetId {
+  return drugPictureAssetId(drug.picture)
+}
+
+/**
+ * 六种药的插图全推。**不按当前选中的那一瓶推**：`load()` 是 async 而
+ * `draw()` 不是，选中之后再去取图的话那一帧的插图是空的 —— 而"图还没到"
+ * 与"原版这里本来就不画"在画面上长得一模一样。跟「使用」按钮同一个理由。
+ *
+ * 分母是 `DRUGS`（判据在 `battle/drugs.test.ts`，它自己去读 GBK 的
+ * `drug.txt` 逐行对），不是手写的六。
+ */
+export function drugPictureIds(): AssetId[] {
+  return DRUGS.map(drugPictureId)
+}
+
+/**
  * 天书页那批按钮的贴图词干，按原版 `FuncButtons.addButton()` 里读图那几行。
  *
  * **走按需加载**（`天书/` 整个目录在 `menuAssets` 那条边界的内容那一半），
@@ -151,9 +184,10 @@ export function menuTextureIds(w: MenuWorld): AssetId[] {
   // 天书页那一排按钮 —— 出菜单唯一那条路（「返回」）就在上面，**画不出来
   // 等于玩家出不去**（/code-review 的 Spec 轴提的）。
   if (w.panel === 'funcPanel') ids.push(...funcButtonIds())
-  // 物品页那颗「使用」按钮。⚠️ 按 `isDraw` 决定画不画是绘制清单的事，
-  // 贴图这一头一律先要过来 —— 选中一瓶药之后再去取图，那一帧会缺一颗按钮。
-  if (w.panel === 'thingPanel') ids.push(...thingButtonIds())
+  // 物品页那颗「使用」按钮，外加六种药的插图（xl-6lo.15）。⚠️ 按状态决定
+  // 画不画是绘制清单的事，贴图这一头一律先要过来 —— 选中一瓶药之后再去取图，
+  // 那一帧会缺一颗按钮、缺一张插图。
+  if (w.panel === 'thingPanel') ids.push(...thingButtonIds(), ...drugPictureIds())
   // 奇术页那十五颗技能按钮，外加**正在放的那一条动画整条的帧**（xl-6lo.11）。
   //
   // ⚠️ 整条一起推，不是只推当前那一帧：`load()` 是 async 而 `draw()` 不是，

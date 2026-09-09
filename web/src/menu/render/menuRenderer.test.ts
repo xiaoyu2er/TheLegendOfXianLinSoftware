@@ -3,7 +3,9 @@ import deferredBattle from '../../generated/battleAnimations.json'
 import deferredMenu from '../../generated/menuContent.json'
 import { resetDeferredBattleCache } from '../../assets/deferredBattle'
 import { resetDeferredMenuCache } from '../../assets/deferredMenu'
-import { MENU_BACKGROUND, mouseId } from './assets'
+import manifest from '../../generated/assets.json'
+import { MENU_BACKGROUND, drugPictureId, mouseId } from './assets'
+import { DRUGS } from '../../battle/drugs'
 import { magicAnimationFrameId, magicSkillButtonId } from './magicSkills'
 import { menuAssetUrl } from './menuRenderer'
 
@@ -51,8 +53,23 @@ describe('菜单素材的 URL 分流', () => {
     expect(skeleton).not.toBe(deferred)
   })
 
+  it('药品插图走主包映射表 —— 它既不在 sources/菜单/ 也不在 image/ 下', async () => {
+    const id = drugPictureId(DRUGS[0]!)
+    // 空转要响：它要是根本没烘进主包，下面拿到的会是一条查不到的 URL。
+    expect((manifest as Record<string, string>)[id], `${id} 不在主包映射表里 —— 先跑 pnpm bake`)
+      .toBeTruthy()
+    const url = await menuAssetUrl(id)
+    expect(url).toContain(encodeURI((manifest as Record<string, string>)[id]!))
+    // 它**不在**两份按需名单里的任何一份 —— 分流走错一支就是 404。
+    expect((deferredMenu as { files: Record<string, string> }).files[id]).toBeUndefined()
+    expect((deferredBattle as { files: Record<string, string> }).files[id]).toBeUndefined()
+  })
+
   it('认不出来的前缀是抛，不是猜', async () => {
-    await expect(menuAssetUrl('scene:宿舍/1.png')).rejects.toThrow(/只认 menu: 与 battle:/)
+    await expect(menuAssetUrl('scene:宿舍/1.png')).rejects.toThrow(/只认 menu: \/ battle: \/ drug:/)
+    // 手写的 drug: ID（算回去对不上）也要抛 —— 反斜杠会被 `normalizePath`
+    // 规范成正斜杠，于是算回去与手写的那条不一样。
+    await expect(menuAssetUrl('drug:回复类\\金创药.png')).rejects.toThrow(/不是从文件名/)
     // 手写的 menu: ID（算回去对不上）也要抛 —— 这里用一条反斜杠路径：
     // `menuAssetId` 会把它规范化成正斜杠，于是算回去与手写的那条不一样。
     await expect(menuAssetUrl('menu:奇术\\横剑摆渡1.png')).rejects.toThrow(/不是从 sources\/菜单\//)
