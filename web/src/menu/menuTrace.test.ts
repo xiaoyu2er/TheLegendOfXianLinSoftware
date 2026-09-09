@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import { snapshotMenu } from './snapshot'
@@ -250,22 +250,18 @@ describe('菜单状态层对齐行为真值', () => {
    * "纯状态"了 —— 它会开始需要 canvas，而失败的样子是一句 jsdom 的报错，
    * 跟"实现错了"分不开。
    */
-  it('这个文件与它拉进来的那几个模块都不碰渲染', () => {
-    const files = [
-      'menuTrace.test.ts',
-      'snapshot.ts',
-      'step.ts',
-      'trace.ts',
-      'world.ts',
-      'buttons.ts',
-      'funcButtons.ts',
-      'loop.ts',
-      'heroes.ts',
-      'layout.ts',
-      'types.ts',
-      'defaultWeapons.ts',
-    ]
-    const banned = /from '([^']*(pixi|react|\/render\/)[^']*)'/
+  it('状态层整个目录都不碰渲染', () => {
+    // **分母从磁盘现扫**：写死一份文件名单的话，明天新加的
+    // `menu/xxx.ts` 里 import 一个 Pixi 进来，这条静默放过（dispatch.md 纪律 3）。
+    // 只扫 `menu/` 这一层，不进 `menu/render/` —— 那一层的活就是碰渲染。
+    const files = readdirSync(repoPath('web/src/menu'), { withFileTypes: true })
+      .filter((e) => e.isFile() && /\.tsx?$/.test(e.name))
+      .map((e) => e.name)
+      .sort()
+    // 空转要响：目录名写错了与"这一层干净"长得一样。
+    expect(files.length).toBeGreaterThan(5)
+    expect(files).toContain('step.ts')
+    const banned = /from '([^']*(pixi|react|\/render\/|render\/)[^']*)'/
     for (const file of files) {
       const source = readFileSync(repoPath('web/src/menu', file), 'utf8')
       expect(banned.test(source), `${file} 里 import 了渲染层`).toBe(false)
