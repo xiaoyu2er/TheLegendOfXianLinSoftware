@@ -18,7 +18,7 @@ import {
   equipTextureIds,
   showValueDigits,
 } from './equipDraw'
-import { equipButtonId, showValueArrowId, showValueDigitId, warningId } from './assets'
+import { equipButtonId, menuTextureIds, showValueArrowId, showValueDigitId, warningId } from './assets'
 import type { MenuDrawOp } from './drawList'
 import type { MenuWorld } from '../types'
 
@@ -244,10 +244,85 @@ describe('装备页画出来的那几段', () => {
     expect(new Set(bars.map((t) => t.size))).toEqual(new Set([22]))
   })
 
-  it('没选中东西时那两行说明是「无装备」', () => {
+  it('没选中东西时那两行说明是「无装备」—— 两句都从源码里现读', () => {
+    const src = javaSource('src/menu/EquipPanel.java')
+    const empty = [...src.matchAll(/message([12])="([^"]+)";/g)].map((m) => m[2]!)
+    // 零匹配与"两句都对"长得一样。
+    expect(empty, 'else 那一支的两句没解出来').toEqual(['无装备', '快去装备店购买吧~！'])
     const all = texts(pageOps(world())).map((t) => t.text)
-    expect(all).toContain('无装备')
-    expect(all).toContain('快去装备店购买吧~！')
+    for (const line of empty) expect(all).toContain(line)
+  })
+
+  /**
+   * ⚠️ 这一条曾经写成 `toContain(equipIntroText(spec))` —— **拿被测函数自己
+   * 当期望值**，按构造成立。篡改矩阵里把 `" : 体力+"` 的头一个空格去掉，
+   * 那一版是绿的。现在期望值从原版那句字符串拼接里现读。
+   */
+  it('装备说明那一行的格式，从原版那句拼接里现读', () => {
+    const src = javaSource('src/menu/EquipPanel.java')
+    // `message2=" : 体力+"+…getAddPhysicalPower()+" 敏捷+"+…` 直到分号。
+    const stmt = /message2=(" : [^;]+?);\s/.exec(src)
+    expect(stmt, '那句拼接没解出来').not.toBeNull()
+    const parts = [...stmt![1]!.matchAll(/"([^"]*)"/g)].map((m) => m[1]!)
+    expect(parts, '拼接里的四段字面量没解全').toHaveLength(4)
+    const spec = EQUIPMENT_LISTS.armor[0]!
+    expect(equipIntroText(spec)).toBe(
+      parts[0]! +
+        spec.addPhysicalPower +
+        parts[1]! +
+        spec.addAgile +
+        parts[2]! +
+        spec.addStrength +
+        parts[3]! +
+        spec.addSpirit,
+    )
+  })
+
+  it('画得出来的每一张，`menuTextureIds` 里都要有 —— 否则那一张是空的', () => {
+    // ⚠️ 这一条是篡改矩阵逼出来的：原先只核 `equipTextureIds()` 自己，把它从
+    // `menuTextureIds` 里摘掉照样全绿 —— 而那正是"载不到纹理"的样子。
+    const w = world([{ name: DEFAULT_WEAPONS.lu.name, count: 1 }])
+    stepMenu(w, [{ e: 'move', x: 549, y: 188 - 22 }])
+    stepMenu(w, [{ e: 'press', x: 897, y: 444 }])
+    const used = new Set(
+      menuDrawList(w).flatMap((op) => (op.kind === 'image' ? [op.id] : [])),
+    )
+    expect(used.size).toBeGreaterThan(0)
+    const loaded = new Set(menuTextureIds(w))
+    for (const id of used) {
+      expect(loaded, `${id} 画得出来却不在 load 名单里`).toContain(id)
+    }
+  })
+
+  it('四项属性跟着卷轴上选中的那个人换', () => {
+    // ⚠️ 也是篡改矩阵逼出来的：改成永远画 `heroes[0]` 照样全绿 ——
+    // 上面那条只有张小凡一个人在队里。
+    const w = createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true })
+    w.panel = 'equipPanel'
+    const scoll = w.panels.equipPanel.scoll!
+    // 二号头像开局 isDraw=No，先移一下鼠标让 `Scoll.checkMoveIn()` 打开它。
+    const head = scoll.hero2
+    const [hx, hy] = [head.x - 15 + Math.floor(head.width / 2), head.y - 6 + Math.floor(head.height / 2)]
+    stepMenu(w, [{ e: 'move', x: hx, y: hy }])
+    stepMenu(w, [{ e: 'press', x: hx, y: hy }])
+    stepMenu(w, [{ e: 'release', x: hx, y: hy }])
+    expect(scoll.whichHero).toBe(2)
+
+    const bars = texts(pageOps(w)).filter((t) => t.color === '#0000ff')
+    const lu = w.heroes[1]!
+    expect(bars.map((t) => t.text)).toEqual([
+      `体力：${lu.physicalPower}`,
+      `敏捷：${lu.agile}`,
+      `武力：${lu.strength}`,
+      `精气：${lu.spirit}`,
+    ])
+    // 正向控制：两个人的读数真的不一样，否则这条恒真。
+    expect(bars.map((t) => t.text)).not.toEqual([
+      `体力：${w.heroes[0]!.physicalPower}`,
+      `敏捷：${w.heroes[0]!.agile}`,
+      `武力：${w.heroes[0]!.strength}`,
+      `精气：${w.heroes[0]!.spirit}`,
+    ])
   })
 
   it('选中之后：说明换成那件的，四个升降数字画出来', () => {
