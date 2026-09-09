@@ -710,7 +710,20 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 | `use` | — | 按下 + 松开 | 点"使用" |
 | `abandon` | — | 按下 + 松开 | 点"弃用" |
 | `skill` | `n` = 1..5 | 按下 + 松开 | 点奇术页当前角色的第 n 个技能按钮 |
+| `func` | `name`（白名单见下） | 按下 + 松开 | 点天书页的一颗按钮 |
 | `tick` | `n`（缺省 1） | n 步，一步一次 | 显式推 n 次 `FatherPanel.run()` 的循环体（见下面「tick」） |
+
+`func` 的名字是一份**白名单**（`MenuScript.FUNC_BUTTONS`）：`set` / `setBGM` /
+`setClick` / `onBGM` / `offBGM` / `offClick` / `exit`。天书页上另外七颗按钮
+**在原版里同样点得响**，却各有一条让导出失去意义的理由，逐条写在
+`MenuScript.FUNC_FORBIDDEN` 里、写进剧本就非零退出（xl-6lo.7）：
+
+| 点不得的 | 为什么 |
+|---|---|
+| `exitForSure` | 直接 `System.exit(0)`：导出器在写文件之前就消失，而**退出码是 0** —— 一次「什么都没导出」长得和成功一模一样 |
+| `save` / `read` / `return` / `restart` | 都走 `GameLauncher`（`lsPanel` 与 `switchTo`），导出时那些静态字段是 `null`，空指针 |
+| `onClick` | 「开特殊音效」那一支先 `openMusic()` 打开 `CAN_PLAY_MUSIC`，紧接着自己就 `readmusic("换list.wav")` —— 真的开音频设备、起播放线程，两遍导出不可能一致。**关的那一侧 `offClick` 没有这个问题**，它那一支不出声 |
+| `setKey` | 「键盘设定」在原版里**点不到**：它既不在 `buttonList` 也不在任何一格 `subButtonList`，`isPressedButton` 一次都不会落到它身上（缺陷登记 xl-1dv.16） |
 
 **坐标一律不写在剧本里。** 驱动器从原版按钮对象自己的 `x/y/width/height` 反算
 落点（命中判据抄自 `GameButton.isPressedButton`，含原版那个 `-15/-6` 的偏移），
@@ -738,7 +751,7 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 | `equip.warnEquipped` / `warnCannotUse` | 两条拒绝路径：身上那一格已经有装备 / 这件不是当前角色能用的（`Equipment.user`）。**必须在 `paint()` 之前抓** —— `drawWarning()` 会把这两个标志清零，放到 paint 之后读永远是 0，得到一份"从没发生过拒绝"的真值。 |
 | `equip.diff` | 装备页中间那四个升降数字。取的是四个 `ShowValue` 对象自己的 `value`/`type`，**不是 `EquipPanel` 上那四个 `showPP/showAngile/...` 字段**：`showValueDifference()` 的 else 分支（身上那一格是空的）把绝对值直接传进 `ShowValue.show()`，一个字段都不写，于是字段里留着上一次的陈值。`signal != 1` 时记 `null` —— 那一整段（算差值 + 画四个箭头）都在 `if(signal==1)` 里面。 |
 | `magic.animation` | 开局**不是** `null`：`addMagicAnimation()` 用同一个临时字段建了 20 个动画，循环结束时它停在最后一个（文敏第 5 技能）上，于是刚进奇术页就画着那一条说明。照记不改。 |
-| `func.drawn` | 天书页当前画得出来的按钮，按字段名排序。 |
+| `func.drawn` | 天书页 `isDraw == Yes` 的按钮，按字段名排序。**它记的是 `isDraw`，不是「这一帧真画了」** —— `setKey` 在这个数组里恒有，而 `drawFuncButtons()` 只画 `buttonList` 与四格 `subButtonList`，`setKey` 一格都不在，屏幕上永远看不到它（xl-1dv.16）。「展开 / 收起」在原版里干的事正是改 `isDraw`，所以这一页的状态全在这个字段里（`menu-func`，xl-6lo.7）。 |
 | `input` | 与场景同形，但菜单多一种条目：`tick` 步记的是 `[{"e":"tick"}]`。**它不是一次输入事件**，是"推一次 `run()` 的循环体"这个时钟脉冲 —— 回放端遇到它要推自己那条循环，而不是往面板喂事件。 |
 | `music` | 这一步触发的音效文件名，按调用先后排列（`["换list.wav"]`）。空数组 = 这一步原版不出声。见下面「音效」一节。 |
 | `mouse` | 四个子面板**各自**那个 `Mouse`（四条 run 线程各推各的，只有当前页画得出来）。每个记 `code`/`frame`/`x`/`y`。**`code` 与 `frame` 是两回事**：`code` 是"下一格拿哪张图"的计数器，`frame` 是这一帧真的画出来的那张的下标。`Mouse.update()` 先取图再自增，且 `code==8` 那一次只把 code 拨回 1、**不换图** —— 于是第 0 张只在开局出现一次、第 7 张连画两帧。只记 `code` 的话这两件事在真值里都看不见。|
@@ -996,6 +1009,9 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `milestone` | `脚本1.txt` → `脚本2` → `大活夜` → `大地图夜` | M1 里程碑：开场从头走一遍 —— 旁白 + 23 句主线对话 + 跟曾书书搭话，出门进大地图夜，那边的旁白与 27 句对话也走完，进大活夜再出来。覆盖出口切换的三条分支与两次背景音乐切换 |
 | `menu-magic` | 菜单（`driver` = `menu`） | 奇术页与那条 100ms 循环的逐帧真值（`tick` 指令）：开局挂着的文敏第 5 技能动画在物品页上照样推进（`code` 1→3）→ 进奇术页那一次按下把它清成 `null` → 张小凡第 1 个技能的 37 帧走完（末帧 `code` 拨回 1、动画撤下）→ 鼠标图标 43 拍走完一整轮绕回（第 0 张只出现一次、第 7 张连画两帧） |
 | `menu-equip` | 菜单（`driver` = `menu`） | 四个子面板各自进入与退出；装备页一整条换装：拒绝（已装备）→ 弃用（敏捷 11→10、武力 12→10、精气 11→10）→ 拒绝（藏璎环是陆雪琪专属）→ 换回武器 → 穿上铁甲（体力 10→15、血上限 700→1050、防御 50→75）→ 物品页喝药（生命 700→1000，金创药 2→1） |
+| `menu-scroll` | 菜单（`driver` = `menu`） | 列表撑过列表框与撑不满两侧（xl-6lo.7，给 xl-6lo.13 的滚动条当真值）：装备页武器分类塞满 20 件（`武器.txt` 的全部），行号取 0/15/16/19；盔甲分类 1 件、物品页 6 种药（`drug.txt` 的全部）。量出来的边界写在剧本自己的 `description` 里 —— 装备页首行基线 177、行距 22，`装备4.png` 的列表框内区 y 142..521 ⇒ 放得下 16 行，20 件**撑过 4 行**；物品页放得下 11 行而只有 6 种药，在原版里撑不满。**原版既没有滚动条也不裁剪**：掉到框外的行照画、照命中，仍然点得中 |
+| `menu-hero` | 菜单（`driver` = `menu`） | 三个人之间换人看属性（xl-6lo.7）：`hero` 取到 1 / 2 / 4 / 1，背包跟着换、分类被原版拨回武器。装备页**点得到的四个槽**都有读数 —— 武器是 `EquipPack` 构造函数给的开局自带（张小凡 月苗刀 / 陆雪琪 藏璎环 / 文敏 鸳鸯刀），头盔 / 鞋 / 盔甲是这一条穿上的。护臂与饰品走不到：`gloveButton` / `decorationButton` 声明了却从没 `new` 过 |
+| `menu-func` | 菜单（`driver` = `menu`） | 天书页设定子菜单的展开与收起、BGM 开关、退出那一排展开（xl-6lo.7）：`func.drawn` 取到**五组互不相同**的按钮集合。收起走的是命令栏那一击（`FuncButtons.checkPressed` 的第一个循环）。「关特殊音效」那一步 `music` 是**空的**，而别的每一次按下都有一声 `换list.wav` —— 原版 `off_click` 那一支就是不出声 |
 | `battle-min` | 战斗（`driver` = `battle`） | `剧情1.txt` 的那场固定遭遇（三人对三怪），从开场动画打到分出胜负。第一回合的两步写成显式指令，之后 `autoAttack` 打完 |
 | `battle-em3-box` | 战斗（`driver` = `battle`） | 让 xl-1dv.8（`EnemySlector` 判 em3 用了 `height1`）在真值里露头的那一场：`脚本20.txt` 第 3 行的 Fight 数据，em1 的图 188×220 而 em3 的图 124×172 |
 | `battle-defeat-scene` | 战斗（`driver` = `battle`） | 打输的第一条出口：`脚本22.txt` 第 1 行的剧情必败战（`罹年居士` 独自一只，hp/hurt/defense 全是 9999）。全灭之后一路记到切回 `scenePanel`，张小凡与文敏各回半血。第 2/3 槽是 `null` —— 原版的 Fight 数据一行可以只写一只怪 |
