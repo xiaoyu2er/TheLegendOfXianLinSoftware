@@ -142,11 +142,20 @@ describe('菜单那六层绘制', () => {
     )
   })
 
-  it('别的三页 page 层是空的 —— 那三页归 xl-6lo.9 / .10 / .11', () => {
+  it('物品与奇术两页 page 层还是空的 —— 归 xl-6lo.10 / .11', () => {
     const w = world()
     expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
     stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
     expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
+  })
+
+  it('装备页 page 层不空了（xl-6lo.9）—— 上面那两条才有分辨力', () => {
+    // 没有这一条的话，「这一页归别人」与「menuDrawList 的 page 层整个坏了」
+    // 长得一样：两者都是空数组。
+    const w = world()
+    stepMenu(w, [{ e: 'press', x: 515, y: 62 }])
+    expect(w.panel).toBe('equipPanel')
+    expect(menuDrawList(w).filter((op) => op.layer === 'page').length).toBeGreaterThan(0)
   })
 
   it('不在出战名单里的头像不画；张小凡一个人时只画一颗', () => {

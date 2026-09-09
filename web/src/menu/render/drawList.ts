@@ -10,6 +10,7 @@ import {
   scollId,
   tabId,
 } from './assets'
+import { equipDrawOps } from './equipDraw'
 import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
 import { SCOLL_HEROES } from '../types'
 import type { MenuSubPanel, MenuWorld } from '../types'
@@ -32,11 +33,13 @@ import type { MenuSubPanel, MenuWorld } from '../types'
  *     drawThisPanel(bufferedGraphics);                           ← page（各页自己的）
  *     mouse.drawMouse(bufferedGraphics);                         ← mouse
  *
- * `special` 层与 `page` 层的三页（物品 / 装备 / 奇术）**这一票是空的**：那是
- * 各页各自的内容，归 xl-6lo.10 / .9 / .11。空着而不是抛 —— 骨架这一票的验收
- * 就是"四页的骨架画得出来"，抛会让它一帧都画不出来。⚠️ 代价是「这一页还没做」
- * 与「这一页本来就没有内容」在画面上长得一样，而分开它们的是逐帧比对那张表
- * （xl-6lo.14 接）。
+ * `special` 层与 `page` 层里，**物品与奇术两页仍然是空的**：那是各页各自的
+ * 内容，归 xl-6lo.10 / .11。空着而不是抛 —— 骨架那一票的验收就是"四页的骨架
+ * 画得出来"，抛会让它一帧都画不出来。⚠️ 代价是「这一页还没做」与「这一页
+ * 本来就没有内容」在画面上长得一样，而分开它们的是逐帧比对那张表（xl-6lo.14 接）。
+ *
+ * **装备页那一层已经接上了**（xl-6lo.9，`equipDraw.ts`）—— 连同一条登记：
+ * 那一页有两张装备图今天烘不出来，落点在，纹理不在。
  *
  * **天书页那一层是例外，必须画**：出菜单唯一那条路（「返回」）就在上面，而
  * 菜单里的 ESC 是死代码 —— 不画等于玩家出不去。`func` 那一组的**状态**仍然
@@ -142,10 +145,13 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
 
   // `drawThisPanel` —— 四页各自的。
   //
-  // 物品 / 装备 / 奇术三页这一票空着（归 xl-6lo.10 / .9 / .11）；**天书页
-  // 不能空**：出菜单唯一那条路（「返回」）就是这一层画出来的，空着的话
-  // ESC 又是死代码，玩家一点出去的办法都没有。所以这一页照
+  // 物品与奇术两页仍然空着（归 xl-6lo.10 / .11）；装备页由 `equipDraw.ts` 接
+  // （xl-6lo.9）；**天书页不能空**：出菜单唯一那条路（「返回」）就是这一层画
+  // 出来的，空着的话 ESC 又是死代码，玩家一点出去的办法都没有。所以这一页照
   // `FuncButtons.drawFuncButtons()` 画：先五颗主按钮，再四组子按钮。
+  if (panel.equip && panel.scoll) {
+    ops.push(...equipDrawOps(panel.equip, w.heroes, panel.scoll.whichHero))
+  }
   if (panel.funcButtons) {
     const fb = panel.funcButtons
     for (const key of FUNC_MAIN_ORDER) {

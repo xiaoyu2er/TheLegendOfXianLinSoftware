@@ -1,5 +1,8 @@
 import { menuAssetId } from '../../assets/menuAssets'
+import { battleAssetId } from '../../assets/battleAssets'
 import type { AssetId } from '../../assets/ids'
+import type { EquipSlot } from '../equipment'
+import { equipTextureIds } from './equipDraw'
 import type { ButtonImage, MenuPanelName, MenuTabKey, MenuWorld } from '../types'
 import type { FuncMainKey, FuncSubKey } from '../funcButtons'
 
@@ -131,5 +134,67 @@ export function menuTextureIds(w: MenuWorld): AssetId[] {
   // 天书页那一排按钮 —— 出菜单唯一那条路（「返回」）就在上面，**画不出来
   // 等于玩家出不去**（/code-review 的 Spec 轴提的）。
   if (w.panel === 'funcPanel') ids.push(...funcButtonIds())
+  // 装备页那八颗按钮 + 两张拒绝提示 + 升降数字（xl-6lo.9）。`装备/` 走按需，
+  // `伤害值数字/` 在主包里（它是 `image/` 下的战斗素材）。
+  if (w.panel === 'equipPanel') ids.push(...equipTextureIds())
   return ids
+}
+
+/**
+ * 装备页那八颗按钮的贴图词干（`EquipPanel.addButton()` 里读图那十六行）。
+ *
+ * ⚠️ **六颗槽位按钮只有两张图**：`new MenuButton(…, image1, image2, image1, this)`
+ * —— 第三个参数（按下时那张）传的是 `image1`，也就是**常态图**。
+ * 「使用 / 弃用」那两颗才是三张各一张。照着「三态三张」写会去要一个
+ * `武器3.png`，而那个文件根本不存在 —— 表现是按下去那一颗按钮消失了。
+ */
+const EQUIP_BUTTON_STEM: Readonly<Record<EquipSlot | 'use' | 'abandon', string>> = {
+  weapon: '武器',
+  armor: '盔甲',
+  helmet: '头盔',
+  shoe: '靴子',
+  glove: '护臂',
+  decoration: '饰品',
+  use: '使用',
+  abandon: '弃用',
+}
+
+/** 只有这两颗有第三张图（按下时）。 */
+const EQUIP_BUTTON_HAS_PRESSED: readonly (EquipSlot | 'use' | 'abandon')[] = ['use', 'abandon']
+
+export function equipButtonId(
+  key: EquipSlot | 'use' | 'abandon',
+  image: ButtonImage,
+): AssetId {
+  const n =
+    image === 'pressed' && !EQUIP_BUTTON_HAS_PRESSED.includes(key) ? 1 : STATE_SUFFIX[image]
+  return id(`装备/${EQUIP_BUTTON_STEM[key]}${n}.png`)
+}
+
+/** 两条拒绝路径各自那张提示图（`EquipPanel` 构造函数里读的那两张）。 */
+export function warningId(which: 'equipped' | 'cannotUse'): AssetId {
+  return id(`装备/${which === 'equipped' ? '已装备' : '不能使用'}.png`)
+}
+
+/**
+ * 升降数字那个箭头。`ShowValue.getCurrentImages()` 里那两张：
+ * `上升.png`（type=1）与 `下降.png`（type=2）。
+ */
+export function showValueArrowId(down: boolean): AssetId {
+  return id(`装备/${down ? '下降' : '上升'}.png`)
+}
+
+/**
+ * 升降数字的一位。`ShowValue.loadImage()` 先读 `伤害/0..9`（下标 0..9）再读
+ * `回复/0..9`（下标 10..19），而 `switchNum(num, offset)` 的 offset 是
+ * **type=1 传 0、type=2 传 10** —— 也就是上升用「伤害」那套图、下降用「回复」
+ * 那套。两套对调在画面上是两排都长得像数字的图，谁都看不出来。
+ *
+ * ⚠️ 它在 `image/` 下，所以走 `battleAssetId` 而不是菜单那一支。
+ */
+export function showValueDigitId(digit: number, down: boolean): AssetId {
+  if (!Number.isInteger(digit) || digit < 0 || digit > 9) {
+    throw new Error(`升降数字只有 0..9，收到 ${digit}`)
+  }
+  return battleAssetId(`image/伤害值数字/${down ? '回复' : '伤害'}/${digit}.png`)
 }
