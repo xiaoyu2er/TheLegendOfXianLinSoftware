@@ -74,7 +74,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // ⚠️ `list` 只有 `shop-categories` 那一格签得下，而它**恰恰是最要紧的一格**：
   // 那条剧本六栏全走了一遍，`stock` 那一排数字是原版自己摇出来的 —— 掷骰的
   // 次数与顺序（`world.ts` 的 `STOCK_ROLL_ORDER`）唯一的判据就在这里。
-  // 另外两条剧本一按下加号就分岔，归 xl-knp.7 / .8。
+  // 另外两条剧本走到装备店那一栏就分岔，归 xl-knp.8。
   list: ['shop-categories'],
   icon: ['shop-categories', 'shop-edges', 'shop-trade'],
   pressed: ['shop-categories', 'shop-edges', 'shop-trade'],
@@ -95,32 +95,31 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
  * 那一步"。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // 店主说的三行话整个还没做 —— `step.ts` 的 `panelMoveIn` 里只做了换图标
-  // 那一半，加对白是下面两张票**往那个 if 里加几句赋值**的事。
+  // 店主说的那两三行话。药店那两行是 xl-knp.7 做的（`step.ts` 的
+  // `drugHoverMessage`），装备店那三行（属性加成 / 价位三档 / 谁能用）还没做。
   message: {
-    // 这条剧本一次都没打开药店，第一处分歧在装备店的属性加成那一行。
     'shop-categories': 'xl-knp.8',
-    'shop-edges': 'xl-knp.7',
-    'shop-trade': 'xl-knp.7',
+    'shop-edges': 'xl-knp.8',
+    'shop-trade': 'xl-knp.8',
   },
   // 加减 / 买卖那四声（`click.wav` × 2、`Clip986.wav` × 2）。切分类那声
-  // `换list.wav` 已经有了，所以 `shop-categories` 那一格签得下。
+  // `换list.wav` 与药店那四声都已经有了，剩下装备店那四声。
   music: {
-    'shop-edges': 'xl-knp.7',
-    'shop-trade': 'xl-knp.7',
+    'shop-edges': 'xl-knp.8',
+    'shop-trade': 'xl-knp.8',
   },
   coins: {
-    'shop-edges': 'xl-knp.7',
-    'shop-trade': 'xl-knp.7',
+    'shop-edges': 'xl-knp.8',
+    'shop-trade': 'xl-knp.8',
   },
   // 分岔的只有 `purchase` 那一列（加减按钮）与买卖之后的 `stock` / `held`。
   list: {
-    'shop-edges': 'xl-knp.7',
-    'shop-trade': 'xl-knp.7',
+    'shop-edges': 'xl-knp.8',
+    'shop-trade': 'xl-knp.8',
   },
   pack: {
-    'shop-edges': 'xl-knp.7',
-    'shop-trade': 'xl-knp.7',
+    'shop-edges': 'xl-knp.8',
+    'shop-trade': 'xl-knp.8',
   },
 }
 
@@ -132,7 +131,7 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
  * （开局的存货 / 金钱 / 背包、落点、按钮、换店、切分类），没有这张表就没有
  * 一条判据在守它。
  *
- * 卡住的那一步**不写步号**，写成一句真值自己认得出的话（"药店上松开 buy 的
+ * 卡住的那一步**不写步号**，写成一句真值自己认得出的话（"装备店上松开 buy 的
  * 第一步"）—— 步号会随着剧本改动整体平移，而那种失效是安静的。
  *
  * ⚠️ 十一格全在这里，一格不落：`PENDING` 里有而这里没有的格子，等于放弃了
@@ -149,34 +148,41 @@ interface BlockedAt {
 }
 
 /** 十一格里反复出现的那几种卡法，写一处。 */
-const HOVER_ROW_NO_MESSAGE = '店主对白还没做：第一次把鼠标停到某一行上，那三行话就该换了'
-const STEP_NO_PURCHASE = '加减按钮还没接：松开加号那一下，这一行的 purchase 该变'
-const STEP_NO_SOUND = '加减按钮还没接：松开那一下该出一声 click.wav'
-const BUY_NO_EFFECT = '买入还没接：松开购买那一下，金钱与背包该动'
+const HOVER_ROW_NO_MESSAGE = '装备店的店主对白还没做：第一次把鼠标停到某一行上，那三行话就该换了'
+const STEP_NO_PURCHASE = '装备店的加减按钮还没接：松开加号那一下，这一行的 purchase 该变'
+const STEP_NO_SOUND = '装备店的加减按钮还没接：松开那一下该出一声 click.wav'
+const BUY_NO_EFFECT = '装备店的买入还没接：松开购买那一下，金钱与背包该动'
 
+/**
+ * ⚠️ **十一格全卡在装备店上，一格不落 —— 这就是 xl-knp.7 的成果。**
+ *
+ * xl-knp.6 落地时，`shop-edges` / `shop-trade` 那八格全都指着**药店**（`drug`
+ * 店上的第一次 hover / 第一下加减 / 第一次购买）；药店那半边做完之后，第一处
+ * 分歧整体挪到了装备店。这张表是这件事**唯一**会红的判据：药店做错任何一步，
+ * `firstDivergence` 就退回药店那一步，与这里写的对不上 —— 而"药店做完了"与
+ * "药店压根没做"在只看 `PENDING` 时长得一模一样。
+ */
 const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {
   message: {
     'shop-categories': { shop: 'equipment', event: 'move', target: 'row:6', why: HOVER_ROW_NO_MESSAGE },
-    'shop-edges': { shop: 'drug', event: 'move', target: 'row:5', why: HOVER_ROW_NO_MESSAGE },
-    'shop-trade': { shop: 'drug', event: 'move', target: 'row:0', why: HOVER_ROW_NO_MESSAGE },
+    'shop-edges': { shop: 'equipment', event: 'move', target: 'row:1', why: HOVER_ROW_NO_MESSAGE },
+    'shop-trade': { shop: 'equipment', event: 'move', target: 'row:6', why: HOVER_ROW_NO_MESSAGE },
   },
   music: {
-    'shop-edges': { shop: 'drug', event: 'release', target: 'plus:5', why: STEP_NO_SOUND },
-    // ⚠️ 这一条是**减号**：`shop-trade` 头一下点的是减号，而原版那个守卫
-    // （`purchaseNumber>0` 才减）让它一个数都没改 —— 变的只有那一声。
-    'shop-trade': { shop: 'drug', event: 'release', target: 'minus:0', why: STEP_NO_SOUND },
+    'shop-edges': { shop: 'equipment', event: 'release', target: 'plus:1', why: STEP_NO_SOUND },
+    'shop-trade': { shop: 'equipment', event: 'release', target: 'plus:6', why: STEP_NO_SOUND },
   },
   coins: {
-    'shop-edges': { shop: 'drug', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
-    'shop-trade': { shop: 'drug', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
+    'shop-edges': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
+    'shop-trade': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
   },
   list: {
-    'shop-edges': { shop: 'drug', event: 'release', target: 'plus:5', why: STEP_NO_PURCHASE },
-    'shop-trade': { shop: 'drug', event: 'release', target: 'plus:0', why: STEP_NO_PURCHASE },
+    'shop-edges': { shop: 'equipment', event: 'release', target: 'plus:1', why: STEP_NO_PURCHASE },
+    'shop-trade': { shop: 'equipment', event: 'release', target: 'plus:6', why: STEP_NO_PURCHASE },
   },
   pack: {
-    'shop-edges': { shop: 'drug', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
-    'shop-trade': { shop: 'drug', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
+    'shop-edges': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
+    'shop-trade': { shop: 'equipment', event: 'release', target: 'buy', why: BUY_NO_EFFECT },
   },
 }
 

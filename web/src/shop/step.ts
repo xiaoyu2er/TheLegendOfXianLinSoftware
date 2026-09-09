@@ -1,10 +1,11 @@
+import { DRUGS } from '../battle/drugs'
 import { clickedLabels, moveInButton, pressButton, releaseButton } from './buttons'
 import type { ShopButtonLabel, ShopButtonState } from './buttons'
 import { rowAt } from './layout'
 import type { ShopKind } from './layout'
 import type { EquipSlot } from '../menu/equipment'
 import { activePanel, currentRows, stepBase, stepButtons } from './world'
-import type { EquipShopState, ShopPanelState, ShopWorld } from './types'
+import type { DrugShopState, EquipShopState, ShopPanelState, ShopWorld } from './types'
 
 /**
  * 推进商店一步。**一步 = 一次输入事件**，与菜单同一个口径
@@ -106,10 +107,9 @@ function shopMouseMoved(w: ShopWorld, x: number, y: number): void {
  *
  * 它做两件事：换图标框里那张图，以及换店主说的那两三行话。
  *
- * **这一票只做前一件**（图标框是列表框骨架的一部分）；后一件是店主对白 /
- * 属性加成 / 谁能用，归 xl-knp.7 与 xl-knp.8 —— 它们往下面那个 `if` 里
- * **加**几句赋值就是了，不必重排。真值 `icon` 那一组因此这一票就签得下，
- * `message` 那一组挂在 PENDING 上（`shopTrace.test.ts`）。
+ * 图标框那一半是骨架做的（xl-knp.6）；店主对白**按店分**：药店那两行
+ * 在这里（xl-knp.7），装备店那三行归 xl-knp.8 —— 它往下面那个 `if`
+ * 旁边**加**自己那一支就是了，不必重排。
  */
 function panelMoveIn(w: ShopWorld): void {
   const p = activePanel(w)
@@ -117,8 +117,39 @@ function panelMoveIn(w: ShopWorld): void {
   const row = rowAt(p.currentX, p.currentY, rows.length)
   if (row < 0) return
   p.iconPicture = rows[row]!.picture
-  // xl-knp.7 / xl-knp.8 在这里加 message / messagePlus / messageRemark。
+  if (p.kind === 'drug') drugHoverMessage(p, row)
+  // xl-knp.8 在这里加装备店那一支（messagePlus 三档 + messageRemark 四档）。
 }
+
+/**
+ * 药店的 `isMoveIn()` 里那两句赋值（`src/shop/ShopPanel.java`）：
+ *
+ *     message="Hp恢复"+getAddHp()+", Mp恢复"+getAddMp();
+ *     if(getReduceMoney()>=6000) messageplus="药是好药，但是好像有点贵呢";
+ *     else                       messageplus="物美价廉，呵呵";
+ *
+ * ⚠️ **逗号后面那个空格与「Mp」的大小写都进真值**，差一个字符就红。
+ * 分档的阈值与两句话都由 `drugShop.test.ts` 从 GBK 源码里现读，不手写。
+ *
+ * 回血回蓝那两个数不在 {@link ShopRow} 上 —— 店里那一列与 {@link DRUGS}
+ * **逐下标对齐**（`world.ts` 的 `drugRows` 就是照它建的），所以按下标取。
+ */
+function drugHoverMessage(p: DrugShopState, row: number): void {
+  const drug = DRUGS[row]!
+  p.message = `Hp恢复${drug.addHp}, Mp恢复${drug.addMp}`
+  p.messagePlus =
+    p.rows[row]!.price >= DRUG_EXPENSIVE_FROM ? '药是好药，但是好像有点贵呢' : '物美价廉，呵呵'
+}
+
+/**
+ * `if(drugList.get(i).getReduceMoney()>=6000)` —— 药店店主对白唯一的那道坎。
+ *
+ * ⚠️ **导出它是为了让它可测**：`drug.txt` 里没有一件药的价钱落在 5000 与
+ * 6000 之间，所以把这个数改成 5000 之后**分档的结果一个字都不变** ——
+ * 篡改矩阵实测那一条是绿的。`drugShop.test.ts` 因此直接拿它与 GBK 源码里
+ * 现读的那个数对，而不是只对分档的结果。
+ */
+export const DRUG_EXPENSIVE_FROM = 6000
 
 /**
  * `setButton()` —— 松开鼠标之后按"哪几颗按钮还挂着 `isclicked`"派活。
@@ -134,17 +165,15 @@ function panelMoveIn(w: ShopWorld): void {
 function setButton(w: ShopWorld): void {
   const p = activePanel(w)
   if (p.kind === 'equipment') setEquipCategory(w, p)
-  // 买 / 卖：**这一票不做**，见 `pendingBuySell` 的注释。原版在这里。
-  pendingBuySell(w)
+  buySellButtons(w)
   if (clicked(p.buttons, 'back')) {
     w.music.push('换头像.wav')
     // 原版这里是 `GameLauncher.switchTo("scene")` —— 面板自己不知道要去哪，
     // 换面板是外面那一层的事。浏览器里同理，会话侧接它（xl-yg6.2）。
     w.leaving = true
   }
-  // 加 / 减：**这一票不做**。⚠️ 它在 `back` **之后**，不是和买卖挤在一起 ——
-  // 两个洞分开留，正是为了后面两张票各自往自己那个洞里填、不必重排。
-  pendingStepButtons(w)
+  // ⚠️ 加减在 `back` **之后**，不是和买卖挤在一起（原版两个面板都是）。
+  stepPurchaseButtons(w)
   for (const b of p.buttons) releaseButton(b, p.currentX, p.currentY)
 }
 
@@ -180,33 +209,129 @@ function setEquipCategory(w: ShopWorld, p: EquipShopState): void {
 }
 
 /**
- * 买 / 卖 —— **这一票不做**，归 xl-knp.7（药店）与 xl-knp.8（装备店）。
+ * `for(int i=0;i<6;i++)` —— 药店那三个买卖循环的上界是**字面量 6**，不是
+ * `drugList.size()`。今天两者相等（`drug.txt` 六行），但抄成 `.length` 的话
+ * 数据多一行时这里会安静地跟着变，而原版不会。
+ *
+ * ⚠️ **导出它的理由与 {@link DRUG_EXPENSIVE_FROM} 一样**：`drugShop.test.ts`
+ * 从 GBK 源码里现读那个 6，如果只把它对到 {@link DRUGS} 的行数，这里改成 5
+ * 时那一条仍然是绿的 —— 判据必须对到**这个常量本身**。
+ */
+export const DRUG_TRADE_ROWS = 6
+
+/**
+ * 买 / 卖。**这一票只做药店**（xl-knp.7）；装备店归 xl-knp.8 —— 它往下面
+ * 那个 `if (p.kind !== 'drug') return` 旁边加自己那一支。
  *
  * 空着而不是抛：真值要从头跑到尾。抛的话整条剧本一步都跑不动，于是"这几组
  * 还没做"会伪装成"这一层崩了"，而 `shopTrace.test.ts` 反方向那半边判据
  * （登记成"还欠着"的格子必须**真的**还没对上）就再也跑不到了。
  *
- * 这个洞的登记在 `shopTrace.test.ts` 的 `PENDING` 里，逐格带票号；
- * 它同时是**双向**的：哪天有人把这里做了却忘了改登记，那半边判据立刻红。
+ * ⚠️ **`buy` 在 `sell` 前面**，而药店的按钮表是 `buy` / `sell`、装备店是
+ * `sell` / `buy` —— 分支的先后与按钮表的次序**不是同一件事**，两边的
+ * `setButton()` 都是先 `buy` 后 `sell`。
  */
-function pendingBuySell(_w: ShopWorld): void {
-  // xl-knp.7 / xl-knp.8 在这里加 buy / sell 两段。
+function buySellButtons(w: ShopWorld): void {
+  const p = activePanel(w)
+  // xl-knp.8：把这一句换成按 kind 分派，装备店那一支照 `EquipmentShopPanel`。
+  if (p.kind !== 'drug') return
+  if (clicked(p.buttons, 'buy')) drugBuy(w, p)
+  if (clicked(p.buttons, 'sell')) drugSell(w, p)
 }
 
 /**
- * 加 / 减 —— 同上，**这一票不做**。
+ * 药店的买入。逐行 `temp=Math.min(要几件, 店里还剩几件)`，先**整单成交**，
+ * 再看钱够不够；不够就整单退回来，并换掉店主那两行话。
  *
- * ⚠️ **它是第二个洞，位置不能和上面那个合并**：原版两个面板的 `setButton`
- * 里，那个 `for(int i=3/9;i<buttonlist.size();i+=2)` 排在 `back` 分支
- * **之后**（`ShopPanel.java` / `EquipmentShopPanel.java`）。合成一个洞、
- * 让后面两张票把四段一起填进 `back` 之前，加减就跑到「返回游戏」前头去了
- * —— 表现是同一次松开同时挂着 `back` 与加号时 `music` 成了
- * `[click.wav, 换头像.wav]`，而原版是 `[换头像.wav, click.wav]`
- * （/code-review 的 Spec 轴提的）。**留两个洞，`back` 夹在中间**，后面两张票
- * 才真的只做加法。判据在 `step.test.ts`。
+ * ⚠️ 三处照抄，每一处都反直觉：
+ *
+ * 1. **`Money.getCoins()<0` 是严格小于**：钱正好花光（`coins==0`）算买得起。
+ * 2. **退回来那个循环里 `temp` 是重算的，而 `stock` 已经被上面那个循环减过了**
+ *    （`Math.min(purchase, number)`，`number` 是新的）。买的件数没超过原存货
+ *    的一半时两次算出来一样、退得干净；超过一半就**退不干净** —— 原版缺陷，
+ *    照抄（ADR-0001）。今天三条真值都没走到那一路。
+ * 3. **`purchase` 的清零在最外面**，买成了没成都清。
+ *
+ * 「钱不够时钱与背包一个数都不动」这件事因此是**买了再退**得到的，不是
+ * 先检查后扣钱 —— 两者在真值上分得开：中间那一刻没人观测，但第 2 条的
+ * 退不干净只有前一种写法才会发生。
  */
-function pendingStepButtons(_w: ShopWorld): void {
-  // xl-knp.7 / xl-knp.8 在这里加 plus / minus 两段。
+function drugBuy(w: ShopWorld, p: DrugShopState): void {
+  w.music.push('Clip986.wav')
+  for (let i = 0; i < DRUG_TRADE_ROWS; i++) {
+    const row = p.rows[i]!
+    const temp = Math.min(row.purchase, row.stock)
+    w.pack.drugs[i]! += temp
+    w.coins -= row.price * temp
+    row.stock -= temp
+  }
+  if (w.coins < 0) {
+    for (let i = 0; i < DRUG_TRADE_ROWS; i++) {
+      const row = p.rows[i]!
+      const temp = Math.min(row.purchase, row.stock)
+      w.pack.drugs[i]! -= temp
+      w.coins += row.price * temp
+      row.stock += temp
+    }
+    p.message = '哎呀,小兄弟,你的钱不顾了,要省着点花啊'
+    p.messagePlus = null
+  }
+  for (let i = 0; i < DRUG_TRADE_ROWS; i++) p.rows[i]!.purchase = 0
+}
+
+/**
+ * 药店的卖出。`temp=Math.min(要几件, 背包里有几件)`，钱**加上同一个单价**
+ * —— 卖价等于买价，不打折（xl-knp.2 明写：不许"顺手修好"，ADR-0001）。
+ *
+ * ⚠️ 与买入的三处差别：没有钱不够那一支（钱只会变多）、`purchase` 的清零在
+ * 循环**里面**、店主那两行话一个字都不动。
+ */
+function drugSell(w: ShopWorld, p: DrugShopState): void {
+  w.music.push('Clip986.wav')
+  for (let i = 0; i < DRUG_TRADE_ROWS; i++) {
+    const row = p.rows[i]!
+    const temp = Math.min(row.purchase, w.pack.drugs[i]!)
+    w.pack.drugs[i]! -= temp
+    w.coins += row.price * temp
+    row.stock += temp
+    row.purchase = 0
+  }
+}
+
+/** `drugList.get(i/2-1)` 里那个 `-1`。装备店那一支是 `-4`（`base` 是 9）。 */
+const DRUG_ROW_OFFSET = 1
+
+/**
+ * 加 / 减。**这一票只做药店**；装备店归 xl-knp.8。
+ *
+ * ⚠️ **它是第二个洞，位置不能和买卖那个合并**：原版两个面板的 `setButton`
+ * 里，那个 `for(int i=3/9;i<buttonlist.size();i+=2)` 排在 `back` 分支
+ * **之后**（`ShopPanel.java` / `EquipmentShopPanel.java`）。填进 `back`
+ * 之前的表现是：同一次松开同时挂着 `back` 与加号时 `music` 成了
+ * `[click.wav, 换头像.wav]`，而原版是 `[换头像.wav, click.wav]`。
+ * 判据在 `step.test.ts`。
+ *
+ * ⚠️ **那一声 `click.wav` 在守卫外面**：`purchase` 已经是 0 时再按减号，
+ * 一个数都不动，**但照样出声**。「什么都不发生」是错的读法，而这两种读法
+ * 在除了 `music` 之外的每一列上都长得一样 —— `shop-trade` 第 3 步就是它。
+ */
+function stepPurchaseButtons(w: ShopWorld): void {
+  const p = activePanel(w)
+  // xl-knp.8：装备店只差 `base` 与读哪一栏（`i/2-4`），形状与这里相同。
+  if (p.kind !== 'drug') return
+  const base = stepBase('drug')
+  for (let i = base; i < p.buttons.length; i += 2) {
+    // 原版是 `drugList.get(i/2-1)`（整除）—— `base` 是 3，所以偏移就是 1。
+    const row = p.rows[Math.floor(i / 2) - DRUG_ROW_OFFSET]!
+    if (p.buttons[i]!.isclicked) {
+      w.music.push('click.wav')
+      if (row.purchase > 0) row.purchase--
+    }
+    if (p.buttons[i + 1]?.isclicked) {
+      w.music.push('click.wav')
+      row.purchase++
+    }
+  }
 }
 
 function clicked(buttons: readonly ShopButtonState[], label: ShopButtonLabel): boolean {

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
+import { createShopWorld } from '../shop/world'
 import { DRUGS, drugIntroText } from './drugs'
 
 /**
@@ -40,6 +41,29 @@ describe('六种回复类药品对回 sources/Shop/drug.txt', () => {
     expect(
       DRUGS.map((d) => [d.name, String(d.addHp), String(d.addMp), d.picture, String(d.reduceMoney)]),
     ).toEqual(rows.map((c) => [c[0]!, c[1]!, c[2]!, c[3]!, c[4]!]))
+  })
+
+  /**
+   * ⚠️ **第三个消费者的对撞判据**（xl-knp.7 / xl-knp.2）。
+   *
+   * 这份表现在有三处在读：战斗那边的药品菜单、商店的药店列表，以及这份数据
+   * 本身。xl-knp.2 明确**决定不把它抽到共享位置**（抽公共件会撞 M3 刚落的
+   * 文件，而抽到一起也防不住有人再抄一份出去），改用这一条：药店列出来的
+   * 那几种药与这里**逐字相等**。
+   *
+   * 哪天有人给商店另抄一份价格表，或者在 `world.ts` 的 `drugRows` 里改了
+   * 名字与价钱的来源，这一条立刻红 —— 而"三份分家"平时是**看不出来的**：
+   * 各自的测试都还绿着，只有改了其中一份的那一天才会露头。
+   */
+  it('⚠️ 药店列出来的那几种药与这份表逐字相等 —— 三处消费的是同一份', () => {
+    // 种子随便给：名字与价钱不是摇出来的，摇出来的只有存货。
+    const rows = createShopWorld({ party: ['zhang'], coins: 10000, seed: 1 }).drug.rows
+    // 分母两头现数：药店少列一行、或者这份表多一行，都在这里露头。
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.length).toBe(DRUGS.length)
+    expect(rows.map((r) => [r.name, r.price])).toEqual(
+      DRUGS.map((d) => [d.name, d.reduceMoney]),
+    )
   })
 
   it('介绍文字的形状照抄 DrugMenu.checkMoveIn', () => {
