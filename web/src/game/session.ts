@@ -138,6 +138,9 @@ export interface SessionInput {
 
 export const NO_INPUT: SessionInput = { scene: [], battle: [], menu: [] }
 
+/** 场景收不到键的那几拍喂它。常量，省得每拍新建一个数组。 */
+const NO_KEYS: readonly InputEvent[] = []
+
 /**
  * 起手态：**停在标题上，还没开局**（xl-q7f）。
  *
@@ -306,7 +309,25 @@ export function advanceSession(
     ...session.scene,
     world: { ...session.scene.world, showing: panel === 'scene' },
   }
-  const scene = advance(before, input.scene, elapsedMs, deps.scenes, deps.random)
+  // ⚠️ **不显示的时候一个键都收不到** —— `GameLauncher` 那个 KeyListener 的
+  // `keyPressed` / `keyReleased` 两个方法都从 `if(currentPanel==scenePanel)`
+  // 起手。所以菜单（以及战斗）开着的时候主角**站住不动**，而地图上的 NPC、
+  // 对话定时器照走。
+  //
+  // **这才是票面那句「场景停步」的真正内容**，而它只对了一半：停的是玩家的
+  // 输入，不是那条线程。（本票起先把整句都判成假的，是 /code-review 的 Spec
+  // 轴把另一半找回来的。）
+  //
+  // ⚠️ 顺带复刻一个坑：按住方向键的时候开菜单，那一下**松手事件也被吃掉**
+  // （`keyReleased` 同一个门），于是回到场景主角还在往那边走，要再按一次
+  // 那个键才停。原版就是这样，ADR-0001 说照抄。
+  const scene = advance(
+    before,
+    panel === 'scene' ? input.scene : NO_KEYS,
+    elapsedMs,
+    deps.scenes,
+    deps.random,
+  )
   const request = scene.world.battleRequest
 
   if (request !== null && panel === 'scene') {

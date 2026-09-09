@@ -198,9 +198,18 @@ describe('菜单状态层对齐行为真值', () => {
     }
   })
 
-  it('至少有一格是已对齐的 —— 否则下面整批用例一条都不跑，还全绿', () => {
-    const cells = Object.values(ALIGNED).reduce((n, names) => n + names.length, 0)
-    expect(cells).toBeGreaterThan(0)
+  it('每一条剧本都至少签下了一格 —— 否则那条剧本整条一个断言都不跑，还全绿', () => {
+    // ⚠️ 这一条曾经写成 `Object.values(ALIGNED).reduce(...) > 0` —— 数的是
+    // 同一个文件里 130 行以上那个字面量，**按构造成立**（/code-review 提的）。
+    // 改成按**剧本**分：分母是磁盘上的真值名单，所以新加一份真值而它一格都
+    // 没签时这条就红 —— 那正是「加了却没人回放」与「全都对上了」之间的差别。
+    for (const name of MENU_TRACE_NAMES) {
+      const signed = Object.entries(ALIGNED).filter(([, names]) => names.includes(name))
+      expect(
+        signed.map(([group]) => group),
+        `${name} 一格都没签 —— 它下面那批逐格用例一条都不会生成`,
+      ).not.toEqual([])
+    }
   })
 
   for (const name of MENU_TRACE_NAMES) {

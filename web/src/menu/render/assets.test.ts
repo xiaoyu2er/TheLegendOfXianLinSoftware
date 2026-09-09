@@ -6,12 +6,16 @@ import {
   COMMAND_BAR,
   LEVEL_LABEL,
   MENU_BACKGROUND,
+  funcButtonId,
+  funcButtonIds,
   headId,
   menuSkeletonIds,
+  menuTextureIds,
   mouseId,
   scollId,
   tabId,
 } from './assets'
+import { createMenuWorld } from '../world'
 import type { MenuPanelName } from '../types'
 
 /**
@@ -114,6 +118,32 @@ describe('菜单骨架的贴图 ID', () => {
   it('游标八帧，对回 Mouse.getImage()', () => {
     expect(javaSource('src/menu/Mouse.java')).toContain('"sources/菜单/鼠标图/"+i+".png"')
     expect([0, 7].map(mouseId)).toEqual(['menu:鼠标图/1.png', 'menu:鼠标图/8.png'])
+  })
+
+  it('天书页那批按钮贴图，对回 FuncButtons.addButton()', () => {
+    const paths = [
+      ...javaSource('src/menu/FuncButtons.java').matchAll(
+        /new ImageIcon\("sources\/菜单\/天书\/([^"]+)"\)/g,
+      ),
+    ].map((m) => m[1]!)
+    expect(paths.length).toBeGreaterThan(0)
+    for (const id of funcButtonIds()) {
+      expect(paths, `${id} 不是 addButton() 读的那批`).toContain(id.replace('menu:天书/', ''))
+    }
+    // 开 / 关那两对是共用的（BGM 与音效各一对），所以名单是去过重的。
+    expect(new Set(funcButtonIds()).size).toBe(funcButtonIds().length)
+  })
+
+  it('天书页的按钮走按需加载，只有翻到那一页才进名单', () => {
+    const table = manifest as Record<string, string>
+    for (const id of funcButtonIds()) {
+      expect(table[id], `${id} 不该进主包映射表`).toBeUndefined()
+    }
+    const thing = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    expect(menuTextureIds(thing)).not.toContain(funcButtonId('returnButton', 'normal'))
+    const func = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    func.panel = 'funcPanel'
+    expect(menuTextureIds(func)).toContain(funcButtonId('returnButton', 'normal'))
   })
 
   it('骨架那批全在已烘的映射表里 —— 少一条就是"这一块画不出来"', () => {

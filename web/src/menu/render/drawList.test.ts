@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
 import { MENU_LAYERS, menuDrawList } from './drawList'
 import type { MenuDrawOp, MenuLayer } from './drawList'
-import { MENU_BACKGROUND, mouseId, tabId } from './assets'
+import { MENU_BACKGROUND, funcButtonId, mouseId, tabId } from './assets'
+import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
+import { SCOLL_HEROES } from '../types'
+import { MENU_HERO_ORDER } from '../heroes'
 import { stepMenu } from '../step'
 import { createMenuWorld } from '../world'
 import type { MenuWorld } from '../types'
@@ -103,6 +106,49 @@ describe('菜单那六层绘制', () => {
     expect(layersOf(menuDrawList(w))).not.toContain('scoll')
   })
 
+  it('天书页那一排按钮画得出来 —— 「返回」画不出来玩家就出不去', () => {
+    const w = world()
+    stepMenu(w, [{ e: 'press', x: 723, y: 62 }])
+    stepMenu(w, [{ e: 'release', x: 723, y: 62 }])
+    expect(w.panel).toBe('funcPanel')
+    const page = menuDrawList(w).filter((op) => op.layer === 'page')
+    // 五颗主按钮，一颗子按钮都不画（开局四组 subButtonList 全是 isDraw=No）。
+    expect(page).toHaveLength(FUNC_MAIN_ORDER.length)
+    // 次序照 drawFuncButtons()：buttonList 那五颗按数组下标。
+    expect(page.map((op) => (op.kind === 'image' ? op.id : ''))).toEqual(
+      FUNC_MAIN_ORDER.map((k) => funcButtonId(k, 'normal')),
+    )
+    expect(page.map((op) => (op.kind === 'image' ? op.id : ''))).toContain(
+      funcButtonId('returnButton', 'normal'),
+    )
+  })
+
+  it('⚠️ 「键盘设定」那颗 isDraw 是 Yes，却永远画不出来 —— 两个都是原版的', () => {
+    // `addButton()` 末尾那两层关 isDraw 的循环扫不到 setKey（它一个
+    // subButtonList 都没进），所以它是 Yes；而 `drawFuncButtons()` 也只遍历
+    // buttonList 与 subButtonList[1..4]，同样扫不到它 —— 于是它进得了
+    // `func.drawn`，却一帧都没画过。调和这两个事实就是改原版。
+    const src = javaSource('src/menu/FuncButtons.java')
+    const draw = /public void drawFuncButtons\(Graphics g\)\{([\s\S]*?)\n\t\}/.exec(src)
+    expect(draw, 'drawFuncButtons 的方法体没解出来').not.toBeNull()
+    expect(draw![1]!).not.toContain('setKey')
+    expect(FUNC_SUB_ORDER).not.toContain('setKey')
+
+    const w = world()
+    stepMenu(w, [{ e: 'press', x: 723, y: 62 }])
+    expect(w.panels.funcPanel.funcButtons!.sub.setKey.isDraw).toBe(true)
+    expect(menuDrawList(w).map((op) => (op.kind === 'image' ? op.id : ''))).not.toContain(
+      funcButtonId('setKey', 'normal'),
+    )
+  })
+
+  it('别的三页 page 层是空的 —— 那三页归 xl-6lo.9 / .10 / .11', () => {
+    const w = world()
+    expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
+    stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
+    expect(menuDrawList(w).filter((op) => op.layer === 'page')).toEqual([])
+  })
+
   it('不在出战名单里的头像不画；张小凡一个人时只画一颗', () => {
     const only = menuDrawList(createMenuWorld({ party: ['zhang'], fullHeal: true }))
     const heads = only.filter((op) => op.kind === 'image' && op.id.startsWith('menu:scoll/hero'))
@@ -110,6 +156,14 @@ describe('菜单那六层绘制', () => {
 
     const all = menuDrawList(createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true }))
     expect(all.filter((op) => op.kind === 'image' && op.id.startsWith('menu:scoll/hero'))).toHaveLength(3)
+  })
+
+  it('卷轴那三颗与 heroes[] 是同一个次序 —— 等级那个下标全靠它', () => {
+    // `scollLevel` 拿 `SCOLL_HEROES` 里的下标去索引 `w.heroes` —— 两张表一旦
+    // 不同序，切到玉洁会画出陆雪琪的等级，而两个数都是合法的。
+    expect(SCOLL_HEROES.map((h) => h.party)).toEqual(['zhang', 'lu', 'wen'])
+    expect(MENU_HERO_ORDER.map((h) => h.key)).toEqual(['zhang', 'lu', 'yu'])
+    expect(SCOLL_HEROES).toHaveLength(MENU_HERO_ORDER.length)
   })
 
   it('⚠️ 卷轴上的等级：张小凡在队里就永远是他的 —— 这是复刻的缺陷', () => {

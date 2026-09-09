@@ -4,6 +4,7 @@ import { createMenuHeroes } from './heroes'
 import type { LiveParty } from './heroes'
 import type { PartyKey } from '../battle/units'
 import { HEAD_H, HEAD_POS, HEAD_W, TABS, TAB_H, TAB_W, TAB_Y, tabX } from './layout'
+import { SCOLL_HEROES } from './types'
 import type { MenuPanelName, MenuSubPanel, MenuTabKey, MenuWorld, ScollState } from './types'
 
 /**
@@ -63,7 +64,9 @@ function createScoll(): ScollState {
     // `drawScoll` 后来才把它们打开的。
     return menuButton(pos.x, pos.y, HEAD_W, HEAD_H, hero === 1)
   }
-  return { whichHero: 1, hero1: at(1), hero2: at(2), hero4: at(4) }
+  const scoll = { whichHero: 1 } as ScollState
+  for (const { hero, field } of SCOLL_HEROES) scoll[field] = at(hero)
+  return scoll
 }
 
 function createSubPanel(name: MenuPanelName): MenuSubPanel {

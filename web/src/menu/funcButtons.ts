@@ -51,6 +51,26 @@ export type FuncSubKey =
   | 'exitForSure'
   | 'restart'
 
+/**
+ * 子按钮的绘制次序，逐个对应 `drawFuncButtons()` 里那两层循环走的
+ * `subButtonList[1..4]`：设定那两颗 → BGM 开关 → 音效开关 → 退出那两颗。
+ *
+ * ⚠️ **`setKey` 不在里面，尽管它 `isDraw` 是 Yes。** 它一个 `subButtonList`
+ * 都没进（见上面的文件头注），而 `drawFuncButtons()` 只遍历 `buttonList` 与
+ * `subButtonList[1..4]` —— 于是「键盘设定」那颗按钮**永远画不出来，可它在
+ * `func.drawn` 里**。两个事实都是原版的，别去调和它们。
+ */
+export const FUNC_SUB_ORDER: readonly FuncSubKey[] = [
+  'setBGM',
+  'setClick',
+  'on_BGM',
+  'off_BGM',
+  'on_click',
+  'off_click',
+  'exitForSure',
+  'restart',
+]
+
 export interface FuncButtonsState {
   readonly main: Readonly<Record<FuncMainKey, MenuButtonState>>
   readonly sub: Readonly<Record<FuncSubKey, MenuButtonState>>

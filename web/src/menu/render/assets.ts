@@ -1,6 +1,7 @@
 import { menuAssetId } from '../../assets/menuAssets'
 import type { AssetId } from '../../assets/ids'
 import type { ButtonImage, MenuPanelName, MenuTabKey, MenuWorld } from '../types'
+import type { FuncMainKey, FuncSubKey } from '../funcButtons'
 
 /**
  * 菜单骨架用得到的逻辑 ID。**路径逐字照抄原版那几处 `new ImageIcon(...)` /
@@ -67,6 +68,44 @@ export function mouseId(frame: number): AssetId {
   return id(`鼠标图/${frame + 1}.png`)
 }
 
+/**
+ * 天书页那批按钮的贴图词干，按原版 `FuncButtons.addButton()` 里读图那几行。
+ *
+ * **走按需加载**（`天书/` 整个目录在 `menuAssets` 那条边界的内容那一半），
+ * 所以只在真的翻到天书页时才取。
+ */
+const FUNC_STEM: Readonly<Record<FuncMainKey | FuncSubKey, string>> = {
+  saveButton: '存档',
+  readButton: '提取',
+  setButton: '设定',
+  returnButton: '返回',
+  exitButton: '退出',
+  setBGM: '背景音乐',
+  setClick: '特殊音效',
+  setKey: '键盘设定',
+  on_BGM: '开',
+  off_BGM: '关',
+  on_click: '开',
+  off_click: '关',
+  exitForSure: '确认离开',
+  restart: '重新开始',
+}
+
+export function funcButtonId(key: FuncMainKey | FuncSubKey, image: ButtonImage): AssetId {
+  return id(`天书/${FUNC_STEM[key]}${STATE_SUFFIX[image]}.png`)
+}
+
+/** 天书页那一页要用到的全部按钮贴图（十四颗 × 三态，`开`/`关` 两对共用）。 */
+export function funcButtonIds(): AssetId[] {
+  const ids = new Set<AssetId>()
+  for (const key of Object.keys(FUNC_STEM) as (FuncMainKey | FuncSubKey)[]) {
+    for (const image of Object.keys(STATE_SUFFIX) as ButtonImage[]) {
+      ids.add(funcButtonId(key, image))
+    }
+  }
+  return [...ids]
+}
+
 /** 骨架里**恒定的**那几张（顶栏 + 四颗页签三态 + 游标八帧 + 等级）。 */
 export function menuSkeletonIds(): AssetId[] {
   const ids: AssetId[] = [COMMAND_BAR, LEVEL_LABEL]
@@ -88,5 +127,9 @@ export function menuSkeletonIds(): AssetId[] {
  * 要过来，等于把"按需"变回"打开菜单就全下"。
  */
 export function menuTextureIds(w: MenuWorld): AssetId[] {
-  return [MENU_BACKGROUND[w.panel], ...menuSkeletonIds()]
+  const ids = [MENU_BACKGROUND[w.panel], ...menuSkeletonIds()]
+  // 天书页那一排按钮 —— 出菜单唯一那条路（「返回」）就在上面，**画不出来
+  // 等于玩家出不去**（/code-review 的 Spec 轴提的）。
+  if (w.panel === 'funcPanel') ids.push(...funcButtonIds())
+  return ids
 }

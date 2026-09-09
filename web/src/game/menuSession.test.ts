@@ -79,7 +79,35 @@ describe('场景 ↔ 菜单这条环路', () => {
     }).toEqual(before)
   })
 
-  it('⚠️ 菜单开着的时候场景照跑不误 —— 票面那句「场景停步」不成立', () => {
+  it('⚠️ 菜单开着的时候主角站住 —— 「场景停步」对的是这一半', () => {
+    // 原版 `GameLauncher` 那个 KeyListener 的 `keyPressed` / `keyReleased`
+    // **两个方法都**从 `if(currentPanel==scenePanel)` 起手，所以菜单显示的
+    // 时候一个键都到不了场景。这是票面那句「场景停步」真正说得通的那一半
+    // （另一半 —— 那条线程 —— 见下一条）。
+    const launcher = javaSource('src/main/GameLauncher.java')
+    for (const method of ['keyPressed', 'keyReleased']) {
+      const m = new RegExp(`public void ${method}\\(KeyEvent e\\) \\{([\\s\\S]*?)\\n\\t\\t\\}`).exec(launcher)
+      expect(m, `GameLauncher.${method} 的方法体没解出来`).not.toBeNull()
+      expect(m![1]!, `${method} 没有那道 currentPanel==scenePanel 的门`).toContain(
+        'if(currentPanel==scenePanel)',
+      )
+    }
+
+    let s = inScene('宿舍')
+    const startX = roleTileX(s.scene.world.role)
+    // 先证明这一场里方向键真的走得动 —— 走不动的话下面那条恒真。
+    s = advanceSession(s, { ...NO_INPUT, scene: [{ e: 'press', k: 'right', ctrl: false }] }, 1000)
+    expect(roleTileX(s.scene.world.role)).toBeGreaterThan(startX)
+
+    // 开菜单，同样喂方向键：主角一格都不许动。
+    s = openMenu(s)
+    const held = roleTileX(s.scene.world.role)
+    s = advanceSession(s, { ...NO_INPUT, scene: [{ e: 'press', k: 'right', ctrl: false }] }, 1000)
+    expect(s.panel).toBe('menu')
+    expect(roleTileX(s.scene.world.role), '菜单开着时主角还在走').toBe(held)
+  })
+
+  it('⚠️ 但那条线程不停 —— 菜单开着时地图上的 NPC 照走', () => {
     // 先从原版现读：`switchTo("menu")` 那个 case 里只有换面板与三句
     // refreshValue()，一句停线程的都没有；而 ScenePanel.run() 是
     // `while(true){ step(); sleep(10); }`。

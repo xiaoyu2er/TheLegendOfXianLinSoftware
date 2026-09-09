@@ -1,7 +1,18 @@
 import type { AssetId } from '../../assets/ids'
 import { HEAD_POS, SCOLL_X, SCOLL_Y, TABS, TAB_Y } from '../layout'
-import { MENU_BACKGROUND, COMMAND_BAR, LEVEL_LABEL, headId, mouseId, scollId, tabId } from './assets'
-import type { MenuButtonState, MenuSubPanel, MenuWorld } from '../types'
+import {
+  MENU_BACKGROUND,
+  COMMAND_BAR,
+  LEVEL_LABEL,
+  funcButtonId,
+  headId,
+  mouseId,
+  scollId,
+  tabId,
+} from './assets'
+import { FUNC_MAIN_ORDER, FUNC_SUB_ORDER } from '../funcButtons'
+import { SCOLL_HEROES } from '../types'
+import type { MenuSubPanel, MenuWorld } from '../types'
 
 /**
  * **原版 `FatherPanel.paint()` 那六层，摊成一份有序的绘制清单。**
@@ -21,10 +32,15 @@ import type { MenuButtonState, MenuSubPanel, MenuWorld } from '../types'
  *     drawThisPanel(bufferedGraphics);                           ← page（各页自己的）
  *     mouse.drawMouse(bufferedGraphics);                         ← mouse
  *
- * `special` 与 `page` 两层**这一票是空的**：那是四页各自的内容，归 xl-6lo.9 /
- * .10 / .11 / .12。空着而不是抛 —— 骨架这一票的验收就是"四页的骨架画得出来"，
- * 抛会让它一帧都画不出来。⚠️ 代价是「这一页还没做」与「这一页本来就没有内容」
- * 在画面上长得一样，而分开它们的是逐帧比对那张表（xl-6lo.14 接）。
+ * `special` 层与 `page` 层的三页（物品 / 装备 / 奇术）**这一票是空的**：那是
+ * 各页各自的内容，归 xl-6lo.10 / .9 / .11。空着而不是抛 —— 骨架这一票的验收
+ * 就是"四页的骨架画得出来"，抛会让它一帧都画不出来。⚠️ 代价是「这一页还没做」
+ * 与「这一页本来就没有内容」在画面上长得一样，而分开它们的是逐帧比对那张表
+ * （xl-6lo.14 接）。
+ *
+ * **天书页那一层是例外，必须画**：出菜单唯一那条路（「返回」）就在上面，而
+ * 菜单里的 ESC 是死代码 —— 不画等于玩家出不去。`func` 那一组的**状态**仍然
+ * 挂在 xl-6lo.12 上（子菜单的展开收起没做），画的是骨架那一半。
  */
 
 export type MenuLayer = 'background' | 'special' | 'command' | 'scoll' | 'page' | 'mouse'
@@ -107,44 +123,45 @@ export function menuDrawList(w: MenuWorld, task: string | null = null): MenuDraw
     ops.push({
       kind: 'text',
       layer: 'scoll',
-      text: String(scollLevel(w, panel)),
+      text: String(scollLevel(w, s)),
       x: LEVEL_NUM_X,
       y: LEVEL_NUM_Y,
       size: LEVEL_FONT_SIZE,
       color: LEVEL_COLOR,
     })
-    for (const { hero, button } of headButtons(s)) {
-      if (!drawnHead(w, hero, button)) continue
+    for (const { hero, field, party } of SCOLL_HEROES) {
+      const button = s[field]
+      // ⚠️ `drawScoll()` 自己会把 `isDraw` 打开（`if(SaveAndLoad.lu){hero2.isDraw=Yes;}`
+      // 那三句）—— 也就是说**原版的绘制有副作用**。这一层是纯函数，所以把那
+      // 三句折算成"或上出战名单"：每一帧的结果与原版相同，而状态层不会被绘制
+      // 偷偷改掉。
+      if (!button.isDraw && !w.party[party]) continue
       ops.push({ kind: 'image', layer: 'scoll', id: headId(hero, button.image), x: button.x, y: button.y })
     }
   }
 
-  // `drawThisPanel` —— 四页各自的，骨架这一票空着（见文件头注）。
+  // `drawThisPanel` —— 四页各自的。
+  //
+  // 物品 / 装备 / 奇术三页这一票空着（归 xl-6lo.10 / .9 / .11）；**天书页
+  // 不能空**：出菜单唯一那条路（「返回」）就是这一层画出来的，空着的话
+  // ESC 又是死代码，玩家一点出去的办法都没有。所以这一页照
+  // `FuncButtons.drawFuncButtons()` 画：先五颗主按钮，再四组子按钮。
+  if (panel.funcButtons) {
+    const fb = panel.funcButtons
+    for (const key of FUNC_MAIN_ORDER) {
+      const b = fb.main[key]
+      if (!b.isDraw) continue
+      ops.push({ kind: 'image', layer: 'page', id: funcButtonId(key, b.image), x: b.x, y: b.y })
+    }
+    for (const key of FUNC_SUB_ORDER) {
+      const b = fb.sub[key]
+      if (!b.isDraw) continue
+      ops.push({ kind: 'image', layer: 'page', id: funcButtonId(key, b.image), x: b.x, y: b.y })
+    }
+  }
 
   ops.push({ kind: 'image', layer: 'mouse', id: mouseId(panel.mouse.frame), x: panel.mouse.x, y: panel.mouse.y })
   return ops
-}
-
-function headButtons(s: NonNullable<MenuSubPanel['scoll']>) {
-  return [
-    { hero: 1, button: s.hero1 },
-    { hero: 2, button: s.hero2 },
-    { hero: 4, button: s.hero4 },
-  ]
-}
-
-/**
- * 一颗头像这一帧画不画得出来。
- *
- * ⚠️ **`drawScoll()` 自己会把 `isDraw` 打开**（`if(SaveAndLoad.lu){hero2.isDraw=Yes;}`
- * 那三句）—— 也就是说原版的**绘制有副作用**。这一层是纯函数，所以把那三句
- * 折算成"或上出战名单"：结果与原版每一帧相同，而状态层不会被绘制偷偷改掉。
- */
-function drawnHead(w: MenuWorld, hero: number, button: MenuButtonState): boolean {
-  if (button.isDraw) return true
-  if (hero === 1) return w.party.zhang
-  if (hero === 2) return w.party.lu
-  return w.party.wen
 }
 
 /**
@@ -155,9 +172,10 @@ function drawnHead(w: MenuWorld, hero: number, button: MenuButtonState): boolean
  * `drawScoll()` 第一句就是 `if(SaveAndLoad.zhang){ … level=""+ZhangXiaoFan.level; }`
  * 又把它盖回去。原版就是这么坏的（ADR-0001：照抄），别"顺手修好"。
  */
-function scollLevel(w: MenuWorld, panel: MenuSubPanel): number {
-  const byHero: Record<number, number> = { 1: 0, 2: 1, 4: 2 }
-  const index = byHero[panel.scoll?.whichHero ?? 1] ?? 0
-  const shown = w.party.zhang ? 0 : index
-  return w.heroes[shown]!.level
+function scollLevel(w: MenuWorld, scoll: NonNullable<MenuSubPanel['scoll']>): number {
+  const index = SCOLL_HEROES.findIndex((h) => h.hero === scoll.whichHero)
+  if (index < 0) throw new Error(`卷轴上没有 ${scoll.whichHero} 号`)
+  // `MENU_HERO_ORDER` 与 `SCOLL_HEROES` 是同一个次序（张 / 陆 / 玉），
+  // 判据在 `drawList.test.ts`。
+  return w.heroes[w.party.zhang ? 0 : index]!.level
 }

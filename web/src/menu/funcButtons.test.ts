@@ -14,6 +14,73 @@ import { createMenuWorld } from './world'
 describe('天书页骨架', () => {
   const src = javaSource('src/menu/FuncButtons.java')
 
+  /**
+   * `addButton()` 里那批局部常量（`int name=<字面量>;`）。
+   *
+   * 与 `layout.test.ts` 的 `intField` 同形，但这里还多一步：把每颗按钮
+   * `new MenuButton(...)` 的**前四个实参表达式**原样取出来，代入这些常量
+   * **算一遍**。只对比一串坐标数字的话，那是把同一批数字抄第二遍 —— 抄错的
+   * 那一位在两边都是错的，判据全绿（/code-review 的 Standards 轴提的）。
+   */
+  function intLocals(source: string): Record<string, number> {
+    const out: Record<string, number> = {}
+    for (const m of source.matchAll(/int\s+(\w+)\s*=\s*(-?\d+)\s*;/g)) {
+      out[m[1]!] = Number(m[2])
+    }
+    return out
+  }
+
+  /** 一颗按钮的前四个实参，代入常量算出来的 x/y/width/height。 */
+  function geometryOf(source: string, name: string): [number, number, number, number] {
+    const m = new RegExp(`${name}\\s*=\\s*new MenuButton\\(([^;]*?),\\s*image1,`).exec(source)
+    if (!m) throw new Error(`FuncButtons.java 里没解出 ${name} 的 new MenuButton(...)`)
+    // 顶层逗号切四段 —— 参数里有括号（`y_MenuButton+1*(y_move+height_MenuButton)`）。
+    const args: string[] = []
+    let depth = 0
+    let buf = ''
+    for (const ch of m[1]!) {
+      if (ch === '(') depth++
+      if (ch === ')') depth--
+      if (ch === ',' && depth === 0) {
+        args.push(buf)
+        buf = ''
+      } else buf += ch
+    }
+    args.push(buf)
+    if (args.length !== 4) throw new Error(`${name} 的实参切出了 ${args.length} 段，应为 4 段`)
+    const locals = intLocals(source)
+    return args.map((expr) => {
+      const cleaned = expr.trim()
+      // 只放行「标识符 / 整数 / + - * ( ) 空白」—— 别的一律拒，免得把源码里
+      // 的任意表达式喂进 Function。
+      if (!/^[\w\s+\-*()]+$/.test(cleaned)) throw new Error(`${name} 的实参不是纯算术：${cleaned}`)
+      const names = [...new Set([...cleaned.matchAll(/[A-Za-z_]\w*/g)].map((x) => x[0]!))]
+      for (const n of names) {
+        if (!(n in locals)) throw new Error(`${name} 的实参里 ${n} 不是 addButton() 的局部常量`)
+      }
+      const fn = new Function(...names, `return (${cleaned})`) as (...a: number[]) => number
+      return fn(...names.map((n) => locals[n]!))
+    }) as [number, number, number, number]
+  }
+
+  it('addButton() 里那批常量真的解出来了 —— 解析器空转要响', () => {
+    const locals = intLocals(src)
+    for (const name of ['x_GameButton', 'y_GameButton', 'width_GameButton', 'height_GameButton',
+      'y_move', 'x_move', 'y_MenuButton', 'width_MenuButton', 'height_MenuButton',
+      'width_on', 'height_on']) {
+      expect(locals[name], `addButton() 里没解出 ${name}`).toBeDefined()
+    }
+  })
+
+  it('九颗子按钮的几何，代入原版常量算出来对得上', () => {
+    const fb = createFuncButtons()
+    for (const key of ['setBGM', 'setClick', 'setKey', 'on_BGM', 'off_BGM', 'on_click',
+      'off_click', 'exitForSure', 'restart'] as const) {
+      const b = fb.sub[key]
+      expect([b.x, b.y, b.width, b.height], `${key} 的几何`).toEqual(geometryOf(src, key))
+    }
+  })
+
   it('五颗主按钮的次序与几何，对回 addButton()', () => {
     // `buttonList[0..4]=…`，按下标解出来。
     const matches = [...src.matchAll(/buttonList\[(\d)\]=(\w+);/g)]
@@ -24,10 +91,14 @@ describe('天书页骨架', () => {
     expect(FUNC_MAIN_ORDER).toEqual(order)
 
     const fb = createFuncButtons()
-    expect(FUNC_MAIN_ORDER.map((k) => fb.main[k].x)).toEqual([400, 488, 576, 664, 752])
     for (const key of FUNC_MAIN_ORDER) {
-      expect(fb.main[key].isDraw, `${key} 开局要画得出来`).toBe(true)
+      const b = fb.main[key]
+      expect([b.x, b.y, b.width, b.height], `${key} 的几何`).toEqual(geometryOf(src, key))
+      expect(b.isDraw, `${key} 开局要画得出来`).toBe(true)
     }
+    // 五颗真的排成一行、互不重叠 —— 上面那条要是把它们全算成同一个位置，
+    // 它照样绿（两边同一个来源）。
+    expect(new Set(FUNC_MAIN_ORDER.map((k) => fb.main[k].x)).size).toBe(FUNC_MAIN_ORDER.length)
   })
 
   it('setKey 开局就画得出来 —— 那两层循环没关到它', () => {

@@ -1,4 +1,4 @@
-import type { MenuTabKey } from './types'
+import type { MenuTabKey, ScollHero } from './types'
 
 /**
  * 菜单骨架那两组按钮的几何。全部照抄原版的字段初始化式，判据在
@@ -45,7 +45,7 @@ export const HEAD_GAP = 10
  * （`new MenuButton(x_head+width_head+hgap, y_head+6, …)`）—— 原版就是这样，
  * 抹平它会让逐帧比对在那一小块上红。
  */
-export const HEAD_POS: readonly { hero: number; x: number; y: number }[] = [
+export const HEAD_POS: readonly { hero: ScollHero; x: number; y: number }[] = [
   { hero: 1, x: HEAD_X, y: HEAD_Y },
   { hero: 2, x: HEAD_X + HEAD_W + HEAD_GAP, y: HEAD_Y + 6 },
   { hero: 4, x: HEAD_X + 2 * (HEAD_W + HEAD_GAP), y: HEAD_Y },

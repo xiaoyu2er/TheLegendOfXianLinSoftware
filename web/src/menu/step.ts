@@ -1,6 +1,7 @@
 import { moveInButton, pressButton, releaseButton } from './buttons'
 import { funcCheckPressed, funcCheckReleased } from './funcButtons'
 import { MENU_PANEL_ORDER, PANEL_OF_TAB, TAB_PRIORITY } from './world'
+import { SCOLL_HEROES } from './types'
 import type { MenuSubPanel, MenuWorld } from './types'
 
 /**
@@ -81,9 +82,7 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
   p.currentX = x
   p.currentY = y
   if (p.scoll) {
-    for (const b of [p.scoll.hero1, p.scoll.hero2, p.scoll.hero4]) {
-      releaseButton(b, p.currentX, p.currentY)
-    }
+    for (const { field } of SCOLL_HEROES) releaseButton(p.scoll[field], p.currentX, p.currentY)
   }
   if (p.funcButtons) funcCheckReleased(p.funcButtons, p.currentX, p.currentY)
 }
@@ -133,18 +132,15 @@ function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
 function scollCheckPressed(w: MenuWorld, p: MenuSubPanel): void {
   const s = p.scoll
   if (!s) return
-  for (const b of [s.hero1, s.hero2, s.hero4]) pressButton(b, p.currentX, p.currentY)
-  // ⚠️ 三条是**并列的 if**，不是 if-else：原版就是这么写的。
-  if (s.hero1.isclicked) {
-    s.whichHero = 1
-    w.music.push('换头像.wav')
-  }
-  if (w.party.lu && s.hero2.isclicked) {
-    s.whichHero = 2
-    w.music.push('换头像.wav')
-  }
-  if (w.party.wen && s.hero4.isclicked) {
-    s.whichHero = 4
+  for (const { field } of SCOLL_HEROES) pressButton(s[field], p.currentX, p.currentY)
+  // ⚠️ 三条是**并列的 if**，不是 if-else —— 原版就是这么写的，所以这里是一个
+  // 不带 break 的循环，不是 `find`。⚠️ 一号那一条**没有出战名单的门**
+  // （`if(hero1.isIsclicked())` 光秃秃地在最外层，另外两条包在
+  // `if(SaveAndLoad.lu/wen)` 里），照抄。
+  for (const { hero, field, party } of SCOLL_HEROES) {
+    if (party !== 'zhang' && !w.party[party]) continue
+    if (!s[field].isclicked) continue
+    s.whichHero = hero
     w.music.push('换头像.wav')
   }
 }
@@ -156,9 +152,12 @@ function scollCheckPressed(w: MenuWorld, p: MenuSubPanel): void {
 function scollCheckMoveIn(w: MenuWorld, p: MenuSubPanel): void {
   const s = p.scoll
   if (!s) return
-  if (w.party.lu) s.hero2.isDraw = true
-  if (w.party.wen) s.hero4.isDraw = true
-  for (const b of [s.hero1, s.hero2, s.hero4]) moveInButton(b, p.currentX, p.currentY)
+  // ⚠️ 只打开二号与四号：一号那一句在 `drawScoll()` 里，不在这儿。
+  for (const { field, party } of SCOLL_HEROES) {
+    if (party === 'zhang') continue
+    if (w.party[party]) s[field].isDraw = true
+  }
+  for (const { field } of SCOLL_HEROES) moveInButton(s[field], p.currentX, p.currentY)
 }
 
 /**

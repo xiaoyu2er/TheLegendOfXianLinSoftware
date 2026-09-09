@@ -49,10 +49,37 @@ export interface MouseState {
   y: number
 }
 
+/**
+ * `Scoll.whichHero` 的取值域：**1 张小凡 / 2 陆雪琪 / 4 玉洁**。
+ *
+ * 3 号（宋大仁）原版没做进菜单 —— `Scoll` 里那个 `songdaren=3` 只是个没人读的
+ * 静态字段，`initial()` 一颗头像都没给他建。写成 `number` 的话「切到 3 号」
+ * 会是一个合法值，而它在原版里根本到不了。
+ */
+export type ScollHero = 1 | 2 | 4
+
+/**
+ * 三颗头像的**编号 → 卷轴上的字段名 → 出战名单里的键**。
+ *
+ * 这三样在原版里是三套不一样的写法（`hero1/hero2/hero4` 的字段名、
+ * `whichHero` 的 1/2/4、`SaveAndLoad.zhang/lu/wen`），而它们**必须一一对应**。
+ * 收成一张表，是因为散着写的时候「二号是 lu 还是 wen」要在四五个地方各答一遍
+ * —— 答错一处的表现是「切了人但换的是另一个人的头像」。
+ * ⚠️ 玉洁那一位在出战名单里的键是 **`wen`**，不是 `yu`。
+ */
+export const SCOLL_HEROES: readonly {
+  hero: ScollHero
+  field: 'hero1' | 'hero2' | 'hero4'
+  party: 'zhang' | 'lu' | 'wen'
+}[] = [
+  { hero: 1, field: 'hero1', party: 'zhang' },
+  { hero: 2, field: 'hero2', party: 'lu' },
+  { hero: 4, field: 'hero4', party: 'wen' },
+]
+
 /** 卷轴。天书页没有（`FuncPanel` 不建 `Scoll`）。 */
 export interface ScollState {
-  /** `whichHero`：1 张小凡 / 2 陆雪琪 / 4 玉洁（3 号宋大仁原版没做进菜单）。 */
-  whichHero: number
+  whichHero: ScollHero
   hero1: MenuButtonState
   hero2: MenuButtonState
   hero4: MenuButtonState
