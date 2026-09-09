@@ -56,6 +56,41 @@ describe('菜单骨架的贴图 ID', () => {
     expect(COMMAND_BAR).toBe('menu:菜单/标题栏.png')
   })
 
+  it('三态 → 文件名末尾那个数字：常态 1 / 待点 2 / 按下 3', () => {
+    // ⚠️ 上面那条只核**集合**（12 张都在），三态映射整体错一位它照样绿 ——
+    // 实测过（篡改 18）。这一条核的是**哪一张对哪一态**，出处有两处：
+    //
+    //   1. `GameButton` 的构造函数形参次序：normalImage / waitclickImage /
+    //      pressedImage；
+    //   2. `Command.addGameButton` 把 `image1/2/3` 按这个次序传进去，而
+    //      `image1/2/3` 分别读的是 `…1.png` / `…2.png` / `…3.png`。
+    const gameButton = javaSource('src/tools/GameButton.java')
+    expect(gameButton).toContain(
+      'public GameButton(int x,int y,int width,int height,Image normalImage,' +
+        'Image waitclickImage,Image pressedImage,JPanel mp)',
+    )
+    const command = javaSource('src/menu/Command.java')
+    expect(command).toContain('image1=new ImageIcon("sources/菜单/菜单/标题物品1.png")')
+    expect(command).toContain('image2=new ImageIcon("sources/菜单/菜单/标题物品2.png")')
+    expect(command).toContain('image3=new ImageIcon("sources/菜单/菜单/标题物品3.png")')
+    expect(/new MenuButton\([^)]*image1, image2, image3/.test(command)).toBe(true)
+
+    expect([
+      tabId('thing', 'normal'),
+      tabId('thing', 'waitclick'),
+      tabId('thing', 'pressed'),
+    ]).toEqual(['menu:菜单/标题物品1.png', 'menu:菜单/标题物品2.png', 'menu:菜单/标题物品3.png'])
+    // 头像那一组同一套映射，命名不规则（一号是 hero1/hero12/hero13）。
+    expect([headId(1, 'normal'), headId(1, 'waitclick'), headId(1, 'pressed')]).toEqual([
+      'menu:scoll/hero1.png',
+      'menu:scoll/hero12.png',
+      'menu:scoll/hero13.png',
+    ])
+    expect(javaSource('src/menu/Scoll.java')).toContain(
+      'hero1=new MenuButton(x_head, y_head, width_head, height_head, image1, image2, image3, fp)',
+    )
+  })
+
   it('卷轴、等级与三颗头像的三态，对回 Scoll.initial()', () => {
     const scoll = javaSource('src/menu/Scoll.java')
     const paths = [...scoll.matchAll(/new ImageIcon\("sources\/菜单\/scoll\/([^"]+)"\)/g)].map(
