@@ -17,13 +17,19 @@ import java.util.List;
  *
  * {@code tools/export-trace.sh} 跑的是 {@code tools/traces/scripts/} 里入库的
  * 那些剧本，而**没有任何一份剧本会写一个点不得的按钮名** —— 写了就不入库了。
- * 于是把整段拒绝删掉：三份 menu 真值照样逐字节一致，{@code git diff
- * tools/traces/out} 照样是空的。实测过（2026-09-08）：删掉
- * {@code b.forbidden != null} 那一支，{@code tools/export-trace.sh --check}
- * 全绿，而 {@code exitForSure} 那颗按钮从此可以写进剧本 —— 它会
+ * 于是把整段拒绝删掉，两条重导对比什么都察觉不到。**实测（2026-09-09）**：
+ * 删掉 {@code b.forbidden != null} 那一支，{@code tools/export-trace.sh --check
+ * menu-func} 退出码 0、逐字节一致、{@code git status tools/traces/out} 是空的，
+ * 而这个测试当场红 7 条。放行之后 {@code exitForSure} 就写得进剧本 —— 它会
  * {@code System.exit(0)}，导出器在写文件之前消失，**退出码是 0**。
  * 「什么都没导出」与「导出成功」在那条命令上长得一模一样，这正是本仓库
  * 最忌讳的一族失败。
+ *
+ * <b>这一段只对「点不得」那道成立，别推广到整张表。</b> 同一天量的另一条：
+ * 把 {@code onBGM} 映到的字段名改错（{@code on_BGM} → {@code onBGM}），
+ * 这个测试红 2 条（分母那条 + 映射那条），而 {@code export-trace.sh} **也**红 ——
+ * {@code menu-func} 真的点那颗按钮，反射当场抛「没有字段 onBGM on class
+ * menu.FuncButtons」。两道各守各的：字段名那半重导看得见，拒绝那半看不见。
  *
  * <h2>三件事，各一条</h2>
  *
