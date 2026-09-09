@@ -127,17 +127,6 @@ export function initialMember(key: PartyKey): PartyMemberState {
   return member
 }
 
-/** 一个人此刻的四项基础属性。`createBattle` 的 `attributes` 要它。 */
-export function partyAttributes(key: PartyKey): Attributes {
-  const m = party[key]
-  return {
-    physicalPower: m.physicalPower,
-    agile: m.agile,
-    strength: m.strength,
-    sprit: m.sprit,
-  }
-}
-
 /** 原版那三个静态引用的位置：模块级单例。 */
 let party: Record<PartyKey, PartyMemberState> = fresh()
 

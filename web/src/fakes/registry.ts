@@ -56,7 +56,6 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
     exports: [
       'getParty',
       'partyLevels',
-      'partyAttributes',
       'rememberParty',
       'rememberMenuParty',
       'expToNextLevel',
