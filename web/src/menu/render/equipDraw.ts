@@ -175,10 +175,13 @@ export function equipDrawOps(
     ops.push(image(equipButtonId(slot, b.image), b.x, b.y))
   }
   // 2. 使用 / 弃用。
-  for (const b of [e.use, e.abandon]) {
-    if (!b.isDraw) continue
-    const which = b === e.use ? 'use' : 'abandon'
-    ops.push(image(equipButtonId(which, b.image), b.x, b.y))
+  //
+  // ⚠️ 「弃用」读的是 `abandonDrawn`，**不是** `abandon.isDraw` —— 原版在这
+  // 两颗按钮画完之后才在 `drawHeroStuff()` 里改后者，于是画面比状态**晚一帧**。
+  // 理由与实测读数见 `equipPanel.ts` 里 `abandonDrawn` 那个字段的注释。
+  if (e.use.isDraw) ops.push(image(equipButtonId('use', e.use.image), e.use.x, e.use.y))
+  if (e.abandonDrawn) {
+    ops.push(image(equipButtonId('abandon', e.abandon.image), e.abandon.x, e.abandon.y))
   }
 
   // 3. drawEquipment()

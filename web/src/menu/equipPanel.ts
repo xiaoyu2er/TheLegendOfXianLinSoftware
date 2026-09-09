@@ -88,6 +88,27 @@ export interface EquipPanelState {
   /** `use_button` / `abandon_button`。 */
   use: MenuButtonState
   abandon: MenuButtonState
+  /**
+   * **「弃用」这一帧真的画出来的 `isDraw`** —— 与 `abandon.isDraw` 差一帧。
+   *
+   * 原版 `drawThisPanel()` 的次序是「先把 `useButtonList` 两颗画掉，再
+   * `drawEquipment / drawWarning / drawHeroStuff / drawValueBar`」，而
+   * `drawHeroStuff()` 里那两句 `abandon_button.isDraw=Yes/No` **在按钮画完
+   * 之后才跑**。也就是说：这一帧看得见的「弃用」，用的是**上一帧
+   * `drawHeroStuff()` 留下的值**，而 `MenuDriver` 的快照是 paint 之后抓的、
+   * 记的是新值。两者本来就不是同一个东西。
+   *
+   * 所以行为真值那一列（`equip.abandonDraw`）核的是 `abandon.isDraw`，而
+   * **画面**要核这一个。少了它，逐帧比对会在「弃用」出现 / 消失的那一帧
+   * 上红一整块 120×40 —— 状态层全绿，看起来完全像渲染层画错了
+   * （xl-6lo.14 接上 menu 那条流水线的当天量到的，menu-scroll 第 2 / 5 帧
+   * 各 4800 个像素）。
+   *
+   * ⚠️ 「使用」那一颗**没有**这个问题：改它 `isDraw` 的 `isMoveIn()` 是
+   * `checkAllButtonMoveIn()` 调的，跑在事件里、paint 之前。唯一在 paint
+   * **中途**改按钮的只有 `drawHeroStuff()` 这一处。
+   */
+  abandonDrawn: boolean
 }
 
 /**
@@ -241,9 +262,12 @@ export function createEquipPanel(
     slots,
     use: menuButton(USE_BUTTON_X, USE_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
     abandon: menuButton(ABANDON_BUTTON_X, ABANDON_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
+    abandonDrawn: false,
   }
   // 构造函数末尾那两句：身上有东西就画「弃用」；列表空着就 signal=0。
   if (e.heroEquipment !== null) e.abandon.isDraw = true
+  // 头一帧画的就是构造函数留下的这个值（原版的第一次 paint 之前没人改过它）。
+  e.abandonDrawn = e.abandon.isDraw
   // ⚠️ 这一支今天到不了（六张表的 numberGOT 全是 0），照抄是因为它取的是
   // `currentList.get(0)` 而不是 `list.get(0)` —— 与别处那几段不一样。
   if (equipList(e).length > 0) {
@@ -465,6 +489,9 @@ export function equipCheckReleased(e: EquipPanelState, x: number, y: number): vo
  * 拒绝发生过"的实现，而它看上去完全正常。清位在 `stepMenu` 每步开头。
  */
 export function paintEquip(e: EquipPanelState, music: string[]): void {
+  // **这一帧的「弃用」画不画，在这里就定了** —— 下面那句 `drawHeroStuff()`
+  // 改的是**下一帧**的事。理由见 `abandonDrawn` 那个字段的注释。
+  e.abandonDrawn = e.abandon.isDraw
   // drawEquipment → showValueDifference()：只有 signal==1 时才算，else 那半
   // 留着上一次的陈值（真值那时记 null，看不见）。
   if (e.signal === 1) e.diff = computeDiff(e)
