@@ -1,14 +1,15 @@
 /**
  * 从**实际差异图**上量缺口区（xl-knp.10 用它量 shop 那三条）。
  *
- * 票面那句「分区坐标不许手写，要从实际差异图上量出来」的可执行版本：把
- * `tools/traces/compare/<剧本>/` 下两侧的位图逐帧对齐，取超容差像素的**并集**，
- * 连通聚类，逐块打印外接框与「单帧最多」。区的四边再各留几个像素余量、成因
- * 逐块回到截图上认，那两件事是人做的 —— 这个脚本只交出读数。
+ * 票面那句「分区坐标不许手写，要从实际差异图上量出来」的可执行版本。**这个
+ * 文件只做读盘与打印** —— 算术全在 `src/compare/measure.ts`，那半有测试
+ * （`measure.test.ts`，跑在 `pnpm test` 里）。分成两半的理由与这条流水线其余
+ * 各处一样：`tools/traces/compare/` 整个不入库，拿它当测试的分母的话，别人
+ * 机器上"目录是空的"会让测试恒真。
  *
- * 为什么不写成测试：它量的是**当下这一轮**的产物，而那个目录整个不入库
- * （`tools/.gitignore`）。落成判据的是它的输出被抄进 `expected.ts` 之后，由
- * `regions.ts` 那套「缺口区之外一个像素都不许差」守着。
+ * 第一档：**量**。两侧位图逐帧对齐、取超容差像素的并集、连通聚类，逐块打印
+ * 外接框与「单帧最多」。区的四边再各留几个像素余量、成因逐块回到截图上认，
+ * 那两件事是人做的 —— 这个脚本只交出读数。
  *
  *   cd web && pnpm exec vite-node scripts/measureGaps.ts -- <剧本> [<剧本>…]
  *
@@ -22,227 +23,93 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { decodePng } from '../src/compare/png'
-import { DEFAULT_TOLERANCE } from '../src/compare/diff'
+import { clusterBoxes, diffMask, readOutside, readRegion, unionOf } from '../src/compare/measure'
 import { repoPath } from '../src/test/repoPath'
+import type { Rect } from '../src/compare/regions'
 
-/** 聚类时把差异像素向外胀这么多再连通 —— 一个字的笔画之间是断开的。 */
-const DILATE = 4
-
-interface Box {
-  x0: number
-  y0: number
-  x1: number
-  y1: number
-  pixels: number
+interface NamedRect extends Rect {
+  readonly name: string
 }
 
-function frameNames(dir: string): string[] {
-  return readdirSync(dir)
+interface Frames {
+  readonly names: readonly string[]
+  readonly masks: readonly Uint8Array[]
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * 把一条剧本这一轮的两侧位图读成逐帧掩码。
+ *
+ * **一张 PNG 都没有要响。** 那个目录整个不入库，跑错剧本名 / 上一轮被清掉都会
+ * 让它是空的 —— 而空的掩码会让下面每个区都报「一帧都不差」、末尾报「硬比区
+ * 逐像素相等」，与真的量过一遍**逐字相同**。实测过：把这道守卫拿掉，空目录上
+ * 整轮退出码 **0** 并打印那句「逐像素相等」。而这份输出正是要被抄进
+ * `expected.ts` 的那份读数。
+ */
+function readFrames(script: string): Frames {
+  const root = repoPath(join('tools/traces/compare', script))
+  const names = readdirSync(join(root, 'java'))
     .filter((f) => f.endsWith('.png'))
     .sort()
-}
-
-/** 与 `diff.ts` 的 `frameDiff` 同一条规则：**alpha 不参与**，容差 8。 */
-function diffMask(a: Uint8Array, b: Uint8Array, n: number): Uint8Array {
-  const mask = new Uint8Array(n)
-  for (let i = 0; i < n; i++) {
-    const p = i * 4
-    const d = Math.max(
-      Math.abs(a[p]! - b[p]!),
-      Math.abs(a[p + 1]! - b[p + 1]!),
-      Math.abs(a[p + 2]! - b[p + 2]!),
-    )
-    if (d > DEFAULT_TOLERANCE) mask[i] = 1
-  }
-  return mask
-}
-
-/** 并集掩码 → 连通块的外接框。膨胀只用于判连通，框仍是原始像素的外接框。 */
-function cluster(union: Uint8Array, w: number, h: number): Box[] {
-  const label = new Int32Array(w * h).fill(-1)
-  const boxes: Box[] = []
-  const stack: number[] = []
-  for (let seed = 0; seed < union.length; seed++) {
-    if (!union[seed] || label[seed] !== -1) continue
-    const id = boxes.length
-    const box: Box = { x0: w, y0: h, x1: -1, y1: -1, pixels: 0 }
-    boxes.push(box)
-    label[seed] = id
-    stack.push(seed)
-    while (stack.length > 0) {
-      const i = stack.pop()!
-      const x = i % w
-      const y = (i / w) | 0
-      if (x < box.x0) box.x0 = x
-      if (x > box.x1) box.x1 = x
-      if (y < box.y0) box.y0 = y
-      if (y > box.y1) box.y1 = y
-      box.pixels++
-      for (let dy = -DILATE; dy <= DILATE; dy++) {
-        const ny = y + dy
-        if (ny < 0 || ny >= h) continue
-        for (let dx = -DILATE; dx <= DILATE; dx++) {
-          const nx = x + dx
-          if (nx < 0 || nx >= w) continue
-          const j = ny * w + nx
-          if (union[j] && label[j] === -1) {
-            label[j] = id
-            stack.push(j)
-          }
-        }
-      }
-    }
-  }
-  return boxes
-}
-
-function measure(script: string): void {
-  const root = repoPath(join('tools/traces/compare', script))
-  const javaDir = join(root, 'java')
-  const webDir = join(root, 'web')
-  const names = frameNames(javaDir)
   if (names.length === 0) throw new Error(`${script}: java/ 下一张 PNG 都没有`)
-
-  let w = 0
-  let h = 0
-  let union: Uint8Array | null = null
+  let width = 0
+  let height = 0
   const masks: Uint8Array[] = []
-  for (const name of names) {
-    const a = decodePng(readFileSync(join(javaDir, name)))
-    const b = decodePng(readFileSync(join(webDir, name)))
-    if (a.width !== b.width || a.height !== b.height) {
-      throw new Error(`${script}/${name}: 两端尺寸不同`)
-    }
-    w = a.width
-    h = a.height
-    const mask = diffMask(a.rgba, b.rgba, w * h)
-    masks.push(mask)
-    if (!union) union = new Uint8Array(w * h)
-    for (let i = 0; i < mask.length; i++) if (mask[i]) union[i] = 1
-  }
-  if (!union) throw new Error(`${script}: 一帧都没读到`)
-
-  const boxes = cluster(union, w, h).sort((p, q) => q.pixels - p.pixels)
-  const total = union.reduce((s, v) => s + v, 0)
-  console.log(`\n=== ${script} — ${names.length} 帧 · 并集 ${total} 个差异像素 · ${boxes.length} 块 ===`)
-  for (const box of boxes) {
-    // 单帧最多：这一块在任意一帧里的超容差像素数的上限，正是 maxPixels 的来源。
-    let worst = 0
-    let worstFrame = ''
-    let framesHit = 0
-    masks.forEach((mask, k) => {
-      let n = 0
-      for (let y = box.y0; y <= box.y1; y++) {
-        for (let x = box.x0; x <= box.x1; x++) if (mask[y * w + x]) n++
-      }
-      if (n > 0) framesHit++
-      if (n > worst) {
-        worst = n
-        worstFrame = names[k]!
-      }
-    })
-    console.log(
-      `  (${box.x0},${box.y0})-(${box.x1},${box.y1})` +
-        ` ${box.x1 - box.x0 + 1}×${box.y1 - box.y0 + 1}` +
-        ` · 并集 ${box.pixels} · 单帧最多 ${worst}（${worstFrame}）· 出现在 ${framesHit}/${names.length} 帧`,
-    )
-  }
-}
-
-interface NamedRect {
-  readonly name: string
-  readonly x0: number
-  readonly y0: number
-  readonly x1: number
-  readonly y1: number
-}
-
-/** 核一组已经划好的分区：逐区报单帧最多，并把区外的差异像素点出来。 */
-function verify(script: string, rects: readonly NamedRect[]): void {
-  const root = repoPath(join('tools/traces/compare', script))
-  const names = frameNames(join(root, 'java'))
-  // **一帧都没读到要响。** 那个目录整个不入库，跑错剧本名 / 上一轮被清掉都会
-  // 让它是空的 —— 而空的 `masks` 会让下面每个区都报「一帧都不差」、末尾报
-  // 「硬比区逐像素相等」，与真的量过一遍**逐字相同**。而这份输出正是要被抄进
-  // `expected.ts` 的那份读数。
-  if (names.length === 0) throw new Error(`${script}: java/ 下一张 PNG 都没有`)
-  const masks: Uint8Array[] = []
-  let w = 0
-  let h = 0
   for (const name of names) {
     const a = decodePng(readFileSync(join(root, 'java', name)))
     const b = decodePng(readFileSync(join(root, 'web', name)))
-    w = a.width
-    h = a.height
-    masks.push(diffMask(a.rgba, b.rgba, w * h))
-  }
-  console.log(`\n=== ${script} — ${names.length} 帧 · 核 ${rects.length} 个分区 ===`)
-  const inside = new Uint8Array(w * h)
-  for (const r of rects) {
-    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) inside[y * w + x] = 1
-  }
-  for (const r of rects) {
-    let worst = 0
-    let worstFrame = ''
-    let hit = 0
-    masks.forEach((mask, k) => {
-      let n = 0
-      for (let y = r.y0; y <= r.y1; y++) {
-        for (let x = r.x0; x <= r.x1; x++) if (mask[y * w + x]) n++
-      }
-      if (n > 0) hit++
-      if (n > worst) {
-        worst = n
-        worstFrame = names[k]!
-      }
-    })
-    // 实测外接框：区里那些差异像素**并集**的外接框。写进注释，它与矩形之间
-    // 的差就是留的余量，别人一眼看得出留了几个像素。
-    let bx0 = r.x1
-    let by0 = r.y1
-    let bx1 = r.x0 - 1
-    let by1 = r.y0 - 1
-    for (const mask of masks) {
-      for (let y = r.y0; y <= r.y1; y++) {
-        for (let x = r.x0; x <= r.x1; x++) {
-          if (!mask[y * w + x]) continue
-          if (x < bx0) bx0 = x
-          if (y < by0) by0 = y
-          if (x > bx1) bx1 = x
-          if (y > by1) by1 = y
-        }
-      }
+    if (a.width !== b.width || a.height !== b.height) {
+      throw new Error(
+        `${script}/${name}: 两端尺寸不同（${a.width}×${a.height} vs ${b.width}×${b.height}）`,
+      )
     }
-    const area = (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1)
+    width = a.width
+    height = a.height
+    masks.push(diffMask(a.rgba, b.rgba, width * height))
+  }
+  return { names, masks, width, height }
+}
+
+const box = (r: Rect) => `(${r.x0},${r.y0})-(${r.x1},${r.y1})`
+
+function measure(script: string): void {
+  const { names, masks, width, height } = readFrames(script)
+  const union = unionOf(masks, width * height)
+  const boxes = clusterBoxes(union, width, height)
+  const total = union.reduce((s: number, v: number) => s + v, 0)
+  console.log(
+    `\n=== ${script} — ${names.length} 帧 · 并集 ${total} 个差异像素 · ${boxes.length} 块 ===`,
+  )
+  for (const b of boxes) {
+    const r = readRegion(masks, width, b)
     console.log(
-      `  ${r.name.padEnd(20)} 外接框 (${bx0},${by0})-(${bx1},${by1})` +
-        ` · 单帧最多 ${String(worst).padStart(6)}（${worstFrame}）` +
-        ` · maxPixels=${worst * 2} · 面积 ${area} · 出现在 ${hit}/${names.length} 帧` +
-        (worst === 0 ? '  ⚠️ 一帧都不差 —— 这个区该删掉' : ''),
+      `  ${box(b)} ${b.x1 - b.x0 + 1}×${b.y1 - b.y0 + 1}` +
+        ` · 并集 ${b.pixels} · 单帧最多 ${r.worst}（${names[r.worstFrame] ?? '—'}）` +
+        ` · 出现在 ${r.framesHit}/${names.length} 帧`,
     )
   }
-  // 区外：硬比区里一个超容差的像素都不许有。
-  let outside = 0
-  let box = { x0: w, y0: h, x1: -1, y1: -1 }
-  const frames = new Set<string>()
-  masks.forEach((mask, k) => {
-    for (let i = 0; i < mask.length; i++) {
-      if (!mask[i] || inside[i]) continue
-      outside++
-      frames.add(names[k]!)
-      const x = i % w
-      const y = (i / w) | 0
-      if (x < box.x0) box.x0 = x
-      if (y < box.y0) box.y0 = y
-      if (x > box.x1) box.x1 = x
-      if (y > box.y1) box.y1 = y
-    }
-  })
+}
+
+function verify(script: string, rects: readonly NamedRect[]): void {
+  const { names, masks, width, height } = readFrames(script)
+  console.log(`\n=== ${script} — ${names.length} 帧 · 核 ${rects.length} 个分区 ===`)
+  for (const rect of rects) {
+    const r = readRegion(masks, width, rect)
+    const area = (rect.x1 - rect.x0 + 1) * (rect.y1 - rect.y0 + 1)
+    console.log(
+      `  ${rect.name.padEnd(20)} 外接框 ${r.box ? box(r.box) : '（无）'}` +
+        ` · 单帧最多 ${String(r.worst).padStart(6)}（${names[r.worstFrame] ?? '—'}）` +
+        ` · maxPixels=${r.worst * 2} · 面积 ${area} · 出现在 ${r.framesHit}/${names.length} 帧` +
+        (r.worst === 0 ? '  ⚠️ 一帧都不差 —— 这个区该删掉' : ''),
+    )
+  }
+  const outside = readOutside(masks, width, height, rects)
   console.log(
-    outside === 0
+    outside.pixels === 0
       ? '  硬比区：逐像素相等（0 个超容差像素）'
-      : `  ⚠️ 硬比区里有 ${outside} 个超容差像素，外接框 (${box.x0},${box.y0})-(${box.x1},${box.y1})，` +
-          `涉及 ${frames.size} 帧`,
+      : `  ⚠️ 硬比区里有 ${outside.pixels} 个超容差像素，外接框 ${box(outside.box!)}，` +
+          `涉及 ${outside.frames} 帧`,
   )
 }
 

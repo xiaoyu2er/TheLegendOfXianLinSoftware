@@ -38,6 +38,7 @@ import { createShopRenderer } from '../shop/render/shopRenderer'
 import type { ShopRenderer } from '../shop/render/shopRenderer'
 import { replayShopSetup, shopInputsOfTicks } from '../shop/replay'
 import { stepShop } from '../shop/step'
+import type { ShopInput } from '../shop/step'
 // 同菜单那一条的理由：类型从 `shop/trace.ts` 取，不在这里手抄一份子集。
 // 那个模块转手 `node:fs`，而 `import type` 会被整个擦掉。
 import type { ShopTrace } from '../shop/trace'
@@ -426,6 +427,15 @@ let shopWorld: ShopWorld | null = null
 let shopNext = 0
 /** 上一次真的载过的那份贴图名单（`shopTextureIds` 的 `JSON.stringify`）。 */
 let shopLoaded: string | null = null
+/**
+ * 逐步的输入，**在 `load` 里一次算完**。
+ *
+ * 放在 `load` 而不是每次 `seek` 现算，有两个理由，第二个才是主要的：算一次
+ * 是 O(n) 而不是 O(n²)；而 `shopInputsOfTicks` 会**两个方向都核**（空输入的
+ * 那一步必须真是 `open`、非空的必须不是），放在 `load` 里意味着这份真值接不
+ * 上的话**在取第一帧之前**就抛，而不是走到某一步中途才炸。
+ */
+let shopInputs: readonly ShopInput[][] = []
 
 /**
  * 逐帧比对里商店动画停在**第 0 格**。
@@ -479,6 +489,10 @@ const shopAssembly: Assembly = {
     shopTrace = parsed
     shopNext = 0
     shopLoaded = null
+    // 换店那一步的输入要从剧本的 `open` 指令还原 —— 真值里它是空数组（原版走
+    // 场景的选择事件，面板收不到鼠标事件）。与 `shopTrace.test.ts` 走的是同一
+    // 个函数。
+    shopInputs = shopInputsOfTicks(parsed.script.steps, parsed.ticks)
     await loadShopFrame(world)
     shopRenderer.draw(shopDrawList(world, SHOP_FROZEN_FRAME))
     // `scene` 这一栏对商店来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
@@ -496,12 +510,8 @@ const shopAssembly: Assembly = {
     if (t >= trace.ticks.length) {
       throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
     }
-    // 换店那一步的输入要从剧本的 `open` 指令还原 —— 真值里它是空数组。**整份
-    // 一次算出来**，与 `shopTrace.test.ts` 走的是同一个函数：它两个方向都核
-    // （空输入的那一步必须真是 open、非空的必须不是），认错了会抛。
-    const inputs = shopInputsOfTicks(trace.script.steps, trace.ticks)
     for (; shopNext <= t; shopNext++) {
-      stepShop(world, inputs[shopNext]!)
+      stepShop(world, shopInputs[shopNext]!)
     }
     await loadShopFrame(world)
     renderer.draw(breakShopOps(shopDrawList(world, SHOP_FROZEN_FRAME), t))
