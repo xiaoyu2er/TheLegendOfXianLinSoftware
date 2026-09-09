@@ -204,8 +204,9 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   done | sort | uniq -c
   ```
 
-  (2026-09-07 on this branch that printed 13 battle / 5 scene / 2 menu /
-  1 shop = 21 — a reading, not a spec.) An unrecognised
+  (2026-09-09 on this branch that printed 13 battle / 5 menu / 5 scene /
+  1 shop = 24 — a reading, not a spec. The 2026-09-07 reading in this spot was
+  21, with only 2 menu scripts; xl-6lo.7 added three.) An unrecognised
   name is a hard failure, never a guess — but a **missing** `driver` field
   defaults to `scene`, the exporter's one and only leniency (the scene
   scripts predate the field; giving them one would change the script echo and
@@ -217,11 +218,11 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   `tools/compare-frames.sh` runs the original side for all four, but the capture
   page only assembles the drivers listed in `web/src/replay/implemented.ts`
   (`IMPLEMENTED_DRIVERS` — that array is the single source of truth; as of
-  2026-09-07 it is `scene` and `battle`). The rest wait for **M3 (xl-6lo) /
-  M4 (xl-knp)** to build those panels in `web/`. Until then those
-  scripts make the pipeline **exit non-zero and name the driver plus its owning
-  issue** — a script that was never assembled compares as "zero frames differ",
-  which looks exactly like "the two sides agree". See
+  2026-09-09 it is `scene`, `battle` and `menu`, M3 having wired the third).
+  Only `shop` is left, waiting for **M4 (xl-knp)** to build those panels in
+  `web/`. Until then that script makes the pipeline **exit non-zero and name the
+  driver plus its owning issue** — a script that was never assembled compares as
+  "zero frames differ", which looks exactly like "the two sides agree". See
   `docs/frame-compare.md` § 装配不出来的驱动器.
 
 ## Workspace layout

@@ -116,8 +116,9 @@ export interface StartSequence {
  * 拿眼睛看过（2026-09-08，第 8 帧，逐点放大即 `pixelated` 的放大方式）：
  * 1:1 分不出来；2 倍下极轻微更平滑，要盯着找；10 倍下纸纤维的颗粒明显被抹平，
  * 卷轴的硬边与投影完好。过场只有 1 秒，且这一屏不进跨端逐帧比对
- * （`replay/implemented.ts` 的 `IMPLEMENTED_DRIVERS` 今天是 scene / battle，
- * 一条 start 驱动器都没有），所以大迷宫那笔「永远留下 22% 偏离」的账这里不存在。
+ * （`replay/implemented.ts` 的 `IMPLEMENTED_DRIVERS` 里**一条 start 驱动器都
+ * 没有** —— 那份名单会随里程碑变长，start 不会进去，所以这里不抄它当时有哪几支），
+ * 所以大迷宫那笔「永远留下 22% 偏离」的账这里不存在。
  *
  * ### 量化（10 帧合计 9212800 像素，源 PNG vs q80 解回来的 RGBA）
  *
