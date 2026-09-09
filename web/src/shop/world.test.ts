@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { repoPath } from '../test/repoPath'
 import { DRUGS } from '../battle/drugs'
 import { javaSource } from '../test/javaSource'
 import { JavaRandom } from '../game/javaRandom'
@@ -51,25 +53,56 @@ describe('建商店世界', () => {
     expect(a).not.toEqual(c)
   })
 
-  it('按钮表的次序 = ShopDriver.buttonLabel 的下标算法', () => {
+  it('按钮表的次序 = ShopDriver.buttonLabel 的下标算法（三处都从源码现读）', () => {
+    // ⚠️ **不要在这里手抄一份 `buttonLabel`**：抄出来的那一份用的是实现自己的
+    // `stepBase()` 与 `SHOP_CATEGORIES`，于是"固定那几颗的下标"与"分类那六颗
+    // 的次序"两半都按构造成立（/code-review 的 Standards 轴提的）。三样东西
+    // 全部从 `ShopDriver.java` 现读 —— 它是**导出真值那一侧**算这几个名字的
+    // 地方，两边分家的表现是"点了购买，真值里写着卖出"。
+    const driver = readFileSync(repoPath('tools/src/devtools/ShopDriver.java'), 'utf8')
+
+    // 1. 两家店固定那三颗的名字与次序。
+    const arrays = [...driver.matchAll(/new String\[\] \{ ([^}]+) \}\[i\]/g)].map((m) =>
+      m[1]!.split(',').map((x) => x.trim().replace(/"/g, '')),
+    )
+    expect(arrays, 'buttonLabel 里那两个字符串数组').toHaveLength(2)
+    const [drugFixed, equipFixed] = arrays as [string[], string[]]
+    // ⚠️ 头两颗真的是对调的 —— 抄混了也画得出来、点得着。
+    expect(drugFixed).not.toEqual(equipFixed)
+
+    // 2. 两家店 `stepBase()` 的返回值。
+    const base = driver.match(/private int stepBase\(\) \{ return isDrugShop\(\) \? (\d+) : (\d+); \}/)
+    expect(base, 'stepBase 没解出来').not.toBeNull()
+    expect(stepBase('drug')).toBe(Number(base![1]))
+    expect(stepBase('equipment')).toBe(Number(base![2]))
+
+    // 3. 分类那六颗的次序 —— `ShopScript.CATEGORIES`，同样现读。
+    // ⚠️ `tools/src/` 是 **UTF-8**，不是 GBK —— 那条 `javaSource()` 只管
+    // `src/` 下原版那批（见 `test/javaSource.ts`）。
+    const categories = readFileSync(repoPath('tools/src/devtools/ShopScript.java'), 'utf8').match(
+      /CATEGORIES =\s*\r?\n?\s*Arrays\.asList\(([^)]+)\)/,
+    )
+    expect(categories, 'ShopScript.CATEGORIES 没解出来').not.toBeNull()
+    expect(SHOP_CATEGORIES).toEqual(
+      categories![1]!.split(',').map((x) => x.trim().replace(/"/g, '')),
+    )
+
     const w = createShopWorld(BASE)
-    // 照 `ShopDriver.buttonLabel(i)` 再算一遍：下标 → 名字。两边对不上说明
-    // 按钮表排错了，而排错之后每一颗照样画得出来、点得着。
-    const label = (kind: 'drug' | 'equipment', i: number): string => {
-      const base = stepBase(kind)
-      if (i >= base) {
-        const row = Math.floor((i - base) / 2)
-        return `${(i - base) % 2 === 0 ? 'minus:' : 'plus:'}${row}`
+    const label = (fixed: string[], stepFrom: number, i: number): string => {
+      if (i >= stepFrom) {
+        const row = Math.floor((i - stepFrom) / 2)
+        return `${(i - stepFrom) % 2 === 0 ? 'minus:' : 'plus:'}${row}`
       }
-      if (kind === 'drug') return ['buy', 'sell', 'back'][i]!
-      if (i < 3) return ['sell', 'buy', 'back'][i]!
-      return `category:${SHOP_CATEGORIES[i - 3]}`
+      if (fixed === equipFixed && i >= fixed.length) {
+        return `category:${SHOP_CATEGORIES[i - fixed.length]}`
+      }
+      return fixed[i]!
     }
     expect(w.drug.buttons.map((b) => b.label)).toEqual(
-      w.drug.buttons.map((_, i) => label('drug', i)),
+      w.drug.buttons.map((_, i) => label(drugFixed, Number(base![1]), i)),
     )
     expect(w.equipment.buttons.map((b) => b.label)).toEqual(
-      w.equipment.buttons.map((_, i) => label('equipment', i)),
+      w.equipment.buttons.map((_, i) => label(equipFixed, Number(base![2]), i)),
     )
     // 颗数：固定那几颗 + 每行两颗。
     expect(w.drug.buttons).toHaveLength(stepBase('drug') + 2 * DRUGS.length)

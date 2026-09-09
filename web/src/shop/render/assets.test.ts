@@ -5,6 +5,7 @@ import { SLOT_FILE } from '../../menu/equipment'
 import { KNOWN_MISSING_EQUIP_PICTURES } from '../../menu/equipmentPictures'
 import { equipPictureAssetId } from '../../assets/ids'
 import { ANIMATION_FRAMES, SHOP_CATEGORIES } from '../layout'
+import type { ShopButtonLabel } from '../buttons'
 import { createShopWorld } from '../world'
 import {
   CATEGORY_IMAGE_NAME,
@@ -103,7 +104,7 @@ describe('商店素材的逻辑 ID', () => {
     ]
     expect(m, '加减按钮那两组图没解出来').toHaveLength(2)
     for (const x of m) expect([x[2], x[3]]).toEqual(['2', '2'])
-    for (const label of ['minus:0', 'plus:0']) {
+    for (const label of ['minus:0', 'plus:0'] as const) {
       const images = buttonImages(label)
       expect(images.waitclick).toBe(images.pressed)
       expect(images.normal).not.toBe(images.waitclick)
@@ -111,7 +112,7 @@ describe('商店素材的逻辑 ID', () => {
   })
 
   it('买 / 卖 / 返回三颗各有三张不同的图', () => {
-    for (const label of ['buy', 'sell', 'back']) {
+    for (const label of ['buy', 'sell', 'back'] as const) {
       const images = buttonImages(label)
       expect(new Set(Object.values(images)).size, label).toBe(3)
       for (const id of Object.values(images)) expect(() => resolveAsset(id), id).not.toThrow()
@@ -140,7 +141,13 @@ describe('商店素材的逻辑 ID', () => {
   })
 
   it('认不出的按钮名一律抛，不猜', () => {
+    // `category:<不存在的分类>` 落在 `ShopButtonLabel` 的模板字面量里 ——
+    // 类型收不住它，运行时才分得出。
     expect(() => buttonImages('category:grocery')).toThrow(/认不出来/)
-    expect(() => buttonImages('use')).toThrow(/认不出来/)
+    // ⚠️ 这一个类型已经收住了（`ShopButtonLabel` 里没有 `use`），所以要
+    // `as` 一下才试得出来。**留着它**：这个函数从渲染层收名字，而渲染层的
+    // 名字来自 `ShopButtonState.label` —— 哪天有人给它加一种按钮而忘了加图，
+    // 拦住的是这个 `throw`，不是类型。
+    expect(() => buttonImages('use' as ShopButtonLabel)).toThrow(/认不出来/)
   })
 })

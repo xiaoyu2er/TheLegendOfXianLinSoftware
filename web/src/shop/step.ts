@@ -1,5 +1,5 @@
 import { clickedLabels, moveInButton, pressButton, releaseButton } from './buttons'
-import type { ShopButtonState } from './buttons'
+import type { ShopButtonLabel, ShopButtonState } from './buttons'
 import { rowAt } from './layout'
 import type { ShopKind } from './layout'
 import type { EquipSlot } from '../menu/equipment'
@@ -134,14 +134,17 @@ function panelMoveIn(w: ShopWorld): void {
 function setButton(w: ShopWorld): void {
   const p = activePanel(w)
   if (p.kind === 'equipment') setEquipCategory(w, p)
-  // 买卖与加减：**这一票不做**，见 `pendingTrade` 的注释。
-  pendingTrade(w)
+  // 买 / 卖：**这一票不做**，见 `pendingBuySell` 的注释。原版在这里。
+  pendingBuySell(w)
   if (clicked(p.buttons, 'back')) {
     w.music.push('换头像.wav')
     // 原版这里是 `GameLauncher.switchTo("scene")` —— 面板自己不知道要去哪，
     // 换面板是外面那一层的事。浏览器里同理，会话侧接它（xl-yg6.2）。
     w.leaving = true
   }
+  // 加 / 减：**这一票不做**。⚠️ 它在 `back` **之后**，不是和买卖挤在一起 ——
+  // 两个洞分开留，正是为了后面两张票各自往自己那个洞里填、不必重排。
+  pendingStepButtons(w)
   for (const b of p.buttons) releaseButton(b, p.currentX, p.currentY)
 }
 
@@ -177,7 +180,7 @@ function setEquipCategory(w: ShopWorld, p: EquipShopState): void {
 }
 
 /**
- * 买 / 卖 / 加 / 减 —— **这一票不做**，归 xl-knp.7（药店）与 xl-knp.8（装备店）。
+ * 买 / 卖 —— **这一票不做**，归 xl-knp.7（药店）与 xl-knp.8（装备店）。
  *
  * 空着而不是抛：真值要从头跑到尾。抛的话整条剧本一步都跑不动，于是"这几组
  * 还没做"会伪装成"这一层崩了"，而 `shopTrace.test.ts` 反方向那半边判据
@@ -186,11 +189,27 @@ function setEquipCategory(w: ShopWorld, p: EquipShopState): void {
  * 这个洞的登记在 `shopTrace.test.ts` 的 `PENDING` 里，逐格带票号；
  * 它同时是**双向**的：哪天有人把这里做了却忘了改登记，那半边判据立刻红。
  */
-function pendingTrade(_w: ShopWorld): void {
-  // xl-knp.7 / xl-knp.8 在这里加 buy / sell / plus / minus 四段。
+function pendingBuySell(_w: ShopWorld): void {
+  // xl-knp.7 / xl-knp.8 在这里加 buy / sell 两段。
 }
 
-function clicked(buttons: readonly ShopButtonState[], label: string): boolean {
+/**
+ * 加 / 减 —— 同上，**这一票不做**。
+ *
+ * ⚠️ **它是第二个洞，位置不能和上面那个合并**：原版两个面板的 `setButton`
+ * 里，那个 `for(int i=3/9;i<buttonlist.size();i+=2)` 排在 `back` 分支
+ * **之后**（`ShopPanel.java` / `EquipmentShopPanel.java`）。合成一个洞、
+ * 让后面两张票把四段一起填进 `back` 之前，加减就跑到「返回游戏」前头去了
+ * —— 表现是同一次松开同时挂着 `back` 与加号时 `music` 成了
+ * `[click.wav, 换头像.wav]`，而原版是 `[换头像.wav, click.wav]`
+ * （/code-review 的 Spec 轴提的）。**留两个洞，`back` 夹在中间**，后面两张票
+ * 才真的只做加法。判据在 `step.test.ts`。
+ */
+function pendingStepButtons(_w: ShopWorld): void {
+  // xl-knp.7 / xl-knp.8 在这里加 plus / minus 两段。
+}
+
+function clicked(buttons: readonly ShopButtonState[], label: ShopButtonLabel): boolean {
   return buttons.some((b) => b.isclicked && b.label === label)
 }
 

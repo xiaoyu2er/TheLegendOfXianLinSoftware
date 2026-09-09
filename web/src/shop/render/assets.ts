@@ -7,6 +7,8 @@ import { SLOT_FILE } from '../../menu/equipment'
 import type { EquipSlot } from '../../menu/equipment'
 import { ANIMATION_FRAMES, SHOP_CATEGORIES } from '../layout'
 import type { ShopKind } from '../layout'
+import { activePanel, currentRows } from '../world'
+import type { ShopButtonLabel } from '../buttons'
 import type { ShopWorld } from '../types'
 
 /**
@@ -144,8 +146,13 @@ export function categoryImages(category: EquipSlot): ButtonImages {
   }
 }
 
-/** 按钮的逻辑名 → 它那三张图。 */
-export function buttonImages(label: string): ButtonImages {
+/**
+ * 按钮的逻辑名 → 它那三张图。
+ *
+ * 收的是 {@link ShopButtonLabel} 而不是裸 `string`：那个联合类型就在隔壁，
+ * 用裸 string 等于把"名字有哪几种"这件事在两处各答一遍。
+ */
+export function buttonImages(label: ShopButtonLabel): ButtonImages {
   if (label === 'buy') return BUY_IMAGES
   if (label === 'sell') return SELL_IMAGES
   if (label === 'back') return BACK_IMAGES
@@ -176,14 +183,12 @@ export function shopTextureIds(w: ShopWorld): AssetId[] {
     }
     ids.push(animationFrameId(KEEPER_ROLE[w.active], frame))
   }
-  const panel = w.active === 'drug' ? w.drug : w.equipment
-  for (const b of panel.buttons) {
+  for (const b of activePanel(w).buttons) {
     const images = buttonImages(b.label)
     ids.push(images.normal, images.waitclick, images.pressed)
   }
   // 商品图：当前这一栏每一行都可能被悬停选中。
-  const rows = w.active === 'drug' ? w.drug.rows : w.equipment.rows[w.equipment.category]
-  for (const row of rows) {
+  for (const row of currentRows(w)) {
     const picture = pictureTextureId(row.picture)
     if (picture !== null) ids.push(picture)
   }

@@ -24,6 +24,7 @@ import {
 } from '../layout'
 import { PREVIEW_CONFIG } from '../preview'
 import { stepShop } from '../step'
+import { hitCenter } from '../test/hitCenter'
 import { createShopWorld } from '../world'
 import type { ShopWorld } from '../types'
 import { PURSE, SHOP_BACKGROUND, SIGN, animationFrameId, mouseId } from './assets'
@@ -218,9 +219,7 @@ describe('商店的绘制清单', () => {
     const w = world()
     stepShop(w, [{ e: 'open', shop: 'equipment' }])
     const before = shopDrawList(w, 0).filter((o) => o.layer === 'button').length
-    const box = categoryBox('shoe')
-    const x = box.x - 15 + Math.floor(box.width / 2)
-    const y = box.y - 6 + Math.floor(box.height / 2)
+    const [x, y] = hitCenter(categoryBox('shoe'))
     stepShop(w, [{ e: 'press', x, y }])
     stepShop(w, [{ e: 'release', x, y }])
     const after = shopDrawList(w, 0).filter((o) => o.layer === 'button').length

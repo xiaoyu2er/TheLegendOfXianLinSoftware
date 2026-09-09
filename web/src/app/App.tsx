@@ -212,13 +212,6 @@ export function App() {
     if (at) view.menuInput({ e, x: at.x, y: at.y })
   }
 
-  /**
-   * 滚轮 —— 装备页与物品页那两处列表翻页用（xl-6lo.13）。**原版没有这一种
-   * 输入**，它只从浏览器进来。
-   *
-   * 送的是**行数**不是 `deltaY`：那个数的量纲随设备与操作系统变，换算在
-   * `menu/scroll.ts` 的 `wheelRows` 里，那里进得了 `pnpm test`。
-   */
   /** 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。 */
   const onShopMouse =
     (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -227,6 +220,13 @@ export function App() {
       if (at) shop.input({ e, x: at.x, y: at.y })
     }
 
+  /**
+   * 滚轮 —— 装备页与物品页那两处列表翻页用（xl-6lo.13）。**原版没有这一种
+   * 输入**，它只从浏览器进来。
+   *
+   * 送的是**行数**不是 `deltaY`：那个数的量纲随设备与操作系统变，换算在
+   * `menu/scroll.ts` 的 `wheelRows` 里，那里进得了 `pnpm test`。
+   */
   const onMenuWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (!inMenu || event.deltaY === 0) return
     const at = stagePoint(event)

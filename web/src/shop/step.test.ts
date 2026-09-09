@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { repoPath } from '../test/repoPath'
 import { javaSource } from '../test/javaSource'
 import { EQUIPMENT_LISTS } from '../menu/equipment'
-import { hits } from './buttons'
 import { BACK_BOX, categoryBox, stepBox } from './layout'
+import type { ShopButtonBox } from './layout'
+import { hitCenter } from './test/hitCenter'
 import { cursorRow, pressedLabels, stepShop } from './step'
 import { snapshotShop } from './snapshot'
 import { createShopWorld, stepBase } from './world'
@@ -11,14 +14,9 @@ import type { ShopWorld } from './types'
 
 const BASE: ShopConfig = { party: ['zhang'], coins: 10000, seed: 1 }
 
-/** 一颗按钮的命中中心，与 `ShopDriver.center()` 同一个算法。 */
-function center(box: { x: number; y: number; width: number; height: number }): [number, number] {
-  return [box.x - 15 + Math.floor(box.width / 2), box.y - 6 + Math.floor(box.height / 2)]
-}
-
 /** 按下再松开一颗按钮 —— 两步，与导出器同一个口径。 */
-function click(w: ShopWorld, box: { x: number; y: number; width: number; height: number }): void {
-  const [x, y] = center(box)
+function click(w: ShopWorld, box: ShopButtonBox): void {
+  const [x, y] = hitCenter(box)
   stepShop(w, [{ e: 'press', x, y }])
   stepShop(w, [{ e: 'release', x, y }])
 }
@@ -105,11 +103,46 @@ describe('商店状态层的那几步', () => {
     }
   })
 
+  it('⚠️ setButton 六段的先后：分类 → 买 → 卖 → 返回 → 加减 → 松手，两边都现读', () => {
+    // 原版那一侧：从 `setButton()` 的方法体里现读六段的出现位置。
+    for (const [what, file, stepLoop] of [
+      ['药店', 'src/shop/ShopPanel.java', /for\(int i=3;i<buttonlist\.size\(\);i\+=2\)/],
+      ['装备店', 'src/shop/EquipmentShopPanel.java', /for\(int i=9;i<buttonList\.size\(\);i\+=2\)/],
+    ] as const) {
+      const source = javaSource(file)
+      const body = source.slice(source.indexOf('public void setButton()'))
+      const marks: [string, number][] = [
+        ['buy', body.indexOf('buy.isIsclicked()==true')],
+        ['sell', body.indexOf('sell.isIsclicked()==true')],
+        ['back', body.indexOf('back.isIsclicked()==true')],
+        ['加减', body.search(stepLoop)],
+        ['松手', body.indexOf('isRelesedButton')],
+      ]
+      if (what === '装备店') marks.unshift(['分类', body.indexOf('weapon.isIsclicked()==true')])
+      for (const [name, at] of marks) expect(at, `${what} 的「${name}」那一段`).toBeGreaterThan(-1)
+      const order = marks.map(([, at]) => at)
+      expect(order, `${what} 里六段的先后`).toEqual([...order].sort((a, b) => a - b))
+    }
+
+    // 这一侧：两个占位洞必须**分开**，`back` 夹在中间。合成一个洞的话，后面
+    // 两张票把四段一起填进去，加减就跑到「返回游戏」前头去了 —— 而那一步的
+    // 后果只是 `music` 那一列两声调了个个儿。
+    const mine = readFileSync(repoPath('web/src/shop/step.ts'), 'utf8')
+    const body = mine.slice(mine.indexOf('function setButton('))
+    const order = [
+      ['分类', body.indexOf('setEquipCategory(w, p)')],
+      ['买卖那个洞', body.indexOf('pendingBuySell(w)')],
+      ['返回', body.indexOf("clicked(p.buttons, 'back')")],
+      ['加减那个洞', body.indexOf('pendingStepButtons(w)')],
+      ['松手', body.indexOf('releaseButton(b,')],
+    ] as [string, number][]
+    for (const [name, at] of order) expect(at, `setButton 里的「${name}」`).toBeGreaterThan(-1)
+    expect(order.map(([, at]) => at)).toEqual([...order.map(([, at]) => at)].sort((a, b) => a - b))
+  })
+
   it('按下那一步 pressed 里有它，松开那一步是空的', () => {
     const w = createShopWorld(BASE)
-    const box = stepBox(0, true)
-    const [x, y] = center(box)
-    expect(hits(box, x, y)).toBe(true)
+    const [x, y] = hitCenter(stepBox(0, true))
     stepShop(w, [{ e: 'press', x, y }])
     expect(pressedLabels(w)).toEqual(['plus:0'])
     stepShop(w, [{ e: 'release', x, y }])
