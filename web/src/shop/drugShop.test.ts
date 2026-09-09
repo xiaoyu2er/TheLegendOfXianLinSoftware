@@ -173,6 +173,49 @@ describe('药店的源码参照模型：期望值从 ShopPanel.java 现读', () 
     expect(row.purchase).toBe(0)
   })
 
+  /**
+   * ⚠️ **钱正好花光算不算买得起，原来也没人守。**
+   *
+   * 原版是 `if(Money.getCoins()<0)` —— **严格小于**，所以余额落在 0 上是
+   * 成交。把它改成 `<=` 之后全套判据仍然全绿（篡改矩阵实测）：三条真值里
+   * 没有一笔正好把钱花光的。与 6000 那道坎、退款循环那两个洞同一个形状。
+   *
+   * 期望值仍然不手写：**比较符从 GBK 源码里现读**，再按它的语义断言行为。
+   */
+  it('⚠️ 钱正好花光（余额 0）算买得起 —— 那个比较符从源码现读', () => {
+    const m = SET_BUTTON.match(/if\(Money\.getCoins\(\)(<=?)0\)/)
+    expect(m, 'setButton 里那句 if(Money.getCoins()<0) 没解析出来').not.toBeNull()
+    const refusedAtZero = m![1]! === '<='
+
+    const world = replayShop(readShopTrace(SHOP_TRACE_NAMES[0]!))
+    world.active = 'drug'
+    const row = world.drug.rows[0]!
+    const [purchase, stock] = [2, 5]
+    row.purchase = purchase
+    row.stock = stock
+    // 摆成"正好花光"：手上的钱恰好等于这一单要付的钱。
+    world.coins = row.price * purchase
+    const held0 = world.pack.drugs[0]!
+    const message0 = world.drug.message
+
+    const [bx, by] = hitCenter(BUY_BOX)
+    stepShop(world, [{ e: 'press', x: bx, y: by }])
+    stepShop(world, [{ e: 'release', x: bx, y: by }])
+    expect(world.music, '这一下没点着买入按钮').toEqual(['Clip986.wav'])
+
+    // 无论哪一边，余额都停在 0；分岔的是"东西到手了没有"。
+    expect(world.coins).toBe(0)
+    if (refusedAtZero) {
+      expect(world.pack.drugs[0]).toBe(held0)
+      expect(world.drug.message).not.toBe(message0)
+    } else {
+      expect(world.pack.drugs[0], '钱正好花光却被拒了 —— 那个比较符抄成了 <=').toBe(
+        held0 + purchase,
+      )
+      expect(world.drug.message, '成交了却换成了"钱不顾了"那句').toBe(message0)
+    }
+  })
+
   it('买卖那几个循环的上界是**字面量**，且与 drug.txt 的行数相等', () => {
     const bounds = [...SET_BUTTON.matchAll(/for\(int i=0;i<(\d+);i\+\+\)/g)].map((m) =>
       Number(m[1]),
