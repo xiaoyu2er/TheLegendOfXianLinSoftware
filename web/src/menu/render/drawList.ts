@@ -36,9 +36,10 @@ import type { MenuSubPanel, MenuWorld } from '../types'
  *
  * 这一层是纯函数：世界 → 一串「把哪张图贴在哪」。它**不碰 Pixi、不碰 DOM**，
  * 所以顺序、坐标、贴哪一张图全都能在 `pnpm test` 里逐条断言。真实像素由跨端
- * 逐帧比对兜底 —— 而 **menu 那条流水线今天还没接上**（`replay/implemented.ts`
- * 的 `IMPLEMENTED_DRIVERS` 里没有 menu），接线是 **xl-6lo.14**。也就是说
- * 这一层今天只有"顺序与坐标"这一半判据，像素那一半还欠着。
+ * 逐帧比对兜底 —— **menu 那条流水线已经接上了**（xl-6lo.14：`menu` 进了
+ * `replay/implemented.ts` 的 `IMPLEMENTED_DRIVERS`，五条 menu 剧本在
+ * `compare/expected.ts` 里各有一份实测的分区表态）。也就是说这一层现在两半
+ * 判据都有：顺序与坐标在 `pnpm test` 里，像素在缺口区之外**逐像素**相等。
  *
  * ## 六层的次序就是 z 序
  *
@@ -79,7 +80,8 @@ export type MenuDrawOp =
   /**
    * 一块纯色矩形。**原版一条这样的绘制都没有** —— 它是给滚动条用的
    * （xl-6lo.13），原版没有滚动条。所以看见它就等于"这一块是 web 侧加的"，
-   * 逐帧比对接上以后（xl-6lo.14）那片矩形要单独表态。
+   * 逐帧比对接上以后它**真的单独表态了**（xl-6lo.14）：`menu-scroll` 的
+   * `scrollbar` 那个缺口区，实测 (770,155)-(777,506)。
    */
   | {
       readonly kind: 'rect'

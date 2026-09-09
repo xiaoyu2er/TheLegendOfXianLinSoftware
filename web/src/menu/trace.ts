@@ -1,7 +1,7 @@
 import { readTrace, traceNamesOf } from '../state/trace'
+import { replayMenuSetup } from './replay'
 import type { MenuInput } from './step'
 import type { MenuConfig } from './world'
-import { createMenuWorld } from './world'
 import type { MenuWorld } from './types'
 
 /**
@@ -57,15 +57,10 @@ export function readMenuTrace(name: string): MenuTrace {
 /**
  * 照剧本头把菜单世界建出来。**只读 `setup`，一个状态字段都不从真值里读。**
  *
- * `setup.drugs` 铺药品存货（物品页 xl-6lo.10 读它）、`setup.equipment` 铺
- * 装备页的背包（xl-6lo.9 读它）—— **两列现在都有人核**：前者由真值
- * `drug.list` 逐步守着，后者由 `equip` 那一组守着。所以两列都读。
+ * 建世界那一段搬去了 `./replay.ts`（xl-6lo.14）：取图页在**浏览器**里要把
+ * 同一件事做一遍，而这个模块转手 `node:fs`，进不了浏览器包。这里只剩"从
+ * 一份读进来的 trace 里取出 setup"。
  */
 export function replayMenu(trace: MenuTrace): MenuWorld {
-  return createMenuWorld({
-    party: trace.script.setup.party,
-    fullHeal: trace.script.setup.fullHeal,
-    drugs: trace.script.setup.drugs,
-    equipment: trace.script.setup.equipment,
-  })
+  return replayMenuSetup(trace.script.setup)
 }

@@ -18,6 +18,19 @@ import { replayBattle } from '../battle/replay'
 import { stepBattleWithPaint } from '../battle/loop'
 import type { BattleTrace } from '../battle/trace'
 import type { BattleWorld } from '../battle/types'
+import { menuTextureIds } from '../menu/render/assets'
+import { menuDrawList } from '../menu/render/drawList'
+import type { MenuDrawOp } from '../menu/render/drawList'
+import { createMenuRenderer } from '../menu/render/menuRenderer'
+import type { MenuRenderer } from '../menu/render/menuRenderer'
+import { replayMenuSetup } from '../menu/replay'
+import { stepMenu } from '../menu/step'
+// **类型从 `menu/trace.ts` 取，不在这里手抄一份。** 那个模块转手 `node:fs`，
+// 但 `import type` 会被 TypeScript 整个擦掉、一行运行时代码都不产生（战斗那
+// 一侧的 `BattleTrace` 走的是同一条路）。手抄一份子集的话，真值加一列时这里
+// 不会响 —— 那正是"名单抄两份迟早分家"的类型版。
+import type { MenuTrace } from '../menu/trace'
+import type { MenuWorld } from '../menu/types'
 import { resolveAsset } from '../assets/resolve'
 import { pickAssembly } from './drivers'
 import type { ImplementedDriver } from './implemented'
@@ -313,6 +326,86 @@ const battleAssembly: Assembly = {
   },
 }
 
+/* ===================== 菜单（xl-6lo.14） ===================== */
+
+let menuRenderer: MenuRenderer | null = null
+let menuTrace: MenuTrace | null = null
+let menuWorld: MenuWorld | null = null
+let menuNext = 0
+/** 上一次真的载过的那份贴图名单（`menuTextureIds` 的 join）。 */
+let menuLoaded: string | null = null
+
+/**
+ * **故意改坏一处渲染**（`--self-check` 的注入点），菜单版。
+ *
+ * 与战斗那一侧逐字同构，理由也一样：**整帧一起挪，不挑层**。菜单更需要这一条
+ * —— 它每一页的第一条绘制都是**满屏 1024×640 的背景图**（`MENU_BACKGROUND`），
+ * 挑任何一层往上挪，都可能被下一页的背景整个盖住，而那不成立的样子正是
+ * 「改坏了却没响」。
+ */
+function breakMenuOps(ops: MenuDrawOp[], t: number): MenuDrawOp[] {
+  const b = window.__xlBreak
+  if (!b || t < b.fromTick) return ops
+  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
+}
+
+/**
+ * 把这一帧要用的贴图载齐。**每一帧都问一次**，不是只在 load 时问一次。
+ *
+ * `menuTextureIds` 是从世界现推的：翻页换背景、选中一瓶药多一颗「使用」按钮、
+ * 奇术页放起动画要整条 37 帧。只在 `load()` 时载一次的话，`menu-magic` 第 8 步
+ * 之后那段动画会让 `textureOf` 当场抛 —— 而 `menu-equip` 那种从头到尾停在
+ * 第一页的剧本一点事都没有，于是"漏载"会表现成只有某几条剧本坏掉。
+ */
+async function loadMenuFrame(world: MenuWorld): Promise<void> {
+  const ids = menuTextureIds(world)
+  const key = ids.join('\u0000')
+  if (menuLoaded === key) return
+  await menuRenderer!.load(ids)
+  menuLoaded = key
+}
+
+const menuAssembly: Assembly = {
+  async load(traceJson: string) {
+    const parsed = JSON.parse(traceJson) as MenuTrace
+    menuRenderer ??= await createMenuRenderer(hostFor('menu'))
+    activate('menu')
+    const world = replayMenuSetup(parsed.script.setup)
+    menuWorld = world
+    menuTrace = parsed
+    menuNext = 0
+    menuLoaded = null
+    await loadMenuFrame(world)
+    menuRenderer.draw(menuDrawList(world))
+    // `scene` 这一栏对菜单来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
+    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+  },
+
+  async seek(t: number) {
+    const trace = menuTrace
+    const world = menuWorld
+    const renderer = menuRenderer
+    if (!trace || !world || !renderer) throw new Error('还没 load 就 seek')
+    if (t < menuNext - 1) {
+      throw new Error(`取图只能往前：当前在第 ${menuNext - 1} 步，要去第 ${t} 步`)
+    }
+    if (t >= trace.ticks.length) {
+      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
+    }
+    for (; menuNext <= t; menuNext++) {
+      stepMenu(world, trace.ticks[menuNext]!.input)
+    }
+    await loadMenuFrame(world)
+    // `task` 不喂：`MenuDriver` 从来不给 `tools.Reader.task` 赋值，原版画的
+    // 就是「当前任务:无」。喂一个别的值进来，顶栏那行字两端立刻对不上。
+    renderer.draw(breakMenuOps(menuDrawList(world), t))
+    await twoFrames()
+    // 菜单的一步是一次输入事件，没有虚拟时间可言（`MenuDriver` 不推时钟）。
+    // `timeMs` 这一栏只进日志，报步号乘 `MENU_TICK_MS` 会假装它是时间。
+    return { t, timeMs: 0, x: world.currentX, y: world.currentY }
+  },
+}
+
 /**
  * 判别名 → 装配。**名单只有这一份**，`pickAssembly` 报"本页实现了哪些"时
  * 数的就是它 —— 另抄一张名单，加了驱动器却忘了改名单的那天，报出来的话是错的。
@@ -324,6 +417,7 @@ const battleAssembly: Assembly = {
 const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = {
   scene: sceneAssembly,
   battle: battleAssembly,
+  menu: menuAssembly,
 }
 
 /** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */
