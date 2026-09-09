@@ -2,10 +2,46 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CANVAS_HEIGHT, CANVAS_WIDTH, EXPECTED, expectationOf, scriptNames } from './expected'
+import type { Expectation } from './expected'
 import { exactRectsOf } from './exactRegions'
 import type { ExactRectSource, ExactTraceTick } from './exactRegions'
 import { rectsOverlap } from './regions'
 import { repoPath } from '../test/repoPath'
+
+/**
+ * `unassembled` / `unpainted` 共用的那四条规矩：一帧都没比过的剧本不许带任何
+ * 量出来的数，而且必须说清楚为什么、挂着哪张票。
+ *
+ * **抽出来是因为两份登记现在都空着**（xl-rh9.15 清空了 `unpainted`，xl-knp.10
+ * 清空了 `unassembled`）。照旧只在 `for` 里断言的话，两个 it 块各自**一轮都不
+ * 跑** —— 而「一条都没验到」与「全验过了」长得一模一样，正是本仓库最不许有的
+ * 那种通过条件。抽出来之后同一个函数跑两处：真登记上（今天零轮），以及下面
+ * 那组**合成**的正反例上（分母写死的 1 + 4，与登记空不空无关）。
+ */
+function assertNothingMeasured(name: string, e: Expectation, issue: RegExp): void {
+  expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
+  expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()
+  expect(e.why, `${name} 要说清楚为什么比不了`).toBeTruthy()
+  expect(e.issue ?? '', `${name} 要挂上接它的那张票`).toMatch(issue)
+}
+
+/** 那四条规矩各自真的会咬人 —— 逐条改坏一处，确认它抛。 */
+function assertRulesBite(status: 'unassembled' | 'unpainted', issue: RegExp): void {
+  const good = { status, why: '合成出来的处境', issue: 'xl-knp.10' } as const
+  expect(() => assertNothingMeasured('合成', good, issue)).not.toThrow()
+  const bad: readonly Partial<Expectation>[] = [
+    { maxRatio: 0.1 },
+    { gaps: [] },
+    { why: '' },
+    { issue: '' },
+  ]
+  for (const one of bad) {
+    expect(
+      () => assertNothingMeasured('合成', { ...good, ...one }, issue),
+      `改坏 ${JSON.stringify(one)} 之后它居然没抛`,
+    ).toThrow()
+  }
+}
 
 /**
  * 期望表本身的体检。跑得起来不需要 Java、不需要 Chrome，所以它在 CI 里，
@@ -74,12 +110,10 @@ describe('跨端比对的期望表', () => {
       unpainted.map(([name]) => name),
       '表 unpainted 的剧本变了？改这份登记，下面那几条会跟着验它',
     ).toEqual([])
-    for (const [name, e] of unpainted) {
-      expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
-      expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()
-      expect(e.why, `${name} 要说清楚为什么画不出来`).toBeTruthy()
-      expect(e.issue, `${name} 要挂上接它的那张票`).toMatch(/^xl-/)
-    }
+    for (const [name, e] of unpainted) assertNothingMeasured(name, e, /^xl-/)
+    // 登记空着时上面那个 for 一轮都不跑。分母写死的那一半在这里（xl-knp.10
+    // 收 /code-review 时补）：合成一条表态，逐条改坏，确认那四条规矩真会咬人。
+    assertRulesBite('unpainted', /^xl-/)
   })
 
   it('unassembled 的表态不许带任何量出来的数 —— 一帧都没比过，写了就是编的', () => {
@@ -103,12 +137,9 @@ describe('跨端比对的期望表', () => {
       unassembled.map(([name]) => name),
       '表 unassembled 的剧本变了？改这份登记，下面那几条会跟着验它',
     ).toEqual([])
-    for (const [name, e] of unassembled) {
-      expect(e.maxRatio, `${name} 比不了却写了 maxRatio`).toBeUndefined()
-      expect(e.gaps, `${name} 比不了却写了分区表态`).toBeUndefined()
-      expect(e.why, `${name} 要说清楚为什么比不了`).toBeTruthy()
-      expect(e.issue, `${name} 要挂上接它的那张票`).toBeTruthy()
-    }
+    for (const [name, e] of unassembled) assertNothingMeasured(name, e, /./)
+    // 同上：登记空着时上面那个 for 一轮都不跑，分母写死的那一半在这里。
+    assertRulesBite('unassembled', /./)
   })
 
   it('缺口区的上界必须够得着 —— 上界比这块区的面积还大就永远超不了', () => {

@@ -424,7 +424,7 @@ let shopRenderer: ShopRenderer | null = null
 let shopTrace: ShopTrace | null = null
 let shopWorld: ShopWorld | null = null
 let shopNext = 0
-/** 上一次真的载过的那份贴图名单（`shopTextureIds` 的 join）。 */
+/** 上一次真的载过的那份贴图名单（`shopTextureIds` 的 `JSON.stringify`）。 */
 let shopLoaded: string | null = null
 
 /**

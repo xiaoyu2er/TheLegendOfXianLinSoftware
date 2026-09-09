@@ -161,6 +161,11 @@ interface NamedRect {
 function verify(script: string, rects: readonly NamedRect[]): void {
   const root = repoPath(join('tools/traces/compare', script))
   const names = frameNames(join(root, 'java'))
+  // **一帧都没读到要响。** 那个目录整个不入库，跑错剧本名 / 上一轮被清掉都会
+  // 让它是空的 —— 而空的 `masks` 会让下面每个区都报「一帧都不差」、末尾报
+  // 「硬比区逐像素相等」，与真的量过一遍**逐字相同**。而这份输出正是要被抄进
+  // `expected.ts` 的那份读数。
+  if (names.length === 0) throw new Error(`${script}: java/ 下一张 PNG 都没有`)
   const masks: Uint8Array[] = []
   let w = 0
   let h = 0
