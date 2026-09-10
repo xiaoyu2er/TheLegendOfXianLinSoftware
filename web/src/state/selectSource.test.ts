@@ -487,7 +487,7 @@ describe('逐字吐的那几个数：从 GBK 源码现读', () => {
   it('A/B/C/D 光标的上下界：源码里的 size() - n 只有这两个 n', () => {
     const ns = [...source.matchAll(/\.size\(\) - (\d+)/g)].map((m) => Number(m[1]))
     expect(ns.length).toBeGreaterThan(0)
-    expect([...new Set(ns)].sort()).toEqual([ABCD_LAST_FROM_END, ABCD_FIRST_FROM_END].sort())
+    expect([...new Set(ns)].sort((a, b) => a - b)).toEqual([ABCD_LAST_FROM_END, ABCD_FIRST_FROM_END].sort((a, b) => a - b))
   })
 })
 

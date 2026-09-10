@@ -640,9 +640,11 @@ describe('答题 → 钱包', () => {
     // 答对：挪到答案那一行再交卷。
     resetWallet()
     let right = asking()
-    while (right.scene.world.select.abcd !== answer) {
+    // 有界：答案那一行要是不在光标的取值范围里，这里该报错，而不是挂到超时。
+    for (let i = 0; i < 8 && right.scene.world.select.abcd !== answer; i++) {
       right = advanceSession(right, scene([press('down')]), SCENE_PUMP_MS)
     }
+    expect(right.scene.world.select.abcd, '按了 8 下下键还没挪到答案那一行').toBe(answer)
     const r = advanceSession(right, scene([press('enter')]), SCENE_PUMP_MS)
     expect(r.scene.world.presentRequest?.correct).toBe(true)
     expect(getCoins()).toBe(10000 + 750)
