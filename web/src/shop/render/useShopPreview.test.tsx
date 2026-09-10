@@ -39,6 +39,20 @@ import { useShopPreview } from './useShopPreview'
  * | **hook 的 `setInterval` 间隔翻倍** | **绿** | **红** |
  * | **hook 里帧号永远传 `previewFrame(0)`** | **绿** | **红** |
  *
+ * 收 `/code-review` 之后又补了四条，都在这一版上真跑过（「之前」那一列没跑，
+ * 因为这四条针对的正是这一版才有的东西）：
+ *
+ * | 篡改 | 读数 |
+ * |---|---|
+ * | hook 的 `setInterval` 间隔**减半** | 红 —— `鼠标图那一串: expected [0,0,1,1,2,2,…] to deeply equal [0,1,2,3,…]` |
+ * | 两个面板的 `while (true)` 都改成 `if (true)` | 红 3 条 —— 头一条就是 `expected false to be true`（`wraps` 那一位真的解出来了） |
+ * | 只改药店那一个 `while (true)` | 红 —— 整个文件收集失败：「两个面板的动画线程解出来不一样：…"wraps":false… / …"wraps":true…」 |
+ * | `ShopPanel.java` 的 `i < 8` 改成 `i < 6` | 红 2 个文件 —— 这里收集失败（两个面板解出来不一样），`animation.test.ts` 报「drug 的循环上界: expected 6 to be 8」 |
+ *
+ * ⚠️ 那三条**改的是 `src/` 里的 GBK 源码**，改法是按 GBK 读进来、替换、按 GBK
+ * 写回去（`CLAUDE.md`「源码是 GBK+CRLF」那条），每一次跑完都 `cp` 还原并
+ * `cmp` 过与 HEAD 逐字节一致 —— 这一票**不改 `src/`**，那几下是篡改验证。
+ *
  * 最后两行是这个文件买到的分辨力，前六行是第二双眼睛。⚠️ 那两条**绿**尤其
  * 值得看一眼：`setInterval` 间隔翻倍之后画面照样在转，只是慢一半 —— 与"对了"
  * 长得几乎一样；而帧号永远是 0 时画面**一动不动**，而那正是导出时的样子，
@@ -107,12 +121,11 @@ describe('店里那八格真的在转，而且照原版那条 for 的形状转',
   it('参照模型解出来了 —— 零匹配与「源码里没这一段」长得一样', () => {
     expect(loop.from).toBe(0)
     expect(loop.step).toBe(1)
+    // ⚠️ `wraps` 是**解出来的**，不是解析器写死的 true —— 把源码里那个
+    // `while (true)` 拿掉，这一条当场红（`animationLoop.ts` 里那段注释）。
     expect(loop.wraps).toBe(true)
     expect(count).toBeGreaterThan(1)
     expect(loop.intervalMs).toBeGreaterThan(0)
-    // 循环变量在三处是同一个（for 头、mouses[i]、images.get(i)）——
-    // 解析器解不出这三处之一时上面那句 `animationLoopOfPanels()` 已经抛了。
-    expect(loop.variable).toMatch(/^\w+$/)
   })
 
   it('⚠️ 跨过第一圈：走完一圈从头再来，而「走完就停」在头一圈里长得一模一样', () => {
@@ -139,7 +152,10 @@ describe('店里那八格真的在转，而且照原版那条 for 的形状转',
     unmount()
 
     // 空转要响：一帧都没画与「每一帧都对」在下面那两条断言下长得一样。
-    // 上界也顺手守住了转速：推三圈该画出三圈那么多张，画少了同样红。
+    // ⚠️ 这是**下界，只拦转得太慢的那一半**（间隔翻倍时它就是红的那一条）。
+    // 转得太快由下面那条逐格 `toEqual` 拦：`loopFrames` 的分母取自
+    // `drawn.length`，长度永远对得上，**对不上的是里面的数**（间隔减半时实测
+    // 读到 0,0,1,1,2,2… 而模型要 0,1,2,3…）。
     expect(drawn.length, '推了三圈，画出来的帧数却不够两圈').toBeGreaterThan(count * 2)
 
     const want = loopFrames(loop, drawn.length)

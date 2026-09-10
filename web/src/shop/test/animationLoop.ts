@@ -109,14 +109,14 @@ export function parseAnimationLoop(source: string): AnimationLoop {
   const inc = forHeader[4]!
   const step = inc === '++' ? 1 : inc === '--' ? -1 : Number(inc.replace(/\+=\s*/, ''))
 
-  // `while (true)` 必须在那条 for **之前**出现，且两者之间只有空白 —— 否则
-  // 它套的是别的东西，而"套着"与"没套"在头八格里分不开。
+  // `while (true)` 要在那条 for **之前**出现，且两者之间只有空白 —— 否则它套的
+  // 是别的东西。⚠️ 这一条**解出布尔值，不抛错**：抛错的话 `wraps` 就永远是
+  // 字面量 `true`，「断言本身按构造成立」（dispatch.md 纪律 3 那一族），
+  // 而它恰恰是这份模型里最要紧的一位 —— 不循环的话头一圈与循环长得一模一样。
   const between = body.slice(0, body.indexOf(forHeader[0]))
   const whileAt = between.lastIndexOf('while (true) {')
-  if (whileAt < 0) throw new Error('那条 for 外面没有 while (true)')
-  if (between.slice(whileAt + 'while (true) {'.length).trim() !== '') {
-    throw new Error('while (true) 与那条 for 之间还有别的语句 —— 套的不是它')
-  }
+  const wraps =
+    whileAt >= 0 && between.slice(whileAt + 'while (true) {'.length).trim() === ''
 
   const sleep = body.match(/tools\.Clock\.sleep\((\d+)\);/)
   if (!sleep) throw new Error('循环体里的 Clock.sleep 没解出来')
@@ -130,7 +130,7 @@ export function parseAnimationLoop(source: string): AnimationLoop {
     throw new Error(`循环体里没有 animation.image=animation.images.get(${variable});`)
   }
 
-  return { from, bound, step, wraps: true, intervalMs: Number(sleep[1]), variable }
+  return { from, bound, step, wraps, intervalMs: Number(sleep[1]), variable }
 }
 
 /** 两个面板各自解一遍。⚠️ 两段源码是复制粘贴的关系，解出来必须一模一样。 */

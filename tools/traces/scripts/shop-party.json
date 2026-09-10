@@ -1,7 +1,7 @@
 {
   "driver": "shop",
   "name": "shop-party",
-  "description": "**队伍三个人都在**的一条商店真值（xl-knp.11）。另外三条商店剧本的 setup.party 都只有 zhang，于是原版 drawIcon 里 if(SaveAndLoad.lu) 与 if(SaveAndLoad.wen) 两支一次都没走到 —— 陆雪琪 (0,160) 与文敏 (0,320) 那两个 72×144 的框在逐帧比对里每一帧都是 0/10368 像素差（xl-knp.9 实测），左上角那三组属性标签也只画得出第一组。这条剧本把那两支打开，让两条人物动画与另外两组属性图标真的进逐帧比对；买卖只走最短的一遍（药店买一份金创药、装备店买一把月苗刀、切一次鞋子栏），因为它要盖的是绘制那一层，账目那一层 shop-trade 已经走完了。\n\n⚠️ 它仍然守不住「这八格按什么次序、多久换一格」：导出时 Clock.setFactor(1e-9) 把 sleep(120) 拉成约 3800 年，动画线程整次导出停在第 0 格。那一维由 web/src/shop/render/animation.test.ts 的参照模型守着（同一票）。",
+  "description": "**队伍三个人都在**的一条商店真值（xl-knp.11）。另外三条商店剧本的 setup.party 都只有 zhang，于是原版 drawIcon 里 if(SaveAndLoad.lu) 与 if(SaveAndLoad.wen) 两支一次都没走到 —— 陆雪琪 (0,160) 与文敏 (0,320) 那两个 72×144 的框在逐帧比对里每一帧都是 0/10368 像素差（xl-knp.9 实测），左上角那三组属性标签也只画得出第一组。这条剧本把那两支打开，让两条人物动画与另外两组属性图标真的进逐帧比对；买卖只走最短的一遍（药店买一份金创药、装备店买一把月苗刀、切一次鞋子栏），因为它要盖的是绘制那一层，账目那一层 shop-trade 已经走完了。\n\n⚠️ 它仍然守不住「这八格按什么次序、多久换一格」：导出时 Clock.setFactor(1e-9) 把 sleep(120) 拉成约 3800 年，动画线程整次导出停在第 0 格。那一维由 web/src/shop/test/animationLoop.ts 那份从 GBK 源码现解的参照模型守着，consumer 是 web/src/shop/render/useShopPreview.test.tsx（同一票）。",
   "setup": {
     "party": ["zhang", "lu", "wen"],
     "coins": 10000,

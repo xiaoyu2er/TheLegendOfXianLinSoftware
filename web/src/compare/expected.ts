@@ -1,5 +1,6 @@
 import { readdirSync } from 'node:fs'
 import { repoPath } from '../test/repoPath'
+import { STAT_ROW_GAP } from '../shop/layout'
 import type { ExactRegionSpec } from './exactRegions'
 import type { GapRegion } from './regions'
 
@@ -172,7 +173,7 @@ function shopGaps(worst: {
   readonly held: number
   readonly coins: number
   /**
-   * 左上角那组属性标签**一个人一组**：第 i 组整体下移 `STAT_ROW_GAP`=150 px
+   * 左上角那组属性标签**一个人一组**：第 i 组整体下移 `STAT_ROW_GAP` px
    * （原版 `drawIcon` 里三段 `30+i*150`，各自锁在 `if(SaveAndLoad.…)` 里面）。
    * 所以这里是**一个数组，一格一组**，长度就是那条剧本 `setup.party` 里的人数。
    *
@@ -222,13 +223,23 @@ function shopGaps(worst: {
       why: '右上角钱袋里那串金钱数字的字形',
       issue: GLYPH,
     },
-    // 队伍里每个人一组，第 i 组整体下移 150 px。⚠️ 循环的分母是**给进来的
+    // 队伍里每个人一组，第 i 组整体下移 `STAT_ROW_GAP` px。⚠️ 循环的分母是**给进来的
     // 那份读数有几格**，不是写死的 1 或 3 —— 三条只有 zhang 的剧本与
     // `shop-party` 共用这一个函数。
     ...worst.statLabels.map((single, i) => ({
-      name: i === 0 ? 'stat-labels' : `stat-labels-${i}`,
+      // 一律带下标，第 0 组也不例外 —— `stat-labels` 与 `stat-labels-1` 并排时
+      // 读不出前者也是一个下标。
+      name: `stat-labels-${i}`,
       maxPixels: bound(single),
-      rect: { x0: 49, y0: 7 + 150 * i, x1: 80, y1: 97 + 150 * i },
+      // ⚠️ 行距取自 `shop/layout.ts` 的 `STAT_ROW_GAP`，不在这里再抄一个 150：
+      // 抄一份的话改了那边这里静默不动，而"矩形挪错了"的样子是**区外多出
+      // 差异像素**，与"渲染回归了"分不开。
+      rect: {
+        x0: 49,
+        y0: 7 + STAT_ROW_GAP * i,
+        x1: 80,
+        y1: 97 + STAT_ROW_GAP * i,
+      },
       why: `左上角第 ${i} 组四行属性标签的字形（图标本身逐像素相等）`,
       issue: GLYPH,
     })),
