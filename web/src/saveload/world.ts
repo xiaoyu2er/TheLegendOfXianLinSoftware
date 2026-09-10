@@ -81,7 +81,7 @@ export interface SaveLoadWorld {
 
 /**
  * 三颗按钮：`new StartButton(800, 150 + i * 200, 80, 80, …)`。与 GBK 源码对撞见
- * `saveload/layout.test.ts`。
+ * `saveload/step.test.ts`（最后一条）。
  */
 export const SLOT_BUTTON_X = 800
 export const SLOT_BUTTON_Y0 = 150
@@ -132,6 +132,11 @@ export function prepareScenes(w: SaveLoadWorld, store: SaveStore): void {
     w.tasks.push(s.task)
     w.taskDrawn.push(save !== null)
   }
+}
+
+/** 第 i 颗按钮命中框的中心（导出器 `SaveLoadDriver.center` 同一个算法）。只给测试与回放用。 */
+export function slotCenter(i: number): { x: number; y: number } {
+  return { x: SLOT_BUTTON_X - 15 + SLOT_BUTTON_SIZE / 2, y: SLOT_BUTTON_Y0 + i * SLOT_STRIDE - 6 + SLOT_BUTTON_SIZE / 2 }
 }
 
 /** `StartButton` 的命中框：`x-15 < cx < x+w-15 && y-6 < cy < y+h-6`（与 `GameButton` 同一对历史偏移）。 */

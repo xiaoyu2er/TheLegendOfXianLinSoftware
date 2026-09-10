@@ -4,7 +4,9 @@ import { createMemorySaveStore } from '../../save/memoryStore'
 import { javaSource } from '../../test/javaSource'
 import { LS_IMAGES, LS_SEQUENCES, lsFrameId, lsImageId } from '../assets'
 import { draftSlots } from '../test/replayTrace'
-import { createSaveLoadWorld } from '../world'
+import { SLOT_BUTTON_X, createSaveLoadWorld } from '../world'
+import { SAVE_SLOT_COUNT } from '../../save/store'
+import { START_SEQUENCES } from '../../start/assets'
 import type { SaveLoadWorld } from '../world'
 import { LS_FONT_SIZE, LS_LAYOUT, mapLabel, saveLoadDrawList, saveLoadTextureIds } from './drawList'
 
@@ -33,7 +35,7 @@ describe('坐标与素材从原版现读', () => {
   it('四段动画的目录、帧数、落点与 initialAnimations() 一致', () => {
     const got = [...SRC.matchAll(/newStartAnimation\((\d+),"([^"]+)",this,(\d+),150\+i\*200\)/g)].map((m) => [m[2], Number(m[1]), Number(m[3])])
     expect(got).toEqual([
-      [LS_SEQUENCES.buttonGlow.dir, LS_SEQUENCES.buttonGlow.count, 800],
+      [LS_SEQUENCES.buttonGlow.dir, LS_SEQUENCES.buttonGlow.count, SLOT_BUTTON_X],
       [LS_SEQUENCES.zhang.dir, LS_SEQUENCES.zhang.count, LS_LAYOUT.roleX.zhang],
       [LS_SEQUENCES.lu.dir, LS_SEQUENCES.lu.count, LS_LAYOUT.roleX.lu],
       [LS_SEQUENCES.wen.dir, LS_SEQUENCES.wen.count, LS_LAYOUT.roleX.wen],
@@ -43,7 +45,7 @@ describe('坐标与素材从原版现读', () => {
   it('背景两张、按钮一张的路径与源码一致', () => {
     expect(SRC).toContain(`backgroundImage=Reader.readImage("${LS_IMAGES.saveBackground}")`)
     expect(SRC).toContain(`backgroundImage=Reader.readImage("${LS_IMAGES.loadBackground}")`)
-    expect(SRC.split(`Reader.readImage("${LS_IMAGES.blank}")`).length - 1).toBe(3)
+    expect(SRC.split(`Reader.readImage("${LS_IMAGES.blank}")`).length - 1).toBe(SAVE_SLOT_COUNT)
   })
 
   it('mapLabel 就是 split("\\\\.")[0]', () => {
@@ -62,8 +64,8 @@ describe('一帧的绘制清单', () => {
     expect(ops.at(-1)).toEqual({ kind: 'image', id: startFrameAssetId('cursor', 0), x: 0, y: 0 })
     const boards = ops.flatMap((o, i) => (o.kind === 'image' && o.id === lsImageId('board') ? [i] : []))
     const blanks = ops.flatMap((o, i) => (o.kind === 'image' && o.id === lsImageId('blank') ? [i] : []))
-    expect(boards).toHaveLength(3)
-    expect(blanks).toHaveLength(3)
+    expect(boards).toHaveLength(SAVE_SLOT_COUNT)
+    expect(blanks).toHaveLength(SAVE_SLOT_COUNT)
     expect(Math.max(...boards)).toBeLessThan(Math.min(...blanks))
   })
 
@@ -111,7 +113,8 @@ describe('一帧的绘制清单', () => {
     w.roles[1] = [true, true, true]
     w.buttons.forEach((b) => (b.glowing = true))
     const ids = new Set(saveLoadTextureIds(w))
-    for (let f = 0; f < 8; f++) {
+    const longest = Math.max(...Object.values(LS_SEQUENCES).map((s) => s.count), START_SEQUENCES.cursor.count)
+    for (let f = 0; f < longest; f++) {
       for (const o of saveLoadDrawList(w, { cursor: f, roles: f, glow: [f, f, f] })) {
         if (o.kind === 'image') expect(ids, o.id).toContain(o.id)
       }

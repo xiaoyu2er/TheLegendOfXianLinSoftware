@@ -85,21 +85,12 @@ describe('captureSave：Recorder.save 那十个列表', () => {
   })
 
   it('第 2–4 行：三个英雄 saveRoleInfo()，逐项取自队伍里对应的那一位', () => {
-    const src = sources()
-    for (const key of HERO_KEYS) {
-      const m = src.party[HERO_OF_PARTY[key]]
-      expect(save.heroes[key]).toEqual({
-        level: m.level,
-        hp: m.hp,
-        mp: m.mp,
-        angryValue: m.angryValue,
-        isAngry: m.isAngry,
-        isDead: m.isDead,
-        exp: m.exp,
-      })
-    }
-    // 三位的数两两不同，所以「张的档里是陆的数」看得出来。
-    expect(new Set(HERO_KEYS.map((k) => save.heroes[k].level)).size).toBe(3)
+    // 期望值写**字面量**，不经过 HERO_OF_PARTY：经过它的话把陆 / 玉对调，两边一起变，照绿。
+    // 张 = base 10、陆 = base 20、玉洁（队伍键 yu）= base 30，见 `sources()`。
+    expect(save.heroes.zhangXiaoFan).toMatchObject({ level: 11, hp: 12, mp: 13, angryValue: 14, exp: 15, isAngry: true, isDead: false })
+    expect(save.heroes.luXueQi).toMatchObject({ level: 21, hp: 22, mp: 23, angryValue: 24, exp: 25, isAngry: true, isDead: false })
+    expect(save.heroes.yuJie).toMatchObject({ level: 31, hp: 32, mp: 33, angryValue: 34, exp: 35, isAngry: true, isDead: true })
+    expect(HERO_OF_PARTY).toEqual({ zhangXiaoFan: 'zhang', luXueQi: 'lu', yuJie: 'yu' })
   })
 
   it('HERO_OF_PARTY：存档第 2–4 行的次序与 Recorder.save 里三次 saveRoleInfo() 一致', () => {

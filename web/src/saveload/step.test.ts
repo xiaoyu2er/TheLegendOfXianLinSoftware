@@ -6,7 +6,7 @@ import { javaSource } from '../test/javaSource'
 import { draftSlots } from './test/replayTrace'
 import { applySaveLoadInput } from './step'
 import type { SaveLoadInput } from './step'
-import { SLOT_BUTTON_SIZE, SLOT_BUTTON_X, SLOT_BUTTON_Y0, SLOT_STRIDE, createSaveLoadWorld } from './world'
+import { SLOT_BUTTON_SIZE, SLOT_BUTTON_X, SLOT_BUTTON_Y0, SLOT_STRIDE, createSaveLoadWorld, slotCenter } from './world'
 
 /**
  * 面板状态机里真值走不到的那几支（xl-i06.9）。真值走到的都在
@@ -29,7 +29,7 @@ function countingStore(initial: (SaveFile | null)[]): SaveStore & { writes: numb
   }
 }
 
-const center = (i: number) => ({ x: SLOT_BUTTON_X - 15 + SLOT_BUTTON_SIZE / 2, y: SLOT_BUTTON_Y0 + i * SLOT_STRIDE - 6 + SLOT_BUTTON_SIZE / 2 })
+const center = slotCenter
 const OUTSIDE = { x: 5, y: 5 }
 
 function drive(store: SaveStore, inputs: SaveLoadInput[]) {

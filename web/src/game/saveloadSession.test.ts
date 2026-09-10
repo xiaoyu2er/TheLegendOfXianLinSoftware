@@ -8,7 +8,7 @@ import { createMemorySaveStore } from '../save/memoryStore'
 import type { SaveStore } from '../save/store'
 import { draftSlots } from '../saveload/test/replayTrace'
 import type { SaveLoadInput } from '../saveload/step'
-import { SLOT_BUTTON_SIZE, SLOT_BUTTON_X, SLOT_BUTTON_Y0, SLOT_STRIDE } from '../saveload/world'
+import { slotCenter } from '../saveload/world'
 import { createWorld } from '../state/step'
 import { sceneSourceOf } from '../state/trace'
 import { buttonCenter } from '../test/menuClicks'
@@ -48,10 +48,7 @@ const menuClick = (x: number, y: number): MenuInput[] => [
   { e: 'release', x, y },
 ]
 
-const slot = (i: number) => ({
-  x: SLOT_BUTTON_X - 15 + SLOT_BUTTON_SIZE / 2,
-  y: SLOT_BUTTON_Y0 + i * SLOT_STRIDE - 6 + SLOT_BUTTON_SIZE / 2,
-})
+const slot = slotCenter
 const slotClick = (i: number): SaveLoadInput[] => [
   { e: 'press', ...slot(i) },
   { e: 'release', ...slot(i) },

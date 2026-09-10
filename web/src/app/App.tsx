@@ -288,7 +288,11 @@ export function App() {
   const onLsMouse = (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!inLs) return
     const at = stagePoint(event)
-    if (at) view.lsInput({ e, x: at.x, y: at.y })
+    if (!at) return
+    // 按住左键移动是 Swing 的 `mouseDragged`（只记坐标、不碰按钮），不是 `mouseMoved`
+    // （`isMoveIn` 改光效）。浏览器两种都叫 mousemove，按 `buttons` 分开。
+    const kind = e === 'move' && (event.buttons & 1) === 1 ? 'drag' : e
+    view.lsInput({ e: kind, x: at.x, y: at.y })
   }
 
   /**

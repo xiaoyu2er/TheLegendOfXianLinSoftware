@@ -139,8 +139,7 @@ describe('几条路径各自在真值里取到了读数（读数来自真值，�
     const hit = find((t, prev, mode) => mode === 'save' && t.input[0]?.e === 'release' && JSON.stringify(t.slots) !== JSON.stringify(prev?.slots))
     const ours = REPLAYED.get(hit.name)![hit.i]!
     expect(ours.slots).toEqual(hit.tick.slots)
-    // 不是恒真：这一步前后摘要确实不同（从「无」或旧档变成这一局的）。
-    expect(hit.tick.slots).not.toEqual(hit.prev!.slots)
+    // 「前后摘要不同」是上面 find 的挑选条件，不另断言（那会按构造成立）。
   })
 
   it('点空槽读档什么都不发生：当前面板仍是 ls、intercept 两项都空、摘要不变', () => {
@@ -165,8 +164,10 @@ describe('几条路径各自在真值里取到了读数（读数来自真值，�
 
   it('退出键回到进来时那个面板', () => {
     const hit = find((t) => t.input[0]?.e === 'key')
-    expect(hit.tick.current).toBe(hit.tick.lastPanel)
-    expect(REPLAYED.get(hit.name)![hit.i]!.current).toBe(hit.tick.lastPanel)
+    const ours = REPLAYED.get(hit.name)![hit.i]!
+    // 回放自己的 current 等于回放自己的 lastPanel，且都等于真值那一步的。
+    expect(ours.current).toBe(ours.lastPanel)
+    expect(ours.current).toBe(hit.tick.current)
   })
 
   it('两种进面板（存 / 读）都有', () => {
