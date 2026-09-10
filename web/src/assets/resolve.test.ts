@@ -167,14 +167,18 @@ describe('资产逻辑 ID', () => {
     expect(ids.filter((id) => id.startsWith('head:')).map((id) => Number(id.slice(5))).sort((a, b) => a - b)).toEqual(
       Array.from({ length: headFilesInRepo() }, (_, i) => i),
     )
-    // `dialogue/` 那几张固定图。**这是一份登记，不是分母**：目录里还躺着
-    // `提示框.png`（xl-yg6.10）没人烘，改成"现扫目录"就等于让还没做的那张
-    // 自动算作做完了。
+    // `dialogue/` 那几张固定图。**这是一份登记，不是分母**：改成"现扫目录"
+    // 就等于让目录里哪天多出来、还没人接的那张自动算作做完了。
     expect(ids.filter((id) => id.startsWith('dialogue:')).sort()).toEqual([
       'dialogue:box',
+      // 宝箱开过 / 没开过，xl-yg6.10。
+      'dialogue:emptyBox',
+      'dialogue:fullBox',
       'dialogue:icon0',
       'dialogue:icon1',
       'dialogue:name',
+      // 「得到物品」提示框，xl-yg6.10。
+      'dialogue:present',
       // 问题框，xl-yg6.9。
       'dialogue:question',
       // 选择框那两张，xl-yg6.8。

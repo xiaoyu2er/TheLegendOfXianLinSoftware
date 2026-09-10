@@ -12,6 +12,15 @@ import type { World } from '../state/types'
 import { TEXT_FONT_STACK } from '../textFont'
 import { FONT_SIZE, baselineY, layoutLine } from './narratageLayout'
 import { npcSprite } from './npcSprite'
+import {
+  PRESENT_BASELINE,
+  PRESENT_COLOR,
+  PRESENT_FONT_SIZE,
+  PRESENT_TEXT_DX,
+  PRESENT_Y,
+  boxPlacement,
+  presentCells,
+} from './presentLayout'
 import { roleSprite } from './roleSprite'
 import {
   FONT_SIZE as SELECT_FONT_SIZE,
@@ -122,6 +131,11 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   const mapLayer = new Container()
   const camera = new Container()
   app.stage.addChild(mapLayer)
+  // 宝箱（xl-yg6.10）：`paint()` 里 `equipmentEvent.drawTreasureBox` 紧跟在
+  // `map.drawMap` 之后、人物之前。**不在 `camera` 里**：它用的是
+  // `firstTile*8` 那个量（与 NPC 同），直接算成画布坐标，见 `presentLayout.ts`。
+  const boxLayer = new Container()
+  app.stage.addChild(boxLayer)
   app.stage.addChild(camera)
 
   // 地图这一帧被切成若干块 1:1 贴上去（见 `viewport.ts` 的 `mapTiles`）。
@@ -153,6 +167,36 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   const selectCursor = new Sprite()
   selectLayer.addChild(selectBox)
   selectLayer.addChild(selectCursor)
+
+  // 「得到物品」提示框（xl-yg6.10）：`paint()` 的第 4 步，画在选择框之后。
+  // ⚠️ 与对话框的先后同样与原版反了（对话框是 DOM overlay），同一个已知偏离。
+  const presentLayer = new Container()
+  presentLayer.visible = false
+  app.stage.addChild(presentLayer)
+  const presentBox = new Sprite()
+  presentLayer.addChild(presentBox)
+  // 正文自己画在一张小画布上，**跟着框一起挪**：框每 50 ms 挪 32 px，而字
+  // 100 ms 才多一个 —— 每挪一下就重传一张整屏画布太贵。基线在这张小画布里的
+  // 高度是 `PRESENT_TEXT_ASCENT`，贴的时候再减回去。
+  // 小画布里基线离顶的距离：一个字号的 ascent 再留 6 px 余量，免得粗体的笔画
+  // 顶到画布上沿被裁掉。它只决定字在小画布里画在哪，贴的时候整个减回去，
+  // 所以对落点没有影响 —— 不是原版的数，原版没有这张小画布。
+  const PRESENT_TEXT_ASCENT = PRESENT_FONT_SIZE + 6
+  const presentCanvas = document.createElement('canvas')
+  presentCanvas.width = STAGE_WIDTH
+  presentCanvas.height = PRESENT_FONT_SIZE * 2
+  const presentCtx2d = presentCanvas.getContext('2d')
+  if (!presentCtx2d) throw new Error('取不到提示框文字层的 2D context')
+  const presentTextCtx = presentCtx2d
+  const presentText = new Sprite(Texture.from(presentCanvas))
+  presentLayer.addChild(presentText)
+  let drawnPresentText: string | null = null
+  /** 提示框与两张宝箱图。`null` = 还没载。 */
+  let presentTexture: Texture | null = null
+  let fullBoxTexture: Texture | null = null
+  let emptyBoxTexture: Texture | null = null
+  /** 与 `world.treasure.boxes` 逐下标对应，`showScene` 时按这个场景的宝箱数重建。 */
+  let boxSprites: Sprite[] = []
   /** `选择框.png` 与 `icon.png`，两张一起载，跟主角那 48 帧同一个理由。 */
   let selectTexture: Texture | null = null
   /** 选择框那张图这一帧露出的那块。`dynamic` 要开，理由同地图碎片。 */
@@ -261,6 +305,66 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     selectFrame = frameOf(box)
     questionFrame = frameOf(question)
     selectCursor.texture = icon
+  }
+
+  /** 提示框与宝箱那三张图（xl-yg6.10）。理由同选择框：一次载齐，几 KB。 */
+  async function loadTreasureTextures(): Promise<void> {
+    if (presentTexture !== null) return
+    const [present, full, empty] = await Promise.all(
+      (['present', 'fullBox', 'emptyBox'] as const).map((name) =>
+        Assets.load<Texture>(resolveAsset(dialogueAssetId(name))).then(nearest),
+      ),
+    )
+    presentTexture = present!
+    fullBoxTexture = full!
+    emptyBoxTexture = empty!
+    presentBox.texture = present!
+  }
+
+  /**
+   * 宝箱与提示框这一帧：`EquipmentEvent.drawTreasureBox` 与 `drawPresentation`。
+   * 摆位全部来自 `presentLayout.ts`（对着原版逐行核过），这里只负责贴。
+   */
+  function drawTreasure(world: World): void {
+    const t = world.treasure
+    const boxes = t.boxes ?? []
+    if (boxSprites.length !== boxes.length) {
+      // 与 NPC 那条同一个理由：对不上说明 showScene 与 showWorld 拿到的不是同一个场景。
+      throw new Error(
+        `这一帧有 ${boxes.length} 个宝箱，而渲染器建了 ${boxSprites.length} 个精灵；` +
+          `showScene 与 showWorld 拿到的不是同一个场景。`,
+      )
+    }
+    const viewport = computeViewport(world)
+    boxes.forEach((box, i) => {
+      const sprite = boxSprites[i]!
+      const placement = boxPlacement(box, viewport)
+      const texture = placement.image === 'emptyBox' ? emptyBoxTexture : fullBoxTexture
+      sprite.visible = texture !== null
+      if (texture === null) return
+      sprite.texture = texture
+      sprite.position.set(placement.x, placement.y)
+    })
+
+    // `if (isDrawString)`：框在不在场。滑出去之后它仍然是真，框停在 1056 处，
+    // 画在画布外面 —— 照画，不替它收。
+    presentLayer.visible = t.presenting && presentTexture !== null
+    if (!presentLayer.visible) return
+    presentBox.position.set(t.x, PRESENT_Y)
+    // `if (bufferedText != null)`：一个字都没吐时正文不画。
+    presentText.visible = t.bufferedText !== null
+    presentText.position.set(t.x + PRESENT_TEXT_DX, PRESENT_BASELINE - PRESENT_TEXT_ASCENT)
+    if (t.bufferedText === null || t.bufferedText === drawnPresentText) return
+    presentTextCtx.clearRect(0, 0, presentCanvas.width, presentCanvas.height)
+    presentTextCtx.font = `bold ${PRESENT_FONT_SIZE}px ${FONT_STACK}`
+    presentTextCtx.fillStyle = PRESENT_COLOR
+    presentTextCtx.textBaseline = 'alphabetic'
+    const measure = (char: string): number => presentTextCtx.measureText(char).width
+    for (const cell of presentCells(t.bufferedText, measure)) {
+      presentTextCtx.fillText(cell.char, cell.x, PRESENT_TEXT_ASCENT)
+    }
+    presentText.texture.source.update()
+    drawnPresentText = t.bufferedText
   }
 
   async function loadRoleTextures(): Promise<void> {
@@ -441,13 +545,17 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     narratageLayer.visible = showingNarratage
     mapLayer.visible = !world.narratage.active
     camera.visible = !world.narratage.active
+    // 宝箱与提示框同在 `if (!narratage.isNarratage)` 里面（xl-yg6.10）。
+    boxLayer.visible = !world.narratage.active
     if (world.narratage.active) {
       selectLayer.visible = false
+      presentLayer.visible = false
       if (showingNarratage) drawNarratage(world.narratage)
       return
     }
 
     drawSelect(world)
+    drawTreasure(world)
     place(world)
     drawNpcs(world)
     // 纹理还没到（首帧、或者场景正在切）就先不画，别画成一个白方块。
@@ -501,6 +609,7 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     async showScene(scene: SceneScript): Promise<void> {
       await loadRoleTextures()
       await loadSelectTextures()
+      await loadTreasureTextures()
       await loadNarratageTextures(scene)
       const texture = nearest(
         await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
@@ -533,6 +642,14 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
         const sprite = new Sprite()
         sprite.visible = false
         npcLayer.addChild(sprite)
+        return sprite
+      })
+      // 宝箱精灵同理：`new EquipmentEvent` 跟着 initiation 重建，条数随场景变。
+      for (const child of boxLayer.removeChildren()) child.destroy({ texture: false })
+      boxSprites = (world.treasure.boxes ?? []).map(() => {
+        const sprite = new Sprite()
+        sprite.visible = false
+        boxLayer.addChild(sprite)
         return sprite
       })
 

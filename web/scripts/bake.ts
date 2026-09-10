@@ -145,6 +145,12 @@ const DIALOGUE_IMAGES: Readonly<Record<DialogueImageName, string>> = {
   selectIcon: 'dialogue/icon.png',
   // 问题框（xl-yg6.9）。同一个构造函数读的 `dialogue//问题框.png`。
   question: 'dialogue/问题框.png',
+  // 提示框与宝箱（xl-yg6.10）。`EquipmentEvent.drawPresentation` 读
+  // `dialogue//提示框.png`，`TreasureBox` 的两个字段初值读
+  // `dialogue//fullBox.png` / `dialogue//emptyBox.png`。
+  present: 'dialogue/提示框.png',
+  fullBox: 'dialogue/fullBox.png',
+  emptyBox: 'dialogue/emptyBox.png',
 }
 
 /**

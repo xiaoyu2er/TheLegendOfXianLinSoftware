@@ -19,6 +19,7 @@ import type { BattleInfo, FightState } from './fight'
 import type { NarratageState } from './narratage'
 import type { NpcState } from './npc'
 import type { PresentRequest, SelectRecord, SelectState } from './select'
+import type { TreasureGain, TreasureState } from './treasure'
 
 /** 主角朝向。原版是 `Role.DOWN/UP/LEFT/RIGHT` = 0/8/16/24。 */
 export type Direction = 'down' | 'up' | 'left' | 'right'
@@ -240,11 +241,27 @@ export interface World {
    * **这一拍答对或答错了**：加扣多少金币、"得到物品"提示框该吐哪句话。
    * `null` = 这一拍没有。
    *
-   * ⚠️ 同样**今天没有消费者**：钱包与提示框分别归 **xl-yg6.9** 与
-   * **xl-yg6.10**（提示框就是真值 `treasure` 那一列的 `presenting` /
-   * `wordNo`，两张票共用同一个对象，见 `src/scene/EquipmentEvent.java`）。
+   * 两个消费者：钱包（`game/session.ts`，xl-yg6.9）读 `coins`；提示框在
+   * `step()` 里当拍就接走了 `text`（`state/treasure.ts` 的 `drawString`，
+   * xl-yg6.10）—— 那一半不必出这一层，它就是 `World.treasure`。
    */
   readonly presentRequest: PresentRequest | null
+  /**
+   * 宝箱与「得到物品」提示框（xl-yg6.10）。整个来自
+   * `src/scene/EquipmentEvent.java` 与它持有的那批 `TreasureBox`，真值按这一个
+   * 对象整列记（`treasure`）。每次 `initiate` 都新建 —— 提示框与"开过没"都
+   * 不跨场景，原版就是这样。
+   */
+  readonly treasure: TreasureState
+  /**
+   * **这一拍开箱开出来的东西**（`DrugPack.addDrug(treasureName, i)`）。
+   * `null` = 这一拍没开箱。与 `battleRequest` / `presentRequest` 同一个形状：
+   * 只亮一拍的输出，由 `game/session.ts` 记进背包。
+   *
+   * 是数组而不是一件：原版 `EquipmentEvent.keyPressed` 对每一个宝箱都跑一遍，
+   * 同时挨着两个没开过的箱子时，一下空格两个都开。
+   */
+  readonly treasureRequest: readonly TreasureGain[] | null
   /**
    * `GameLauncher.currentPanel == scenePanel`（xl-rh9.17）。
    *
