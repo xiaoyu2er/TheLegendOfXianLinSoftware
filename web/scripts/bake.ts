@@ -175,6 +175,29 @@ const DRUG_PICTURE_DIR = 'sources/Shop/药品/回复类'
  * `Music` 段现读（见 `bakeBgm`）。
  */
 function tracedScenes(): string[] {
+  return tracedFromTruth().scenes
+}
+
+/**
+ * 真值里**真的响过**的每一个背景音乐声明值（`MusicPlayer.currentPlayingBGM`）。
+ *
+ * 为什么光有 {@link tracedScenes} 不够（xl-yg6.7）：那一份数的是「走到过哪些
+ * 场景」，再去场景自己的 `Music` 段里取曲名 —— 它罩得住场景切换那一路，罩不住
+ * **不由场景声明的那几首**。`battle-door` 那条剧本选「是」的一下，原版先跑
+ * `BattlePanel.initial(...)`，那里面按背景图挑了 `B6.mp3` —— 曲子确确实实换了、
+ * 真值的 `audio.bgm` 这一列也记下了，而没有任何一个场景的 `Music` 段写过它。
+ *
+ * 这正是 `TITLE_BGM` 那一句显式补丁的一般形。`src/audio/bgmPlayer.test.ts` 的
+ * 分母**本来就是**这一份（它扫的就是每一 tick 的 `audio.bgm`），所以两边现在
+ * 数的是同一批字符串；从前两份名单碰巧一样，是因为场景真值里唯一改过曲子的
+ * 只有场景切换。
+ */
+function tracedBgm(): string[] {
+  return tracedFromTruth().bgm
+}
+
+/** 扫一遍场景真值，同时给出「走到过哪些场景」与「响过哪几首曲子」。 */
+function tracedFromTruth(): { scenes: string[]; bgm: string[] } {
   const dir = resolve(REPO, 'tools/traces/out')
   const files = readdirSync(dir).filter((f) => f.endsWith('.trace.json'))
   if (files.length === 0) {
@@ -184,19 +207,23 @@ function tracedScenes(): string[] {
     process.exit(1)
   }
   const scenes = new Set<string>()
+  const bgm = new Set<string>()
   for (const f of files) {
     // 真值也是烘焙器的输入：它决定烘哪几首 BGM。不记进指纹的话，改了一条
     // 剧本却不重烘，产物少一首曲子而判据照绿 —— 表现只是"那个场景是哑的"。
     const trace = JSON.parse(readFileSync(useInput(resolve(dir, f)), 'utf8')) as {
       driver: string
-      ticks: readonly { scene: string }[]
+      ticks: readonly { scene: string; audio: { bgm: string | null } }[]
     }
     // 只有场景真值才有"走到过哪些场景"这回事。战斗真值（xl-1vu.4）的每一步
     // 里没有 `scene` 字段，硬扫会往集合里塞一个 `undefined` —— 那之后烘出来
     // 的产物少一首曲子还是多一首，谁都看不出来。战斗自己那首 BGM 要等 web
     // 侧真有战斗面板了再烘（xl-1vu.7）。
     if (trace.driver !== 'scene') continue
-    for (const tick of trace.ticks) scenes.add(stem(tick.scene))
+    for (const tick of trace.ticks) {
+      scenes.add(stem(tick.scene))
+      if (tick.audio.bgm !== null) bgm.add(tick.audio.bgm)
+    }
   }
   if (scenes.size === 0) {
     // 全被筛掉了与"一份 trace 都没有"一样致命，而且更隐蔽：文件都在，
@@ -204,7 +231,10 @@ function tracedScenes(): string[] {
     console.error(`${dir} 下没有一份场景真值（driver === 'scene'）—— 烘不出背景音乐的范围`)
     process.exit(1)
   }
-  return [...scenes].sort()
+  // 曲名这一头不设"空了就退出"：一份从头到尾没响过曲子的场景真值是可能的
+  // （原版的 currentPlayingBGM 初值就是 null），而上面那两道守卫已经保证
+  // 至少有一份场景真值在。
+  return { scenes: [...scenes].sort(), bgm: [...bgm].sort() }
 }
 
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
@@ -1008,7 +1038,7 @@ function bakeBgm(scenes: readonly SceneScript[], manifest: Record<string, string
   // `GameLauncher.switchTo("start")` 那句 `MusicReader.readBGM("主题曲.mp3")`
   // 上，所以现扫的这两份名单谁都罩不住它。不加不是静音而是**抛** ——
   // 理由见 `src/start/assets.ts` 的 `TITLE_BGM`。
-  const wanted = [...new Set([...musicOf(traced), TITLE_BGM])].sort()
+  const wanted = [...new Set([...musicOf(traced), ...tracedBgm(), TITLE_BGM])].sort()
   const all = musicOf(scenes.map((s) => stem(s.script)))
   const deferred = [...all].filter((m) => !wanted.includes(m)).sort()
 

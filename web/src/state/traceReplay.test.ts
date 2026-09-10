@@ -154,23 +154,94 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 主角九个字段（格子坐标 / 像素坐标 / 朝向 / 走跑两套帧号 / 走跑两个旗标），
   // M1 的 xl-9bd.6 与 xl-u39。第十个 `stepNum` 见 `DEAD_SUBFIELDS`。
-  role: ['bigmap-walk', 'dorm-exit', 'dorm-intro', 'dorm-walk', 'milestone'],
+  role: [
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'maze-treasure',
+    'milestone',
+  ],
   // NPC 七个字段，xl-9bd.9。⚠️ `dorm-walk` / `dorm-exit` 那几条里 NPC 动得少，
   // 守的是"别凭空动起来"；真的走动与被 checkNPCStop 停住在下面那条覆盖用例里
   // 有分母兜底。
-  npcs: ['bigmap-walk', 'dorm-exit', 'dorm-intro', 'dorm-walk', 'milestone'],
+  npcs: [
+    'battle-door',
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'shop-door',
+  ],
   // 对话框十二个字段，xl-9bd.10。⚠️ 五条里只有几条真的开过口；一份从头到尾
   // 没有对话的真值上这一格是"全 false 等于全 false"，覆盖靠下面那条数出来的
   // 用例兜。
-  dialogue: ['bigmap-walk', 'dorm-exit', 'dorm-intro', 'dorm-walk', 'milestone'],
+  dialogue: [
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'shop-door',
+  ],
   // 旁白六个字段，xl-9bd.11。⚠️ 只有 `dorm-intro` 与 `milestone` 真的播过旁白
   // （实测 810 / 1070 个 tick），另三条守的是"没有旁白的剧本里它不许自己起来"。
-  narratage: ['bigmap-walk', 'dorm-exit', 'dorm-intro', 'dorm-walk', 'milestone'],
+  narratage: [
+    'battle-door',
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'shop-door',
+  ],
   // 场景文件名与 isScript，xl-9bd.12（出口切换）。
-  scene: ['bigmap-walk', 'dorm-exit', 'dorm-intro', 'dorm-walk', 'milestone'],
-  isScript: ['bigmap-walk', 'dorm-exit', 'dorm-intro', 'dorm-walk', 'milestone'],
+  scene: [
+    'battle-door',
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'shop-door',
+  ],
+  isScript: [
+    'battle-door',
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'shop-door',
+  ],
   // `MusicPlayer.currentPlayingBGM`，xl-9bd.12。
-  audio: ['bigmap-walk', 'dorm-exit', 'dorm-intro', 'dorm-walk', 'milestone'],
+  audio: [
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'shop-door',
+  ],
 }
 
 /**
@@ -265,20 +336,58 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // 选择框那套状态机（`src/scene/SelectEvent.java` 一整个对象）。骨架那张票
   // （选择框 UI + 新列落地）把它翻成已对齐。
   select: {
+    'battle-door': 'xl-yg6.8',
     'bigmap-walk': 'xl-yg6.8',
     'dorm-exit': 'xl-yg6.8',
     'dorm-intro': 'xl-yg6.8',
     'dorm-walk': 'xl-yg6.8',
+    'equipshop-door': 'xl-yg6.8',
+    'maze-treasure': 'xl-yg6.8',
     milestone: 'xl-yg6.8',
+    'question-answer': 'xl-yg6.8',
+    'shop-door': 'xl-yg6.8',
   },
   // 宝箱与"得到物品"提示框（`src/scene/EquipmentEvent.java` +
   // `src/scene/TreasureBox.java`）。归宝箱那张票。
   treasure: {
+    'battle-door': 'xl-yg6.10',
     'bigmap-walk': 'xl-yg6.10',
     'dorm-exit': 'xl-yg6.10',
     'dorm-intro': 'xl-yg6.10',
     'dorm-walk': 'xl-yg6.10',
+    'equipshop-door': 'xl-yg6.10',
+    'maze-treasure': 'xl-yg6.10',
     milestone: 'xl-yg6.10',
+    'question-answer': 'xl-yg6.10',
+    'shop-door': 'xl-yg6.10',
+  },
+  // ⚠️ **xl-yg6.7 起，早就对齐的那几组也开始有欠账了**，而这是新真值该有的
+  // 样子：那五条新剧本走的是选择框开着时的按键，而"选择框开着就走不动"
+  // （`ScenePanel.keyPressed` 的 `if (!selectEvent.isSelect)`）在状态层一个字
+  // 都还没写。于是同一下方向键，原版拿去挪光标、这一层拿去挪主角。
+  //
+  // 逐格实测（xl-yg6.7 把十条剧本 × 七组全填进 ALIGNED 跑了一遍，红的挪到
+  // 这里）：`role` 四条红、`npcs` 与 `dialogue` 各一条、`audio` 一条，其余
+  // 全绿 —— 包括 `maze-treasure` 整条七组（开宝箱按的是空格，不碰方向键）。
+  role: {
+    'battle-door': 'xl-yg6.8',
+    'equipshop-door': 'xl-yg6.8',
+    'question-answer': 'xl-yg6.8',
+    'shop-door': 'xl-yg6.8',
+  },
+  // 主角**朝向**变了（`RoleEvent.switchWalk` 里那一句 `role.setEvent(方向)`
+  // 在挡不挡得住之前就跑了），所以 `checkNPCOral` 那一路跟着变。
+  // ⚠️ `npcs` 这一格**不在这里** —— 这条剧本挪光标用的是上键，正上方那一格
+  // 被 NPC 占着，主角一步都没挪，十三个 NPC 的走停判据（`checkNPCStop` 看的是
+  // 主角**坐标**）因此没受影响，实测逐 tick 全对。
+  dialogue: {
+    'battle-door': 'xl-yg6.8',
+  },
+  // 这一格不是连带的，是**战斗那扇门自己的**：选「是」的一下原版先跑
+  // `FightEvent.fight(...)`，`BattlePanel.initial` 按背景图把 BGM 换成
+  // `B6.mp3`（真值这一列记着），而这一层还没有那条线。归三扇门那张票。
+  audio: {
+    'battle-door': 'xl-yg6.11',
   },
 }
 
@@ -302,8 +411,57 @@ interface BlockedAt {
   readonly why: string
 }
 
-/** 空的。xl-yg6.4 填满格子跑了一遍，一格都没停在半截上。 */
-const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {}
+/**
+ * xl-yg6.4 那一趟是空的（填满格子跑了一遍，一格都没停在半截上）；xl-yg6.7 起
+ * 有了一条 —— `shop-door` 的主角一路对到**选择框开着时按下的那一下下键**才分岔，
+ * 那正是这张表的形状：前半截全对，卡在别人那张票上。
+ *
+ * 只登记了这一格，不是挑着写：另外三条 `role` 的分岔点同样是"选择框开着时的
+ * 那一下方向键"，但它们的剧本里**走路阶段也按过同一个键**，而这张表认那一 tick
+ * 靠的是「第一条 (场景, 事件, 键) 命中」—— 认到的会是走路那一下，登记就成了
+ * 一句错话。`shop-door` 从头到尾只按过一次下键，所以只有它认得准。
+ */
+const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {
+  role: {
+    'shop-door': {
+      scene: '金陵大学医院.txt',
+      event: 'press',
+      key: 'down',
+      why:
+        '选择框开着时原版把方向键交给光标（ScenePanel.keyPressed 的 if (!selectEvent.isSelect)），' +
+        '这一层还没有那道闸，同一下键被拿去挪主角 —— 归 xl-yg6.8',
+    },
+  },
+}
+
+/**
+ * **整条真值上这一列都是空数组的格子 —— 手写登记，写明为什么空。**
+ *
+ * 只影响下面那条**子字段对撞**：一列 `npcs` 要是每一 tick 都是 `[]`，
+ * 两边的子字段并集都是 `[]`，"两边对上了"与"两边都没东西可对"长得一模一样。
+ * 那条用例本来直接 `toBeGreaterThan(0)` 拦死，注释里还写着「今天五条真值的
+ * NPC 条数是 13/2/3/2/3（实测），观测不到」—— xl-yg6.7 的 `maze-treasure`
+ * 走的是迷宫1，那份脚本**没有 NPC 段**，于是它当场红了。
+ *
+ * 空不是错，所以不能拦死；但空也不能静悄悄地放过去，否则哪天导出器把某一列
+ * 整个写成空数组，这条对撞会一路绿。**折中是让它必须被人签**：签了的格子
+ * 免掉子字段对撞（逐 tick 的 `toEqual` 照跑 —— 那一格仍然在守"这一层不许
+ * 凭空造一个 NPC 出来"），没签的照旧红。
+ *
+ * 反方向也红：签了却其实不空，说明这条登记过期了（见下面那条用例）。
+ */
+interface EmptyColumn {
+  /** 空的原因，一句话，指得到原版数据。 */
+  readonly why: string
+}
+
+const EMPTY_COLUMNS: Readonly<Record<string, Readonly<Record<string, EmptyColumn>>>> = {
+  npcs: {
+    'maze-treasure': {
+      why: 'script/迷宫1.txt 没有 NPC 段 —— 五份带 TreasureBox 的脚本全都没有',
+    },
+  },
+}
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */
 const traceCache = new Map<string, Trace>()
@@ -555,6 +713,16 @@ describe('回放行为真值', () => {
         // 轴提的）：一列 `npcs` 要是空数组，`subKeysOf` 给的就是 `[]`，
         // "两边都没有子字段"与"两边的子字段都对上了"长得一样。今天五条真值的
         // NPC 条数是 13/2/3/2/3（实测），观测不到 —— 所以这条明写出来。
+        if (truth.length === 0) {
+          // 空列必须被签过；签了就跳过这一格的子字段对撞（理由见 EMPTY_COLUMNS）。
+          expect(
+            EMPTY_COLUMNS[group]?.[name],
+            `${name} 的 ${group} 一个子字段都没读到 —— 整条真值上它都是空的话，` +
+              `去 EMPTY_COLUMNS 里签一句为什么；不是的话这是真的漏了`,
+          ).toBeTruthy()
+          expect(got, `${name} 的 ${group} 真值是空的，观察函数却读出了子字段`).toEqual([])
+          continue
+        }
         expect(truth.length, `${name} 的 ${group} 一个子字段都没读到`).toBeGreaterThan(0)
         expect(
           [...(got ?? []), ...deadFieldsOf(group)].sort(),
@@ -564,6 +732,31 @@ describe('回放行为真值', () => {
     }
     // 空转要响：一列都没比到与"每一列都齐"长得一样。
     expect(compared).toBeGreaterThan(0)
+  })
+
+  it('登记成「整列都空」的格子：真值里每一 tick 都真的是空数组', () => {
+    // 空转要响：这张表空了的时候这条用例什么也没核。
+    const cells = Object.entries(EMPTY_COLUMNS).flatMap(([group, byTrace]) =>
+      Object.keys(byTrace).map((name) => [group, name] as const),
+    )
+    expect(cells.length).toBeGreaterThan(0)
+    for (const [group, name] of cells) {
+      expect(SCENE_TRACE_NAMES, `EMPTY_COLUMNS[${group}] 里的 ${name} 不在真值目录里`).toContain(
+        name,
+      )
+      const sizes = new Set(
+        traceOf(name).ticks.map((tick) => {
+          const column = columnsOf(tick)[group]
+          return Array.isArray(column) ? column.length : -1
+        }),
+      )
+      // 分母是这条真值的每一 tick：原版哪天在这个场景里放一个 NPC，或者这一列
+      // 根本不是数组，这里立刻红 —— 那时这条登记就该撤掉。
+      expect(
+        [...sizes],
+        `${name} 的 ${group} 并不是每一 tick 都空（读到的长度：${[...sizes].join('/')}）`,
+      ).toEqual([0])
+    }
   })
 
   it('登记成「原版不动」的子字段：真值里恒定，且源码里只有那一处声明', () => {

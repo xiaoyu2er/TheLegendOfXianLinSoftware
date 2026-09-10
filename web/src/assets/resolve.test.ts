@@ -25,6 +25,7 @@ import {
   isIgnoredEquipPicture,
 } from '../menu/equipmentPictures'
 import { repoPath } from '../test/repoPath'
+import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
 function headFilesInRepo(): number {
@@ -256,7 +257,28 @@ describe('资产逻辑 ID', () => {
       baked: true,
       deferred: false,
     })
-    expect([...baked].filter((id) => id !== title).length + deferred.size).toBe(declared.size)
+    // **场景数据之外还有第二类**（xl-yg6.7）：真值里真的响过、而 96 个场景的
+    // `Music` 段一个都没写的那几首。今天只有一首 —— `battle-door` 选「是」的
+    // 一下，原版跑进 `BattlePanel.initial`，那里按背景图挑了 `B6.mp3`。
+    //
+    // 这一类**不点名**，从真值现扫（烘焙器 `bake.ts` 的 `tracedBgm()` 数的是
+    // 同一批字符串）：点名写死的话，下一条走进战斗的剧本会让这条判据红，
+    // 而它红的理由与"烘多了一首"分不开。两头仍然有咬合 —— 烘出来的一首要是
+    // 既不来自场景、也不来自真值、又不是标题曲，下面那个减法立刻对不上。
+    const fromTraces = new Set<string>()
+    for (const name of SCENE_TRACE_NAMES) {
+      for (const tick of readTrace(name).ticks) {
+        if (tick.audio.bgm !== null) fromTraces.add(bgmAssetId(tick.audio.bgm))
+      }
+    }
+    const fromScenes = new Set([...declared].map(bgmAssetId))
+    const outside = [...baked].filter((id) => id !== title && !fromScenes.has(id)).sort()
+    expect(outside).toEqual(outside.filter((id) => fromTraces.has(id)))
+    // 空转要响：这一类今天非空，而它一旦空了，上面那条 `toEqual` 是恒真的。
+    expect(outside.length).toBeGreaterThan(0)
+    expect(
+      [...baked].filter((id) => id !== title && !outside.includes(id)).length + deferred.size,
+    ).toBe(declared.size)
     // 名单上的查出来是 null，映射表里的查出来是 URL，都不抛。
     for (const id of deferred) expect(resolveBgmOrNull(id)).toBeNull()
     for (const id of baked) expect(resolveBgmOrNull(id)).toContain('bgm/')

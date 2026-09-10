@@ -156,6 +156,21 @@ UTF-8 JSON，放在 `tools/traces/scripts/*.json`。
 | `waitIdle` | — | 等到主角的走/跑定时器都停下（即已对齐到格）。 |
 | `waitNarratage` | — | 等到旁白播完。 |
 
+选择框 / 答题 / 宝箱那一套（xl-yg6.7）**也在这张表里**，不另开驱动器：它们在
+原版里就是场景状态的一部分（`ScenePanel.keyPressed` 直接看 `selectEvent.isSelect`
+决定方向键给谁）。
+
+| 指令 | 参数 | 语义 |
+|---|---|---|
+| `select` | — | 按一次空格弹出选择框。没弹出来 —— 硬失败。同一下把 NPC 口头语也说起来了 —— 也硬失败（之后的按键会被对话吞掉，而吞掉与按下去长得一样）。 |
+| `cursor` | `key`, `times` | 在选项之间移动光标，一 tick 一次。`key` 只认 `down` / `up`（原版 `SelectEvent.keyPressed` 只处理这两个），`times` 至少 1。 |
+| `confirm` | — | 按一次回车。**按完当拍就算完**，因为三扇门的跳转就发生在这一下里，`awaitExit` 必须在同一拍接住。 |
+| `dismiss` | — | 按一次空格关掉回答框。`isSelect` 没落回假 —— 硬失败。 |
+| `awaitSelect` | — | 等到选择框/问题框滑完、这一屏字也吐完（`selectImageMove` / `questionImageMove` / `wordsRun` 三个定时器全停）。 |
+| `awaitExit` | `panel` | 断言原版这一下把面板切到了哪一块（卡片名），并把那次跳转取走。切错、没切 —— 都硬失败，报的话不一样。 |
+| `openBox` | — | 按一次空格开宝箱。**判据是"开过的宝箱数 +1"**，不是"提示框弹出来了" —— 答对/答错加扣金币走的是同一个提示框。 |
+| `awaitPresent` | — | 等到"得到物品"提示框滑进来、吐完字、又滑出去（`presentImageMove` / `wordsRun` 都停）。 |
+
 每条指令另有可选的 `budget`（默认 2000），是这条指令自己的 tick 预算。
 超预算、走不动、对话提前结束，一律**非零退出并打印是哪条指令、第几个 tick、
 主角当时在哪一格**。不静默跳过：走不到就当走到了，会导出一份看上去正常、
@@ -179,6 +194,38 @@ UTF-8 JSON，放在 `tools/traces/scripts/*.json`。
 
 被挡住有两种形态，都要硬失败：一段走完位置没变；以及按着方向键 1.5 秒
 没挪窝（这种情况松手条件永远不满足，不专门拦就只会报一句"超预算"）。
+
+### 三扇门：真值里看得见的是**拦截到的目标**
+
+选择框的「是」有三支通往别的面板：药店（`switchTo("shop")`）、装备超市
+（`switchTo("equipmentShop")`）、战斗（先 `FightEvent.fight(...)` 再
+`switchTo("battle")`）。导出器**不真的切过去**——`GameLauncher.switcher` 这个
+public static 字段被换成 `devtools.PanelTap`，它的 `show()` 只记卡片名、不碰
+容器（不换的话 `c` 是 null，`CardLayout.show` 当场 NPE，而那条 NPE 抛在原版
+自己的线程上、被只包着 sleep 的 try/catch 漏掉 —— 表现是导出挂死，看起来只像
+"跑得慢"）。
+
+`awaitExit` 就是断言那个名字。它当拍判：跳转发生在 `confirm` 那一下的按键分发
+里，同步完成。反方向也拦 —— 切了面板而当前指令不是 `awaitExit`，硬失败；
+不然「选了是进了店」与「选了否留下了」在真值里长得一模一样（`shopSelect` 两条
+路上都留着，`isSelect` 也一样）。
+
+**战斗那扇门是三扇里唯一要立真面板的。** `FightEvent.fight` 里有一句不判空的
+`GameLauncher.battlePanel.initial(...)`，没有面板不是"这扇门没接住"而是一条
+NPE。所以场景驱动器在剧本里出现 `awaitExit → battlePanel` 时才建一个
+`BattlePanel`（外加我方三人），而且**先把 `Clock` 倍率压到 1e-9 再构造** ——
+它构造函数最后一句就把 `run()` 线程起来了，循环体第一句 `Clock.sleep(100)`
+于是变成约 11 天，那条线程一拍都跑不了。**要等它真的停进 `TIMED_WAITING`
+才把倍率放回来**：`Thread.start()` 之后它什么时候读到那个倍率是竞态的，放早了
+它读到 1.0，会在一个 `initial()` 都还没跑过的面板上 `update()`，两次导出于是
+不一样。判据是 `--check`。
+
+药店与装备超市那两块**不立**（xl-yg6.3 明写不在导出器里把游戏启动器立起来，
+那要把四支已有驱动器的确定性前提全部重验）。代价是 `switchTo` 的另一半 ——
+`currentPanel = 那块面板` —— 会写进一个 null，而下一句 `ScenePanel.step()` 的
+`currentPanel.equals(scenePanel)` 当场 NPE。`awaitExit` 因此给它一个替身
+`JPanel`：场景这边对这个字段只有那一处读取，问的是"现在显示的还是场景吗"，
+原版此刻的答案是"不是"，替身给出的也是"不是"。
 
 ## trace（输出）
 
@@ -1032,4 +1079,9 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `battle-victory` | 战斗（`driver` = `battle`） | **打赢之后的结算**（xl-rh9.13，837 步）：与 `battle-em3-box` 同一行 Fight 数据（`脚本20.txt` 第 3 行），而**陆雪琪压到 1 级** —— 这一场 1190 点经验对 10 级的张小凡与文敏差得远（升一级要 14462），对 1 级的陆雪琪却够（700），于是结算的两条路在同一份真值里都走到：第一页三个人、第二页只有升了级的那一个、属性一项项滚上去、`timeCode` 数到 55 才 `switchTo("scene")`。它是 `victory.ts`（xl-rh9.5）的**第一份行为真值覆盖** |
 | `shop-trade` | 商店（`driver` = `shop`） | 药店与装备超市各走一条完整的买卖：买 2 份金创药 → 钱不够被拒（金钱与背包一个数都没动） → 卖回 1 份 → 装备超市买月苗刀 → 切到鞋子那栏卖掉皮靴 → 切回武器栏确认刚买的还在。加减按钮的两端也都走到了 |
 | `shop-categories` | 商店（`driver` = `shop`） | 装备自选超市六类全走一遍（weapon → helmet → armor → glove → shoe → decoration → 回 weapon，25 步）。它钉的是**装备店那 56 次掷骰的次数与顺序** —— `shop-trade` 只看得见 weapon 与 shoe 两栏，抽多抽少或换序时另外四栏错位它一个字都看不见。（药店那 6 次这条读不出来，它一次都没开药店；直接读数在 `shop-edges` 第 0 拍。）顺带把装备店店主对白的三个价位档（`<10000` / `<30000` / `<100000`，原版没有 else）一次走完（xl-knp.3） |
+| `question-answer` | `大活.txt` | 答题走到底，**答对与答错各一次**（xl-yg6.7）：第一道题光标不动就回车（初值 `size()-5` = 1，正确答案 2）—— 答错，扣钱的提示框滑进来吐 13 个字；第二道题按两下下键把光标从 3 移到 5（正确答案 5）—— 答对，加钱的提示框吐 8 个字。覆盖 `question` / `asking` / `answering` / `abcd` / `questionNo` / 问题框四角的撑开 / `maxLength` 在 22 与 44 之间来回，以及 `answered` 与 `recorder` 这两张"答过没"的表 |
+| `maze-treasure` | `迷宫1.txt` | 开宝箱（xl-yg6.7）：站在 (4,17) 那个宝箱上面按空格，提示框从 -320 每 50ms +32 滑到 352 停下起打字机、吐完 9 个字、再滑出去（**头一拍 +64**，那一拍三个 `if` 里第一个与第三个都成立）到 1056。`boxes[].empty` 翻真、`boxes[].near` 在走到旁边时就已经翻真。两个宝箱里只开了这一个，`empty` 在同一份真值里两个值都取得到。这份脚本**没有 NPC 段**，`npcs` 整列恒空；走的格子数还受 `Fight 0` 限着（每换一格 `count+1`，数到 30 就随机开打）|
+| `shop-door` | `金陵大学医院.txt` | 药店那扇门（xl-yg6.7）：走到药店大夫旁边弹出选择框，先选「否」（下键把 `yesNo` 从 2 拨到 3）回到走路，再弹一次选「是」—— 拦截到的目标是 `shopPanel` |
+| `equipshop-door` | `金陵大学装备超市.txt` | 装备超市那扇门（xl-yg6.7）：同上的另一支（`equipmentSelect`），拦截到的目标是 `equipmentShopPanel` |
+| `battle-door` | `大地图.txt` | 战斗那扇门（xl-yg6.7）：走到商塔阿威哥脚下，先选「否」，再选「是」—— 拦截到的目标是 `battlePanel`，`fought[0]` 翻真，背景音乐被 `BattlePanel.initial` 换成 `B6.mp3`。这一支与另外两扇不同：选完「是」原版紧接着 `showAnswer(...)`，选择框不但没关还从头滑一遍、吐一句话，剧本把那一段也走完再按空格关掉 |
 | `shop-edges` | 商店（`driver` = `shop`） | 原版有分支而 `shop-trade` 一次都没走到的两条路，两个面板各一遍（36 步）：**买一件存货是 0 的**（药店 灵神天药、装备店 茶罗骨环）与**卖一件背包里一份都没有的**（姜黄粉、踏风草鞋）。两处原版都是 `temp=Math.min(要几件, 另一侧还剩几件)`，后果是"这一行什么都没发生、只有 purchase 被清零"—— 与"压根没点"几乎一样，所以每次都**同时给另一行也加一件**，真值里于是看得见"一次点击里一行动了一行没动"，而不是整单被拒。药店店主的两个价位档（以 6000 分档）也在这条里走完（xl-knp.3） |
