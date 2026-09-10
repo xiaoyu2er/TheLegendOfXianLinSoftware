@@ -204,9 +204,10 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   done | sort | uniq -c
   ```
 
-  (2026-09-09 on this branch that printed 13 battle / 5 menu / 5 scene /
-  1 shop = 24 — a reading, not a spec. The 2026-09-07 reading in this spot was
-  21, with only 2 menu scripts; xl-6lo.7 added three.) An unrecognised
+  (2026-09-10 on this branch that printed 13 battle / 11 scene / 5 menu /
+  4 shop = 33 — a reading, not a spec. This spot has now gone stale three
+  times: 21 on 2026-09-07, 24 on 2026-09-09, 33 today. M5's xl-yg6.7 added
+  six scene scripts in one go; xl-knp.11 had added a fourth shop one.) An unrecognised
   name is a hard failure, never a guess — but a **missing** `driver` field
   defaults to `scene`, the exporter's one and only leniency (the scene
   scripts predate the field; giving them one would change the script echo and
@@ -214,16 +215,16 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   write it. Do not hand-write expected values for
   the state or viewport layers; read them out of a trace. Overview table,
   per-driver formats and pitfalls: `docs/trace-format.md`.
-- **Cross-end frame comparison is not wired up for every driver.**
+- **Cross-end frame comparison: which drivers the capture page assembles is a reading, not a constant.**
   `tools/compare-frames.sh` runs the original side for all four, but the capture
   page only assembles the drivers listed in `web/src/replay/implemented.ts`
-  (`IMPLEMENTED_DRIVERS` — that array is the single source of truth; as of
-  2026-09-09 it is `scene`, `battle` and `menu`, M3 having wired the third).
-  Only `shop` is left, waiting for **M4 (xl-knp)** to build those panels in
-  `web/`. Until then that script makes the pipeline **exit non-zero and name the
-  driver plus its owning issue** — a script that was never assembled compares as
-  "zero frames differ", which looks exactly like "the two sides agree". See
-  `docs/frame-compare.md` § 装配不出来的驱动器.
+  (`IMPLEMENTED_DRIVERS` — that array is the single source of truth; read it
+  off disk, don't trust a list written here. As of 2026-09-10 **all four are
+  wired**, M4 having added `shop`.) The machinery for an unassembled driver is
+  still there and still worth knowing: such a script makes the pipeline
+  **exit non-zero and name the driver plus its owning issue** — a script that
+  was never assembled compares as "zero frames differ", which looks exactly
+  like "the two sides agree". See `docs/frame-compare.md` § 装配不出来的驱动器.
 
 ## Workspace layout
 
