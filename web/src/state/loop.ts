@@ -81,11 +81,8 @@ export function advance(
     ran++
     // **有请求亮起的那一拍就停下这一批**（`SceneRequests`，xl-i06.3 收拢）。
     // 请求只亮一拍，而一次 pump 常常要补跑好几拍 —— 不停的话，亮着的那一拍会被
-    // 下一拍的世界（全 `null`）覆盖掉，而被吞掉的样子与"压根没发"一模一样：
-    // 走到第 30 格什么也没发生（`battleRequest`，xl-rh9.17）、题答完了钱一个
-    // 子儿没动（`presentRequest`，xl-yg6.9）、箱子空了背包里却没多东西
-    // （`treasureRequest`，xl-yg6.10）、选了「是」没进店（`selectPanelRequest`，
-    // xl-yg6.11）。
+    // 下一拍的世界（全 `null`）覆盖掉，而被吞掉的样子与"压根没发"一模一样
+    // （比如走到第 30 格什么也没发生）。有哪几个请求，看 `SceneRequests`。
     //
     // 没跑的那几拍**留在 carryMs 里**，下一次 pump 接着跑，所以
     // `loop.test.ts` 那条"切成几段喂进来结果都一样"的不变量照旧成立。
