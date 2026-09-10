@@ -231,10 +231,10 @@ export interface World {
    * `null` = 这一拍不切。与 `battleRequest` 同一个形状：只亮一拍的输出，
    * 不是常驻状态。
    *
-   * ⚠️ **今天没有消费者** —— 接上药店与装备超市两块面板是 **xl-yg6.11**
-   * 的正题。这里先把它发出来，是因为"选了是"与"选了否"在别处一模一样
-   * （`isSelect` 两条路上都留着，见 `docs/trace-format.md`），不发出来就
-   * 没有任何东西分得开这两条路。
+   * 消费者是 `game/session.ts`（xl-yg6.11）：翻到 `shop` 面板、进
+   * `SHOP_OF_DOOR` 那一家。`state/loop.ts` 在它亮的那一拍停批。它非发不可，
+   * 是因为"选了是"与"选了否"在别处一模一样（`isSelect` 两条路上都留着，
+   * 见 `docs/trace-format.md`），不发出来就没有任何东西分得开这两条路。
    */
   readonly selectPanelRequest: 'shop' | 'equipmentShop' | null
   /**

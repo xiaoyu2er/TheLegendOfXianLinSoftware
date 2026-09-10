@@ -33,11 +33,13 @@ import type { BattleInfo } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 
 /**
- * **面板机**：场景 ↔ 战斗 ↔ 标题（xl-rh9.17）。
+ * **面板机**：场景 ↔ 战斗 ↔ 标题（xl-rh9.17）↔ 菜单 ↔ 商店（xl-yg6.11）。
  *
  * 原版的这一层是 `GameLauncher.switchTo(...)` 加一个 `CardLayout` —— 八个
- * 面板全都活着，只有一个显示。这里只做已经移植过来的那三个：
- * `scenePanel` / `battlePanel` / `startPanel`。标题那一屏本身是 DOM，画在
+ * 面板全都活着，只有一个显示。这里只做已经移植过来的那几块：
+ * `scenePanel` / `battlePanel` / `startPanel` / `menuPanel`，以及两家店
+ * （`shopPanel` 与 `equipmentShopPanel` 共用一个 `'shop'`，见 `SHOP_OF_DOOR`）。
+ * 标题那一屏本身是 DOM，画在
  * overlay 层里（`start/StartPanel.tsx`，xl-kaa）—— 这一层只负责说"现在该
  * 显示它了"，以及它该放哪首曲子（`currentBgm` 里那句 `TITLE_BGM`）。
  *

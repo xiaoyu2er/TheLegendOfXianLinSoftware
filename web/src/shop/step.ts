@@ -270,7 +270,7 @@ function setButton(w: ShopWorld): void {
   if (clicked(p.buttons, 'back')) {
     w.music.push('换头像.wav')
     // 原版这里是 `GameLauncher.switchTo("scene")` —— 面板自己不知道要去哪，
-    // 换面板是外面那一层的事。浏览器里同理，会话侧接它（xl-yg6.2）。
+    // 换面板是外面那一层的事。浏览器里同理，会话侧接它（`game/session.ts`，xl-yg6.11）。
     w.leaving = true
   }
   // ⚠️ 加减在 `back` **之后**，不是和买卖挤在一起（原版两个面板都是）。

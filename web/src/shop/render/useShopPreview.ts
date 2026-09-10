@@ -13,7 +13,7 @@ import type { ShopRenderer } from './shopRenderer'
 /**
  * 把**开发用的商店预览**接到渲染器上（xl-knp.6）。
  *
- * ⚠️ 这不是进店的正路 —— 见 `shop/preview.ts` 的头注（正路归 xl-yg6.2）。
+ * ⚠️ 这不是进店的正路 —— 见 `shop/preview.ts` 的头注（正路是选择框的门，xl-yg6.11）。
  *
  * 这个 hook 整个泡在 React 与 Pixi 里，进不了 `pnpm test`，所以它**不做决定**：
  * 帧号怎么数在 `preview.ts`、画什么在 `render/drawList.ts`、载入名单在

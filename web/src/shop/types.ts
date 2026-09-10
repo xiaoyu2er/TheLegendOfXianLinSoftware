@@ -107,8 +107,8 @@ export interface ShopWorld {
   music: string[]
   /**
    * 点过「返回游戏」了。原版那一句是 `GameLauncher.switchTo("scene")` ——
-   * 面板自己不知道要去哪，换面板是外面那一层的事，浏览器里同理（会话侧
-   * 接它，xl-yg6.2）。
+   * 面板自己不知道要去哪，换面板是外面那一层的事，浏览器里同理：会话侧
+   * 接它、回到场景、再把它清回 `false`（`game/session.ts`，xl-yg6.11）。
    *
    * ⚠️ **真值不记它**（商店剧本一次都没按过「返回游戏」），所以它不进
    * `snapshotShop`。守着它的是 `step.test.ts`。
