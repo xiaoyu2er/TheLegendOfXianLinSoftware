@@ -447,7 +447,8 @@ describe('场景 → 战斗 → 场景', () => {
     //
     // ⚠️ 这里必须是"停在门槛前一格再一次大 pump"，不能只是"整趟都用大 pump
     // 走"。后者**分辨不出东西**（实测：`state/loop.ts` 那个 break 换成
-    // `if (false) break` 照样绿）—— 请求被同批的下一拍覆盖之后 `count` 归零，
+    // `if (false) break` 照样绿；xl-i06.3 收拢之前量的，那时每个请求各一条
+    // break）—— 请求被同批的下一拍覆盖之后 `count` 归零，
     // 走者只是再走 30 格，总有一趟的触发拍正好落在批尾。
     const ready = walkUntilBattle(
       session,

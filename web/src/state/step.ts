@@ -51,7 +51,7 @@ import {
   tickSelectTimers,
   toSelectDraft,
 } from './select'
-import type { PresentRequest, SelectDraft, SelectHost } from './select'
+import type { SelectDraft, SelectHost } from './select'
 import {
   checkBoxes,
   createTreasure,
@@ -63,8 +63,8 @@ import {
 } from './treasure'
 import type { TreasureDraft, TreasureGain } from './treasure'
 import { fireDue } from './timer'
-import { isArrowKey } from './types'
-import type { CollisionMap, InputEvent, TilePos, World } from './types'
+import { NO_REQUESTS, isArrowKey } from './types'
+import type { CollisionMap, InputEvent, SceneRequests, TilePos, World } from './types'
 import type { DialogueScript, DialogueState } from './dialogue'
 
 /**
@@ -166,10 +166,7 @@ export function initiate(prev: World | null, scene: SceneScript): World {
     // 之后，同样每次 initiation 都新建（xl-yg6.10）。
     treasure: createTreasure(scene),
     // 只亮一拍的输出，任何一个新建的世界里都是空的。
-    battleRequest: null,
-    selectPanelRequest: null,
-    presentRequest: null,
-    treasureRequest: null,
+    ...NO_REQUESTS,
     showing: prev?.showing ?? true,
     sceneMusic: scene.sceneMusic,
     // `GameLauncher.SCENE_SIGNAL` 是 static，`initiation` 不碰它。
@@ -251,14 +248,11 @@ export function step(
   let sel = toSelectDraft(world.select, world.recorder)
   let tre = toTreasureDraft(world.treasure)
   let base = world
-  /** 这一拍起的那场战斗（`World.battleRequest`）。一拍最多起一场。 */
-  let battleRequest: BattleInfo | null = null
-  /** 这一拍选择框要切去哪块面板（`World.selectPanelRequest`）。 */
-  let selectPanelRequest: 'shop' | 'equipmentShop' | null = null
-  /** 这一拍答对答错的加扣（`World.presentRequest`）。 */
-  let presentRequest: PresentRequest | null = null
-  /** 这一拍开箱开出来的东西（`World.treasureRequest`）。 */
-  let treasureRequest: TreasureGain[] | null = null
+  /**
+   * 这一拍的请求（`SceneRequests`）。**每一拍都从全 `null` 起**，返回时整个
+   * 铺回世界上 —— 上一拍亮过的，这一拍一定熄。战斗一拍最多起一场。
+   */
+  const req: { -readonly [K in keyof SceneRequests]: SceneRequests[K] } = { ...NO_REQUESTS }
 
   /**
    * **换过场景之后，手上这几份草稿全部作废** —— 一份一份从新的 `base` 重摊。
@@ -286,7 +280,7 @@ export function step(
    * 先 `exitEvent.nextScript()` 把整个场景换掉，然后 `role.setEvent(true)`。
    */
   const requestBattle = (info: BattleInfo): void => {
-    battleRequest = info
+    req.battleRequest = info
     if (advancesScript(info)) {
       base = nextScriptAdvance(base, scenes)
       resync()
@@ -310,10 +304,10 @@ export function step(
   const host: SelectHost = {
     fight: (info) => requestBattle(info),
     switchTo: (panel) => {
-      selectPanelRequest = panel
+      req.selectPanelRequest = panel
     },
     present: (request) => {
-      presentRequest = request
+      req.presentRequest = request
       // `Money.addCoins/reduceCoins` 之后紧跟的那句
       // `scene.equipmentEvent.drawString(...)`：提示框当拍就弹（xl-yg6.10）。
       drawString(tre, request.text, now)
@@ -322,7 +316,7 @@ export function step(
   }
   /** 开箱开出来的东西。一拍里按两下空格、或一下开两个箱子，都往后接。 */
   const gain = (gains: readonly TreasureGain[]): void => {
-    if (gains.length > 0) treasureRequest = [...(treasureRequest ?? []), ...gains]
+    if (gains.length > 0) req.treasureRequest = [...(req.treasureRequest ?? []), ...gains]
   }
 
   for (const event of input) {
@@ -391,7 +385,7 @@ export function step(
   //    `battlePanel.initial(...)`，后一场会把前一场整个盖掉，而面板只切一次。
   //    今天到不了（有 `@` 的 12 个脚本与有 `battle0` 的 4 个场景不相交），
   //    所以这不是"照抄"，是**一条明写出来的取舍**：起两场只能留一场。
-  if (fight.battle0 !== null && battleRequest === null) {
+  if (fight.battle0 !== null && req.battleRequest === null) {
     const info = checkBattle0(fight, rx, ry, random)
     if (info !== null) requestBattle(info)
   }
@@ -413,10 +407,7 @@ export function step(
     select: fromSelectDraft(sel),
     recorder: sel.recorder,
     treasure: fromTreasureDraft(tre),
-    battleRequest,
-    selectPanelRequest,
-    presentRequest,
-    treasureRequest,
+    ...req,
   }
 }
 

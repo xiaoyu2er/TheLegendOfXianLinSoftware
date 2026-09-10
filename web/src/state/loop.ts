@@ -1,5 +1,6 @@
 import { TICK_MS, step } from './step'
 import type { SceneSource } from './step'
+import { hasRequest } from './types'
 import type { InputEvent, World } from './types'
 
 /**
@@ -78,24 +79,14 @@ export function advance(
   for (let i = 0; i < ticks; i++) {
     world = step(world, i === 0 ? queue : EMPTY, TICK_MS, scenes, random)
     ran++
-    // **起战斗的那一拍就停下这一批**（xl-rh9.17）。`battleRequest` 只亮一拍，
-    // 而一次 pump 常常要补跑好几拍 —— 不停的话，第 3 拍起的那场架会被第 4 拍
-    // 的世界（`battleRequest: null`）覆盖掉，表现是"走到第 30 格什么也没发生"，
-    // 和"还没走够"长得一模一样。
+    // **有请求亮起的那一拍就停下这一批**（`SceneRequests`，xl-i06.3 收拢）。
+    // 请求只亮一拍，而一次 pump 常常要补跑好几拍 —— 不停的话，亮着的那一拍会被
+    // 下一拍的世界（全 `null`）覆盖掉，而被吞掉的样子与"压根没发"一模一样
+    // （比如走到第 30 格什么也没发生）。有哪几个请求，看 `SceneRequests`。
     //
     // 没跑的那几拍**留在 carryMs 里**，下一次 pump 接着跑，所以
     // `loop.test.ts` 那条"切成几段喂进来结果都一样"的不变量照旧成立。
-    if (world.battleRequest !== null) break
-    // 答对答错的加扣（`presentRequest`，xl-yg6.9）同一个坑、同一个做法：它也只亮
-    // 一拍，被吞掉的表现是"题答完了、钱一个子儿没动"。它只会在读输入的那一拍
-    // （i === 0）亮起，所以停在这里至多少跑一批里剩下的那几拍，留给下一次 pump。
-    if (world.presentRequest !== null) break
-    // 开箱开出来的东西（`treasureRequest`，xl-yg6.10）：同一个坑，被吞掉的表现是
-    // "箱子空了、提示框也弹了，背包里却什么都没多"。
-    if (world.treasureRequest !== null) break
-    // 选择框切去药店 / 装备超市（`selectPanelRequest`，xl-yg6.11）：同一个坑，
-    // 被吞掉的表现是"选了「是」什么也没发生"—— 与"压根没发"在画面上一模一样。
-    if (world.selectPanelRequest !== null) break
+    if (hasRequest(world)) break
   }
   return { ...ticker, world, carryMs: budget - ran * TICK_MS, pending: [] }
 }

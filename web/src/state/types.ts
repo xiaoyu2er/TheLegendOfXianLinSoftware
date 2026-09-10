@@ -130,7 +130,7 @@ export interface RoleState {
  * （xl-9bd.9）。`NpcState` 带着派生的格子坐标 `x`/`y`，所以它同时是一个
  * `TilePos`，上面那两处照读不误。
  */
-export interface World {
+export interface World extends SceneRequests {
   readonly timeMs: number
   readonly collision: CollisionMap
   readonly npcs: readonly NpcState[]
@@ -197,17 +197,6 @@ export interface World {
    */
   readonly fight: FightState
   /**
-   * **这一拍要起一场战斗**（xl-rh9.17）。`null` = 这一拍不起。
-   *
-   * 它是 `step()` 的一个**输出**，不是常驻状态：起战斗的那一拍是哪一拍在
-   * 原版里看得见（`switchTo("battle")` 就发生在那一拍里），所以把它做成一个
-   * 只亮一拍的字段，而不是让调用方去比较前后两个世界猜出来。
-   *
-   * 元组是 `Fight` 段那一行，原样递出去 —— 解它、建怪、切面板都在
-   * `game/session.ts`。
-   */
-  readonly battleRequest: BattleInfo | null
-  /**
    * 选择框 / 答题那套状态机（xl-yg6.8）。整个来自 `src/scene/SelectEvent.java`，
    * 真值按这一个对象整列记（`select`）。
    *
@@ -227,41 +216,12 @@ export interface World {
    */
   readonly recorder: readonly SelectRecord[]
   /**
-   * **这一拍选择框要切到药店或装备超市**（`GameLauncher.switchTo(...)`）。
-   * `null` = 这一拍不切。与 `battleRequest` 同一个形状：只亮一拍的输出，
-   * 不是常驻状态。
-   *
-   * 消费者是 `game/session.ts`（xl-yg6.11）：翻到 `shop` 面板、进
-   * `SHOP_OF_DOOR` 那一家。`state/loop.ts` 在它亮的那一拍停批。它非发不可，
-   * 是因为"选了是"与"选了否"在别处一模一样（`isSelect` 两条路上都留着，
-   * 见 `docs/trace-format.md`），不发出来就没有任何东西分得开这两条路。
-   */
-  readonly selectPanelRequest: 'shop' | 'equipmentShop' | null
-  /**
-   * **这一拍答对或答错了**：加扣多少金币、"得到物品"提示框该吐哪句话。
-   * `null` = 这一拍没有。
-   *
-   * 两个消费者：钱包（`game/session.ts`，xl-yg6.9）读 `coins`；提示框在
-   * `step()` 里当拍就接走了 `text`（`state/treasure.ts` 的 `drawString`，
-   * xl-yg6.10）—— 那一半不必出这一层，它就是 `World.treasure`。
-   */
-  readonly presentRequest: PresentRequest | null
-  /**
    * 宝箱与「得到物品」提示框（xl-yg6.10）。整个来自
    * `src/scene/EquipmentEvent.java` 与它持有的那批 `TreasureBox`，真值按这一个
    * 对象整列记（`treasure`）。每次 `initiate` 都新建 —— 提示框与"开过没"都
    * 不跨场景，原版就是这样。
    */
   readonly treasure: TreasureState
-  /**
-   * **这一拍开箱开出来的东西**（`DrugPack.addDrug(treasureName, i)`）。
-   * `null` = 这一拍没开箱。与 `battleRequest` / `presentRequest` 同一个形状：
-   * 只亮一拍的输出，由 `game/session.ts` 记进背包。
-   *
-   * 是数组而不是一件：原版 `EquipmentEvent.keyPressed` 对每一个宝箱都跑一遍，
-   * 同时挨着两个没开过的箱子时，一下空格两个都开。
-   */
-  readonly treasureRequest: readonly TreasureGain[] | null
   /**
    * `GameLauncher.currentPanel == scenePanel`（xl-rh9.17）。
    *
@@ -292,6 +252,81 @@ export interface World {
    * 回放真值时恒为 `false`：导出器从不 `switchTo("scene")`。
    */
   readonly sceneSignal: boolean
+}
+
+/**
+ * **只亮一拍的请求**那一族（xl-i06.3 收拢）：`step()` 的**输出**，不是常驻状态。
+ * `null` = 这一拍没有。
+ *
+ * 它们共用三件事，收拢之后各只写在一处：
+ *
+ * - **每一拍都从全 `null` 起**：`step()` 起手铺一份 `NO_REQUESTS` 当草稿、
+ *   返回时整个铺回世界上，所以上一拍亮过的这一拍一定熄；新建的世界
+ *   （`initiate`）同样铺 `NO_REQUESTS`；
+ * - **亮的那一拍停批**：`state/loop.ts` 只问 `hasRequest(world)`。一次 pump
+ *   常常补跑好几拍，不停的话亮着的那一拍会被下一拍（全 `null`）覆盖掉；
+ * - **会话层（`game/session.ts`）当拍接走**。
+ *
+ * 加一个新请求：在这里加一个字段 → `NO_REQUESTS` 补一个键（不补
+ * `pnpm typecheck` 就红）→ `step()` 里在该亮的地方写 `req.<它> = …` →
+ * 会话层去接。停批与每拍清零不用再碰。
+ */
+export interface SceneRequests {
+  /**
+   * **这一拍要起一场战斗**（xl-rh9.17）。
+   *
+   * 起战斗的那一拍是哪一拍在原版里看得见（`switchTo("battle")` 就发生在那一拍
+   * 里），所以把它做成一个只亮一拍的字段，而不是让调用方去比较前后两个世界
+   * 猜出来。
+   *
+   * 元组是 `Fight` 段那一行，原样递出去 —— 解它、建怪、切面板都在
+   * `game/session.ts`。
+   */
+  readonly battleRequest: BattleInfo | null
+  /**
+   * **这一拍选择框要切到药店或装备超市**（`GameLauncher.switchTo(...)`）。
+   *
+   * 消费者是 `game/session.ts`（xl-yg6.11）：翻到 `shop` 面板、进
+   * `SHOP_OF_DOOR` 那一家。它非发不可，是因为"选了是"与"选了否"在别处一模
+   * 一样（`isSelect` 两条路上都留着，见 `docs/trace-format.md`），不发出来就
+   * 没有任何东西分得开这两条路。
+   */
+  readonly selectPanelRequest: 'shop' | 'equipmentShop' | null
+  /**
+   * **这一拍答对或答错了**：加扣多少金币、"得到物品"提示框该吐哪句话。
+   *
+   * 两个消费者：钱包（`game/session.ts`，xl-yg6.9）读 `coins`；提示框在
+   * `step()` 里当拍就接走了 `text`（`state/treasure.ts` 的 `drawString`，
+   * xl-yg6.10）—— 那一半不必出这一层，它就是 `World.treasure`。
+   */
+  readonly presentRequest: PresentRequest | null
+  /**
+   * **这一拍开箱开出来的东西**（`DrugPack.addDrug(treasureName, i)`），由
+   * `game/session.ts` 记进背包。
+   *
+   * 是数组而不是一件：原版 `EquipmentEvent.keyPressed` 对每一个宝箱都跑一遍，
+   * 同时挨着两个没开过的箱子时，一下空格两个都开。
+   */
+  readonly treasureRequest: readonly TreasureGain[] | null
+}
+
+/**
+ * 一个都不亮。类型是 `SceneRequests` 的键逐个映成 `null`，所以**给
+ * `SceneRequests` 加了字段而这里没补，`pnpm typecheck` 当场红** —— 它因此
+ * 同时是这一族的名单，`hasRequest` 与 `requests.test.ts` 都从它现读。
+ */
+export const NO_REQUESTS: { readonly [K in keyof SceneRequests]: null } = {
+  battleRequest: null,
+  selectPanelRequest: null,
+  presentRequest: null,
+  treasureRequest: null,
+}
+
+const REQUEST_KEYS = Object.keys(NO_REQUESTS) as readonly (keyof SceneRequests)[]
+
+/** 这一拍有没有哪个请求亮着。`state/loop.ts` 靠它停批。 */
+export function hasRequest(requests: SceneRequests): boolean {
+  return REQUEST_KEYS.some((k) => requests[k] !== null)
 }
 
 /** 世界声明此刻该放的背景音乐。见 `World.audio`。 */
