@@ -1,0 +1,17 @@
+{
+  "file": "存档0.txt",
+  "slot": 0,
+  "physicalLines": 9,
+  "reads": [
+    { "line": 1, "readBy": ["getTextInfo()","isNull()"], "fields": ["true","true","true","大地图.jpg","现在要去练武场一决胜负了"] },
+    { "line": 2, "readBy": ["zhangXiaoFanInfo"], "fields": ["11","1267","990","1746","true","false","12257"] },
+    { "line": 3, "readBy": ["luXueQiInfo"], "fields": ["10","800","710","530","false","false","8719"] },
+    { "line": 4, "readBy": ["yuJieInfo"], "fields": ["11","1222","300","1342","false","false","10926"] },
+    { "line": 5, "readBy": ["sceneInfo"], "fields": ["true","脚本38.txt","false","3","32","40","43/42 比武第二阶段 脚本38.txt","32/40 大地图.txt 脚本39.txt","false","2"] },
+    { "line": 6, "readBy": ["menuInfo"], "fields": ["千月星痕","null","null","null","null","null","藏璎环","null","null","null","null","null","御衡镇日刀","null","null","null","null","null"] },
+    { "line": 7, "readBy": ["shopInfo"], "fields": ["32","18","15","10","16","2","59868"] },
+    { "line": 8, "readBy": ["equipmentShopInfo"], "fields": ["0","0","0","0","1","0","0","0","0","0","1","0","0","0","0","1","0","0","1","1","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"] },
+    { "line": 9, "readBy": ["questionInfo"], "fields": [""] },
+    { "line": 10, "readBy": ["answerInfo"], "fields": [] }
+  ]
+}
