@@ -168,13 +168,15 @@ describe('资产逻辑 ID', () => {
       Array.from({ length: headFilesInRepo() }, (_, i) => i),
     )
     // `dialogue/` 那几张固定图。**这是一份登记，不是分母**：目录里还躺着
-    // `问题框.png`（xl-yg6.9）与 `提示框.png`（xl-yg6.10）两张没人烘，
-    // 改成"现扫目录"就等于让还没做的那两张自动算作做完了。
+    // `提示框.png`（xl-yg6.10）没人烘，改成"现扫目录"就等于让还没做的那张
+    // 自动算作做完了。
     expect(ids.filter((id) => id.startsWith('dialogue:')).sort()).toEqual([
       'dialogue:box',
       'dialogue:icon0',
       'dialogue:icon1',
       'dialogue:name',
+      // 问题框，xl-yg6.9。
+      'dialogue:question',
       // 选择框那两张，xl-yg6.8。
       'dialogue:select',
       'dialogue:selectIcon',

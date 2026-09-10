@@ -15,10 +15,8 @@ import { npcSprite } from './npcSprite'
 import { roleSprite } from './roleSprite'
 import {
   FONT_SIZE as SELECT_FONT_SIZE,
-  ICON_LEFT,
   ICON_SIZE,
-  boxRect,
-  iconY,
+  boxFrame,
   selectBoxKind,
   selectCells,
   selectLines,
@@ -159,6 +157,8 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   let selectTexture: Texture | null = null
   /** 选择框那张图这一帧露出的那块。`dynamic` 要开，理由同地图碎片。 */
   let selectFrame: Texture | null = null
+  /** 问题框（`问题框.png`，xl-yg6.9）这一帧露出的那块。与选择框共用一个精灵，按支换纹理。 */
+  let questionFrame: Texture | null = null
 
   // 旁白：一张铺满画布的背景动画 + 一层文字（xl-9bd.11）。
   //
@@ -245,22 +245,21 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   }
 
   /**
-   * 选择框那两张图。**一次载齐**，两张加起来几 KB；按需载会让选择框弹出来的
-   * 第一帧画不出来，而那一帧恰好是滑入动画的起点。
+   * 选择框那三张图（选择框 / 问题框 / 光标）。**一次载齐**，加起来几十 KB；
+   * 按需载会让框弹出来的第一帧画不出来，而那一帧恰好是滑入动画的起点。
    */
   async function loadSelectTextures(): Promise<void> {
     if (selectTexture !== null) return
-    const [box, icon] = await Promise.all([
+    const [box, question, icon] = await Promise.all([
       Assets.load<Texture>(resolveAsset(dialogueAssetId('select'))).then(nearest),
+      Assets.load<Texture>(resolveAsset(dialogueAssetId('question'))).then(nearest),
       Assets.load<Texture>(resolveAsset(dialogueAssetId('selectIcon'))).then(nearest),
     ])
     selectTexture = box
-    selectFrame = new Texture({
-      source: box.source,
-      frame: new Rectangle(0, 0, 1, 1),
-      dynamic: true,
-    })
-    selectBox.texture = selectFrame
+    const frameOf = (texture: Texture): Texture =>
+      new Texture({ source: texture.source, frame: new Rectangle(0, 0, 1, 1), dynamic: true })
+    selectFrame = frameOf(box)
+    questionFrame = frameOf(question)
     selectCursor.texture = icon
   }
 
@@ -381,22 +380,27 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
    */
   function drawSelect(world: World): void {
     const kind = selectBoxKind(world.select)
-    if (kind === null || selectTexture === null || selectFrame === null) {
+    const frame = kind === 'question' ? questionFrame : selectFrame
+    if (kind === null || selectTexture === null || frame === null) {
       selectLayer.visible = false
       return
     }
     selectLayer.visible = true
 
-    const rect = boxRect(world.select)
-    selectFrame.frame.x = 0
-    selectFrame.frame.y = 0
+    // 选择框与问题框共用一个精灵，按支换纹理（原版是同一个 `drawSelectImage`
+    // 里的两支，一帧只进一支）。
+    const rect = boxFrame(world.select, kind)
+    selectBox.texture = frame
     // 宽或高为 0 的 `Rectangle` 会让 Pixi 算出一张 0 尺寸的纹理；滑入的第一帧
-    // 就是 0×0（`showSelectShopPanel` 把两个游标清成 0，下一拍才 +50/+15）。
+    // 就是 0×0（`showSelectShopPanel` 把两个游标清成 0，下一拍才 +50/+15；
+    // 问题框翻过来那一拍四个游标都在屏幕中心）。
     selectBox.visible = rect.width > 0 && rect.height > 0
     if (selectBox.visible) {
-      selectFrame.frame.width = rect.width
-      selectFrame.frame.height = rect.height
-      selectFrame.update()
+      frame.frame.x = rect.srcX
+      frame.frame.y = rect.srcY
+      frame.frame.width = rect.width
+      frame.frame.height = rect.height
+      frame.update()
       selectBox.position.set(rect.x, rect.y)
       selectBox.setSize(rect.width, rect.height)
     }
@@ -405,14 +409,15 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     const cursor = lines.find((line) => line.selected)
     selectCursor.visible = cursor !== undefined
     if (cursor !== undefined) {
-      selectCursor.position.set(ICON_LEFT, iconY(cursor.row))
+      selectCursor.position.set(cursor.iconX, cursor.iconY)
       selectCursor.setSize(ICON_SIZE, ICON_SIZE)
     }
 
     // 正文只在真的变了的时候重画：一整张 1024×640 的画布每帧重传纹理太贵，
-    // 而逐字游标 30 ms 才动一次。键里带上光标行号 —— 只按文字比的话，
-    // 上下键翻光标那一下颜色不会跟着变。
-    const key = `${cursor?.row ?? -1}|${lines.map((line) => `${line.row}:${line.text}`).join('\n')}`
+    // 而逐字游标 30 ms 才动一次。键里带上是哪一支与光标行号 —— 只按文字比的
+    // 话，上下键翻光标那一下颜色不会跟着变；而问题框与回答框的行距起点不同，
+    // 同一行字换一支画的位置就不一样。
+    const key = `${kind}|${cursor?.row ?? -1}|${lines.map((line) => `${line.row}:${line.text}`).join('\n')}`
     if (key === drawnSelectText) return
     selectTextCtx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
     selectTextCtx.font = `bold ${SELECT_FONT_SIZE}px ${FONT_STACK}`

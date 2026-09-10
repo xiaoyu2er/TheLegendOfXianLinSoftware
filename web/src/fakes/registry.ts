@@ -67,8 +67,8 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
     owner: 'xl-knp.1',
     original: 'shop.Money',
     fakeBecause:
-      '初值是抄来的常量 10000 而不是从存档读的；只做了加法，reduceCoins 故意没做 —— ' +
-      '战斗结算不花钱，补一个没人调的方法只会造出"看起来做完了"的假象。',
-    exports: ['getCoins', 'addCoins', 'resetWallet'],
+      '初值是抄来的常量 10000 而不是从存档读的（存档归 M6）；加减两个方法都在 ' +
+      '（reduceCoins 的第一个调用方是答错扣钱，xl-yg6.9），setCoins 没做 —— 读档才调它。',
+    exports: ['getCoins', 'addCoins', 'reduceCoins', 'resetWallet'],
   },
 }

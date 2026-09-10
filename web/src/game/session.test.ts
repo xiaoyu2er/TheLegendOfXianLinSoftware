@@ -7,6 +7,7 @@ import { TITLE_BGM } from '../start/assets'
 import { repoPath } from '../test/repoPath'
 import { getScene } from '../data/scenesEager'
 import { getParty, rememberParty, resetParty } from '../fakes/party'
+import { getCoins, resetWallet } from '../fakes/wallet'
 import { HEROES, derive } from '../battle/units'
 import type { PartyKey } from '../battle/units'
 import { readBattleTrace } from '../battle/trace'
@@ -571,3 +572,98 @@ function snapshotScene(s: RunningSession) {
     npcCount: w.npcs.length,
   }
 }
+
+/**
+ * 答对答错的加扣金币落进钱包（xl-yg6.9）。
+ *
+ * 原版是 `SelectEvent.keyPressed` 里那两句 `Money.addCoins(i)` /
+ * `Money.reduceCoins(i)` —— 与 `drawString` 在同一拍。状态层把它做成只亮一拍的
+ * `World.presentRequest`（xl-yg6.8），这里验的是**会话真的把它记进了钱包**。
+ *
+ * 真值不记钱（金额是 `Math.random()` 现掷的，见 `docs/trace-format.md`），所以
+ * 这一条没有真值可对：`random` 钉成 0.5，金额恒为 `500 + (int)(500 * 0.5)`。
+ */
+describe('答题 → 钱包', () => {
+  beforeEach(() => {
+    resetWallet()
+  })
+
+  /** 站到大活 0 号 NPC 那一格上（与 `state/select.test.ts` 同一个摆法）。 */
+  function daHuo(): RunningSession {
+    const world = createWorld(getScene('大活'))
+    const npc = world.npcs[0]!
+    return openSession(
+      { ...world, role: { ...world.role, px: npc.x * 32, py: npc.y * 32 } },
+      deps(fixedRandom(0.5)),
+    )
+  }
+
+  const scene = (keys: InputEvent[]) => ({ scene: keys, battle: [], menu: [] })
+
+  /** 一拍一拍推，直到选择框的三个定时器都停下来。 */
+  function settle(session: RunningSession): RunningSession {
+    let s = session
+    for (let i = 0; i < 4000; i++) {
+      const t = s.scene.world.select
+      if (!t.selectImageMove.running && !t.questionImageMove.running && !t.wordsRun.running) return s
+      s = advanceSession(s, scene([]), SCENE_PUMP_MS)
+    }
+    throw new Error('选择框 4000 拍还没停下来')
+  }
+
+  /** 走到问题框吐完、光标停在初值上。 */
+  function asking(): RunningSession {
+    let s = daHuo()
+    // 0 号 NPC 是原地运动型，要等 `checkNpcStop` 把它停下来才搭得上话。
+    for (let i = 0; i < 5; i++) s = advanceSession(s, scene([]), SCENE_PUMP_MS)
+    s = settle(advanceSession(s, scene([press('space')]), SCENE_PUMP_MS))
+    expect(s.scene.world.select.question, '第一下空格该弹出「要不要答题」').toBe(true)
+    s = settle(advanceSession(s, scene([press('enter')]), SCENE_PUMP_MS))
+    expect(s.scene.world.select.asking).toBe(true)
+    return s
+  }
+
+  it('答错扣钱、答对加钱，金额与提示语是同一个数', () => {
+    const answer = Number(getScene('大活').answer![0]![0])
+
+    // 答错：光标停在初值 size()-5 上，而这道题的答案不是它（夹具先核一遍）。
+    const wrong = asking()
+    expect(wrong.scene.world.select.abcd).not.toBe(answer)
+    const w = advanceSession(wrong, scene([press('enter')]), SCENE_PUMP_MS)
+    expect(w.scene.world.presentRequest).toEqual({
+      correct: false,
+      coins: 750,
+      text: '回答错误，扣掉750个金币',
+    })
+    expect(getCoins()).toBe(10000 - 750)
+
+    // 答对：挪到答案那一行再交卷。
+    resetWallet()
+    let right = asking()
+    // 有界：答案那一行要是不在光标的取值范围里，这里该报错，而不是挂到超时。
+    for (let i = 0; i < 8 && right.scene.world.select.abcd !== answer; i++) {
+      right = advanceSession(right, scene([press('down')]), SCENE_PUMP_MS)
+    }
+    expect(right.scene.world.select.abcd, '按了 8 下下键还没挪到答案那一行').toBe(answer)
+    const r = advanceSession(right, scene([press('enter')]), SCENE_PUMP_MS)
+    expect(r.scene.world.presentRequest?.correct).toBe(true)
+    expect(getCoins()).toBe(10000 + 750)
+  })
+
+  /**
+   * `presentRequest` 只亮一拍，而一次 pump 常常补跑好几拍 —— 与 `battleRequest`
+   * 同一个坑（`state/loop.ts` 的那个 break）。不停的话，交卷那一拍的请求被同批
+   * 下一拍的 `null` 盖掉，钱包一个子儿都不动，而画面上"题答完了"照常发生。
+   */
+  it('一次 pump 补跑很多拍，交卷那一拍的加扣不会被吞掉', () => {
+    const s = asking()
+    const burst = advanceSession(s, scene([press('enter')]), 500)
+    expect(burst.scene.world.presentRequest, '交卷那一拍被同一批的下一拍吞掉了').not.toBeNull()
+    expect(getCoins()).toBe(10000 - 750)
+    // 没跑完的那几拍留在 carryMs 里；下一次 pump 接着跑，钱不会再扣一次。
+    expect(burst.scene.carryMs).toBeGreaterThan(0)
+    const next = advanceSession(burst, scene([]), SCENE_PUMP_MS)
+    expect(next.scene.world.presentRequest).toBeNull()
+    expect(getCoins()).toBe(10000 - 750)
+  })
+})

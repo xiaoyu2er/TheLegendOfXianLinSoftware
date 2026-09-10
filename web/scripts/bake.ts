@@ -143,6 +143,8 @@ const DIALOGUE_IMAGES: Readonly<Record<DialogueImageName, string>> = {
   // `dialogue//选择框.png` 与 `dialogue//icon.png`。
   select: 'dialogue/选择框.png',
   selectIcon: 'dialogue/icon.png',
+  // 问题框（xl-yg6.9）。同一个构造函数读的 `dialogue//问题框.png`。
+  question: 'dialogue/问题框.png',
 }
 
 /**
