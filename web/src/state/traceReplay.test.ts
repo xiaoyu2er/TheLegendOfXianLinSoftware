@@ -505,6 +505,11 @@ describe('回放行为真值', () => {
         }
         compared++
         expect(got, `${name} 的 ${group} 在真值里是对象/数组，观察函数却给了标量`).not.toBeNull()
+        // ⚠️ 空的键名表两边都是 `[]`，那一格**恒真**（/code-review 的 Standards
+        // 轴提的）：一列 `npcs` 要是空数组，`subKeysOf` 给的就是 `[]`，
+        // "两边都没有子字段"与"两边的子字段都对上了"长得一样。今天五条真值的
+        // NPC 条数是 13/2/3/2/3（实测），观测不到 —— 所以这条明写出来。
+        expect(truth.length, `${name} 的 ${group} 一个子字段都没读到`).toBeGreaterThan(0)
         expect(
           [...(got ?? []), ...deadFieldsOf(group)].sort(),
           `${name} 的 ${group} 子字段与真值不一致：真值有 ${truth.join('/')}`,
@@ -680,7 +685,7 @@ describe('回放行为真值', () => {
   describe('反方向：登记成「还欠着」的格子必须真的还没对上', () => {
     // 同上：`PENDING` 空着时这个 describe 也是零用例。
     if (Object.keys(PENDING).length === 0) {
-      it('今天没有「还欠着」的格子 —— 七组 × 五条剧本全对齐了，另两组签在别处', () => {
+      it('今天没有「还欠着」的格子 —— 这是读数，不是这张表的形状', () => {
         expect(PENDING).toEqual({})
       })
     }
