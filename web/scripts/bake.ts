@@ -332,8 +332,9 @@ function main(): void {
   }
   // 登记的每一张都得真的烘到过：名单里写错一个字，那张图会静默落回 q80，
   // 而「落回 q80」的样子是跨端比对里整屏又差回 30%，与「这一族账还没还」分不开。
+  const referencedMaps = new Set(mapSources(scenes))
   for (const source of MAP_NEAR_LOSSLESS) {
-    if (!mapSources(scenes).includes(source)) {
+    if (!referencedMaps.has(source)) {
       console.error(`MAP_NEAR_LOSSLESS 里的 ${source} 不是任何场景的底图 —— 名单写错了`)
       process.exit(1)
     }

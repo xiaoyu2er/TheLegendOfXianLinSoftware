@@ -1,5 +1,7 @@
+import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
+import { repoPath } from '../test/repoPath'
 import { OVERLAY_FILES, overlayPlacements } from './mapOverlays'
 import type { SceneViewport } from './viewport'
 
@@ -48,8 +50,9 @@ describe('OtherEvent.addMap 的遮掩图', () => {
     expect(OVERLAY_FILES).toHaveLength(19)
     expect(new Set(OVERLAY_FILES).size).toBe(OVERLAY_FILES.length)
     expect(OVERLAY_FILES).toContain('money')
-    for (const p of overlayPlacements('大地图夜.jpg', 80, at(0, 0))) {
-      expect(OVERLAY_FILES).toContain(p.asset.replace(/^overlay:/, ''))
-    }
+    // 核的是**磁盘**，不是名单自己：名单由 `OVERLAYS` 推出来，拿它去核它推出来的
+    // 那几个名字按构造恒真（/code-review 抓的）。拼错一个字，这里点名是哪张。
+    const absent = OVERLAY_FILES.filter((file) => !existsSync(repoPath(`maps/${file}.png`)))
+    expect(absent, '烘焙名单里这几张 maps/ 下没有').toEqual([])
   })
 })

@@ -1,12 +1,5 @@
 import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
-import {
-  dialogueAssetId,
-  mapAssetId,
-  mapOverlayAssetId,
-  narratageBgAssetId,
-  npcAssetId,
-  roleAssetId,
-} from '../assets/ids'
+import { dialogueAssetId, mapAssetId, mapOverlayAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../assets/ids'
 import { getCoins } from '../fakes/wallet'
 import { COIN_ICON, COIN_ICON_FILE, COIN_TEXT, OVERLAY_FILES, overlayPlacements } from './mapOverlays'
 import type { AssetId } from '../assets/ids'
@@ -687,7 +680,6 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       await loadTreasureTextures()
       await loadNarratageTextures(scene)
       await loadOverlayTextures()
-      currentScene = scene
       const texture = nearest(
         await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
       )
@@ -707,6 +699,9 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       // 换地图只换碎片指向的源，精灵与 `Texture` 对象留着 —— Assets 的缓存
       // 保住了解码结果，池子保住了精灵。
       mapTexture = texture
+      // 遮掩层要的地图名与行数跟地图**同一处**换：早于这一行换的话，上面那几个
+      // `await` 期间来的 `showWorld` 会拿新场景的名字去摆旧地图上的遮掩图。
+      currentScene = scene
       for (const piece of mapPieces) piece.texture.source = texture.source
 
       // 这个场景的 NPC：先把素材载齐，再按条数重建精灵。**重建而不是复用**，

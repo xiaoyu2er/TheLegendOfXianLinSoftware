@@ -1,4 +1,3 @@
-import { OVERLAY_FILES } from '../scene/mapOverlays'
 import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
@@ -27,6 +26,7 @@ import {
 } from '../menu/equipmentPictures'
 import { repoPath } from '../test/repoPath'
 import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
+import { OVERLAY_FILES } from '../scene/mapOverlays'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
 function headFilesInRepo(): number {
