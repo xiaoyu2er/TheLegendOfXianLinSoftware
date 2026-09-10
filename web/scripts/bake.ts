@@ -61,6 +61,7 @@ import {
   drugPictureAssetId,
   headAssetId,
   mapAssetId,
+  mapOverlayAssetId,
   narratageBgAssetId,
   npcAssetId,
   roleAssetId,
@@ -93,6 +94,7 @@ import {
   shopUnreferencedProductPath,
 } from '../src/shop/shopAssets'
 import { scanShopReferences } from '../src/shop/shopReferences'
+import { OVERLAY_FILES } from '../src/scene/mapOverlays'
 import { bakeScript } from '../src/data/bakeScript'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
@@ -428,6 +430,21 @@ function main(): void {
   console.log(
     `对话框素材 ${Object.keys(DIALOGUE_IMAGES).length} 张 + 头像 ${HEAD_COUNT} 张 → dialogue/*.webp、heads/*.webp`,
   )
+
+  // `OtherEvent.addMap` 那一层（xl-yg6.12）：大地图的遮掩图与金币图标。路径是原版
+  // 那几句 `drawImage` 写死的，脚本里一个字都没提，所以同样不在 checkSceneAssets
+  // 的覆盖范围内，缺了攒进 missing 一次报全。名单与渲染器共用 `OVERLAY_FILES`。
+  for (const file of OVERLAY_FILES) {
+    const source = resolve(REPO, 'maps', `${file}.png`)
+    if (!existsSync(source)) {
+      missing.push(`地图遮掩层 maps/${file}.png`)
+      continue
+    }
+    const relative = `overlays/${file}.webp`
+    manifest[mapOverlayAssetId(file)] = relative
+    bytes += toWebp(source, resolve(ASSETS_OUT, relative))
+  }
+  console.log(`地图遮掩层 ${OVERLAY_FILES.length} 张 → overlays/*.webp`)
 
   // 旁白的背景动画。跟主角精灵一样不在 checkSceneAssets 的覆盖范围内 ——
   // 那一层查的是场景数据引用到的资源，而这 52 张的路径是原版 `Narratage`

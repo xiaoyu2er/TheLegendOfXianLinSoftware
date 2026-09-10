@@ -107,6 +107,15 @@ export function narratageBgAssetId(frame: number): AssetId {
   return `narratage:bg:${frame}`
 }
 
+/**
+ * `OtherEvent.addMap` 那一层的一张图（xl-yg6.12）：大地图的遮掩图与金币图标。
+ * 入参是 `maps/` 下的文件名去掉 `.png`（`tiyuguan2夜`、`money`），名单在
+ * `scene/mapOverlays.ts` 的 `OVERLAY_FILES`。
+ */
+export function mapOverlayAssetId(file: string): AssetId {
+  return `overlay:${file}`
+}
+
 /** `舒缓.mp3` → `bgm:舒缓`。BGM 的转码与播放在 xl-9bd.12。 */
 export function bgmAssetId(musicName: string): AssetId {
   return `bgm:${stem(basename(musicName))}`
