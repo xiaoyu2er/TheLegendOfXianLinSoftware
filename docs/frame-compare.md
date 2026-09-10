@@ -348,8 +348,8 @@ xl-u39 真的走了一遍，见上一节。
 
 ## 装配不出来的驱动器：未实现的 web 侧必须响亮（xl-1vu.7）
 
-四种驱动器的真值现在都齐了（场景 / 战斗 / 菜单 / 商店，见 `docs/trace-format.md`
-的「四种驱动器一览」），而**取图页只装配得出 `web/src/replay/implemented.ts` 里
+驱动器的真值（有哪几支见 `docs/trace-format.md` 的驱动器一览，M6 起多了第五支
+`saveload`），**取图页只装配得出 `web/src/replay/implemented.ts` 里
 `IMPLEMENTED_DRIVERS` 列的那几支**——名单只有那一份，这里不抄第二份（**别照抄
 任何写在散文里的读数**：这一处的读数已经过期过两次，2026-09-07 写的是 `scene`
 与 `battle`）。没在名单上的那几支在这条流水线里
@@ -956,3 +956,35 @@ question-memory 2207 → 1046。那一格的内容随取样帧落在滑动的哪
 
 最后一条是**这一层有没有被守住**的判据：`mapOverlays.test.ts` 只验摆位算得对不对，
 渲染器按设计没有测试缝，真把这一层画没了，`pnpm test` 全绿 —— 只有逐帧比对会红。
+
+## 存读档面板与读档剧本接上（2026-09-10，xl-i06.12，M6 收口）
+
+**先验证了「不加装配会红」**（改动之前跑 `tools/compare-frames.sh saveload-menu saveload-start`，
+退出码 1，两条逐条点名 `driver=saveload` 与 `xl-i06.12`），再把 `saveload` 加进
+`IMPLEMENTED_DRIVERS` 与取图页装配表。
+
+### 原版存档从哪来
+
+两条 saveload 剧本起手要草稿区那三个槽，三条读档剧本（场景剧本带 `load`）起手要那一份档读回来
+的样子。**没有另写浏览器侧的原版存档读取器**：比对器在 Node 那一半用状态层判据的同一个读取器
+解好（`web/src/compare/saveFixtures.ts` —— 读档那一路 `loaderReadBack`、写档装置那一路
+`fromRecorderText`，后者的布局从 Java 源码现读、在浏览器里做不了），随剧本送进页面。
+取图页的读档起手走产品那一路的 `applyReadBack`（钱也落进钱包，金币 HUD 画的是存档里的数）；
+存读档面板的起手与逐步推进与状态层判据共用 `web/src/saveload/replay.ts`。
+
+### 量出来的分区（矩形与读数在 `expected.ts`）
+
+| 剧本 | 帧 | 缺口区 | 硬比区 |
+|---|---|---|---|
+| saveload-menu | 9 | thumb-0/1/2（xl-cpo）· map-name-0/1/2 · task-0/1/2（字形） | 逐像素相等 |
+| saveload-start | 5 | thumb-0（xl-cpo）· map-name-0/1/2 · task-0/2（字形） | 逐像素相等 |
+| load-slot0/1/2 | 8/11/9 | coin-digits（字形） | 逐像素相等 |
+
+- **缩略图整块挂 xl-cpo，不在本票拟合。** 大迷宫.png 那一格两端逐像素相等（反证：原版那块
+  4655 种颜色、空槽位置 144 种），所以不声明；读数记在 xl-cpo 上。
+- **追出来的第三族：地图图片与碰撞网格不等。** load-slot2 读进 脚本20，渲染器原先对「图 ≠
+  网格 × 32」一律拒绝渲染。现数 96 个场景里 22 个对不上：图比网格大（大迷宫.png）的画法与相等
+  时相同，放行（`web/src/scene/mapSize.ts`）；图比网格小的 20 个另立 **xl-i06.14**，照旧拒绝。
+  load-slot2 硬比区逐像素相等是「放行得对」的读数。
+- 取图页每条场景剧本起手重置钱 / 药 / 队伍单例 —— 一个页面连着装好几条剧本，读档剧本写进
+  钱包的数会画到下一条的金币 HUD 上。
