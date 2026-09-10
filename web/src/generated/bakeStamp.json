@@ -46,10 +46,10 @@
     "web/src/state/narratage.ts": "219ef613e81f9afa9dc89afbdb426e9544bc36c9edcc41a15be41fce56579240",
     "web/src/state/npc.ts": "9694fa399c2f44026ca018e8f7afe37a95185b9ea7d4ad0464ed9c44dd6b6553",
     "web/src/state/role.ts": "3b2ca2f6d64483d21639e1645f48b20879222a59ba563b5c821b1ec70fd23da3",
-    "web/src/state/select.ts": "a920ffea6f5173d23e6f15dfbe0d7f208d5174b4b2c9e4a07e405ce56f60c0b5",
+    "web/src/state/select.ts": "c6f0f0e0edb88c39bbcdc15e727e18952a3370a47c4f734009d69ec567228da9",
     "web/src/state/timer.ts": "836ef72b45e1930db3aeea089bbe6b699eee75a9d0af483990be80b7be0f7056",
     "web/src/state/treasure.ts": "c3e115a47f90d241a61c544e254729b5ac3e6ce84bd210e4e894853c87d3fafb",
-    "web/src/state/types.ts": "482b8f9fb09cdbd8fd7bddc81c272c8b281b83cad205f930f6ae1f9181ecb3ca"
+    "web/src/state/types.ts": "33456fcfeee19b24518f9dbe578defcf3df7a917f4a22062542a003c47c5f13b"
   },
   "inputs": {
     "NPCs/厨师1/1.png": "d339407f5881072d19597ab27cf154d8170c9b04ceb0c16db18d7a13be560535",

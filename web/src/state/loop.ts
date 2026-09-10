@@ -93,6 +93,9 @@ export function advance(
     // 开箱开出来的东西（`treasureRequest`，xl-yg6.10）：同一个坑，被吞掉的表现是
     // "箱子空了、提示框也弹了，背包里却什么都没多"。
     if (world.treasureRequest !== null) break
+    // 选择框切去药店 / 装备超市（`selectPanelRequest`，xl-yg6.11）：同一个坑，
+    // 被吞掉的表现是"选了「是」什么也没发生"—— 与"压根没发"在画面上一模一样。
+    if (world.selectPanelRequest !== null) break
   }
   return { ...ticker, world, carryMs: budget - ran * TICK_MS, pending: [] }
 }

@@ -6,8 +6,8 @@ import type { ShopConfig } from './world'
  * **开发用的商店预览**那一点点纯逻辑（xl-knp.6）。
  *
  * ⚠️ **这不是进店的正路。** 原版进店走的是场景里的选择事件
- * （`GameLauncher.switchTo`），把它接到会话上是 **xl-yg6.2** 的活
- * （「M4→M5 入口：场景选择事件接上药店与装备超市两支」）。这里只是让骨架
+ * （`GameLauncher.switchTo`），那条路 **xl-yg6.11** 接上了（`game/session.ts`）；
+ * `previewFrame` 那一份数法两边共用（`game/useGame.ts` 的 `drawShop`）。这里只是让骨架
  * 在浏览器里**真的画得出来** —— 少了它，"两个店的骨架画得出来"就只剩一句
  * 断言不了的话：`drawList.test.ts` 守的是清单，守不了"这份清单真的贴上了
  * 纹理"，而那两件事失败的样子不一样（前者是断言红，后者是一片空白）。

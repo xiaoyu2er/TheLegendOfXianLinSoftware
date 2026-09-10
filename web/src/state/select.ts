@@ -409,7 +409,7 @@ export function fromSelectDraft(d: SelectDraft): SelectState {
  * - `fight` ← `fightEvent.fight(battle2.get(count_battle2))`，
  *   场景这一侧已经有这条路（`state/step.ts` 的 `requestBattle`）；
  * - `switchTo` ← `GameLauncher.switchTo("shop" | "equipmentShop")`，
- *   药店与装备超市那两扇门 —— 归 **xl-yg6.11**；
+ *   药店与装备超市那两扇门 —— 会话接走（`game/session.ts`，xl-yg6.11）；
  * - `present` ← `Money.addCoins/reduceCoins` + `equipmentEvent.drawString(...)`，
  *   答对答错的加扣金币与"得到物品"提示框 —— 归 **xl-yg6.9 / xl-yg6.10**。
  *   ⚠️ `present` 这个词是**原版自己的**（`EquipmentEvent` 的

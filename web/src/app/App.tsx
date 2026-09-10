@@ -90,13 +90,12 @@ export function App() {
   /**
    * **开发用的商店预览**（xl-knp.6）。
    *
-   * ⚠️ 它不是进店的正路：原版进店走的是场景里的选择事件，把它接到会话上
-   * （`game/session.ts` 的 `Panel`）是 **xl-yg6.2** 的活。这里只让骨架在
-   * 浏览器里真的画得出来 —— `shop/render/drawList.test.ts` 守的是那份清单，
-   * 守不了"清单真的贴上了纹理"，而两者失败的样子不一样（断言红 vs 一片空白）。
+   * ⚠️ 它不是进店的正路：原版进店走的是场景里的选择事件，那条路 xl-yg6.11
+   * 接上了（`game/session.ts` 的 `Panel` 里的 `'shop'`，即下面的 `inShop`）。
+   * 预览留着，是因为它不必先走到店主旁边就看得到两家店的骨架。
    *
-   * 因此它**不进 `view.panel`**，只是一个盖在最上面的独立面板；选它就等于
-   * 把游戏那一半先搁一边。
+   * 它**不进 `view.panel`**，只是一个盖在最上面的独立面板；选它就等于
+   * 把游戏那一半先搁一边 —— 连那张商店画布也归它（见下面 `useGame` 的入参）。
    */
   const shopRenderer = useShopRenderer(shopHostRef)
   const [shopPreview, setShopPreview] = useState<ShopPreviewChoice>('none')
@@ -113,11 +112,15 @@ export function App() {
     sceneName,
     battleRenderer,
     menuRenderer,
+    // 预览开着时那张画布归预览：两边往同一个渲染器上画，谁后画谁赢，一帧一换。
+    inShopPreview ? null : shopRenderer,
   )
   const dialogue = view.dialogue
   if (view.scene !== game.scene) setGame({ scene: view.scene })
   const inBattle = view.panel === 'battle'
   const inMenu = view.panel === 'menu'
+  /** 从选择框那两扇门进了店（xl-yg6.11）。商店预览是另一回事，见 `inShopPreview`。 */
+  const inShop = view.panel === 'shop'
   /**
    * 标题画面。**两条路走到它**：
    *
@@ -212,12 +215,19 @@ export function App() {
     if (at) view.menuInput({ e, x: at.x, y: at.y })
   }
 
-  /** 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。 */
+  /**
+   * 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。
+   *
+   * 同一张画布两个主人：预览开着时送给预览，否则店真的开着（从选择框的门进来的）
+   * 就送给游戏。两边都不在就丢掉。
+   */
   const onShopMouse =
     (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (!inShopPreview) return
+      if (!inShopPreview && !inShop) return
       const at = stagePoint(event)
-      if (at) shop.input({ e, x: at.x, y: at.y })
+      if (!at) return
+      if (inShopPreview) shop.input({ e, x: at.x, y: at.y })
+      else view.shopInput({ e, x: at.x, y: at.y })
     }
 
   /**
@@ -243,7 +253,7 @@ export function App() {
             <div
               className="stage-panel"
               ref={sceneHostRef}
-              hidden={inBattle || inMenu || atTitle || inShopPreview}
+              hidden={inBattle || inMenu || inShop || atTitle || inShopPreview}
               data-testid="scene-host"
             />
             <div
@@ -266,7 +276,7 @@ export function App() {
             <div
               className="stage-panel"
               ref={shopHostRef}
-              hidden={!inShopPreview}
+              hidden={!inShopPreview && !inShop}
               onMouseDown={onShopMouse('press')}
               onMouseUp={onShopMouse('release')}
               onMouseMove={onShopMouse('move')}
@@ -276,13 +286,13 @@ export function App() {
         }
         overlay={
           <>
-            {status.kind === 'ready' || inBattle || inMenu || atTitle || inShopPreview ? null : (
+            {status.kind === 'ready' || inBattle || inMenu || inShop || atTitle || inShopPreview ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
             {atTitle && !inShopPreview ? <StartPanel onNewGame={onNewGame} /> : null}
-            {inShopPreview && shop.loading ? (
+            {(inShopPreview && shop.loading) || (!inShopPreview && inShop && view.shopLoading) ? (
               <p className="stage-notice stage-notice--loading" role="status">
                 正在载入商店…
               </p>
@@ -297,7 +307,7 @@ export function App() {
                 正在载入战斗…
               </p>
             ) : null}
-            {dialogue && !inBattle && !inMenu && !inShopPreview ? (
+            {dialogue && !inBattle && !inMenu && !inShop && !inShopPreview ? (
               <DialogueBox dialogue={dialogue} />
             ) : null}
           </>
@@ -345,8 +355,10 @@ export function App() {
         ) : null}
         <p className="toolbar-hint">
           {inShopPreview
-            ? '商店预览（开发用）：加减买卖还没接（xl-knp.7 / .8），进店的正路等 xl-yg6.2'
-            : atTitle
+            ? '商店预览（开发用）：进店的正路是场景里店主旁边的选择框（xl-yg6.11）'
+            : inShop
+              ? '商店：点商品、加减、买卖；「返回游戏」回到场景'
+              : atTitle
             ? '开始界面：点「起」重开一局（读档要等 M6 存档）'
             : inBattle
               ? '战斗中：点「击」再点怪物；技、防、物同理'

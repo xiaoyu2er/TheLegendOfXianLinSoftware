@@ -306,8 +306,16 @@ describe('场景 → 战斗 → 场景', () => {
     })
     expect(done.session.panel).toBe('scene')
     expect(battleWorldOf(done.session)).toBeNull()
-    // 回到场景 = 该场景的曲子重新放上（原版 `SCENE_SIGNAL` 那一句）。
-    expect(currentBgm(done.session)).toBe(getScene('迷宫1').sceneMusic)
+    // 进战斗那一下，场景这一列就被 `BattlePanel.initial` 换成了战斗曲 ——
+    // `MusicPlayer.currentPlayingBGM` 是全局的，真值 `battle-door` 记着
+    // （xl-yg6.11）。伏魔山树林那一行按背景图挑的是 B6。
+    expect(before.bgm).toBe('B6.mp3')
+    // 回到场景那一拍原版只是 `SCENE_SIGNAL=1`；**下一拍** `ScenePanel.step()`
+    // 末尾才 `readBGM(reader.getSceneMusic())`。所以这里先看信号、再推一拍看曲子。
+    expect(done.session.scene.world.sceneSignal).toBe(true)
+    const back = advanceSession(done.session, NO_INPUT, SCENE_PUMP_MS)
+    expect(back.scene.world.sceneSignal).toBe(false)
+    expect(currentBgm(back)).toBe(getScene('迷宫1').sceneMusic)
 
     // 场景那一侧：主角像素坐标、脚本、NPC 名单、BGM 声明一个都没变。
     // （虚拟时间与 NPC 的定时器**是**会走的 —— 原版那条线程没停。）

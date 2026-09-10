@@ -20,7 +20,10 @@ import {
   toNarratageDraft,
 } from './narratage'
 import { exitTableOf } from './exit'
+import { battleBgm } from '../battle/units'
+import { normalizePath } from '../assets/path'
 import {
+  COL_BACKGROUND,
   advancesScript,
   checkBattle0,
   createFight,
@@ -168,6 +171,9 @@ export function initiate(prev: World | null, scene: SceneScript): World {
     presentRequest: null,
     treasureRequest: null,
     showing: prev?.showing ?? true,
+    sceneMusic: scene.sceneMusic,
+    // `GameLauncher.SCENE_SIGNAL` 是 static，`initiation` 不碰它。
+    sceneSignal: prev?.sceneSignal ?? false,
   }
 }
 
@@ -285,6 +291,13 @@ export function step(
       base = nextScriptAdvance(base, scenes)
       resync()
     }
+    // `GameLauncher.battlePanel.initial(fileName, ...)` 排在 `nextScript()` 之后：
+    // 它先 `normalizePath` 再按背景图 `readBGM(...)`（xl-yg6.11）。
+    // `MusicPlayer.currentPlayingBGM` 是全局的，所以**场景这一列跟着变**
+    // （真值 `battle-door` 记着）。那个 switch 没有 default，认不出的背景一首
+    // 都不换 —— 于是这里是"换或不换"，不是"换成 null"。
+    const bgm = battleBgm(normalizePath(info[COL_BACKGROUND] ?? ''))
+    if (bgm !== null) base = { ...base, audio: { bgm } }
     // `scene.role.setEvent(true)` —— 起战斗就松手，回来时主角不会接着走。
     d.canStop = true
   }
@@ -381,6 +394,12 @@ export function step(
   if (fight.battle0 !== null && battleRequest === null) {
     const info = checkBattle0(fight, rx, ry, random)
     if (info !== null) requestBattle(info)
+  }
+  // `if (GameLauncher.SCENE_SIGNAL == 1) { readBGM(reader.getSceneMusic()); SCENE_SIGNAL = 0; }`
+  // —— 第 7 步之后、`repaint()` 之前（xl-yg6.11）。从战斗 / 商店 / 菜单回来，
+  // 把场景自己的曲子放回去；读的是**第 4 步换过场景之后**的那一首。
+  if (base.sceneSignal) {
+    base = { ...base, audio: { bgm: base.sceneMusic }, sceneSignal: false }
   }
 
   return {
