@@ -116,7 +116,10 @@ function verify(script: string, rects: readonly NamedRect[]): void {
 const argv = process.argv.slice(2)
 const rectsAt = argv.indexOf('--rects')
 const rectsFile = rectsAt < 0 ? null : argv[rectsAt + 1]
-const scripts = argv.filter((a, i) => !a.startsWith('-') && i !== rectsAt + 1)
+// ⚠️ 不带 `--rects` 时 `rectsAt` 是 -1，`i !== rectsAt + 1` 会把**第一个剧本名**
+// 当成矩形文件吞掉（xl-yg6.12 实测：只给一个剧本时报用法退出 2，给六个时
+// 静静地只量了后五个）。
+const scripts = argv.filter((a, i) => !a.startsWith('-') && !(rectsAt >= 0 && i === rectsAt + 1))
 if (scripts.length === 0) {
   console.error('用法: pnpm exec vite-node scripts/measureGaps.ts -- <剧本> [--rects <矩形.json>]')
   process.exit(2)

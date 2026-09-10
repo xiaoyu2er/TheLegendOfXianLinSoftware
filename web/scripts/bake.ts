@@ -324,7 +324,17 @@ function main(): void {
     const id = mapAssetId(source)
     if (manifest[id] !== undefined) continue
     manifest[id] = relative
-    bytes += toWebp(resolve(REPO, source), resolve(ASSETS_OUT, relative))
+    bytes += MAP_NEAR_LOSSLESS.has(source)
+      ? toNearLosslessWebp(resolve(REPO, source), resolve(ASSETS_OUT, relative))
+      : toWebp(resolve(REPO, source), resolve(ASSETS_OUT, relative))
+  }
+  // 登记的每一张都得真的烘到过：名单里写错一个字，那张图会静默落回 q80，
+  // 而「落回 q80」的样子是跨端比对里整屏又差回 30%，与「这一族账还没还」分不开。
+  for (const source of MAP_NEAR_LOSSLESS) {
+    if (!mapSources(scenes).includes(source)) {
+      console.error(`MAP_NEAR_LOSSLESS 里的 ${source} 不是任何场景的底图 —— 名单写错了`)
+      process.exit(1)
+    }
   }
   const mapCount = Object.keys(manifest).length
   console.log(`地图 ${mapCount} 张 → WebP`)
@@ -1516,6 +1526,55 @@ function toWebp(
     : ['-q', String(quality), ...(sns === undefined ? [] : ['-sns', String(sns)])]
   const cropFlags = crop ? ['-crop', '0', '0', String(crop.width), String(crop.height)] : []
   execFileSync('cwebp', ['-quiet', ...cropFlags, ...flags, source, '-o', destination])
+  return statSync(destination).size
+}
+
+/**
+ * 走 `-near_lossless` 的底图（xl-yg6.12）。**只点名这两张**，`maps/` 下其余 26 张
+ * 照旧按源格式走 `toWebp`，第三张 JPG 地图 藏经阁2层 也不在里面 —— 它没有任何
+ * 一条剧本走到，没量过的素材不替它做决定。
+ *
+ * **为什么要换。** 这两张是 JPG，走 `DEFAULT_LOSSY_QUALITY` 的 q80 之后，凡是
+ * 站在大地图上的帧**满屏**都差（bigmap-walk / battle-door / question-memory /
+ * dorm-exit / milestone 五条，整屏 25%~38%）。满屏的账切不成矩形，于是这五条
+ * 只能写整条上界 —— 而整条上界里任何地方画错了都藏得住（xl-yg6.3：「不许给
+ * 整条上界」）。
+ *
+ * **为什么是 near_lossless 40。** 2026-09-10 试跑（`cwebp` 1.6.0；「超容差」=
+ * 与 Java `ImageIO` 解出来的源 JPEG 逐像素比、三通道最大差 > 8 的像素占比，
+ * 口径同 `src/compare/diff.ts`，分母 3200×2560）：
+ *
+ *   档位              大地图 字节 / 超容差 / 最大差    大地图夜 字节 / 超容差 / 最大差
+ *   q80（原）          2066582 / 31.58% / 135          2299440 / 33.33% / 155
+ *   q95                4075370 / 18.55% / 145          4136338 / 21.64% / 149
+ *   q100               5270258 / 17.38% / 140          5072054 / 21.24% / 145
+ *   near_lossless 20   6212564 /  0     /   8          6279474 /  0     /   8
+ *   **near_lossless 40** 7109526 / 0     /   4          7323520 /  0     /   4
+ *   near_lossless 60   8740046 /  0     /   2          9128016 /  0     /   2
+ *   无损              13545182 /  0     /   0         13676344 /  0     /   0
+ *
+ * 有损档一律到不了 0（YUV420 色度下采样那一笔跟 `-q` 无关，与 `BATTLE_LOSSY_QUALITY`
+ * 头注里 q100 那一行同一件事）。near_lossless 20 的最大差**正好是 8**，贴着
+ * 跨端比对的容差，换一台机器的解码器就可能红；40 留了一倍余量，两张合计比 q80
+ * 多约 10 MB，比无损少约 13 MB。2026-09-10 用户裁定取 40。
+ *
+ * 重烘之后的产物读数（不是上面这张试跑表）记在 `src/compare/expected.ts` 那五条
+ * 剧本的注释里。
+ */
+const MAP_NEAR_LOSSLESS: ReadonlySet<string> = new Set(['maps/大地图.jpg', 'maps/大地图夜.jpg'])
+const MAP_NEAR_LOSSLESS_LEVEL = 40
+
+function toNearLosslessWebp(source: string, destination: string): number {
+  useInput(source)
+  mkdirSync(dirname(destination), { recursive: true })
+  execFileSync('cwebp', [
+    '-quiet',
+    '-near_lossless',
+    String(MAP_NEAR_LOSSLESS_LEVEL),
+    source,
+    '-o',
+    destination,
+  ])
   return statSync(destination).size
 }
 
