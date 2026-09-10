@@ -64,7 +64,8 @@ import {
 import type { TreasureDraft, TreasureGain } from './treasure'
 import { fireDue } from './timer'
 import { NO_REQUESTS, isArrowKey } from './types'
-import type { CollisionMap, InputEvent, SceneRequests, TilePos, World } from './types'
+import type { CollisionMap, InputEvent, ReaderStaticFields, SceneRequests, TilePos, World } from './types'
+import { readerStaticsFor } from '../data/readerStatics'
 import type { DialogueScript, DialogueState } from './dialogue'
 
 /**
@@ -171,6 +172,25 @@ export function initiate(prev: World | null, scene: SceneScript): World {
     sceneMusic: scene.sceneMusic,
     // `GameLauncher.SCENE_SIGNAL` 是 static，`initiation` 不碰它。
     sceneSignal: prev?.sceneSignal ?? false,
+    readerStatics: readerStaticsAfter(prev, scene),
+  }
+}
+
+/**
+ * `new Reader(fileName)` 读完之后那几个静态字段的样子（见 `World.readerStatics`）。
+ * `mapName` 恒被改写；`Task` / `Role` 两段缺席就留着上一个场景的（没有上一个
+ * 就是原版字段初值）。
+ */
+function readerStaticsAfter(prev: World | null, scene: SceneScript): ReaderStaticFields {
+  const read = readerStaticsFor(scene.script)
+  const before = prev?.readerStatics
+  const role = read.role
+  return {
+    mapName: scene.mapName,
+    task: read.task ?? before?.task ?? null,
+    zhang: role ? role[0] : (before?.zhang ?? false),
+    lu: role ? role[1] : (before?.lu ?? false),
+    wen: role ? role[2] : (before?.wen ?? false),
   }
 }
 

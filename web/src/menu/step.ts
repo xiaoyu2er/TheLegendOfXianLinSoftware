@@ -386,3 +386,17 @@ export function clearMenuExit(w: MenuWorld): void {
   const fb = w.panels.funcPanel.funcButtons
   if (fb) fb.exitToScene = false
 }
+
+/**
+ * 玩家点了天书页的「存档」或「提取」吗（xl-i06.9）。原版那两支是
+ * `setLastPanel("menu")` + `changeStateTo(SAVE | LOAD)` + `switchTo("ls")`。
+ */
+export function menuSaveLoadRequest(w: MenuWorld): 'save' | 'load' | null {
+  return w.panels.funcPanel.funcButtons?.saveLoadRequest ?? null
+}
+
+/** 收掉那条一次性信号 —— 理由同 `clearMenuExit`：菜单世界活到关机，不清就下次一开菜单又跳走。 */
+export function clearMenuSaveLoad(w: MenuWorld): void {
+  const fb = w.panels.funcPanel.funcButtons
+  if (fb) fb.saveLoadRequest = null
+}

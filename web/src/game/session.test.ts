@@ -105,6 +105,7 @@ function levelParty(level: number): void {
         mp: d.mpMax,
         isDead: false,
         angryValue: 0,
+        isAngry: false,
       },
     ])
   }

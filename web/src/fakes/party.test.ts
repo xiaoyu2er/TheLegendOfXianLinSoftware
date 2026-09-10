@@ -90,6 +90,7 @@ describe('队伍的出厂状态', () => {
         mp: 2,
         isDead: true,
         angryValue: 5,
+        isAngry: true,
       },
       {
         spec: { key: 'yu' },
@@ -103,6 +104,7 @@ describe('队伍的出厂状态', () => {
         mp: 4,
         isDead: false,
         angryValue: 6,
+        isAngry: false,
       },
     ])
     expect(getParty().zhang.level).toBe(9)

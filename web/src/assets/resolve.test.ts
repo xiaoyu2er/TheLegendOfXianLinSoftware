@@ -1,4 +1,5 @@
 import { readdirSync } from 'node:fs'
+import { LS_IMAGES, LS_SEQUENCES } from '../saveload/assets'
 import { describe, expect, it } from 'vitest'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
@@ -212,6 +213,10 @@ describe('资产逻辑 ID', () => {
     // 地图遮掩层（xl-yg6.12）。分母是 `OVERLAY_FILES` —— 烘焙器与渲染器共用的那一份，
     // 它本身由 `scene/mapOverlays.test.ts` 对着 GBK 源码里那十句 `drawImage` 守着。
     expect(ids.filter((id) => id.startsWith('overlay:'))).toHaveLength(OVERLAY_FILES.length)
+    // 存读档面板（xl-i06.9）。分母是那两份表算出来的，帧数由
+    // `saveload/render/drawList.test.ts` 对着 GBK 源码守着。
+    const lsFrames = Object.values(LS_SEQUENCES).reduce((sum, s) => sum + s.count, 0)
+    expect(ids.filter((id) => id.startsWith('ls:'))).toHaveLength(Object.keys(LS_IMAGES).length + lsFrames)
     const known = [
       'map:',
       'role:walk:',
@@ -240,6 +245,8 @@ describe('资产逻辑 ID', () => {
       'shop:',
       // `OtherEvent.addMap` 那一层（xl-yg6.12）：大地图遮掩图与金币图标，在 `maps/` 下。
       'overlay:',
+      // 存读档面板（xl-i06.9），在 `sources/载入/` 与 `sources/StartPanel/` 下。
+      'ls:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })

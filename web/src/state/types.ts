@@ -252,6 +252,27 @@ export interface World extends SceneRequests {
    * 回放真值时恒为 `false`：导出器从不 `switchTo("scene")`。
    */
   readonly sceneSignal: boolean
+  /**
+   * 原版 `Reader` 读脚本时**顺手写进静态字段**的那几样（xl-i06.9）：
+   * `SaveAndLoad.mapName`（地图头第一行）、`Reader.task`（`Task` 段）、
+   * `SaveAndLoad.zhang/lu/wen`（`Role` 段）。存档第 1 行就是这五样
+   * （`Recorder.save` 的 `roleAndMapInfo`），存读档面板的槽位摘要画的也是它们。
+   *
+   * 全仓只有 `ScenePanel.initiation` 一处 `new Reader(...)`，所以它们恒等于
+   * 「最近一次进的那个场景」读出来的值 —— **但 `Task` / `Role` 两段缺席时是粘的**：
+   * 静态字段没人去清，留着上一个场景的。`mapName` 每个脚本都有，不粘。
+   * 初值是原版字段初值：`task = null`、三个开关 `false`。
+   */
+  readonly readerStatics: ReaderStaticFields
+}
+
+/** 见 `World.readerStatics`。 */
+export interface ReaderStaticFields {
+  readonly mapName: string
+  readonly task: string | null
+  readonly zhang: boolean
+  readonly lu: boolean
+  readonly wen: boolean
 }
 
 /**

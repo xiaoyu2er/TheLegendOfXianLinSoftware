@@ -41,7 +41,7 @@ describe('开始界面', () => {
   })
 
   it('背景图按原始尺寸画在 (0,0)，不缩', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const back = screen.getByTestId('start-panel').querySelector('.start-back') as HTMLImageElement
     expect(back).not.toBeNull()
     expect(back.getAttribute('src')).toBe(resolveAsset(startAssetId('back')))
@@ -52,7 +52,7 @@ describe('开始界面', () => {
   })
 
   it('开机四颗按钮，读屏读得到名字；禁用的两颗各带一句理由', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const buttons = screen.getAllByRole('button')
     // 分母是 `INITIAL_START_BUTTONS`，不是手写的 4 —— 那份名单本身由
     // `buttons.test.ts` 对着源码守着。
@@ -77,12 +77,12 @@ describe('开始界面', () => {
     }
     // **禁用而不是不画**：不画的话「这一版还没做」与「原版就只有三颗按钮」
     // 分不开，而后者是错的。
-    expect(screen.getByRole('button', { name: '读取存档' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '读取存档' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '结束游戏' })).toBeDisabled()
   })
 
   it('按钮元素占的是命中框，不是画出来那个矩形', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const initial = START_BUTTONS.filter((b) => INITIAL_START_BUTTONS.includes(b.key))
     const actual = initial.map((spec) => {
       const el = screen.getByRole('button', { name: spec.label })
@@ -98,7 +98,7 @@ describe('开始界面', () => {
   })
 
   it('一颗按钮画两张图：那圈高亮 + 常态/悬停里的一张，都推回原版的绘制位置', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const el = screen.getByRole('button', { name: '开始新游戏' })
     const images = [...el.querySelectorAll('img')] as HTMLImageElement[]
     // **只画一张脸**（原版 `buttonImage` 就是一个字段），加一圈高亮 = 两张。
@@ -120,7 +120,7 @@ describe('开始界面', () => {
   })
 
   it('鼠标移进按钮：换成悬停图，那圈高亮开始转；移出去换回来并停在第 0 帧', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const el = screen.getByRole('button', { name: '开始新游戏' })
     const glow = () => (el.querySelector('.start-button-glow') as HTMLImageElement).src
     const face = () => (el.querySelector('.start-button-face') as HTMLImageElement).src
@@ -141,7 +141,7 @@ describe('开始界面', () => {
   })
 
   it('⚠️ 点完之后鼠标在框里动一下，高亮续播 —— 组件挂了 onMouseMove', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const el = screen.getByRole('button', { name: '关于我们' })
     const glow = () => (el.querySelector('.start-button-glow') as HTMLImageElement).src
 
@@ -160,7 +160,7 @@ describe('开始界面', () => {
   })
 
   it('键盘 Tab 过来也换图、也转高亮 —— 原版没有这条，是这里补的无障碍', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const el = screen.getByRole('button', { name: '开始新游戏' })
     fireEvent.focus(el)
     expect((el.querySelector('.start-button-face') as HTMLImageElement).src).toContain(
@@ -173,7 +173,7 @@ describe('开始界面', () => {
   })
 
   it('云一直在飘，自绘鼠标 8 帧一直在转', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const cloud = () =>
       Number((screen.getByTestId('start-panel').querySelector('.start-cloud') as HTMLElement).style.top.replace('px', ''))
     const cursor = () =>
@@ -193,7 +193,7 @@ describe('开始界面', () => {
   })
 
   it('自绘鼠标跟着指针走，坐标按舞台缩放换算回逻辑坐标', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
     // jsdom 里元素没有布局，`getBoundingClientRect` 全是 0 —— 那时组件应该
     // 什么都不做（除以 0 会得到 NaN，而 `left: NaNpx` 是一条被浏览器丢掉的
@@ -210,7 +210,7 @@ describe('开始界面', () => {
   })
 
   it('外接矩形为 0 时一动不动 —— 不写出 `left: NaNpx`', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
     const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
     const before = { left: cursor.style.left, top: cursor.style.top }
@@ -221,7 +221,7 @@ describe('开始界面', () => {
 
   it('点「起」：卷轴放完再等 30 拍才 onNewGame —— 不是立刻', () => {
     const onNewGame = vi.fn()
-    render(<StartPanel onNewGame={onNewGame} />)
+    render(<StartPanel onNewGame={onNewGame} onLoad={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: '开始新游戏' }))
     // **点下去当场什么都不该发生**。xl-kaa 那一版是立刻换面板的，这条就是
     // 那处差别的判据。
@@ -233,7 +233,7 @@ describe('开始界面', () => {
   })
 
   it('卷轴放完那一拍，载入动画当拍出现在原版那两个位置上', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
     const loading = () => [...panel.querySelectorAll('.start-loading')] as HTMLImageElement[]
     expect(loading()).toHaveLength(0)
@@ -269,16 +269,18 @@ describe('开始界面', () => {
       (b) => START_BUTTON_WIRING[b.key].enabled && INITIAL_START_BUTTONS.includes(b.key),
     )
     // 分母：开机那四颗里活着的有几颗。零颗的循环跑完看起来跟全过了一样。
-    expect(enabled.map((b) => b.key)).toEqual(['newGame', 'about'])
+    expect(enabled.map((b) => b.key)).toEqual(['newGame', 'load', 'about'])
 
     for (const spec of enabled) {
       const onNewGame = vi.fn()
+      const onLoad = vi.fn()
       const signature = () => ({
         buttons: screen.getAllByRole('button').map((b) => b.getAttribute('aria-label')),
         about: screen.queryByTestId('start-about') !== null,
         newGame: onNewGame.mock.calls.length,
+        load: onLoad.mock.calls.length,
       })
-      const view = render(<StartPanel onNewGame={onNewGame} />)
+      const view = render(<StartPanel onNewGame={onNewGame} onLoad={onLoad} />)
       const before = signature()
       fireEvent.click(screen.getByRole('button', { name: spec.label }))
       // 卷轴 10 拍 + 载入表 30 拍，够走完最长的那条路。
@@ -292,15 +294,17 @@ describe('开始界面', () => {
     const disabled = START_BUTTONS.filter(
       (b) => !START_BUTTON_WIRING[b.key].enabled && INITIAL_START_BUTTONS.includes(b.key),
     )
-    expect(disabled.map((b) => b.key)).toEqual(['load', 'end'])
+    expect(disabled.map((b) => b.key)).toEqual(['end'])
     for (const spec of disabled) {
       const onNewGame = vi.fn()
+      const onLoad = vi.fn()
       const signature = () => ({
         buttons: screen.getAllByRole('button').map((b) => b.getAttribute('aria-label')),
         about: screen.queryByTestId('start-about') !== null,
         newGame: onNewGame.mock.calls.length,
+        load: onLoad.mock.calls.length,
       })
-      const view = render(<StartPanel onNewGame={onNewGame} />)
+      const view = render(<StartPanel onNewGame={onNewGame} onLoad={onLoad} />)
       const before = signature()
       fireEvent.click(screen.getByRole('button', { name: spec.label }))
       tick(10 + LOAD_TICKS)
@@ -309,16 +313,20 @@ describe('开始界面', () => {
     }
   })
 
-  it('点禁用的「承」什么都不发生', () => {
+  it('点「承」：载入表走完调一次 onLoad（进存读档面板，xl-i06.9），不调 onNewGame', () => {
     const onNewGame = vi.fn()
-    render(<StartPanel onNewGame={onNewGame} />)
+    const onLoad = vi.fn()
+    render(<StartPanel onNewGame={onNewGame} onLoad={onLoad} />)
     fireEvent.click(screen.getByRole('button', { name: '读取存档' }))
-    tick(60)
+    tick(10 + LOAD_TICKS - 1)
+    expect(onLoad, '载入表还没走完就换了面板').not.toHaveBeenCalled()
+    tick(1)
+    expect(onLoad).toHaveBeenCalledTimes(1)
     expect(onNewGame).not.toHaveBeenCalled()
   })
 
   it('点「转」：关于我们逐段揭开，展开完出现「回」，点「回」又收回去', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
     const about = () => panel.querySelector('.start-about') as HTMLElement | null
     expect(about()).toBeNull()
@@ -358,7 +366,7 @@ describe('开始界面', () => {
   })
 
   it('卷轴那一层始终在画，展开前后换的是哪一段', () => {
-    render(<StartPanel onNewGame={() => {}} />)
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
     const scroll = () => panel.querySelector('.start-scroll') as HTMLImageElement
     expect(scroll().dataset).toMatchObject({ sequence: 'scroll', frame: '0' })

@@ -21,6 +21,8 @@ export function createMemorySaveStore(initial: readonly (SaveFile | null)[] = []
   return {
     status: () => 'ready',
     error: () => null,
+    // 不落盘，也就没有落盘失败这回事。
+    persistError: () => null,
     read(slot) {
       checkSlot(slot)
       return slots[slot]!

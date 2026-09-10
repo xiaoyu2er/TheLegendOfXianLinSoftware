@@ -45,6 +45,8 @@ const ALLOWED: Record<string, string> = {
     '读的是 sources/Shop/武器.txt，与 drugs.test.ts 同一个理由：游戏**数据文件**而非 Java 源码（同一个文件里读 Java 源码那一半走的正是 helper）',
   'src/save/test/originalSave.ts':
     '读的是 tools/ground-truth/存档/ 下原版存出来的样例存档，与 drugs.test.ts 同一个理由：游戏**数据文件**而非 Java 源码（同一个文件里读 Java 源码那一半走的正是 helper）',
+  'src/data/readerStatics.test.ts':
+    '读的是 script/ 下的场景脚本，找 Role / Task 两段的原文当期望值（xl-i06.9），与 drugs.test.ts 同一个理由：游戏**数据文件**而非 Java 源码（同一个文件里读 Java 源码那一半走的正是 helper）',
 }
 
 /** `web/src` 下所有 `.ts` / `.tsx`，相对 `web/` 的路径。 */

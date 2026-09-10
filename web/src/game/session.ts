@@ -1,7 +1,11 @@
 import { advanceBattle, createBattleTicker } from '../battle/loop'
 import { advanceMenu, createMenuTicker } from '../menu/loop'
 import type { MenuTicker } from '../menu/loop'
-import { clearMenuExit, menuWantsScene } from '../menu/step'
+import { clearMenuExit, clearMenuSaveLoad, menuSaveLoadRequest, menuWantsScene } from '../menu/step'
+import { applySaveLoadInput } from '../saveload/step'
+import type { SaveLoadInput } from '../saveload/step'
+import { createSaveLoadWorld } from '../saveload/world'
+import type { SaveLoadFrom, SaveLoadMode, SaveLoadWorld } from '../saveload/world'
 import type { MenuInput } from '../menu/step'
 import { createMenuWorld, refreshMenuWorld } from '../menu/world'
 import type { BattleTicker } from '../battle/loop'
@@ -33,6 +37,8 @@ import type { BattleInfo } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 import { saveSlotsView } from '../save/store'
 import type { SaveSlotsView, SaveStore } from '../save/store'
+import { captureSave } from '../save/capture'
+import type { SaveFile } from '../save/format'
 
 /**
  * **面板机**：场景 ↔ 战斗 ↔ 标题（xl-rh9.17）↔ 菜单 ↔ 商店（xl-yg6.11）。
@@ -80,7 +86,7 @@ import type { SaveSlotsView, SaveStore } from '../save/store'
  *    状态）建一场战斗塞进会话里，跑到结算结束，看会话回没回场景、经验有没有
  *    记进队伍。
  */
-export type Panel = 'scene' | 'battle' | 'start' | 'menu' | 'shop'
+export type Panel = 'scene' | 'battle' | 'start' | 'menu' | 'shop' | 'ls'
 
 /**
  * 选择框那两扇商店门 → 进哪一家（xl-yg6.11）。
@@ -188,6 +194,30 @@ export interface Session {
    * 店里每一步再写回去 —— 见 `enterShop` / `writeShopBack`。
    */
   readonly shop: ShopWorld | null
+  /**
+   * 存读档面板那一份（xl-i06.9）。`null` = **还没进过**。
+   *
+   * 原版 `lsPanel` 在 `GameLauncher` 构造函数里就 `new` 好了、从开机活到关机，面板上
+   * `isRoleExist` 那份只置不清的记忆也就跟着活到关机（`saveload/world.ts` 的头注）。
+   * 这里推迟到**头一次进面板、而且存档仓库已就绪**才建：开机时仓库可能还在从浏览器
+   * 存储里读，那时建出来的摘要是一句谎话。建好之后再不重建。
+   */
+  readonly saveload: SaveLoadWorld | null
+  /**
+   * 进了存读档面板、但仓库还没就绪（`loading` / `failed`），面板世界还没法建 ——
+   * 先把「以什么模式、从哪进来的」记在这里。就绪的那一拍补上那一下 `enter`
+   * （`stepSaveLoad`）；没就绪之前退出键照样回得去。`null` = 没有悬着的。
+   */
+  readonly lsEntry: { readonly mode: SaveLoadMode; readonly from: SaveLoadFrom } | null
+  /**
+   * 读档点中的那个槽，**交给 xl-i06.10**（读档那条重建路径）。`null` = 没有。
+   *
+   * 这一票只做到面板上那一下：真值里看得见的是「原版本来要切到 scenePanel」
+   * （`saveload/step.ts` 的 `SaveLoadEffect`）。重建场景、回填数值、跳过旁白都归
+   * 那张票，所以这里**不切面板**、留在存读档面板上，面板上说明为什么没动
+   * （`app/App.tsx`）—— 切回场景而不重建，画面上像读档成功了，而进度一样没回来。
+   */
+  readonly loadRequest: number | null
   readonly deps: SessionDeps
 }
 
@@ -213,9 +243,11 @@ export interface SessionInput {
    * 可省：进店之前的每一处调用方都不必改。
    */
   readonly shop?: readonly ShopInput[]
+  /** 存读档面板上的鼠标事件与退出键（xl-i06.9）。可省，理由同 `shop`。 */
+  readonly saveload?: readonly SaveLoadInput[]
 }
 
-export const NO_INPUT: SessionInput = { scene: [], battle: [], menu: [], shop: [] }
+export const NO_INPUT: SessionInput = { scene: [], battle: [], menu: [], shop: [], saveload: [] }
 
 /** 场景收不到键的那几拍喂它。常量，省得每拍新建一个数组。 */
 const NO_KEYS: readonly InputEvent[] = []
@@ -248,7 +280,17 @@ export function createSession(deps: SessionDeps): Session {
   // 菜单**开机就建**，与原版同一句：`GameLauncher` 构造函数里那句
   // `menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)` 排在
   // `switchTo("start")` 之前。见 `Session.menu`。
-  return { panel: 'start', scene: null, battle: null, menu: createGameMenu(), shop: null, deps }
+  return {
+    panel: 'start',
+    scene: null,
+    battle: null,
+    menu: createGameMenu(),
+    shop: null,
+    saveload: null,
+    lsEntry: null,
+    loadRequest: null,
+    deps,
+  }
 }
 
 /**
@@ -401,6 +443,12 @@ export function advanceSession(
   input: SessionInput,
   elapsedMs: number,
 ): Session {
+  // 存读档面板（xl-i06.9）排在最前：**标题上按「承」进来时还没开局**，下面那道
+  // 「没开局就原样交回」会把它的输入整个吞掉。它只收自己的输入，不碰场景 ——
+  // 场景那条线程照跑，就在下面。
+  if (session.panel === 'ls' || session.lsEntry !== null) {
+    session = stepSaveLoad(session, input.saveload ?? NO_SAVELOAD_INPUT)
+  }
   const { deps } = session
   // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，没有世界
   // 可推。**原样交回去**，而不是推一个空世界 —— 见 `Session.scene`。
@@ -550,6 +598,15 @@ export function advanceSession(
       // 又关上了。`returnButton.isclicked` **不清**，见 `clearMenuExit`。
       clearMenuExit(menu.world)
     }
+    // 「存档」/「提取」（xl-i06.9）：`setLastPanel("menu")` + `changeStateTo` +
+    // `switchTo("ls")`。同一个理由的一次性信号。
+    const lsRequest = menuSaveLoadRequest(menu.world)
+    if (lsRequest !== null) {
+      clearMenuSaveLoad(menu.world)
+      const entered = enterSaveLoad({ ...session, panel, scene, battle, menu }, lsRequest, 'menu')
+      panel = entered.panel
+      session = entered
+    }
   }
 
   // ——— 商店（xl-yg6.11）———
@@ -577,6 +634,113 @@ export function advanceSession(
 }
 
 const NO_SHOP_INPUT: readonly ShopInput[] = []
+const NO_SAVELOAD_INPUT: readonly SaveLoadInput[] = []
+
+/**
+ * 进存读档面板（xl-i06.9）—— 菜单「存档 / 提取」与标题「承」替它做的那三句：
+ * `setLastPanel(from)` + `changeStateTo(mode)` + `switchTo("ls")`。
+ *
+ * **仓库没就绪就先不建面板**（`save/store.ts` 的就绪标志）：面板上照样换成 `ls`，
+ * 但画的是「正在读取存档」而不是三个空槽；就绪那一拍 `stepSaveLoad` 补上这一下。
+ */
+export function enterSaveLoad<S extends Session>(session: S, mode: SaveLoadMode, from: SaveLoadFrom): S {
+  const store = session.deps.saves
+  if (store.status() !== 'ready') {
+    return { ...session, panel: 'ls', lsEntry: { mode, from }, loadRequest: null }
+  }
+  const w = session.saveload ?? createSaveLoadWorld(store)
+  applySaveLoadInput(w, { e: 'enter', mode, from }, { store, capture: noCapture })
+  return { ...session, panel: 'ls', saveload: w, lsEntry: null, loadRequest: null }
+}
+
+/** 进面板与退出键用不到写档装置；真用到了就是接线错了。 */
+function noCapture(): never {
+  throw new Error('存读档面板在不该存档的地方要了一份档')
+}
+
+/**
+ * 推存读档面板一批输入。**一个事件一步**，与 saveload 真值同一个口径；面板那条
+ * 10 Hz 的动画线程只推绘制量，不在这里（`saveload/world.ts` 头注）。
+ */
+function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadInput[]): S {
+  const store = session.deps.saves
+  let { saveload, lsEntry, loadRequest } = session
+  let panel: Panel = session.panel
+  const ports = {
+    store,
+    // 存档只从菜单进得来，菜单只从场景进得去 —— 走到这里一定开了局。
+    capture: () => {
+      if (!isRunning(session)) throw new Error('还没开局就要存档 —— 存档的入口在菜单上，菜单只从场景进得去')
+      return captureSession(session)
+    },
+  }
+  // 就绪的那一拍补上悬着的那一下 `enter`。
+  if (lsEntry !== null && store.status() === 'ready') {
+    saveload = saveload ?? createSaveLoadWorld(store)
+    applySaveLoadInput(saveload, { e: 'enter', ...lsEntry }, ports)
+    lsEntry = null
+  }
+  for (const input of inputs) {
+    // 切走之后这一批剩下的事件落在别的面板上，这里不再收。
+    if (panel !== 'ls') break
+    if (lsEntry !== null || saveload === null) {
+      // 没就绪：一个槽都没画出来，点什么都不算；退出键照样回得去（原版 `lastPanel`
+      // 在进面板那三句的第一句就设好了）。
+      if (input.e === 'key' && lsEntry !== null) {
+        panel = lsEntry.from
+        lsEntry = null
+      }
+      continue
+    }
+    const fx = applySaveLoadInput(saveload, input, ports)
+    for (const to of fx.switches) {
+      // `scene`：读档那一下原版要切回场景。重建归 xl-i06.10，见 `Session.loadRequest`。
+      if (to === 'menu' || to === 'start') panel = to
+    }
+    const loaded = fx.loads.at(-1)
+    if (loaded !== undefined) loadRequest = loaded
+  }
+  // `switchTo("menu")` 那三句 `refreshValue()`：回菜单时属性按最新的刷一遍（同 `openMenu`）。
+  if (panel === 'menu' && session.panel !== 'menu') {
+    refreshMenuWorld(session.menu.world, { live: liveParty(getParty()), audio: getAudioSettings() })
+  }
+  return { ...session, panel, saveload, lsEntry, loadRequest }
+}
+
+/**
+ * 存读档面板此刻的样子，面板没开着就是 `null`（xl-i06.9）。
+ *
+ * - `loading` —— 仓库还在从浏览器存储里读。**不画三个空槽**：两者在原版画面上长得
+ *   一模一样，而后者是一句谎话；
+ * - `failed` —— 读不上来（没有 IndexedDB 的环境、盘上有一份不认识版本号的档……）。
+ *   这时存不了也读不了：`write` 会抛，`read` 也会抛。**面板上说清楚并且只留退出键**，
+ *   不画槽（规格没定这一支，xl-i06.9 裁定，见关票理由）；
+ * - `ready` —— 面板世界，外加最近一次落盘失败的原因（`persistError`，快照已经是新的、
+ *   浏览器存储没写进去）与读档交给 xl-i06.10 的那个槽。
+ */
+export type SaveLoadView =
+  | { readonly status: 'loading' }
+  | { readonly status: 'failed'; readonly error: Error | null }
+  | {
+      readonly status: 'ready'
+      readonly world: SaveLoadWorld
+      readonly persistError: Error | null
+      readonly loadRequest: number | null
+    }
+
+export function saveLoadViewOf(session: Session): SaveLoadView | null {
+  if (session.panel !== 'ls') return null
+  const store = session.deps.saves
+  if (session.saveload === null || session.lsEntry !== null) {
+    return store.status() === 'failed' ? { status: 'failed', error: store.error() } : { status: 'loading' }
+  }
+  return {
+    status: 'ready',
+    world: session.saveload,
+    persistError: store.persistError(),
+    loadRequest: session.loadRequest,
+  }
+}
 
 /** `switchTo("scene")` 里那句 `SCENE_SIGNAL=1`（见 `World.sceneSignal`）。 */
 function signalScene(ticker: Ticker): Ticker {
@@ -677,6 +841,32 @@ export function currentBgm(session: Session): string | null {
   // 少了它下面那句就得写 `!`。
   if (session.panel === 'start' || session.scene === null) return TITLE_BGM
   return session.scene.world.audio.bgm
+}
+
+/**
+ * 写档装置的来源（xl-i06.9）：`Recorder.save` 读的那几处，在这一层的落点逐个现读，
+ * 交给 `save/capture.ts` 的纯函数拼成一份档。
+ *
+ * - 场景与 `Reader` 那几个静态字段 —— 场景世界；
+ * - 三个人 —— 队伍（`fakes/party.ts`）；
+ * - 身上的装备与六张装备表的持有量 —— 菜单装备页（全局装备背包唯一的落点，
+ *   见 `Session.menu`）；
+ * - 药与钱 —— 药包与钱包。店开着时每一步都写回过（`writeShopBack`），所以这里读到
+ *   的就是此刻的数。
+ *
+ * 只有开了局才存得了档：存档的入口在菜单上，而菜单只从场景进得去。
+ */
+export function captureSession(session: RunningSession): SaveFile {
+  const equip = session.menu.world.panels.equipPanel.equip
+  if (equip === null) throw new Error('菜单装备页没有 equip 那一摊 —— 身上的装备无处可取')
+  return captureSave({
+    world: session.scene.world,
+    party: getParty(),
+    worn: equip.packs,
+    owned: equip.owned,
+    drugs: DRUGS.map((d) => drugCount(d.name)),
+    coins: getCoins(),
+  })
 }
 
 /**

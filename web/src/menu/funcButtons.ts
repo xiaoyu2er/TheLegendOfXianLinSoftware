@@ -98,6 +98,12 @@ export interface FuncButtonsState {
   readonly sub: Readonly<Record<FuncSubKey, MenuButtonState>>
   /** 「返回」这一步被按下了 —— 会话读它，把面板换回场景。 */
   exitToScene: boolean
+  /**
+   * 「存档」/「提取」这一步被按下了（xl-i06.9）—— 会话读它，进存读档面板。
+   * 与 `exitToScene` 同一类：原版那一支直接 `switchTo("ls")`，这一层要让会话读得到，
+   * 就得有一个一次性信号，由读它的人清（`menu/step.ts` 的 `clearMenuSaveLoad`）。
+   */
+  saveLoadRequest: 'save' | 'load' | null
 }
 
 export function createFuncButtons(): FuncButtonsState {
@@ -118,7 +124,7 @@ export function createFuncButtons(): FuncButtonsState {
     exitForSure: menuButton(X + 4 * W, SUB_Y, SUB_W, SUB_H, false),
     restart: menuButton(X + 4 * W, SUB_Y + (Y_MOVE + SUB_H), SUB_W, SUB_H, false),
   }
-  return { main, sub, exitToScene: false }
+  return { main, sub, exitToScene: false, saveLoadRequest: null }
 }
 
 /** 第 `n` 组（1..4）那两颗。下标换算只在这一处，见 `FUNC_SUB_GROUPS`。 */
@@ -206,11 +212,14 @@ export function funcCheckPressed(
   if (fb.main.saveButton.isclicked) {
     music.push('换list.wav')
     setAllGroups(fb, false)
-    // 空实现：原版这里切到存档面板（`lsPanel` + `SAVE`）。存档 → **M6**（xl-i06）。
+    // 原版：`setLastPanel("menu")` + `changeStateTo(SAVE)` + `switchTo("ls")`。
+    // 那三句由会话做（`game/session.ts` 的 `enterSaveLoad`，xl-i06.9）。
+    fb.saveLoadRequest = 'save'
   } else if (fb.main.readButton.isclicked) {
     music.push('换list.wav')
     setAllGroups(fb, false)
-    // 空实现：原版这里切到存档面板（`lsPanel` + `LOAD`）。提取 → **M6**（xl-i06）。
+    // 同上，`changeStateTo(LOAD)`。
+    fb.saveLoadRequest = 'load'
   } else if (fb.main.setButton.isclicked) {
     music.push('换list.wav')
     setAllGroups(fb, false)

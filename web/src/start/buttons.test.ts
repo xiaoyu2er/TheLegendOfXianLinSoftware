@@ -87,7 +87,7 @@ describe('开始界面的按钮', () => {
     // 两边一起改就照绿。真正验这件事的是 `StartPanel.test.tsx` 里那条
     // 「每一颗活着的按钮，点下去屏幕都得真的变」。
     expect(Object.fromEntries(START_BUTTONS.map((b) => [b.key, START_BUTTON_WIRING[b.key].enabled])))
-      .toEqual({ newGame: true, about: true, goBack: true, load: false, end: false })
+      .toEqual({ newGame: true, about: true, goBack: true, load: true, end: false })
     // 禁用的那两颗必须各自带一句理由，活的那三颗必须没有 —— 一颗按钮"禁用
     // 了但没说为什么"与"忘了接线"长得一模一样。
     for (const button of START_BUTTONS) {

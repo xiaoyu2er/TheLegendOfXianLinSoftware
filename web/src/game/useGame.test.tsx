@@ -211,6 +211,7 @@ describe('useGame 接线', () => {
         mp: 2,
         isDead: true,
         angryValue: 5,
+        isAngry: false,
       },
     ])
     expect(getParty().zhang.level).toBe(9)

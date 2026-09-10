@@ -52,6 +52,14 @@ export interface SaveStore {
    * 那一下读到的必须是刚存进去的）。落盘是之后的事，见各实现。没就绪时抛。
    */
   write(slot: number, save: SaveFile): void
+  /**
+   * 最近一次**落盘**失败的原因，`null` = 没失败过（xl-i06.9 从浏览器版提上来）。
+   *
+   * 与 {@link status} 的 `failed` 不是一回事：那是开机读不上来；这是快照已经是新的、
+   * 而浏览器存储没写进去 —— 面板上摘要看起来存上了，关掉页面就没了。存读档面板
+   * 把它露出来（`game/session.ts` 的 `saveLoadViewOf`）。
+   */
+  persistError(): Error | null
 }
 
 /** 没就绪就读写。这是调用方的错 —— 面板不该在快照就绪之前打开。 */

@@ -82,6 +82,59 @@ export function bakeScript(
   return s
 }
 
+/**
+ * `Role` 与 `Task` 两段 —— 原版 `Reader.switchReader` 把它们写进**静态字段**
+ * （`SaveAndLoad.zhang/lu/wen` 与 `Reader.task`），不进那 26 个真值字段，所以
+ * `bakeScript` 只把那一行吃掉。存档要它们（xl-i06.9：`Recorder.save` 的第 1 行
+ * 就是这四样加 `SaveAndLoad.mapName`），于是另出一份。
+ *
+ * `null` = 这个脚本**没有**这一段。区分它与「有、但是空串」要紧：原版是
+ * 静态字段，没有这一段就**留着上一个场景的值**（`state/step.ts` 的 `initiate`）。
+ */
+export interface ReaderStatics {
+  /** `Reader.task = br.readLine()` —— 原样，不 trim。 */
+  readonly task: string | null
+  /** `Integer.parseInt(ss[k]) == 1`，次序 zhang / lu / wen。 */
+  readonly role: readonly [boolean, boolean, boolean] | null
+}
+
+/**
+ * 读 `Role` / `Task` 两段。**段的切分借 `bakeScript` 自己那一趟**：它报出来的
+ * 每一次分派都带着关键字所在的行号，而这两段的读法都是「再读一行」，值就在
+ * 下一行。自己另扫一遍的话，对话段里恰好写着 `Task` 的一行会被认成段关键字，
+ * 而 `bakeScript` 那一趟不会（它在段里）。同一段出现两次，后一次赢（原版就是
+ * 两次赋值）。
+ */
+export function readerStaticsOf(raw: Uint8Array, scriptName: string): ReaderStatics {
+  const lines = splitLines(decodeGbk(raw))
+  let task: string | null = null
+  let role: [boolean, boolean, boolean] | null = null
+  const valueAfter = (e: SectionEvent): string => {
+    // `e.line` 是 1 基的关键字行号，下一行的 0 基下标恰好就是它。
+    const v = lines[e.line]
+    if (v === undefined) throw new Error(`${scriptName} 第 ${e.line} 行的 ${e.keyword} 段后面没有值那一行`)
+    return v
+  }
+  bakeScript(raw, scriptName, (e) => {
+    if (!e.known) return
+    if (e.keyword === 'Task') task = valueAfter(e)
+    if (e.keyword === 'Role') {
+      const ss = javaSplit(valueAfter(e), ' ')
+      const flag = (k: number): boolean => {
+        const s = ss[k]
+        // `Integer.parseInt` 读不懂就抛；原版那一抛被 switchReader 的 catch 吞掉、
+        // 三个开关停在半路。烘焙期碰到就当场报，不去复刻「停在半路」。
+        if (s === undefined || !/^[+-]?\d+$/.test(s)) {
+          throw new Error(`${scriptName} 第 ${e.line + 1} 行 Role 的第 ${k} 项 ${JSON.stringify(s)} 不是整数`)
+        }
+        return Number.parseInt(s, 10) === 1
+      }
+      role = [flag(0), flag(1), flag(2)]
+    }
+  })
+  return { task, role }
+}
+
 /** 一次段分派：在哪个脚本的第几行、读到什么关键字、认不认得。 */
 export interface SectionEvent {
   script: string
