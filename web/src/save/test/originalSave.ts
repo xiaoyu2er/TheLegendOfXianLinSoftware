@@ -5,6 +5,8 @@ import { EQUIPMENT_LISTS, type EquipSlot } from '../../menu/equipment'
 import {
   HERO_KEYS,
   SAVE_VERSION,
+  parseSave,
+  serializeSave,
   type HeroKey,
   type HeroRecord,
   type SaveFile,
@@ -151,6 +153,87 @@ export function recorderLayout(): string[][] {
   if (lines.length === 0) throw new Error('writeInfo 里一个列表都没认出来')
   return lines
 }
+
+/**
+ * **手写登记**：`NeverReadBack` 的每个键对应原版哪个列表。与
+ * {@link derivedNeverReadBack}（源码现推）对撞见测试。
+ */
+export const NEVER_READ_BACK_SOURCE = {
+  equipmentStock: 'equipmentShopInfo',
+  questionMaps: 'questionInfo',
+  answers: 'answerInfo',
+} as const satisfies Record<keyof SaveFile['neverReadBack'], RecorderList>
+
+/**
+ * 原版「写了但从不读回游戏状态」的列表，**从源码现推**：
+ *
+ * - `Loader.load()` 里由 `loadLine` 读进来、之后在 `load()` 里再没被用过的变量
+ *   （答题那两组：读进来就搁着）；
+ * - 被用了、但交给的回填方法一次都不碰全局 `EquipmentPack` 的那一组（装备店的
+ *   `initialEquipmentShopInfo` 只写面板自建的表，xl-1dv.32）。
+ *
+ * 另核一条旁证：`loadQuestion` / `loadAnswer` 全仓零调用点（xl-1dv.20）。
+ */
+export function derivedNeverReadBack(): string[] {
+  const loader = javaSource('src/start/Loader.java')
+  const recorder = javaSource('src/start/Recorder.java')
+  const from = loader.indexOf('public void load(int textcode)')
+  const to = loader.indexOf('public ArrayList<String> getTextInfo', from)
+  if (from < 0 || to < 0) throw new Error('Loader.java 里找不到 load() 的界标')
+  const body = loader.slice(from, to)
+  const assigned = [...body.matchAll(/(\w+)\s*=\s*loadLine\(/g)].map((m) => m[1]!)
+  if (assigned.length === 0) throw new Error('load() 里一个 loadLine 赋值都没认出来')
+  const never: string[] = []
+  for (const v of assigned) {
+    const uses = [...body.matchAll(new RegExp(`\\b${v}\\b`, 'g'))].length
+    if (uses === 1) {
+      never.push(v)
+      continue
+    }
+    const loadWith = new RegExp(`\\.(\\w+)\\(\\s*${v}\\s*\\)`).exec(body)?.[1]
+    if (loadWith === undefined) throw new Error(`${v} 用了但认不出交给了谁`)
+    const saveWith = new RegExp(`\\b${v}\\s*=[^;]*?\\.(\\w+)\\(\\)\\s*;`).exec(recorder)?.[1]
+    if (saveWith === undefined) throw new Error(`Recorder.save 里认不出 ${v} 是哪个方法存的`)
+    // 存的一侧读了哪些全局类，读的一侧的回填方法得一个不落地碰到；少一个，就是写进了别处。
+    const readGlobals = globalsIn(methodBody(saveWith))
+    const loadBody = methodBody(loadWith)
+    if (readGlobals.some((g) => !loadBody.includes(`${g}.`))) never.push(v)
+  }
+  return never.sort()
+}
+
+/** 首字母大写、后面跟 `.` 的标识符 —— 即引用的类（静态字段所在），去掉 JDK 那几个。 */
+function globalsIn(body: string): string[] {
+  const jdk = new Set(['Integer', 'String', 'Boolean', 'Math'])
+  return [...new Set([...body.matchAll(/\b([A-Z]\w*)\./g)].map((m) => m[1]!))].filter((g) => !jdk.has(g))
+}
+
+/**
+ * 方法体：从签名到与签名同缩进的那个 `}`（`ShopPanel` 的方法缩进两格，不能按一格找）。
+ * 在存 / 读两侧方法所在的那几个文件里找。
+ */
+function methodBody(name: string): string {
+  const sig = new RegExp(`(void|ArrayList<String>)\\s+${name}\\s*\\(`)
+  const src = LOAD_TARGET_FILES.map((f) => javaSource(f)).find((s) => sig.test(s))
+  if (src === undefined) throw new Error(`找不到方法 ${name} 的定义`)
+  const start = src.search(sig)
+  const lineStart = src.lastIndexOf('\n', start) + 1
+  const indent = /^[\t ]*/.exec(src.slice(lineStart))![0]
+  const end = src.indexOf(`\n${indent}}`, start)
+  if (end < 0) throw new Error(`${name} 的方法体没有收尾`)
+  return src.slice(start, end)
+}
+
+/** 存 / 读两侧方法所在的文件（`Recorder.save` 与 `Loader.load` 交出去的那几个）。 */
+const LOAD_TARGET_FILES = [
+  'src/battle/ZhangXiaoFan.java',
+  'src/battle/LuXueQi.java',
+  'src/battle/YuJie.java',
+  'src/scene/SaveAndLoad.java',
+  'src/menu/EquipPanel.java',
+  'src/shop/ShopPanel.java',
+  'src/shop/EquipmentShopPanel.java',
+]
 
 // 下面几份次序是**手写登记**，各自由 originalSave.test.ts 与源码对撞。
 
@@ -385,7 +468,8 @@ export function fromRecorderText(text: string): SaveFile {
     }
   })
   for (const k of HERO_KEYS) if (!d.heroes[k]) throw new Error(`没解出 ${k}`)
-  return { version: SAVE_VERSION, ...d } as unknown as SaveFile
+  // 出口过一遍产品侧的形状检查：哪一组没解出来，这里就抛，不靠别的测试间接兜。
+  return parseSave(serializeSave({ version: SAVE_VERSION, ...d } as unknown as SaveFile))
 }
 
 /** {@link SaveFile} → 原版写档装置会写出的文本。行尾由调用方给（原版跟平台走）。 */

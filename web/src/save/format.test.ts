@@ -12,6 +12,7 @@ import {
 } from './format'
 import {
   EQUIPMENT_TOTAL,
+  STOCK_ORDER,
   encodeHero,
   encodeScene,
   encodeShop,
@@ -100,6 +101,7 @@ describe('存全套：存出去的内容里，原版读不回来的那几组确�
     const line = (n: number) => reads.find((r) => r.line === n)!.fields
     return {
       name,
+      stock: line(8).slice(0, EQUIPMENT_TOTAL),
       stockNonZero: line(8).slice(0, EQUIPMENT_TOTAL).filter((f) => f !== '0').length,
       questionMaps: line(8).slice(EQUIPMENT_TOTAL),
       answerCount: line(9).filter((f) => f !== '').length,
@@ -116,7 +118,8 @@ describe('存全套：存出去的内容里，原版读不回来的那几组确�
     const e = expected.find((x) => x.name === name)!
     // 直接读序列化出来的 JSON，不经 parseSave —— 验的是「存出去了」，不是往返。
     const written = JSON.parse(serializeSave(save)).neverReadBack as NeverReadBack
-    expect(nonZero(written)).toBe(e.stockNonZero)
+    // 逐值、逐位置（按 EquipmentPack 六张表的次序摊平），不只是非零个数。
+    expect(STOCK_ORDER.flatMap((s) => written.equipmentStock[s].map(String))).toEqual(e.stock)
     expect(written.questionMaps).toEqual(e.questionMaps)
     expect(written.answers.length).toBe(e.answerCount)
   })

@@ -1,7 +1,11 @@
+import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
+import { repoPath } from '../../test/repoPath'
 import {
   CODECS,
+  NEVER_READ_BACK_SOURCE,
+  derivedNeverReadBack,
   HERO_FIELDS,
   ROLE_AND_MAP_EXPRS,
   SCENE_FIELDS,
@@ -58,6 +62,20 @@ describe('原版存档解析器 —— 按原版读取器的实际读法', () =>
     expect(javaSplitExact('A', 'A')).toEqual([])
     expect(javaSplitExact('任务A文本A', 'A')).toEqual(['任务', '文本'])
     expect(javaSplitExact('aAAbAA', 'A')).toEqual(['a', '', 'b'])
+  })
+})
+
+describe('「写了但从不读回」的名单从源码现推', () => {
+  it('源码现推的名单与 NeverReadBack 的手签登记相同', () => {
+    expect(derivedNeverReadBack()).toEqual(Object.values(NEVER_READ_BACK_SOURCE).sort())
+  })
+
+  it('答题记录的两个回填方法全仓零调用点（xl-1dv.20）', () => {
+    const files = (readdirSync(repoPath('src'), { recursive: true }) as string[]).filter((f) => f.endsWith('.java'))
+    const all = files.map((f) => javaSource(`src/${f}`)).join('\n')
+    // 分母：声明恰好两处 —— 正则认得出这两个名字，零调用点才不是「搜不到」。
+    expect([...all.matchAll(/void\s+(loadQuestion|loadAnswer)\s*\(/g)].length).toBe(2)
+    expect([...all.matchAll(/\.(loadQuestion|loadAnswer)\s*\(/g)].map((m) => m[0])).toEqual([])
   })
 })
 
