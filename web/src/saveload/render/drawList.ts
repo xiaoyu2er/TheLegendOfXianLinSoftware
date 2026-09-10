@@ -30,7 +30,7 @@ import type { SaveLoadWorld } from '../world'
  * 原版那句是 `drawImage(img, x, y, 150, 100, observer)` —— 交给平台自己缩放，
  * 没有手写循环；而本仓库已经拟合过的两条缩放循环按「源图带不带透明通道」分岔，
  * 拟合数据又是在**放大**区间上扫出来的，这里是大幅**缩小**。所以这一块照原尺寸
- * 交给 Pixi 缩放，**不去对齐像素**，缺口与成因归单立的那张票（见 `op.scaled`）。
+ * 交给 Pixi 缩放，**不去对齐像素**，缺口与成因归单立的那张票 xl-cpo（见 `op.scaled`）。
  *
  * ## 动画帧号不在状态层里
  *
@@ -46,7 +46,7 @@ export type SaveLoadDrawOp =
       /**
        * 给了就按这个尺寸画（`drawImage(img, x, y, w, h, …)`）。**只有缩略图用它**，
        * 而那一块的像素是登记在案的缺口（平台自带的缩放；两条循环按源图透明通道
-       * 分岔，且缩小倍率落在既有拟合区间之外），挂 xl-i06.9 关票理由里点名的那张票。
+       * 分岔，且缩小倍率落在既有拟合区间之外），挂 xl-cpo。
        */
       readonly scaled?: { readonly width: number; readonly height: number }
     }

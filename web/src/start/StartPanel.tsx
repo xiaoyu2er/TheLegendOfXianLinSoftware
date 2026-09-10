@@ -54,6 +54,8 @@ import { useStartPanel } from './useStartPanel'
 export interface StartPanelProps {
   /** 「起」：`GameLauncher.init()` + `switchTo("scene")` + 进脚本1。 */
   readonly onNewGame: () => void
+  /** 「承」：`setLastPanel("start")` + `changeStateTo(LOAD)` + `switchTo("ls")`（xl-i06.9）。 */
+  readonly onLoad: () => void
 }
 
 /** 逻辑名 → 那颗按钮的摆位。`START_BUTTONS` 是模块常量，这张表也就不必每渲染重建。 */
@@ -63,19 +65,19 @@ const SPECS = new Map<StartButtonKey, StartButtonSpec>(START_BUTTONS.map((b) => 
 const frameSrc = (name: StartSequenceName, frame: number): string =>
   resolveAsset(startFrameAssetId(name, frame))
 
-export function StartPanel({ onNewGame }: StartPanelProps) {
+export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
   /**
    * 状态机推出来的三种动作，各自接到什么上。
    *
-   * `null` 的那两个对应 `START_BUTTON_WIRING` 里 `enabled: false` 的两颗按钮
-   * （「承」/ `loadPanel`、「结」/ `exit`），理由逐字写在那张表上。两处必须
+   * `null` 的那一个对应 `START_BUTTON_WIRING` 里 `enabled: false` 的那颗按钮
+   * （「结」/ `exit`），理由逐字写在那张表上。两处必须
    * 一致，而**验它的不是一条比对而是行为**：`StartPanel.test.tsx` 里那条
    * 「每一颗活着的按钮，点下去屏幕都得真的变」—— 把某颗按钮放开却不在这里
    * 接线，那条立刻红，因为点了它屏幕上什么都不会变。
    */
   const actions: Readonly<Record<StartEffect, (() => void) | null>> = {
     newGame: onNewGame,
-    loadPanel: null,
+    loadPanel: onLoad,
     exit: null,
   }
 

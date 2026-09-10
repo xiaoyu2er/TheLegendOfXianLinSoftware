@@ -10,11 +10,13 @@ import { useBattleRenderer } from '../battle/render/useBattleRenderer'
 import { useMenuRenderer } from '../menu/render/useMenuRenderer'
 import { useShopRenderer } from '../shop/render/useShopRenderer'
 import { useShopPreview } from '../shop/render/useShopPreview'
+import { useSaveLoadRenderer } from '../saveload/render/useSaveLoadRenderer'
 import { SHOP_PREVIEW_CHOICES } from '../shop/preview'
 import type { ShopPreviewChoice } from '../shop/preview'
 import { wheelRows } from '../menu/scroll'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { useGame } from '../game/useGame'
+import type { SaveLoadNotice } from '../game/useGame'
 import { StartPanel } from '../start/StartPanel'
 import { DialogueBox } from '../ui/DialogueBox'
 import { devToolsEnabled } from './devTools'
@@ -26,6 +28,50 @@ import { devToolsEnabled } from './devTools'
  * `''`，改掉其中一个，测试照样绿。
  */
 export const TITLE_OPTION = ''
+
+/**
+ * 存读档面板上的几行字（xl-i06.9）。**画在 overlay 上，不画进 Pixi**：它们原版没有，
+ * 是这一层对浏览器存储那几种状态的表态 —— 混进画布就会被当成原版画面去比。
+ *
+ * - `loading`：仓库还在从浏览器存储里读。画布这时是空的，**不画三个空槽**；
+ * - `failed`：读不上来。这一次存不了也读不了，只留退出键（规格没定，本票裁定）；
+ * - `persistError`：快照已经是新的、浏览器存储没写进去 —— 摘要看着存上了，关掉就没了；
+ * - `loadRequest`：读档那条重建路径归 xl-i06.10，这里说一声为什么点了没回到场景。
+ */
+function SaveLoadNotices({
+  notice,
+  loading,
+}: {
+  readonly notice: SaveLoadNotice | null
+  readonly loading: boolean
+}) {
+  if (notice === null) return null
+  const lines: { kind: 'loading' | 'error'; text: string }[] = []
+  if (notice.status === 'loading') lines.push({ kind: 'loading', text: '正在读取存档…' })
+  else if (notice.status === 'failed') {
+    lines.push({ kind: 'error', text: `存档读不上来：${notice.error}。这一次存不了档、也读不了档；按 Esc 回去。` })
+  } else {
+    if (loading) lines.push({ kind: 'loading', text: '正在载入存读档面板…' })
+    if (notice.persistError !== null) {
+      lines.push({ kind: 'error', text: `上一次存档没能写进浏览器存储：${notice.persistError} —— 关掉页面之后它不会留下。` })
+    }
+    if (notice.loadRequest !== null) {
+      lines.push({
+        kind: 'loading',
+        text: `已选中第 ${notice.loadRequest + 1} 个存档；读档之后回到场景那一段还没接上（xl-i06.10）。按 Esc 回去。`,
+      })
+    }
+  }
+  return (
+    <>
+      {lines.map((l) => (
+        <p key={l.text} className={`stage-notice stage-notice--${l.kind}`} role="status" data-testid="ls-notice">
+          {l.text}
+        </p>
+      ))}
+    </>
+  )
+}
 
 export function App() {
   /**
@@ -39,6 +85,7 @@ export function App() {
   const battleHostRef = useRef<HTMLDivElement>(null)
   const menuHostRef = useRef<HTMLDivElement>(null)
   const shopHostRef = useRef<HTMLDivElement>(null)
+  const lsHostRef = useRef<HTMLDivElement>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
   /**
    * **现在该在哪个场景**，`null` = 还没开局、停在标题上（xl-q7f）。
@@ -101,6 +148,7 @@ export function App() {
   const [shopPreview, setShopPreview] = useState<ShopPreviewChoice>('none')
   const shop = useShopPreview(shopRenderer, shopPreview)
   const inShopPreview = shopPreview !== 'none'
+  const saveLoadRenderer = useSaveLoadRenderer(lsHostRef)
   // 方向键走动、按住 Ctrl（或 Shift）跑动、空格搭话。世界的推进与画面无关，
   // 见 useGame；对话框是它交出来的那份状态的投影。
   //
@@ -114,6 +162,7 @@ export function App() {
     menuRenderer,
     // 预览开着时那张画布归预览：两边往同一个渲染器上画，谁后画谁赢，一帧一换。
     inShopPreview ? null : shopRenderer,
+    saveLoadRenderer,
   )
   const dialogue = view.dialogue
   if (view.scene !== game.scene) setGame({ scene: view.scene })
@@ -131,6 +180,8 @@ export function App() {
    * 两条路在这一层不分家：画的都是同一屏，「起」做的也都是同一件事。
    */
   const atTitle = view.panel === 'start'
+  /** 存读档面板（xl-i06.9）：菜单的「存档 / 提取」或标题的「承」进来。 */
+  const inLs = view.panel === 'ls'
 
   /**
    * 「起」：重开一局。
@@ -231,6 +282,16 @@ export function App() {
     }
 
   /**
+   * 存读档面板与菜单一样**纯鼠标**（外加退出键，走 `useGame` 的键盘那一路）：
+   * 按下 / 松开 / 移动三种都要送 —— 按钮光效走的是 `mouseMoved`。
+   */
+  const onLsMouse = (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!inLs) return
+    const at = stagePoint(event)
+    if (at) view.lsInput({ e, x: at.x, y: at.y })
+  }
+
+  /**
    * 滚轮 —— 装备页与物品页那两处列表翻页用（xl-6lo.13）。**原版没有这一种
    * 输入**，它只从浏览器进来。
    *
@@ -253,7 +314,7 @@ export function App() {
             <div
               className="stage-panel"
               ref={sceneHostRef}
-              hidden={inBattle || inMenu || inShop || atTitle || inShopPreview}
+              hidden={inBattle || inMenu || inShop || atTitle || inLs || inShopPreview}
               data-testid="scene-host"
             />
             <div
@@ -282,16 +343,26 @@ export function App() {
               onMouseMove={onShopMouse('move')}
               data-testid="shop-host"
             />
+            <div
+              className="stage-panel"
+              ref={lsHostRef}
+              hidden={!inLs || inShopPreview}
+              onMouseDown={onLsMouse('press')}
+              onMouseUp={onLsMouse('release')}
+              onMouseMove={onLsMouse('move')}
+              data-testid="ls-host"
+            />
           </>
         }
         overlay={
           <>
-            {status.kind === 'ready' || inBattle || inMenu || inShop || atTitle || inShopPreview ? null : (
+            {status.kind === 'ready' || inBattle || inMenu || inShop || atTitle || inLs || inShopPreview ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
-            {atTitle && !inShopPreview ? <StartPanel onNewGame={onNewGame} /> : null}
+            {atTitle && !inShopPreview ? <StartPanel onNewGame={onNewGame} onLoad={view.openLoad} /> : null}
+            {inLs && !inShopPreview ? <SaveLoadNotices notice={view.saveLoad} loading={view.saveLoadLoading} /> : null}
             {(inShopPreview && shop.loading) || (!inShopPreview && inShop && view.shopLoading) ? (
               <p className="stage-notice stage-notice--loading" role="status">
                 正在载入商店…
@@ -307,7 +378,7 @@ export function App() {
                 正在载入战斗…
               </p>
             ) : null}
-            {dialogue && !inBattle && !inMenu && !inShop && !inShopPreview ? (
+            {dialogue && !inBattle && !inMenu && !inShop && !inLs && !inShopPreview ? (
               <DialogueBox dialogue={dialogue} />
             ) : null}
           </>
@@ -358,8 +429,10 @@ export function App() {
             ? '商店预览（开发用）：进店的正路是场景里店主旁边的选择框（xl-yg6.11）'
             : inShop
               ? '商店：点商品、加减、买卖；「返回游戏」回到场景'
+              : inLs
+                ? '存读档：点右边的圆钮存进 / 读出那一格；Esc 回到进来时那一屏'
               : atTitle
-            ? '开始界面：点「起」重开一局（读档要等 M6 存档）'
+            ? '开始界面：点「起」重开一局，点「承」读取存档'
             : inBattle
               ? '战斗中：点「击」再点怪物；技、防、物同理'
               : inMenu

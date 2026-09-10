@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { getScene } from '../../data/scenesEager'
+import type { SceneScript } from '../../data/types'
 import { resetDrugPack } from '../../fakes/drugPack'
 import { resetParty } from '../../fakes/party'
 import { resetWallet } from '../../fakes/wallet'
@@ -78,6 +78,14 @@ export function draftSlots(emptySlots: readonly number[]): (SaveFile | null)[] {
 }
 
 const stem = (s: string) => s.replace(/\.txt$/, '')
+
+/**
+ * 烘焙好的场景 JSON，用 node fs 现读。不走 `data/scenesEager.ts`：那个模块的导入方
+ * 被 `sceneLoading.test.ts` 钉着只许是测试文件与 `scripts/`，而这里是测试辅助件。
+ */
+function getScene(name: string): SceneScript {
+  return JSON.parse(readFileSync(repoPath('web/src/generated/scenes', `${name}.json`), 'utf8')) as SceneScript
+}
 
 /** 照剧本头立起一个已开局的会话（存档时要从它身上取数）。 */
 export function setupSession(setup: SaveLoadSetup, store: SaveStore): RunningSession {

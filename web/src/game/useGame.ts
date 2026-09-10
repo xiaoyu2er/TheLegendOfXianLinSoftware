@@ -33,8 +33,21 @@ import { shopTextureIds } from '../shop/render/assets'
 import { shopDrawList } from '../shop/render/drawList'
 import type { ShopRenderer } from '../shop/render/shopRenderer'
 import type { ShopInput } from '../shop/step'
-import { shopWorldOf } from './session'
+import { NO_INPUT, enterSaveLoad, saveLoadViewOf, shopWorldOf } from './session'
 import type { Panel, Session, SessionDeps } from './session'
+import { saveLoadDrawList, saveLoadTextureIds } from '../saveload/render/drawList'
+import type { SaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
+import type { SaveLoadInput } from '../saveload/step'
+import { SAVE_SLOT_COUNT } from '../save/store'
+
+/**
+ * 存读档面板上那几行提示要的东西（xl-i06.9）—— `saveLoadViewOf` 的一个只含文字的
+ * 投影，好让 React 只在它变了的时候重渲染。
+ */
+export type SaveLoadNotice =
+  | { readonly status: 'loading' }
+  | { readonly status: 'failed'; readonly error: string }
+  | { readonly status: 'ready'; readonly persistError: string | null; readonly loadRequest: number | null }
 
 /**
  * 把状态层接到键盘与渲染器上。**这里没有一行游戏逻辑**——它只做三件事：
@@ -132,6 +145,14 @@ export interface GameView {
    * 标题上（xl-q7f），没有"先建一局再退回标题"这回事。
    */
   readonly restart: () => void
+  /** 存读档面板开着时那几行提示；面板没开着是 `null`（xl-i06.9）。 */
+  readonly saveLoad: SaveLoadNotice | null
+  /** 存读档面板贴图还在载入。 */
+  readonly saveLoadLoading: boolean
+  /** 存读档面板上的一次鼠标事件（舞台逻辑坐标）。面板没开着就丢掉。 */
+  readonly lsInput: (input: SaveLoadInput) => void
+  /** 标题上的「承」：下一拍进存读档面板（读模式，从标题进来）。 */
+  readonly openLoad: () => void
 }
 
 /**
@@ -155,7 +176,20 @@ export function useGame(
   battleRenderer: BattleRenderer | null = null,
   menuRenderer: MenuRenderer | null = null,
   shopRenderer: ShopRenderer | null = null,
+  saveLoadRenderer: SaveLoadRenderer | null = null,
 ): GameView {
+  /** 存读档面板上的输入，攒到下一拍（xl-i06.9）。 */
+  const lsInputRef = useRef<SaveLoadInput[]>([])
+  /** 标题上点了「承」：下一拍进面板。 */
+  const openLoadRef = useRef(false)
+  const [saveLoad, setSaveLoad] = useState<SaveLoadNotice | null>(null)
+  const saveLoadSigRef = useRef<string>('null')
+  const [saveLoadLoading, setSaveLoadLoading] = useState(false)
+  const loadedLsRef = useRef<string | null>(null)
+  const lsLoadingRef = useRef(false)
+  /** 进面板那一刻（帧号从它数起）；按钮光效各自从开始发光那一刻数。 */
+  const lsSinceRef = useRef<number | null>(null)
+  const glowSinceRef = useRef<(number | null)[]>(Array.from({ length: SAVE_SLOT_COUNT }, () => null))
   const sessionRef = useRef<Session | null>(null)
   const queueRef = useRef<InputEvent[]>([])
   const clicksRef = useRef<BattleInput[]>([])
@@ -223,6 +257,8 @@ export function useGame(
     shopLoadingRef.current = false
     shopSinceRef.current = null
     setShopLoading(false)
+    lsInputRef.current = []
+    openLoadRef.current = false
     // 载入那几十毫秒里显示的是**场景**（"正在载入 X…"），不是标题。
     //
     // **这一点跟原版是一致的**，而 xl-w16 的票面写反了（它说"原版是
@@ -287,7 +323,10 @@ export function useGame(
       // 缺陷（`menu/step.ts` 的 `menuWantsScene`）。别"顺手修好"它。
       if (event.type === 'keydown' && event.key === 'Escape') {
         event.preventDefault()
-        openMenuRef.current = true
+        // 存读档面板开着时 ESC 归它（`GameLauncher.keyPressed` 只转给当前面板：
+        // `if(currentPanel==lsPanel) lsPanel.keyPressed(keyCode)`）。
+        if (panelRef.current === 'ls') lsInputRef.current.push({ e: 'key', key: 'escape' })
+        else openMenuRef.current = true
         return
       }
       const input = toInputEvent({
@@ -381,13 +420,31 @@ export function useGame(
       return names
     }
     const pump = () => {
-      const session = sessionRef.current
+      let session = sessionRef.current
       if (!session) return
       const now = performance.now()
+      // 标题上点了「承」（xl-i06.9）：`setLastPanel("start")` + `changeStateTo(LOAD)` +
+      // `switchTo("ls")`。只有停在标题上时才算 —— 那颗按钮只画在标题上。
+      if (openLoadRef.current) {
+        openLoadRef.current = false
+        if (session.panel === 'start') session = sessionRef.current = enterSaveLoad(session, 'load', 'start')
+      }
       // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，一拍
       // 都不推。曲子照放 —— 标题那一屏放主题曲，也是会话说了算。
+      //
+      // 唯一的例外是从标题「承」进来的存读档面板：它收自己的鼠标与退出键，
+      // 与场景那条线程无关（`advanceSession` 起手先推它，然后照样原样交回）。
       if (!isRunning(session)) {
         last = now
+        if (session.panel === 'ls') {
+          const saveload = lsInputRef.current
+          lsInputRef.current = []
+          const next = advanceSession(session, { ...NO_INPUT, saveload }, 0)
+          sessionRef.current = next
+          syncPanel(next)
+          drawSaveLoad(next, now)
+          session = next
+        }
         bgmRef.current?.sync(currentBgm(session))
         return
       }
@@ -431,11 +488,13 @@ export function useGame(
         battle: clicksRef.current,
         menu: menuInputRef.current,
         shop: shopInputRef.current,
+        saveload: lsInputRef.current,
       }
       queueRef.current = []
       clicksRef.current = []
       menuInputRef.current = []
       shopInputRef.current = []
+      lsInputRef.current = []
       // 按 ESC 开菜单。**在推进之前**：晚一拍开的话那一拍的方向键还会被场景
       // 收走，表现为"按了 ESC 主角又多走一步"。
       const opening = openMenuRef.current
@@ -443,13 +502,11 @@ export function useGame(
       const next = advanceSession(opening ? openMenu(session) : session, input, elapsed)
       sessionRef.current = next
       bgmRef.current?.sync(currentBgm(next))
-      if (next.panel !== panelRef.current) {
-        panelRef.current = next.panel
-        setPanel(next.panel)
-      }
+      syncPanel(next)
       drawBattle(next)
       drawMenu(next)
       drawShop(next, now)
+      drawSaveLoad(next, now)
       // 战斗面板显示的时候场景那张画布看不见，画它是白费；而**世界照样在推**
       // （原版那条线程没停），所以这里跳的只有绘制。
       if (next.panel !== 'scene') return
@@ -551,9 +608,87 @@ export function useGame(
       shopRenderer.draw(shopDrawList(world, previewFrame(now - shopSinceRef.current)))
     }
 
+    function syncPanel(next: Session): void {
+      if (next.panel !== panelRef.current) {
+        panelRef.current = next.panel
+        setPanel(next.panel)
+      }
+    }
+
+    /**
+     * 存读档面板那张画布（xl-i06.9）。与商店同构：贴图按内容比、空窗里不画、每拍都画
+     * （那条动画线程只推帧号，帧号从进面板那一刻现数，100 ms 一格）。
+     *
+     * **没就绪就把画布清空**，不画槽 —— 「还没读上来」画成三个空槽是一句谎话
+     * （`save/store.ts` 的就绪标志）；那几行字归 `app/App.tsx` 的提示。
+     */
+    function drawSaveLoad(next: Session, now: number): void {
+      const view = saveLoadViewOf(next)
+      syncSaveLoadNotice(view)
+      if (view === null) {
+        lsSinceRef.current = null
+        return
+      }
+      if (lsSinceRef.current === null) lsSinceRef.current = now
+      if (!saveLoadRenderer) return
+      if (view.status !== 'ready') {
+        saveLoadRenderer.draw([])
+        return
+      }
+      const world = view.world
+      const wanted = saveLoadTextureIds(world).join(' ')
+      if (loadedLsRef.current !== wanted) {
+        loadedLsRef.current = wanted
+        lsLoadingRef.current = true
+        setSaveLoadLoading(true)
+        void saveLoadRenderer.load(saveLoadTextureIds(world)).then(() => {
+          if (loadedLsRef.current !== wanted) return
+          lsLoadingRef.current = false
+          setSaveLoadLoading(false)
+        })
+        return
+      }
+      if (lsLoadingRef.current) return
+      const tick = (since: number) => Math.floor((now - since) / 100)
+      const glow = world.buttons.map((b, i) => {
+        if (!b.glowing) glowSinceRef.current[i] = null
+        else if (glowSinceRef.current[i] === null) glowSinceRef.current[i] = now
+        const since = glowSinceRef.current[i]
+        return since === null || since === undefined ? 0 : tick(since)
+      })
+      const t = tick(lsSinceRef.current)
+      saveLoadRenderer.draw(saveLoadDrawList(world, { cursor: t, roles: t, glow }))
+    }
+
+    /** 那几行提示只在内容变了的时候交给 React。 */
+    function syncSaveLoadNotice(view: ReturnType<typeof saveLoadViewOf>): void {
+      const notice: SaveLoadNotice | null =
+        view === null
+          ? null
+          : view.status === 'loading'
+            ? { status: 'loading' }
+            : view.status === 'failed'
+              ? { status: 'failed', error: view.error?.message ?? '原因不明' }
+              : { status: 'ready', persistError: view.persistError?.message ?? null, loadRequest: view.loadRequest }
+      const sig = JSON.stringify(notice)
+      if (sig === saveLoadSigRef.current) return
+      saveLoadSigRef.current = sig
+      setSaveLoad(notice)
+    }
+
     const id = window.setInterval(pump, TICK_MS)
     return () => window.clearInterval(id)
-  }, [renderer, battleRenderer, menuRenderer, shopRenderer])
+  }, [renderer, battleRenderer, menuRenderer, shopRenderer, saveLoadRenderer])
+
+  /** 存读档面板上的一次鼠标事件。面板没开着就丢掉。 */
+  const lsInput = (input: SaveLoadInput): void => {
+    if (sessionRef.current?.panel !== 'ls') return
+    lsInputRef.current.push(input)
+  }
+
+  const openLoad = (): void => {
+    openLoadRef.current = true
+  }
 
   const click = (x: number, y: number): void => {
     const world = sessionRef.current?.battle?.world
@@ -594,6 +729,10 @@ export function useGame(
     menuInput,
     shopInput,
     restart,
+    saveLoad,
+    saveLoadLoading,
+    lsInput,
+    openLoad,
   }
 }
 

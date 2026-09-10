@@ -153,7 +153,8 @@ export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWir
   // 那一屏，全在状态机里（`panelState.ts`），所以组件那边没有它们的 handler。
   about: { enabled: true, disabledReason: null },
   goBack: { enabled: true, disabledReason: null },
-  load: { enabled: false, disabledReason: '读取存档要等 M6 存档（xl-i06.1）' },
+  // 「承」进存读档面板（xl-i06.9）。点中非空槽之后那条重建路径归 xl-i06.10。
+  load: { enabled: true, disabledReason: null },
   end: {
     enabled: false,
     // 原版是 `System.exit(0)`（`src/start/StartPanel.java:233`）。浏览器里没有
