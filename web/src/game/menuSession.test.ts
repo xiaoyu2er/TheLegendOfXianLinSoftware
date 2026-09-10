@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
-import { getParty, resetParty } from '../fakes/party'
+import { attributesOf, getParty, resetParty } from '../fakes/party'
 import { javaSource } from '../test/javaSource'
 import { sceneSourceOf } from '../state/trace'
 import { createWorld } from '../state/step'
@@ -13,7 +13,15 @@ import { createBattle } from '../battle/world'
 import { DEFAULT_WEAPONS, withWeapon } from '../menu/defaultWeapons'
 import { DRUG_LIST_VIEW, DRUG_LIST_X, DRUG_ROW_H } from '../menu/drugPanel'
 import { EQUIPMENT_LISTS } from '../menu/equipment'
-import { addEquipment } from '../menu/equipPanel'
+import {
+  EQUIP_LIST_VIEW,
+  EQUIP_ROW_H,
+  EQUIP_X_START,
+  addEquipment,
+  equipCount,
+  equipList,
+  snapshotEquip,
+} from '../menu/equipPanel'
 import { rowBandTop } from '../menu/scroll'
 import { buttonCenter, clickButton, selectEquipRow } from '../test/menuClicks'
 import {
@@ -415,5 +423,236 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     expect(yu2.hpMax).toBe(derive(bumped).hpMax)
     expect(yu2.hpMax).toBeGreaterThan(yu.hpMax)
     resetParty()
+  })
+})
+
+/**
+ * **菜单世界跨得过一次关菜单**（xl-6lo.18）。
+ *
+ * ## 这张票要守的那条缝
+ *
+ * 原版的 `MenuPanel` 是 `GameLauncher` 构造函数里 `new` 的**一份**，从开机活到
+ * 关机（唯一会重建它的 `GameLauncher.init()` 整个是注释掉的死代码）。这一层
+ * 起先每次开菜单都新建一份，于是**两样在这一层没有别的出处**的状态活不过一次
+ * 关菜单：`EquipPanelState.packs`（六个槽位穿着什么）与 `EquipPanelState.owned`
+ * （六张装备表的持有量，原版是 `static` 的全局背包）。顺带还有当前在哪一页、
+ * 四个 `Mouse` 的计数器、两条列表的滚动位置。
+ *
+ * xl-6lo.16 让四项属性与血 / 灵力跨过了这条缝（写回 `fakes/party.ts`），
+ * 于是留下一处**会跟着变红的不一致**：队伍记着"加成"却记不住"加成是谁给的"，
+ * 穿一件 +5 体力的盔甲 → 关菜单（+5 记住了）→ 再开菜单（盔甲不在槽位里了）
+ * → 再穿一次 → +10。
+ *
+ * ## ⚠️ 同样没有行为真值，凭什么算过
+ *
+ * 与上面两组同一个理由：两条 menu 真值都从 `new MenuPanel()` 起、到剧本跑完
+ * 为止，**关菜单之后不在任何一份真值里**。判据是五条，每条都跑得出红绿：
+ *
+ * 1. **装备状态逐字段跨得过去** —— 关菜单那一刻的整份 `equip` 快照，与再开
+ *    菜单之后逐字段相等；
+ * 2. **"穿两次加两次"那条路径** —— 关菜单再开，**原样重放**同一串点击，
+ *    四项属性一个数都不许再动；
+ * 3. **一次性信号真的收掉了** —— 不收的话下次开菜单第一拍就自己关上；
+ * 4. **`returnButton.isclicked` 照原版留着**（复刻的缺陷，不是疏忽）；
+ * 5. **「起」不重建菜单** —— 判据从 GBK 源码现读。
+ *
+ * ## 判据不是"今天到不了所以恒真"
+ *
+ * 装备在游戏本体里的唯一来源是装备超市（M4 / xl-knp），所以下面那句
+ * `addEquipment(...)` 就是**装备超市将来要做的那一句** —— 与上一组里那句
+ * "往背包里塞一瓶药"同一个手法。它落在**会话自己那份**菜单世界上
+ * （`s.menu.world`），而不是另造一个世界：另造一个的话这一整组测的就不是
+ * 会话那条缝了。塞完之后每一下都走真的输入（`advanceSession` 收
+ * `SessionInput.menu`），一个状态字段都不手写。
+ */
+describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
+  /** 张小凡用得了、而且**真的加体力**的第一件盔甲。名字与数从表里取。 */
+  function armorForZhang() {
+    const armor = EQUIPMENT_LISTS.armor.find(
+      (i) => (i.user === 0 || i.user === 1) && i.addPhysicalPower > 0,
+    )
+    if (!armor) throw new Error('盔甲表里没有张小凡用得了、又加体力的东西')
+    return armor
+  }
+
+  /** 点顶栏那一颗页签，走会话。 */
+  function tab(s: RunningSession, key: 'thing' | 'equip' | 'magic' | 'func'): RunningSession {
+    return advanceSession(
+      s,
+      { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs[key])) },
+      0,
+    )
+  }
+
+  /** 天书页那颗「返回」—— 出菜单唯一的路。 */
+  function leaveMenu(s: RunningSession): RunningSession {
+    let next = tab(s, 'func')
+    const back = menuWorldOf(next)!.panels.funcPanel.funcButtons!.main.returnButton
+    next = advanceSession(next, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
+    expect(next.panel, '点了「返回」却没回到场景').toBe('scene')
+    return next
+  }
+
+  /**
+   * 在装备页上把 `name` 那件穿到当前那个人身上：切到装备页 → 点盔甲槽位 →
+   * 把鼠标移到它那一行 → 点「使用」。**四下全走会话**。
+   */
+  function wearArmor(s: RunningSession, name: string): RunningSession {
+    let next = tab(s, 'equip')
+    expect(menuWorldOf(next)!.panel).toBe('equipPanel')
+    const e = () => menuWorldOf(next)!.panels.equipPanel.equip!
+    next = advanceSession(next, { ...NO_INPUT, menu: click(...buttonCenter(e().slots.armor)) }, 0)
+    expect(e().currentList, '没切到盔甲那张表').toBe('armor')
+    const index = equipList(e()).findIndex((i) => i.name === name)
+    if (index < 0) throw new Error(`盔甲列表里没有「${name}」`)
+    next = advanceSession(
+      next,
+      {
+        ...NO_INPUT,
+        menu: [
+          {
+            e: 'move',
+            x: EQUIP_X_START + 1,
+            y: rowBandTop(EQUIP_LIST_VIEW, index, 0) + Math.floor(EQUIP_ROW_H / 2),
+          },
+        ],
+      },
+      0,
+    )
+    expect(e().currentEquipment, `想选「${name}」，选中的却是别的`).toBe(name)
+    return advanceSession(next, { ...NO_INPUT, menu: click(...buttonCenter(e().use)) }, 0)
+  }
+
+  /** 开一次菜单，往背包里塞两件盔甲（装备超市将来做的那一句），穿上一件。 */
+  function equipOnce(): { s: RunningSession; armor: ReturnType<typeof armorForZhang> } {
+    let s = openMenu(inScene('宿舍'))
+    const armor = armorForZhang()
+    // 塞**两件**：穿掉一件之后列表里还剩一件，`owned` 那一列于是既不是全 0、
+    // 也不是"穿完就空"—— 一份分得出"跨过去了"与"重建成 0 了"的存货。
+    addEquipment(s.menu.world.panels.equipPanel.equip!, armor.name, 2)
+    s = wearArmor(s, armor.name)
+    expect(s.menu.world.panels.equipPanel.equip!.packs[1]!.armor, '这件盔甲没穿上').toBe(armor.name)
+    return { s, armor }
+  }
+
+  it('穿一件盔甲、关菜单、再开菜单：整份装备状态逐字段相同', () => {
+    const first = equipOnce()
+    const armor = first.armor
+    let s = leaveMenu(first.s)
+
+    // 关菜单**那一刻**的快照。`menuWorldOf` 这时是 null（菜单没显示着），
+    // 所以从会话自己那一份上取 —— 世界还在，这正是本票要守的事。
+    const world = s.menu.world
+    const equip = world.panels.equipPanel.equip!
+    const shot = () => ({
+      equip: snapshotEquip(equip),
+      // 快照函数只记**当前那个人**的六个槽位，另外两个人的也要跨过去。
+      packs: structuredClone(equip.packs),
+      owned: structuredClone(equip.owned),
+      // 顺带那三样（票面「现象」那一节列的）。
+      panel: world.panel,
+      scroll: equip.scroll,
+      mouse: structuredClone(world.panels.equipPanel.mouse),
+    })
+    const before = shot()
+    // 先证明这份快照**不是一份空货**：穿上的那件在槽位里、背包里还剩一件。
+    expect(before.packs[1]!.armor).toBe(armor.name)
+    expect(before.equip['equipped']).toMatchObject({ armor: armor.name })
+    expect(equipCount(equip, 'armor', armor.name)).toBe(1)
+
+    s = openMenu(s)
+    expect(menuWorldOf(s), '再开菜单却没有菜单世界').not.toBeNull()
+    expect(shot(), '关一次菜单丢了装备状态').toEqual(before)
+    // 而且是**同一份**世界，不是逐字段相等的另一份。
+    expect(menuWorldOf(s)).toBe(world)
+  })
+
+  it('⚠️ 穿两次不会加两次 —— 关菜单再开，原样重放同一串点击', () => {
+    const first = equipOnce()
+    const armor = first.armor
+    let s = first.s
+    const zhang = () => attributesOf(getParty().zhang)
+    // 写回是每一拍一次，先推一拍让队伍跟上（上一组已经验过这条）。
+    s = advanceSession(s, NO_INPUT, 0)
+    const afterFirst = zhang()
+    // 反向控制：这一件**真的加了点什么**，否则下面那条"没再动"恒真。
+    expect(armor.addPhysicalPower).toBeGreaterThan(0)
+    expect(afterFirst.physicalPower).toBe(
+      menuWorldOf(s)!.heroes[0]!.physicalPower,
+    )
+
+    s = leaveMenu(s)
+    s = openMenu(s)
+    // 关菜单之后队伍记着 +5，而槽位里那件盔甲**必须还在** —— 不在的话下面
+    // 这串点击会把它再穿一次，四项属性变成 +10。
+    expect(
+      menuWorldOf(s)!.panels.equipPanel.equip!.packs[1]!.armor,
+      '再开菜单，槽位里那件盔甲不见了',
+    ).toBe(armor.name)
+
+    // **原样重放**同一串点击：切装备页 → 点盔甲槽位 → 选那一行 → 点「使用」。
+    // 槽位已经满了，`doUseButton` 记的是「已装备」那条拒绝，一个属性都不动。
+    s = wearArmor(s, armor.name)
+    s = advanceSession(s, NO_INPUT, 0)
+    expect(zhang(), '穿两次加了两次').toEqual(afterFirst)
+    // 存货也不许动 —— 拒绝那一支在减存货**之前**返回。
+    expect(equipCount(menuWorldOf(s)!.panels.equipPanel.equip!, 'armor', armor.name)).toBe(1)
+  })
+
+  it('「返回」那条一次性信号读了就收 —— 再开菜单不会当场关上', () => {
+    let s = openMenu(inScene('宿舍'))
+    s = leaveMenu(s)
+    expect(
+      s.menu.world.panels.funcPanel.funcButtons!.exitToScene,
+      '出菜单的信号没收掉，下次开菜单第一拍就自己关了',
+    ).toBe(false)
+    s = openMenu(s)
+    // 推几拍：信号还立着的话这里当场掉回场景。
+    s = advanceSession(s, NO_INPUT, 5 * MENU_TICK_MS)
+    expect(s.panel).toBe('menu')
+  })
+
+  it('⚠️ 但「返回」那颗按钮的 isclicked 照原版留着 —— 再开菜单在天书页上按一下就又出去了', () => {
+    // 先从原版现读：鼠标监听器挂在 `MenuPanel` **自己**身上，所以 CardLayout
+    // 把它藏起来之后松手那一下根本到不了它 —— `isRelesedButton` 一次没跑，
+    // 那个 `isclicked` 就一直是 true。
+    const menuPanel = javaSource('src/menu/MenuPanel.java')
+    expect(menuPanel).toContain('addMouseListener(')
+    expect(menuPanel, '鼠标监听器不在 MenuPanel 自己身上，这条推理就不成立了').toContain(
+      'public void mouseReleased(MouseEvent e)',
+    )
+
+    let s = openMenu(inScene('宿舍'))
+    s = leaveMenu(s)
+    const fb = s.menu.world.panels.funcPanel.funcButtons!
+    expect(fb.main.returnButton.isclicked, '「返回」的 isclicked 被清掉了 —— 原版清不掉').toBe(true)
+
+    // 再开菜单：当前页还是天书页（页也跨过来了），在上面按任何一处，
+    // `funcCheckPressed` 那串 if-else 又会走到「返回」那一支 ——「退出」排在
+    // 它后面，所以点「退出」得到的是"又出去了"。
+    s = openMenu(s)
+    expect(menuWorldOf(s)!.panel).toBe('funcPanel')
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.main.exitButton)) }, 0)
+    expect(s.panel, '这一下没把菜单弹出去 —— 那个粘住的 isclicked 没复刻上').toBe('scene')
+  })
+
+  it('「起」不重建菜单 —— 原版那一句 init() 是注释掉的死代码', () => {
+    const start = javaSource('src/start/StartPanel.java')
+    // ⚠️ 先切出 `startLoadAction` 再找 `case 0:` —— 这个文件里有**好几个**
+    // switch，直接 `/case 0:/` 抓到的是别处那一个（头一版就这么错了，
+    // 报的是"找不到那句注释"，看起来像原版改过）。
+    const action = /private void startLoadAction\(\) \{([\s\S]*?)\n\t\}/.exec(start)
+    expect(action, 'startLoadAction 的方法体没解出来').not.toBeNull()
+    const case0 = /case 0:([\s\S]*?)break;/.exec(action![1]!)
+    expect(case0, 'startLoadAction 的 case 0 没解出来').not.toBeNull()
+    // 那一句在原版里是被注释掉的，行首带 `//`。
+    expect(case0![1]!).toContain('//	Game.game.init();')
+    // 而这一支里一个字都没碰菜单。
+    expect(case0![1]!).not.toContain('menuPanel')
+
+    // 这一层的对应物：`enterScene` 交回来的会话，菜单还是同一份。
+    const idle = createSession(DEPS)
+    const s = enterScene(idle, createWorld(getScene('宿舍')))
+    expect(s.menu, '「起」把菜单重建了').toBe(idle.menu)
   })
 })

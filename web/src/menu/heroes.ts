@@ -147,3 +147,49 @@ export function refreshMenuHero(h: MenuHero): void {
   if (h.hp >= h.hpMax) h.hp = h.hpMax
   if (h.mp >= h.mpMax) h.mp = h.mpMax
 }
+
+/**
+ * `switchTo("menu")` 那三句 `refreshValue()` —— **把队伍此刻那几样刷进已经
+ * 存在的那三个人**（xl-6lo.18）。
+ *
+ * 原版这一句真的只有 `refreshValue()`：`MenuPanel.hero1/hero2/hero4` 就是
+ * `GameLauncher` 的那三个对象，四项属性与血 / 灵力是 `static` 字段，菜单与
+ * 战斗读的本来就是同一份，没有什么可搬的。这一层的菜单世界是另建的一份，
+ * 队伍（`fakes/party.ts`）才是那份 static 的对应物 —— 所以"刷新"在这里
+ * 展开成"先把队伍那七样抄过来，再 `refreshValue()`"。
+ *
+ * 抄的这七样与 `rememberMenuParty` 写回去的**是同一批**（等级、四项基础属性、
+ * 血、灵力），两个函数互为逆向。多一样少一样的表现都是"关一次菜单丢一样"，
+ * 而画面上那一样看起来只是个合法的旧数字。
+ *
+ * `live` 缺席时**一个字段都不抄**，只跑 `refreshValue()` —— 回放真值那条路
+ * （`menu/replay.ts`）不喂队伍，与 `createMenuHeroes` 的规矩相同。
+ */
+export function refreshMenuHeroes(
+  heroes: MenuHero[],
+  live?: Readonly<Partial<Record<PartyKey, LiveParty>>>,
+): void {
+  if (heroes.length !== MENU_HERO_ORDER.length) {
+    throw new Error(`菜单里应当恰好 ${MENU_HERO_ORDER.length} 个人，实际 ${heroes.length} 个`)
+  }
+  MENU_HERO_ORDER.forEach(({ key, name }, i) => {
+    const h = heroes[i]!
+    // 按次序取回来，再核一遍名字 —— 对错位的表现是"属性刷到了别人身上"，
+    // 而两个人的属性都还是合法数字。同 `rememberMenuParty`。
+    if (h.name !== name) throw new Error(`菜单第 ${i} 个人应当是 ${name}，实际 ${h.name}`)
+    const now = live?.[key]
+    if (now) {
+      h.level = now.level
+      h.physicalPower = now.physicalPower
+      h.agile = now.agile
+      h.strength = now.strength
+      // ⚠️ 原版字段拼 `sprit`，菜单这一列叫 `spirit`（见 `MenuHero`）。
+      h.spirit = now.sprit
+      h.hp = now.hp
+      h.mp = now.mp
+    }
+    // 派生值重算 + 那两句只夹不补。血 / 灵力超过新上限时在这里被夹回去，
+    // 与 `createMenuHeroes` 里那两句 `Math.min` 同一件事。
+    refreshMenuHero(h)
+  })
+}
