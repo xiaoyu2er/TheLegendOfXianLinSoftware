@@ -331,6 +331,27 @@ function subKeysOf(value: unknown): readonly string[] | null {
   return null
 }
 
+/**
+ * 一列**在整条真值上**出现过的子字段并集。
+ *
+ * ⚠️ **不能只看 `ticks[0]`**（/code-review 的 Spec 轴提的）：某个子字段只在
+ * 后段的 tick 才冒出来时，只读第一行的话那条对撞是绿的，而用例名宣称的是
+ * 「真值多一个字段，就得有人签它」。这与 a9a236f 自己学到的那条同形，只是
+ * 轴从「剧本」换成了「tick」。
+ *
+ * 一列在任何一个 tick 上是标量，整列就当标量（`scene` / `isScript`）。
+ */
+function unionSubKeys(values: readonly unknown[]): readonly string[] | null {
+  let keys: Set<string> | null = null
+  for (const value of values) {
+    const own = subKeysOf(value)
+    if (own === null) return null
+    keys ??= new Set<string>()
+    for (const k of own) keys.add(k)
+  }
+  return keys === null ? null : [...keys].sort()
+}
+
 /** 这一列上登记为"原版不动"的那几个子字段。 */
 function deadFieldsOf(column: string): readonly string[] {
   return DEAD_SUBFIELDS.filter((d) => d.column === column)
@@ -496,8 +517,8 @@ describe('回放行为真值', () => {
       const trace = traceOf(name)
       const snaps = snapshotsOf(name)
       for (const group of Object.keys(ALIGNED)) {
-        const truth = subKeysOf(columnsOf(trace.ticks[0]!)[group])
-        const got = subKeysOf(snaps[0]![group])
+        const truth = unionSubKeys(trace.ticks.map((tick) => columnsOf(tick)[group]))
+        const got = unionSubKeys(snaps.map((snap) => snap[group]))
         if (truth === null) {
           // 标量列：两边都不许有子字段，否则一边是对象一边是标量。
           expect(got, `${name} 的 ${group} 在真值里是标量，观察函数却给了对象`).toBeNull()
@@ -616,23 +637,34 @@ describe('回放行为真值', () => {
     })
   }
 
-  for (const name of SCENE_TRACE_NAMES) {
-    for (const group of Object.keys(ALIGNED)) {
-      if (!ALIGNED[group]!.includes(name)) continue
-      it(`${name} · ${group}：逐 tick 与真值相等`, () => {
-        const trace = traceOf(name)
-        expect(trace.tickCount).toBeGreaterThan(0)
-        const snaps = snapshotsOf(name)
-        for (const [i, tick] of trace.ticks.entries()) {
-          // 带上 t：比对失败时要一眼看得出是第几个 tick 开始偏的。
-          expect({ t: tick.t, [group]: snaps[i]![group] }).toEqual({
-            t: tick.t,
-            [group]: stripDead(group, columnsOf(tick)[group]),
-          })
-        }
+  describe('逐格：登记成「已对齐」的格子逐 tick 与真值相等', () => {
+    // ⚠️ `ALIGNED` 空掉的时候这一批用例**静静消失**（实测：54 条 → 19 条），
+    // 而「一条都没生成」与「都过了」在测试报告里长得一样。对撞用例那边会
+    // 间接红（35 个格子全变成"没人登记"），但**间接红不是明写读数**，所以
+    // 这里也放一条：今天非空，它自己就没了。
+    if (Object.keys(ALIGNED).length === 0) {
+      it('今天 ALIGNED 一格都没签 —— 下面那批逐格用例一条都不会生成', () => {
+        expect(ALIGNED).not.toEqual({})
       })
     }
-  }
+    for (const name of SCENE_TRACE_NAMES) {
+      for (const group of Object.keys(ALIGNED)) {
+        if (!ALIGNED[group]!.includes(name)) continue
+        it(`${name} · ${group}：逐 tick 与真值相等`, () => {
+          const trace = traceOf(name)
+          expect(trace.tickCount).toBeGreaterThan(0)
+          const snaps = snapshotsOf(name)
+          for (const [i, tick] of trace.ticks.entries()) {
+            // 带上 t：比对失败时要一眼看得出是第几个 tick 开始偏的。
+            expect({ t: tick.t, [group]: snaps[i]![group] }).toEqual({
+              t: tick.t,
+              [group]: stripDead(group, columnsOf(tick)[group]),
+            })
+          }
+        })
+      }
+    }
+  })
 
   describe('「前半截已经对上了」的格子：卡住的那一 tick 就是登记里写的那一下', () => {
     // ⚠️ `BLOCKED_AT` 空着的时候这个 describe 一条用例都不生成，而
