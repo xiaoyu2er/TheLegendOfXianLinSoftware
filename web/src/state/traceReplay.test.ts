@@ -486,24 +486,30 @@ describe('回放行为真值', () => {
     // 分母是真值那一列自己的键名（现读），减去登记过的死字段；对面是观察
     // 函数实际取出来的键名。多一个少一个都红 —— 这一条是这张票逮到
     // `role.stepNum` 的那一条。
-    const name = SCENE_TRACE_NAMES[0]!
-    const trace = traceOf(name)
-    const snaps = snapshotsOf(name)
+    //
+    // ⚠️ **每一条真值都要读**，不是只读名单里的第一条：头一版只读了
+    // `SCENE_TRACE_NAMES[0]`，往 `dorm-walk` 的 `role` 里塞一个子字段那次
+    // 它是绿的（红的只有那一格的逐 tick 用例）—— 而导出器给某一条剧本多记
+    // 一列的时候，红在哪一条上是没法预先知道的。
     let compared = 0
-    for (const group of Object.keys(ALIGNED)) {
-      const truth = subKeysOf(columnsOf(trace.ticks[0]!)[group])
-      const got = subKeysOf(snaps[0]![group])
-      if (truth === null) {
-        // 标量列：两边都不许有子字段，否则一边是对象一边是标量。
-        expect(got, `${group} 在真值里是标量，观察函数却给了对象`).toBeNull()
-        continue
+    for (const name of SCENE_TRACE_NAMES) {
+      const trace = traceOf(name)
+      const snaps = snapshotsOf(name)
+      for (const group of Object.keys(ALIGNED)) {
+        const truth = subKeysOf(columnsOf(trace.ticks[0]!)[group])
+        const got = subKeysOf(snaps[0]![group])
+        if (truth === null) {
+          // 标量列：两边都不许有子字段，否则一边是对象一边是标量。
+          expect(got, `${name} 的 ${group} 在真值里是标量，观察函数却给了对象`).toBeNull()
+          continue
+        }
+        compared++
+        expect(got, `${name} 的 ${group} 在真值里是对象/数组，观察函数却给了标量`).not.toBeNull()
+        expect(
+          [...(got ?? []), ...deadFieldsOf(group)].sort(),
+          `${name} 的 ${group} 子字段与真值不一致：真值有 ${truth.join('/')}`,
+        ).toEqual([...truth])
       }
-      compared++
-      expect(got, `${group} 在真值里是对象/数组，观察函数却给了标量`).not.toBeNull()
-      expect(
-        [...(got ?? []), ...deadFieldsOf(group)].sort(),
-        `${group} 的子字段与真值不一致：真值有 ${truth.join('/')}`,
-      ).toEqual([...truth])
     }
     // 空转要响：一列都没比到与"每一列都齐"长得一样。
     expect(compared).toBeGreaterThan(0)
@@ -556,7 +562,14 @@ describe('回放行为真值', () => {
       // 那一列不再被比对。三条都做不到的话，"另一条缝在守它"就是一句注释。
       expect(source.length, `${where.file} 读出来是空的 —— 指针指向一个不存在的文件`).toBeGreaterThan(0)
       expect(source, `${where.file} 的分母不是 SCENE_TRACE_NAMES`).toContain('SCENE_TRACE_NAMES')
-      expect(source, `${where.file} 里没有一处比对 tick.${group}`).toContain(`tick.${group}`)
+      // ⚠️ **按词边界数行，不要 `toContain`**：`toContain` 是子串匹配，把那个
+      // 文件里的 `tick.viewport` 全改成 `tick.viewportZZ` 之后它照样过 ——
+      // 实测如此，这一版是被那条篡改逼出来的（原来的写法 9 处全改掉还是绿的）。
+      const hits = source.split('\n').filter((line) => new RegExp(`tick\\.${group}\\b`).test(line))
+      expect(
+        hits.length,
+        `${where.file} 里没有一处比对 tick.${group} —— 指针在骗人`,
+      ).toBeGreaterThan(0)
     }
   })
 
