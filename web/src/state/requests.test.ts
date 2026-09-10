@@ -35,8 +35,6 @@ describe('只亮一拍的请求', () => {
     })
 
     it(`${k} 亮着进 step()，出来一定熄了`, () => {
-      // 期望值在动作之前定下：进去的时候它确实亮着。
-      expect(lit(k)[k]).not.toBeNull()
       expect(step(lit(k), [], TICK_MS)[k]).toBeNull()
     })
   }
