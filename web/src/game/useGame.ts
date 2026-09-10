@@ -7,6 +7,7 @@ import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
 import { exitsReady, loadedSceneSource, prepareExits, rememberScene } from '../data/loadedScenes'
 import { resetParty } from '../fakes/party'
+import { createBrowserSaveStore, indexedDbBackend } from '../save/browserStore'
 import { loadScene } from '../data/scenes'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { TICK_MS, createWorld } from '../state/step'
@@ -142,6 +143,9 @@ const SESSION_DEPS: SessionDeps = {
   sprite: enemySpriteSize,
   // 原版 `FightEvent.startBattle0` 与 `calDamage` 用的就是它。
   random: Math.random,
+  // 存档仓库**开机就建**、当场开始从 IndexedDB 往快照里读：首次进存读档面板
+  // 之前它必须已经就绪，越早起读越好。读的过程在状态机之外（`save/store.ts`）。
+  saves: createBrowserSaveStore(indexedDbBackend()),
 }
 
 export function useGame(

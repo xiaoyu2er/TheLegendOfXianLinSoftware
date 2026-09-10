@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
 import { attributesOf, getParty, resetParty } from '../fakes/party'
+import { createMemorySaveStore } from '../save/memoryStore'
 import { javaSource } from '../test/javaSource'
 import { sceneSourceOf } from '../state/trace'
 import { createWorld } from '../state/step'
@@ -61,6 +62,7 @@ const DEPS: SessionDeps = {
   scenes: sceneSourceOf(getScene),
   sprite: () => ({ width: 1, height: 1 }),
   random: () => 0.5,
+  saves: createMemorySaveStore(),
 }
 
 function inScene(name: string): RunningSession {

@@ -71,4 +71,12 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
       '（reduceCoins 的第一个调用方是答错扣钱，xl-yg6.9），setCoins 没做 —— 读档才调它。',
     exports: ['getCoins', 'addCoins', 'reduceCoins', 'resetWallet'],
   },
+  memorySaveStore: {
+    owner: 'xl-i06.8',
+    original: 'start.Recorder / start.Loader 读写的 sources/Record/存档N.txt',
+    fakeBecause:
+      '不落盘，页面一关就没了；生来就绪，没有「还在从盘上读」那一段 —— 给测试与真值回放用。' +
+      '运行时那一份是 save/browserStore.ts（内存快照 + IndexedDB），两份共用 save/store.ts 的接口。',
+    exports: ['createMemorySaveStore'],
+  },
 }
