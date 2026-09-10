@@ -86,6 +86,10 @@ export function advance(
     // 没跑的那几拍**留在 carryMs 里**，下一次 pump 接着跑，所以
     // `loop.test.ts` 那条"切成几段喂进来结果都一样"的不变量照旧成立。
     if (world.battleRequest !== null) break
+    // 答对答错的加扣（`presentRequest`，xl-yg6.9）同一个坑、同一个做法：它也只亮
+    // 一拍，被吞掉的表现是"题答完了、钱一个子儿没动"。它只会在读输入的那一拍
+    // （i === 0）亮起，所以停在这里至多少跑一批里剩下的那几拍，留给下一次 pump。
+    if (world.presentRequest !== null) break
   }
   return { ...ticker, world, carryMs: budget - ran * TICK_MS, pending: [] }
 }

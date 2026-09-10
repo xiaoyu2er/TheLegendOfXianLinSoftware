@@ -13,6 +13,7 @@ import type { MenuWorld } from '../menu/types'
 import type { PartyKey } from '../battle/units'
 import { attributesOf, getParty, rememberMenuParty, rememberParty } from '../fakes/party'
 import type { PartyMemberState } from '../fakes/party'
+import { addCoins, reduceCoins } from '../fakes/wallet'
 import type { LiveParty } from '../menu/heroes'
 import { getAudioSettings, rememberAudioSettings } from './audioSettings'
 import { TITLE_BGM } from '../start/assets'
@@ -391,6 +392,17 @@ export function advanceSession(
     deps.random,
   )
   const request = scene.world.battleRequest
+
+  // 答对答错那一下的加扣（xl-yg6.9）。原版 `SelectEvent.keyPressed` 里
+  // `Money.addCoins(i)` / `Money.reduceCoins(i)` 与 `drawString` 同一拍；这一层
+  // 把它做成只亮一拍的 `presentRequest`，`advance` 在它亮的那一拍停批（见
+  // `state/loop.ts`），所以读的就是这一拍的。**只在这里记一次**：下一次 pump
+  // 的世界里它已经落回 `null`。
+  const present = scene.world.presentRequest
+  if (present !== null) {
+    if (present.correct) addCoins(present.coins)
+    else reduceCoins(present.coins)
+  }
 
   if (request !== null && panel === 'scene') {
     battle = createBattleTicker(createBattle(configFor(request, deps)))
