@@ -1,5 +1,7 @@
+import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../../test/javaSource'
+import { repoPath } from '../../test/repoPath'
 
 /**
  * **读档之后的残留，原版那一半**（xl-i06.11）—— 从 GBK 源码现读。
@@ -133,6 +135,7 @@ describe('菜单装备页 heroEquipment 读档不刷新', () => {
     expect(assignments(b, 'heroEquipment')).toEqual([])
   })
 
+  // 6 = 那段六个 `else if` 各写一次（冻结的原版源码现读出来的数，不是分母）。
   it('对照：同一个选择器在换槽位那段（judgeCurrentPack）里一抓一个准', () => {
     const b = methodBody(src(), 'private void judgeCurrentPack() {')
     expect(assignments(b, 'heroEquipment').length).toBe(6)
@@ -140,9 +143,21 @@ describe('菜单装备页 heroEquipment 读档不刷新', () => {
 })
 
 describe('读档标志 isLoad：置真一处、清零一处，清零只在「无对话编号」那一支（xl-1dv.33）', () => {
+  /** `src/` 下所有 `.java` 的仓库相对路径 —— 分母现扫，不手列。 */
+  function javaFiles(): string[] {
+    const walk = (dir: string): string[] =>
+      readdirSync(repoPath(dir), { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith('.java') ? [`${dir}/${e.name}`] : [],
+      )
+    return walk('src').sort()
+  }
+
   /** `src/` 下对 `isLoad` 的每一处赋值，带文件名。 */
   function isLoadWrites(): string[] {
-    const files = ['src/scene/SaveAndLoad.java', 'src/scene/ScenePanel.java', 'src/start/StartPanel.java', 'src/start/Loader.java', 'src/start/LoadAndSavePanel.java', 'src/main/GameLauncher.java']
+    const files = javaFiles()
+    // 分母先自证：扫空了目录与「真的只有两处」长得一样。
+    expect(files.length).toBeGreaterThan(50)
+    expect(files).toContain('src/scene/SaveAndLoad.java')
     return files.flatMap((f) => assignments(javaSource(f), 'isLoad').map((a) => `${f.split('/').at(-1)}: ${a}`))
   }
 
@@ -190,16 +205,20 @@ describe('「起」（StartPanel case 0）一样都不清 —— 读档读回来
     // 先证明取到的是那一段：它确实做了「进脚本1」这件事。
     expect(block).toContain('initiation("脚本1.txt")')
     expect(block).toContain('switchTo("scene")')
-    const live = block
-      .split(/\r?\n/)
-      .filter((l) => !l.trim().startsWith('//'))
-      .join('\n')
-    const touched = ['Money', 'DrugPack', 'EquipmentPack', 'SelectEvent', 'answeredRecorder', 'equipPanel', 'level', 'currentScript', 'isLoad', 'init()'].filter(
-      (name) => live.includes(name),
-    )
-    expect(touched).toEqual([])
-    // 反面样本：同一个过滤器认得出被注释掉的那一句 init() 若是活的。
-    expect(block.includes('Game.game.init()')).toBe(true)
+    const touched = (b: string) => {
+      const live = b
+        .split(/\r?\n/)
+        .filter((l) => !l.trim().startsWith('//'))
+        .join('\n')
+      return ['Money', 'DrugPack', 'EquipmentPack', 'SelectEvent', 'answeredRecorder', 'equipPanel', 'level', 'currentScript', 'isLoad', 'init()'].filter(
+        (name) => live.includes(name),
+      )
+    }
+    expect(touched(block)).toEqual([])
+    // 反面样本：把被注释掉的那句 `Game.game.init();` 放活，同一个过滤器必须认得出来。
+    const revived = block.replace(/\/\/\s*Game\.game\.init\(\);/, 'Game.game.init();')
+    expect(revived).not.toBe(block)
+    expect(touched(revived)).toEqual(['init()'])
   })
 })
 
@@ -223,8 +242,11 @@ describe('那条不复刻的例外：中途读档多起一条场景循环', () =
     expect(ls).toMatch(/Thread\s+t\s*=\s*new\s+Thread\(GameLauncher\.scenePanel\)\s*;/)
     expect(ls.replace(/\s+/g, '')).toContain('loader.load(i);if(!t.isAlive())t.start();GameLauncher.switchTo("scene");')
     const run = methodBody(javaSource('src/scene/ScenePanel.java'), 'public void run() {')
+    const exits = /\bbreak\b|\breturn\b|\bthrow\b/
     expect(run).toMatch(/while\s*\(\s*true\s*\)/)
-    expect(run).not.toMatch(/\bbreak\b|\breturn\b/)
+    expect(run).not.toMatch(exits)
+    // 反面样本：循环体里多一句 break，同一个选择器认得出来。
+    expect(run.replace('step();', 'step(); break;')).toMatch(exits)
     // 「起」每次都 new 一条（不经过读档的那个入口）。
     const start = javaSource('src/start/StartPanel.java')
     expect(start.replace(/\s+/g, '')).toContain('Threadt=newThread(GameLauncher.scenePanel);GameLauncher.scenePanel.initiation("脚本1.txt");t.start();')

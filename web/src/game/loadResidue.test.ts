@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { DRUGS } from '../battle/drugs'
 import { getScene } from '../data/scenesEager'
-import { drugCount, resetDrugPack } from '../fakes/drugPack'
+import { resetDrugPack } from '../fakes/drugPack'
 import { resetParty } from '../fakes/party'
-import { getCoins, resetWallet } from '../fakes/wallet'
+import { resetWallet } from '../fakes/wallet'
 import type { MenuInput } from '../menu/step'
 import { createMemorySaveStore } from '../save/memoryStore'
 import type { SaveFile } from '../save/format'
@@ -243,8 +242,9 @@ describe('背景音乐：读档之后是读进的那个场景的曲子（spec �
 describe('那条不复刻的例外：读档之后场景不是双倍速（ADR-0001 例外表）', () => {
   /**
    * 原版中途读档多起一条场景循环（JVM 读数：step() 85.5 → 169.5 次/秒），这一层不复刻：
-   * 状态层没有线程模型，场景一拍一个 `advance`。判据：读档前后，同样推一秒，场景时钟都只走一秒、
-   * 主角按住方向键走的格数也一样。
+   * 状态层没有线程模型，场景一拍一个 `advance`。判据：读档前后，同样推一秒，场景时钟都只走一秒
+   * （世界时间逐拍 `+= 10`，场景被多推一遍 —— 多一条线程的对应物 —— 它就走两秒；篡改矩阵把推进
+   * 时长乘 2，这一组三条全红）。
    */
   it('读档前后各推一秒：世界时间都只走 1000 ms', () => {
     fresh()
@@ -304,8 +304,6 @@ describe('读档 → 回标题 → 起：钱、药、装备库存、答题记录
     picked.menu.world.panels.equipPanel.equip!.owned.helmet[0] = 77
     const loaded = loadGame(picked)
     const carried = {
-      coins: getCoins(),
-      drugs: DRUGS.map((d) => drugCount(d.name)),
       owned: structuredClone(loaded.menu.world.panels.equipPanel.equip!.owned),
       recorder: loaded.scene.world.recorder,
     }
@@ -337,8 +335,10 @@ describe('读档 → 回标题 → 起：钱、药、装备库存、答题记录
   it('开机那一次没有上一局：什么都不带（背包全空、答题表只有脚本1 自己登记的）', () => {
     const carry = carryIntoNewGame(null)
     const s = enterScene(createSession(deps(createMemorySaveStore())), createWorld(getScene('脚本1'), true, carry.recorder))
-    const owned = s.menu.world.panels.equipPanel.equip!.owned
-    expect(Object.values(owned).flat().every((n) => n === 0)).toBe(true)
+    const all = Object.values(s.menu.world.panels.equipPanel.equip!.owned).flat()
+    // 空数组上 `every` 恒真，先钉住确实有格子。
+    expect(all.length).toBeGreaterThan(0)
+    expect(all.every((n) => n === 0)).toBe(true)
     expect(s.scene.world.recorder).toEqual(createWorld(getScene('脚本1')).recorder)
   })
 })
