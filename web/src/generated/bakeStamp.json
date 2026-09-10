@@ -46,7 +46,7 @@
     "web/src/state/narratage.ts": "219ef613e81f9afa9dc89afbdb426e9544bc36c9edcc41a15be41fce56579240",
     "web/src/state/npc.ts": "9694fa399c2f44026ca018e8f7afe37a95185b9ea7d4ad0464ed9c44dd6b6553",
     "web/src/state/role.ts": "3b2ca2f6d64483d21639e1645f48b20879222a59ba563b5c821b1ec70fd23da3",
-    "web/src/state/select.ts": "e852776cff287f1a827857b39ee8785ea8319a9fa529efd90a39194bb73a2c88",
+    "web/src/state/select.ts": "7eaed5a6bf9f5c89b4b05f213b465438dc2245c49e1d6b6506c8f67e842de7ac",
     "web/src/state/timer.ts": "836ef72b45e1930db3aeea089bbe6b699eee75a9d0af483990be80b7be0f7056",
     "web/src/state/types.ts": "1d816c3aa2e3159976426f91612ae417fba03721a6dafba512c90fdad716b28d"
   },

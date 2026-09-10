@@ -757,7 +757,18 @@ export function tickSelectWords(d: SelectDraft): void {
  *
  * **次序照抄导出器**：它按字段名排序装表（`SceneDriver.sortedFields`），
  * `SelectEvent` 的三个 `Timer` 字段排下来就是
- * `questionImageMove` → `selectImageMove` → `wordsRun`。
+ * `questionImageMove` → `selectImageMove` → `wordsRun`；而这一组整体排在
+ * 旁白之后、NPC 之前（导出器 `installTimers` 的根对象名单里
+ * `sp.selectEvent` 就在那两者之间），落点在 `state/step.ts`。
+ *
+ * ⚠️ **今天的真值分辨不出这两条次序**，如实登记：把这一组整个挪到 NPC 之后，
+ * 篡改矩阵 12 条里唯一一条不红的就是它（2026-09-09 实测）。成因是形状 ——
+ * 这三个定时器只碰 `SelectEvent` 自己的字段，NPC 那两个只碰 NPC 自己的，
+ * 一个 tick 里两组互不相干。旁白那两个的先后**是**分辨得出来的
+ * （见 `narratage.ts` 的 `tickNarratageTimers`），这一组不是。
+ *
+ * 钉死次序仍然照做，理由与 `role` 的走/跑两个定时器同一条：它哪天不再互不
+ * 相干时，不必回来重想一遍 —— 那种偏移在画面上跟"画错了一帧"分不开。
  */
 export function tickSelectTimers(d: SelectDraft, now: number): void {
   fireDue(

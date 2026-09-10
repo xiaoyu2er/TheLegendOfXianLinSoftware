@@ -162,6 +162,33 @@ describe('选择框：真值盖不到的分支', () => {
   })
 
   /**
+   * `checkSelectEvent` 答题那支开头那句 `if (isSelect) return true` ——
+   * **它不看 npcNo**，于是选择框开着时，有题的场景里所有 NPC 都说不了口头语。
+   *
+   * ⚠️ 这一条**篡改矩阵头一轮是绿的**，而那不是判据失灵：大活的 5 个 NPC
+   * 恰好每一个都还挂着没答的题（18 道题分在 5 个 NPC 上，两条剧本各答掉
+   * 1–2 道），所以拿掉这句之后循环照样命中、照样返回 true。分辨得出来的
+   * 只有"这个 NPC 的题全答完了"那一刻 —— 今天的真值走不到，所以在这里造。
+   */
+  it('选择框开着时，题全答完的 NPC 也不说口头语 —— 那句 if (isSelect) 不看 npcNo', () => {
+    const { draft: d } = draftOf('大活', '大活.txt')
+    const npcNo = Number(getScene('大活').selectQuestion![0]![0])
+    // 先把这个 NPC 名下的题全标成答过 —— 大活 18 道题都挂在 0..4 号 NPC 上，
+    // 这里直接全标，夹具才不依赖"哪几道是他的"。
+    d.answered = d.answered.map(() => true)
+
+    // 框关着：全答完了就不再截胡，这个 NPC 该说口头语。
+    expect(checkSelectEvent(d, npcNo, 0)).toBe(false)
+
+    // 框开着：那句早退把所有 NPC 一律截胡。**两个方向都要有**，否则
+    // "早退生效了"与"这个 NPC 本来就截胡"长得一样。
+    d.isSelect = true
+    expect(checkSelectEvent(d, npcNo, 0)).toBe(true)
+    // 连一个压根不在选择数据里的序号也一样 —— 那正是它不看 npcNo 的意思。
+    expect(checkSelectEvent(d, 999, 0)).toBe(true)
+  })
+
+  /**
    * 真值看不见它，因为 11 条场景真值里没有一次在选择框开着时按过左右键
    * （剧本的 `cursor` 指令只认 `down` / `up`，见 `docs/trace-format.md`）。
    *
