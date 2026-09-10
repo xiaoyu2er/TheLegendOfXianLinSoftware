@@ -430,6 +430,38 @@ public final class SceneDriver implements TraceDriver {
     private static int getInt(Object o, String name)     { return (Integer) get(o, name); }
     private static boolean getBool(Object o, String name) { return (Boolean) get(o, name); }
 
+    /**
+     * 把一个 {@code ArrayList<Boolean>} 字段读成 JSON 数组。
+     *
+     * 不是 List 就抛，不静默返回 {@code []} —— 一个空数组与"读错了字段"
+     * 在真值里长得一模一样，而这几张表（答过没 / 打过没）正是"全 false"
+     * 最常见的形状。
+     */
+    private static String boolList(Object o, String name) {
+        Object v = get(o, name);
+        if (v == null) return "null";
+        if (!(v instanceof List)) {
+            throw new RuntimeException(name + " 不是 List，而是 " + v.getClass().getName());
+        }
+        return boolJson((List<?>) v);
+    }
+
+    /**
+     * 一串 Boolean 摊成 JSON 数组。{@link #boolList} 与
+     * {@link #answeredRecorder} 共用它 —— 两处原本各写了一份逐字同形的循环，
+     * 而**只有其中一份带类型守卫**，那正是 /code-review 的 Standards 轴提的。
+     *
+     * 元素不是 Boolean 就抛（`(Boolean)` 那道强转），不静默给一个值。
+     */
+    private static String boolJson(List<?> list) {
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append(((Boolean) list.get(i)).booleanValue());
+        }
+        return b.append(']').toString();
+    }
+
     private static String bgm() {
         try {
             Field bf = media.MusicReader.class.getDeclaredField("background");
@@ -525,6 +557,9 @@ public final class SceneDriver implements TraceDriver {
          .append(",\"bg\":").append(getInt(nar, "index"))
          .append("}");
 
+        b.append(",\"select\":").append(selectState());
+        b.append(",\"treasure\":").append(treasureState());
+
         b.append(",\"audio\":{\"bgm\":").append(Json.str(bgm())).append("}");
 
         b.append(",\"viewport\":{\"offsetX\":").append(getInt(oe, "offsetX"))
@@ -536,6 +571,217 @@ public final class SceneDriver implements TraceDriver {
          .append("}");
 
         b.append(",\"drawOrder\":").append(Json.str(drawOrder()));
+        return b.append("}").toString();
+    }
+
+    /**
+     * 选择框 / 答题那套状态机（xl-yg6.6）。**一列一个原版对象**，与
+     * {@code dialogue}（Dialogue）、{@code narratage}（Narratage）、
+     * {@code viewport}（OtherEvent）同构：这一列整个来自
+     * {@code src/scene/SelectEvent.java}，一个字段都不跨对象取。
+     *
+     * <h3>只记会变的游标与旗标，不记静态文本</h3>
+     *
+     * 题面、选项文本、回答文本（{@code currentSentences}、{@code bufferedText}）
+     * 一个都不进来：它们来自脚本，而脚本已经在数据层被逐字段钉住
+     * （{@code tools/ground-truth/}）。再塞进每一拍是把同一件事验两次，
+     * 而把体量翻几倍。**分工是：文本对不对归数据层，吐到第几个字归这里。**
+     *
+     * <h3>加了哪几个字段，各自对应源码里的哪一个</h3>
+     *
+     * 逐条从 GBK 源码现读（{@code iconv -f GBK src/scene/SelectEvent.java}）：
+     *
+     * <pre>
+     *   active        ← isSelect              选择系统占用中；ScenePanel 靠它挡住走路
+     *                                          （ScenePanel.keyPressed 的 if (!selectEvent.isSelect)）
+     *                                          与决定画不画（paint 的 if (selectEvent.isSelect)）
+     *   shop          ← shopSelect            四个"这是哪一种选择框"的旗标。**四个各记一个，
+     *   equipShop     ← equipmentSelect        不合成一个枚举**：合成的话"两个同时为真"这种
+     *   battle        ← battleSelect           原版本不该出现的状态会被悄悄压平成其中一个
+     *   question      ← questionSelect
+     *   asking        ← isQuestion            问题框阶段（选了"是"之后 showQuestion）
+     *   answering     ← isAnswer              回答/结果框阶段（showAnswer）
+     *   yesNo         ← count_selectYesNo     是/否光标。**原版取值是 2 和 3**（见 keyPressed
+     *                                          里的 2↔3 互换与 drawSelectImage 的 i == 它），
+     *                                          不是 0/1 —— 这里照原样记，不翻译一道
+     *   abcd          ← count_selectABCD      A/B/C/D 光标。上下界都由题目自己的行数算出来
+     *                                          （size()-5 .. size()-2）
+     *   battleNo      ← count_battle2         这次问的是第几场战斗（checkSelectEvent 里定的下标）
+     *   questionNo    ← count_questionAndAnswer 这次问的是第几道题
+     *   boxW / boxH   ← x_selectImage / y_selectImage   选择框滑入的宽高游标：每 40ms +50/+15，
+     *                                          **判据是自增前的 x &lt;= 500**，所以终值是
+     *                                          550/165（不是 500/150），下一拍才停下起打字机
+     *                                          —— 照跑了一遍那个循环体确认的
+     *   qx1/qy1/qx2/qy2 ← x1/y1/x2/y2_questionImage     问题框从屏幕中心 (512,320) 每 50ms
+     *                                          向四角各撑 25px，撑到 x1 &lt; 262 停
+     *   sentenceNo    ← count_sentence        逐字打印吐到第几句（**初值 1**，第 0 句是 null 占位）
+     *   wordNo        ← count_word            当前这句吐到第几个字
+     *   lineNo        ← count_bufferedSentence 吐进 bufferedText 的第几行
+     *   maxLength     ← maxLength             一行几个字：选择框 22、问题框 44。它**会变**
+     *                                          （showQuestion 置 44，其余三个 show 置 22），
+     *                                          所以是游标不是常量
+     *   boxMoving     ← selectImageMove.isRunning()    选择框滑入定时器
+     *   qBoxMoving    ← questionImageMove.isRunning()  问题框撑开定时器
+     *   printing      ← wordsRun.isRunning()           逐字打印定时器
+     *   answered      ← haveAnswered          这个场景每道题"答过没"。**跨"离开场景再回来"
+     *                                          存活**：构造函数按 fileName 去 answeredRecorder
+     *                                          里认领同一个 List 对象
+     *   fought        ← haveFighted           每一场选择战斗"打过没"（打过之后 checkSelectEvent
+     *                                          不再问）
+     *   sceneNo       ← count_scene           这个场景在下面那张 recorder 里的下标。
+     *                                          ⚠️ **只有有题的场景才是下标**：原版只在
+     *                                          question != null 且认领到旧记录时才给它赋值，
+     *                                          其余场景它就停在初值 0 —— 而那时 recorder
+     *                                          可能非空（别的场景留下的），于是 0 指着别人
+     *   recorder      ← SelectEvent.mapName / answeredRecorder（两张 static 表配对）
+     *                                          "答过没"真正活在的地方。只有 answered 的话，
+     *                                          一份走出去又走回来的真值里"记住了"与"重新
+     *                                          问了一遍"要靠推断；记下这张表就直接可断言
+     * </pre>
+     *
+     * <h3>answered 与 recorder 是同一份数据，为什么两个都记</h3>
+     *
+     * 有题的场景里 {@code haveAnswered} 就是 {@code answeredRecorder.get(count_scene)}
+     * **同一个对象**（构造函数第一支认领的就是它），所以 {@code answered} 确实可以由
+     * {@code recorder} + {@code sceneNo} 推出来 —— /code-review 的 Standards 轴提的。
+     *
+     * 两个都留，是因为**那条推导正是被守的东西之一**：原版靠"同一个对象"维持记忆，
+     * 哪天有人把它改成拷贝一份，两列当场分岔，而只记其中一列的话这件事无声无息。
+     * 加上上面那条 {@code sceneNo} 的警告 —— 无题场景里那条推导根本不成立 ——
+     * 冗余那一列在这里是判据，不是重复。
+     *
+     * <h3>没有记的那一个，以及为什么</h3>
+     *
+     * {@code haveEnteredTheScene}：构造函数里置真、同一个 if 块里立刻置回假
+     * （它只是那几行的临时量）。取快照的时机永远在构造之后，所以它**恒为
+     * false** —— 记进来等于在每一拍上断言一个按构造成立的常量，那是装饰不是
+     * 判据（{@code docs/agents/dispatch.md} 纪律 3 的第二族恒真判据）。
+     */
+    private String selectState() {
+        Object se = sp.selectEvent;
+        StringBuilder b = new StringBuilder();
+        b.append("{\"active\":").append(getBool(se, "isSelect"))
+         .append(",\"shop\":").append(getBool(se, "shopSelect"))
+         .append(",\"equipShop\":").append(getBool(se, "equipmentSelect"))
+         .append(",\"battle\":").append(getBool(se, "battleSelect"))
+         .append(",\"question\":").append(getBool(se, "questionSelect"))
+         .append(",\"asking\":").append(getBool(se, "isQuestion"))
+         .append(",\"answering\":").append(getBool(se, "isAnswer"))
+         .append(",\"yesNo\":").append(getInt(se, "count_selectYesNo"))
+         .append(",\"abcd\":").append(getInt(se, "count_selectABCD"))
+         .append(",\"battleNo\":").append(getInt(se, "count_battle2"))
+         .append(",\"questionNo\":").append(getInt(se, "count_questionAndAnswer"))
+         .append(",\"boxW\":").append(getInt(se, "x_selectImage"))
+         .append(",\"boxH\":").append(getInt(se, "y_selectImage"))
+         .append(",\"qx1\":").append(getInt(se, "x1_questionImage"))
+         .append(",\"qy1\":").append(getInt(se, "y1_questionImage"))
+         .append(",\"qx2\":").append(getInt(se, "x2_questionImage"))
+         .append(",\"qy2\":").append(getInt(se, "y2_questionImage"))
+         .append(",\"sentenceNo\":").append(getInt(se, "count_sentence"))
+         .append(",\"wordNo\":").append(getInt(se, "count_word"))
+         .append(",\"lineNo\":").append(getInt(se, "count_bufferedSentence"))
+         .append(",\"maxLength\":").append(getInt(se, "maxLength"))
+         .append(",\"boxMoving\":").append(timerRunning(se, "selectImageMove"))
+         .append(",\"qBoxMoving\":").append(timerRunning(se, "questionImageMove"))
+         .append(",\"printing\":").append(timerRunning(se, "wordsRun"))
+         .append(",\"answered\":").append(boolList(se, "haveAnswered"))
+         .append(",\"fought\":").append(boolList(se, "haveFighted"))
+         .append(",\"sceneNo\":").append(getInt(se, "count_scene"))
+         .append(",\"recorder\":").append(answeredRecorder());
+        return b.append("}").toString();
+    }
+
+    /**
+     * 那两张 static 表配对成 {@code [{"scene":…,"answered":[…]}]}。
+     *
+     * 两张表在原版里是**靠同一个下标**对起来的（构造函数里 mapName.add 与
+     * answeredRecorder.add 总是成对执行），而"对不上"在这里是硬失败：
+     * 长度不等时静静按短的那张截断，会导出一份看上去规整、却少了一整个场景
+     * 的记忆表。
+     */
+    private String answeredRecorder() {
+        List<String> names = scene.SelectEvent.mapName;
+        List<ArrayList<Boolean>> rec = scene.SelectEvent.answeredRecorder;
+        if (names.size() != rec.size()) {
+            fail("SelectEvent.mapName 有 " + names.size() + " 项而 answeredRecorder 有 "
+                    + rec.size() + " 项 —— 两张 static 表脱钩了");
+        }
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < names.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append("{\"scene\":").append(Json.str(names.get(i)))
+             .append(",\"answered\":").append(boolJson(rec.get(i)))
+             .append("}");
+        }
+        return b.append("]").toString();
+    }
+
+    /**
+     * 宝箱与"得到物品"提示框（xl-yg6.6）。一列两个原版对象，因为它们本来就是
+     * 一个：{@code src/scene/EquipmentEvent.java} 持有那批
+     * {@code src/scene/TreasureBox.java}，而提示框是宝箱（以及答题加/扣钱）
+     * 唯一的出口。
+     *
+     * <h3>加了哪几个字段，各自对应源码里的哪一个</h3>
+     *
+     * <pre>
+     *   presenting  ← EquipmentEvent.isDrawString        提示框在不在场
+     *   x           ← EquipmentEvent.x_presentImage      提示框滑到哪了，**进场与退场共用这一个
+     *                                                    游标**，而两段的步长不一样（照跑了一遍
+     *                                                    那个循环体确认的）：进场 -320 起每 50ms
+     *                                                    +32，到 352 停下起打字机；退场重新
+     *                                                    start() 之后**头一拍是 +64**（352 那一拍
+     *                                                    三个 if 里第一个与第三个都成立），此后
+     *                                                    每拍 +32，终值 1056，再下一拍才停
+     *   wordNo      ← EquipmentEvent.count_word          那句话吐到第几个字（每 100ms 一个）
+     *   moving      ← presentImageMove.isRunning()       滑入/滑出定时器
+     *   printing    ← wordsRun.isRunning()               逐字打印定时器
+     *   boxes[].empty ← TreasureBox.isEmpty              开过没（开过就画 emptyBox，且不再给东西）
+     *   boxes[].near  ← TreasureBox.AroundHero           主角在不在它四邻。⚠️ 原版**只置真、
+     *                                                    从不置回假**（checkHero 里没有 else），
+     *                                                    走开之后照样是真 —— 这是原版的行为，
+     *                                                    照记不修
+     * </pre>
+     *
+     * <h3>没有记的那两个，以及为什么</h3>
+     *
+     * {@code text} / {@code bufferedText}：提示语本身。物品名来自脚本（数据层
+     * 已经逐字段钉住），而数量与金额是 {@code Math.random()} 现掷的 —— 把它
+     * 记进真值等于让这一列每次导出都不同，{@code --check} 当场红。吐到第几个
+     * 字由 {@code wordNo} 记着，那才是行为层的事。
+     *
+     * {@code TreasureBox.x/y}：宝箱格子坐标，来自脚本的 TreasureBox 段，静态。
+     *
+     * <h3>没有宝箱段的场景</h3>
+     *
+     * {@code treasureBoxes} 为 {@code null}（构造函数只在 treasureBox != null
+     * 时才建），这里照记 {@code null}，不摊平成 {@code []} —— "这个场景没有
+     * 宝箱"与"有宝箱但一个都没建出来"必须分得开。
+     */
+    private String treasureState() {
+        Object ee = sp.equipmentEvent;
+        StringBuilder b = new StringBuilder();
+        b.append("{\"presenting\":").append(getBool(ee, "isDrawString"))
+         .append(",\"x\":").append(getInt(ee, "x_presentImage"))
+         .append(",\"wordNo\":").append(getInt(ee, "count_word"))
+         .append(",\"moving\":").append(timerRunning(ee, "presentImageMove"))
+         .append(",\"printing\":").append(timerRunning(ee, "wordsRun"))
+         .append(",\"boxes\":");
+        Object boxes = get(ee, "treasureBoxes");
+        if (boxes == null) {
+            b.append("null");
+        } else {
+            b.append('[');
+            List<?> list = (List<?>) boxes;
+            for (int i = 0; i < list.size(); i++) {
+                if (i > 0) b.append(',');
+                Object box = list.get(i);
+                b.append("{\"empty\":").append(getBool(box, "isEmpty"))
+                 .append(",\"near\":").append(getBool(box, "AroundHero"))
+                 .append('}');
+            }
+            b.append(']');
+        }
         return b.append("}").toString();
     }
 
