@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -210,7 +211,7 @@ public final class SaveTruth {
             b.append("{\n");
             b.append("  \"file\": ").append(Json.str(name)).append(",\n");
             b.append("  \"slot\": ").append(slot).append(",\n");
-            b.append("  \"physicalLines\": ").append(physicalLines(new File(DRAFT_DIR, name))).append(",\n");
+            b.append("  \"physicalLines\": ").append(physicalLines(new File(TRUTH_DIR, name))).append(",\n");
             b.append("  \"reads\": [\n");
             int i = 0;
             for (Map.Entry<Integer, ArrayList<String>> e : lines.entrySet()) {
@@ -222,7 +223,7 @@ public final class SaveTruth {
             b.append("  ]\n");
             b.append("}\n");
             Files.write(new File(outDir, name.replace(".txt", ".json")).toPath(),
-                    b.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    b.toString().getBytes(StandardCharsets.UTF_8));
             n++;
         }
         return n;

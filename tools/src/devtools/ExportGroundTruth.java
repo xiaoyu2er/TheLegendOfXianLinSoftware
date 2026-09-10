@@ -51,11 +51,11 @@ public class ExportGroundTruth {
 
         // 原版样例存档（xl-i06.5）。逐字节副本不由这里写 —— 它们是真值；这里只写
         // 按原版读取器实际读法解析出来的那份 JSON，且草稿区与副本不等就拒绝。见 SaveTruth。
+        // 真值目录空了也由 export 抛（draftProblems 把它算一处问题），不会安静地导出 0 份。
         try {
             File saves = new File(out, SaveTruth.TRUTH_DIR.getName());
             int n = SaveTruth.export(saves);
             System.out.println("导出 " + n + " 份存档 -> " + saves.getPath());
-            if (n == 0) failed.add("存档：一份都没导出");
         } catch (Throwable t) {
             failed.add("存档 -> " + t);
             System.out.println("  失败 存档 -> " + t);

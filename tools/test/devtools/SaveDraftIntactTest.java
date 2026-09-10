@@ -27,10 +27,8 @@ public final class SaveDraftIntactTest {
         Checks.eq("草稿区 " + SaveTruth.DRAFT_DIR + " 与 " + SaveTruth.TRUTH_DIR + " 里的逐字节真值相同",
                 "[]", problems.toString());
 
-        // 分母：比了几份，就该有几份。真值目录空了由 draftProblems 自己报，这里再钉
-        // 一次它不是按构造成立 —— 两个目录的存档名单都是现扫的。
-        Checks.check("真值目录里至少有一份存档（现扫 " + SaveTruth.saveNames(SaveTruth.TRUTH_DIR) + "）",
-                !SaveTruth.saveNames(SaveTruth.TRUTH_DIR).isEmpty());
+        // 分母：两个目录的存档名单都是现扫的；真值目录一份都没有时 draftProblems
+        // 自己算一处问题，所以「一个都没比」让上面那条红，不会被读成「全部相同」。
 
         // 失败信息本身也要验：上面那条红的时候，读的人要能直接定位。
         byte[] truth = "ab\r\ncdAef\r\n".getBytes();
