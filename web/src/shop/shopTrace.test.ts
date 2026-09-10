@@ -60,30 +60,35 @@ const NON_STATE_COLUMNS: readonly string[] = ['t', 'ip', 'input']
  * "谁已经有人对齐了"这份需要人签字的登记。
  */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
-  // **30 / 30 格 —— 满了**。这份名单是**跑出来的，不是宣布的**：
+  // **40 / 40 格 —— 满了**（xl-knp.11 补进第四条剧本 `shop-party` 之后的读数；
+  // 在那之前是 30/30）。这份名单是**跑出来的，不是宣布的**：
   // xl-knp.6 落地时是 19/30（10 组 × 3 条剧本全填进去跑了一遍，红的 11 格
   // 挪进了当时的 `PENDING`）；xl-knp.7 做完药店那半边之后仍然是 19/30 ——
   // 那 11 格里每一格的第一处分歧都**整体挪到了装备店**，一格都没翻过来
   // （两条剧本各自横跨两家店）。xl-knp.8 接上装备店那半边之后这 11 格一起
   // 转绿，`PENDING` 与 `BLOCKED_AT` 因此都空了（2026-09-09 的读数）。
+  // xl-knp.11 补的 `shop-party`（队伍三个人都在）十格一次全绿 —— 那条剧本要买的
+  // 是**绘制**那一层的覆盖，账目那一层它没走新路。
   //
   // ⚠️ **两张表空掉不等于这套判据没用了**：下面那两个 describe 各留了一条
   // 明写当前读数的用例（为空时它在、非空时它自己就没了），而真正的判据是
-  // 每一格逐步的 `toEqual` —— 30 条，一条一格。真值目录里冒出第四条剧本、
-  // 或者导出器多记一列，第一条用例立刻红。
-  music: ['shop-categories', 'shop-edges', 'shop-trade'],
-  shop: ['shop-categories', 'shop-edges', 'shop-trade'],
-  category: ['shop-categories', 'shop-edges', 'shop-trade'],
-  coins: ['shop-categories', 'shop-edges', 'shop-trade'],
-  cursor: ['shop-categories', 'shop-edges', 'shop-trade'],
+  // 每一格逐步的 `toEqual` —— 一格一条，条数随磁盘上的真值条数走。真值目录里
+  // 冒出一条没人登记的剧本、或者导出器多记一列，第一条用例立刻红（xl-knp.11
+  // 加 `shop-party` 时实测：六条红，分别来自这个文件、`expected.test.ts` 与
+  // `unassembled.test.ts`）。
+  music: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  shop: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  category: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  coins: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  cursor: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
   // ⚠️ `list` 那三格里 `shop-categories` **最要紧**：那条剧本六栏全走了一遍，
   // `stock` 那一排数字是原版自己摇出来的 —— 掷骰的次数与顺序
   // （`world.ts` 的 `STOCK_ROLL_ORDER`）唯一的判据就在这里。
-  list: ['shop-categories', 'shop-edges', 'shop-trade'],
-  icon: ['shop-categories', 'shop-edges', 'shop-trade'],
-  message: ['shop-categories', 'shop-edges', 'shop-trade'],
-  pressed: ['shop-categories', 'shop-edges', 'shop-trade'],
-  pack: ['shop-categories', 'shop-edges', 'shop-trade'],
+  list: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  icon: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  message: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  pressed: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
+  pack: ['shop-categories', 'shop-edges', 'shop-party', 'shop-trade'],
 }
 
 /**

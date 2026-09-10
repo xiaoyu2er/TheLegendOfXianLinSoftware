@@ -171,7 +171,22 @@ function shopGaps(worst: {
   readonly priceAndStock: number
   readonly held: number
   readonly coins: number
-  readonly statLabels: number
+  /**
+   * 左上角那组属性标签**一个人一组**：第 i 组整体下移 `STAT_ROW_GAP`=150 px
+   * （原版 `drawIcon` 里三段 `30+i*150`，各自锁在 `if(SaveAndLoad.…)` 里面）。
+   * 所以这里是**一个数组，一格一组**，长度就是那条剧本 `setup.party` 里的人数。
+   *
+   * ⚠️ **长度是登记，不是分母**（`expected.ts` 是一张静态表，读不到真值头部），
+   * 所以要人写对。写短了会红，而且红得很响 —— xl-knp.11 实测：把
+   * `shop-party` 的 `[545, 545, 547]` 改成 `[545]`，
+   * `tools/compare-frames.sh shop-party --skip-capture` 退出码 1，报
+   * 「硬比区破了：第 0 帧起有像素超容差，15 帧合计 16380 个；最坏的是第 0 帧
+   * 1092 个 @ (55,163)-(74,391)」—— 正是被漏掉的第二、三组那两块。写长了：
+   * 多出来的那个区一帧都不差，而 `expected.test.ts` 那条「每个区都得真的差过」会红。
+   *
+   * 逐组各写各的读数，因为它们**不一样**：xl-knp.11 实测 545 / 545 / 547。
+   */
+  readonly statLabels: readonly number[]
   readonly keeperMessage: number
 }): readonly GapRegion[] {
   // 上界一律是「单帧最多」的 2 倍，与本文件其余各条同一条规矩。乘在这一处，
@@ -207,13 +222,16 @@ function shopGaps(worst: {
       why: '右上角钱袋里那串金钱数字的字形',
       issue: GLYPH,
     },
-    {
-      name: 'stat-labels',
-      maxPixels: bound(worst.statLabels),
-      rect: { x0: 49, y0: 7, x1: 80, y1: 97 },
-      why: '左上角四行属性标签的字形（图标本身逐像素相等）',
+    // 队伍里每个人一组，第 i 组整体下移 150 px。⚠️ 循环的分母是**给进来的
+    // 那份读数有几格**，不是写死的 1 或 3 —— 三条只有 zhang 的剧本与
+    // `shop-party` 共用这一个函数。
+    ...worst.statLabels.map((single, i) => ({
+      name: i === 0 ? 'stat-labels' : `stat-labels-${i}`,
+      maxPixels: bound(single),
+      rect: { x0: 49, y0: 7 + 150 * i, x1: 80, y1: 97 + 150 * i },
+      why: `左上角第 ${i} 组四行属性标签的字形（图标本身逐像素相等）`,
       issue: GLYPH,
-    },
+    })),
     {
       name: 'keeper-message',
       maxPixels: bound(worst.keeperMessage),
@@ -1164,7 +1182,8 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
       // 实测外接框 (905,4)-(971,19)，单帧最多 650（第 0 帧）。
       coins: 650,
       // 实测外接框 (55,13)-(74,91)，单帧最多 545（第 0 帧）。
-      statLabels: 545,
+      // 这条剧本的 setup.party 只有 zhang，所以只有一组。
+      statLabels: [545],
       // 实测外接框 (453,593)-(870,633)，单帧最多 6132（第 32 帧）。药店没有
       // 第三行（`ShopPanel` 没有 `messageremark`），所以它比另外两条窄。
       keeperMessage: 6132,
@@ -1186,7 +1205,8 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
       // 实测外接框 (905,4)-(971,19)，单帧最多 650（第 5 帧）。
       coins: 650,
       // 实测外接框 (55,13)-(74,91)，单帧最多 545（第 0 帧）。
-      statLabels: 545,
+      // 这条剧本的 setup.party 只有 zhang，所以只有一组。
+      statLabels: [545],
       // 实测外接框 (453,593)-(951,633)，单帧最多 8041（第 2 帧）。装备店有
       // 第三行（`messageremark`，画在 x=730），所以右边比药店那条宽 81 px。
       keeperMessage: 8041,
@@ -1208,11 +1228,53 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
       // 实测外接框 (905,4)-(971,19)，单帧最多 650（第 0 帧）。
       coins: 650,
       // 实测外接框 (55,13)-(74,91)，单帧最多 545（第 0 帧）。
-      statLabels: 545,
+      // 这条剧本的 setup.party 只有 zhang，所以只有一组。
+      statLabels: [545],
       // 实测外接框 (453,593)-(951,633)，单帧最多 8152（第 18 帧）。
       keeperMessage: 8152,
     }),
     why: '只剩字形（原版字体未交付）；被拒的那两笔买卖只改店主那句话，其余逐像素相等',
+    issue: 'xl-9bd.17',
+  },
+  'shop-party': {
+    status: 'gap',
+    // **队伍三个人都在的那一条**（xl-knp.11）。另外三条剧本的 `setup.party`
+    // 只有 zhang，于是原版 `drawIcon` 里 `if(SaveAndLoad.lu)` 与
+    // `if(SaveAndLoad.wen)` 两支一次都没走到 —— 陆雪琪 (0,160) 与文敏 (0,320)
+    // 那两个 72×144 的框在另外三条里**每一帧都是 0/10368**（xl-knp.9 实测，
+    // xl-knp.11 复量确认）。这一条把它们打开，于是那两条人物动画与另外两组
+    // 属性图标真的进了逐帧比对。
+    //
+    // 原版侧那两个框的前后对照（`ExportTrace --frames --every 1` 出的位图与
+    // `sources/Shop/shopback.png` 逐像素比，2026-09-09 实测）：
+    //
+    //   | 框 | shop-trade（40 帧） | shop-party（15 帧） |
+    //   |---|---|---|
+    //   | 陆雪琪 (0,160) | **0 / 10368**，每一帧 | **4487 / 10368**，每一帧 |
+    //   | 文敏 (0,320)   | **0 / 10368**，每一帧 | **4844 / 10368**，每一帧 |
+    //
+    // 而这一轮比对的读数是「硬比区 15 帧逐像素相等」—— 也就是说那两条动画
+    // 两端画的是同一批像素，不再是"两边都没画"。
+    //
+    // 15 帧。药店买一份金创药、装备店买一把月苗刀、切一次鞋子栏 —— 账目那一层
+    // shop-trade 已经走完，这一条要的是**绘制**那一层的覆盖。
+    // 实测：`tools/compare-frames.sh shop-party`，容差 8。
+    gaps: shopGaps({
+      // 实测外接框 (453,183)-(574,581)，单帧最多 14113（第 6 帧）。
+      nameAndPurchase: 14113,
+      // 实测外接框 (638,185)-(732,580)，单帧最多 18570（第 11 帧）。
+      priceAndStock: 18570,
+      // 实测外接框 (758,185)-(772,580)，单帧最多 3520（第 6 帧）。
+      held: 3520,
+      // 实测外接框 (905,4)-(971,19)，单帧最多 650（第 0 帧）。
+      coins: 650,
+      // **三组**，实测外接框 (55,13)-(74,91) / (55,163)-(74,241) /
+      // (55,313)-(74,391)，单帧最多 545 / 545 / 547（都在第 0 帧）。
+      statLabels: [545, 545, 547],
+      // 实测外接框 (453,593)-(870,633)，单帧最多 6132（第 14 帧）。
+      keeperMessage: 6132,
+    }),
+    why: '只剩字形（原版字体未交付）；三条人物动画、招牌、商品图与全部按钮逐像素相等',
     issue: 'xl-9bd.17',
   },
   // ===================== 菜单五条（xl-6lo.14 接上 driver=menu） =====================
