@@ -122,6 +122,8 @@ export interface Session {
    *   是**全局背包**）。
    *
    * 顺带活过来的还有当前在哪一页、四个 `Mouse` 的计数器、两条列表的滚动位置。
+   * （**活着**不等于**在走**：原版那四条 run 线程关着菜单也在跑，这一层没有，
+   * 见 `advanceSession` 里那一段与 xl-6lo.19。）
    *
    * ⚠️ 起先这里是**每次开菜单新建一份**，理由写的是「那三句 `refreshValue()`
    * 说的就是每次打开都按最新属性重算一遍」。那句话对了一半：属性确实要刷
@@ -431,8 +433,9 @@ export function advanceSession(
       menu = advanceMenu(menu, [event], 0)
       if (menuWantsScene(menu.world)) break
     }
-    // 时钟脉冲照旧 —— 菜单还开着才推（关掉的那一拍原版切了面板，
-    // 那四条线程的事另算，见 `Session.menu`）。
+    // 时钟脉冲照旧 —— **菜单还开着才推**。⚠️ 原版那四条 `FatherPanel.run()`
+    // 线程关着菜单也在跑（游标换图、奇术页那段技能动画），这一层今天没有；
+    // 它只影响画面、一个状态字段都不碰，单开一张票：**xl-6lo.19**。
     if (!menuWantsScene(menu.world)) menu = advanceMenu(menu, [], elapsedMs)
     // 天书页那两颗「背景音乐 开 / 关」改的是菜单世界上的开关，而原版改的是
     // 两个 static。**每一拍都记回去**，不是等关菜单时记 —— 关菜单那条路只有
