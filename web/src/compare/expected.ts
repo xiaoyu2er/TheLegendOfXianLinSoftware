@@ -1731,9 +1731,9 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // "选择框开着时方向键不给主角"这道闸）把主角挪了一格、视口跟着滚了 32px，
     // 卷动地图上几乎每个像素都不一样了。96% × 2 = 192% 的上界连全黑图都拦不住
     // ——那条表态会变成装饰。改成上键之后主角正上方被 NPC 占着，一步都挪不动，
-    // 这一条于是现在就量得准。**状态层那笔账没有被藏起来**：它当时登记在
-    // `state/traceReplay.test.ts` 的 PENDING 里（role / dialogue × battle-door，
-    // xl-yg6.8 翻过来；最后一格 audio × battle-door 由 xl-yg6.11 翻过来）。
+    // 这一条于是现在就量得准。**状态层那笔账没有被藏起来**：它登记在
+    // `state/traceReplay.test.ts` 的 PENDING 里（role / dialogue × battle-door）。
+    // （后记：那几格 xl-yg6.8 翻过来，最后一格 audio × battle-door 由 xl-yg6.11 翻过来，PENDING 已空。）
     //
     // ⚠️ **xl-yg6.8 把选择框画上了，这个数同样一个字没变**（重量了一遍，
     // 仍是 38.5582% @ 整屏）：底账是整张卷动地图的有损重编码，选择框那点

@@ -13,7 +13,15 @@ import { BACK_BOX, BUY_BOX } from '../shop/layout'
 import { hitCenter } from '../shop/test/hitCenter'
 import type { ShopInput } from '../shop/step'
 import { COL_BACKGROUND } from '../state/fight'
-import { NO, YES } from '../state/select'
+import {
+  NO,
+  YES,
+  checkSelectEvent,
+  createSelect,
+  selectKeyPressed,
+  toSelectDraft,
+} from '../state/select'
+import type { BattleInfo } from '../state/fight'
 import { step } from '../state/step'
 import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import type { Trace } from '../state/trace'
@@ -185,7 +193,7 @@ function confirmsOf(trace: Trace): Confirm[] {
   return out
 }
 
-describe('三扇门：几扇、各通往哪 —— 从 GBK 源码现读', () => {
+describe('三扇门：几扇、各通往哪 —— 从源码现读（原版 GBK + 导出器 UTF-8）', () => {
   it('门的名单与三张映射表都解析出了东西', () => {
     // 分母不许是空的：空名单会让下面每一条 `for` 零轮、全绿。
     expect(DOORS.length).toBeGreaterThan(0)
@@ -238,6 +246,53 @@ describe('三扇门：逐支一次读数（状态层）', () => {
   })
 })
 
+/**
+ * **`select.battleNo` 这一场观测不到**（主干评论 3）—— 如实登记，判据回到数据上取。
+ *
+ * 大地图有两场选择战（`SelectBattlePanel` 两行），而 `battle-door` 只走到了
+ * 第 0 场那个 NPC 面前；第 1 场的 NPC 一直在走，没有一条剧本停在它脚下。于是
+ * 真值里 `battleNo` 从头到尾是 0，"战斗那扇门按 `battleNo` 挑哪一行 Fight"
+ * 这件事，照抄与写死成 0 读出来一模一样。
+ *
+ * 两条用例各管一半：
+ * 1. **读数**：磁盘上每一条场景真值的每一拍 `battleNo` 都是 0 —— 哪天补了走到
+ *    第 1 场的真值，这条先红，提醒把判据换成真值读数；
+ * 2. **判据**：在状态层把第 1 场的选择框打开（NPC 序号从数据现读）、选「是」，
+ *    打的必须是 `battle2` 的**那一行**，而且那一行与第 0 场真的不同（否则
+ *    "挑对了"与"写死成 0"又长得一样）。选择框状态机这一半
+ *    （`checkSelectEvent` 那句无条件 `count_battle2 = i`）在 `state/select.test.ts`
+ *    「打过的那一场不再问」里。
+ */
+describe('select.battleNo：这一场观测不到，判据回到数据上取', () => {
+  it('读数：每一条场景真值的每一拍 battleNo 都是 0', () => {
+    const seen = new Set<number>()
+    for (const name of SCENE_TRACE_NAMES) {
+      for (const tick of readTrace(name).ticks) seen.add(tick.select.battleNo)
+    }
+    expect([...seen]).toEqual([0])
+  })
+
+  it('判据：打开第 1 场、选「是」，打的是 battle2 的第 1 行，与第 0 行不同', () => {
+    const scene = getScene('大地图')
+    const rows = scene.selectBattlePanel!
+    const fights = scene.battle2!
+    expect(rows.length, '大地图不再有两场选择战，这条用例得换个场景').toBeGreaterThan(1)
+    expect(fights[1], '第 1 场与第 0 场同一行 Fight —— 挑没挑对看不出来').not.toEqual(fights[0])
+
+    const d = toSelectDraft(createSelect(scene, []).select, [])
+    expect(checkSelectEvent(d, Number(rows[1]![0]), 0)).toBe(true)
+    expect(d.battleNo).toBe(1)
+    const got: BattleInfo[] = []
+    selectKeyPressed(d, 'enter', 0, {
+      fight: (info) => got.push(info),
+      switchTo: () => {},
+      present: () => {},
+      random: () => 0,
+    })
+    expect(got).toEqual([fights[1]])
+  })
+})
+
 // ——— 会话那一侧 ———
 
 function spriteSize(name: string): { width: number; height: number } {
@@ -249,18 +304,40 @@ function deps(): SessionDeps {
   return { scenes, sprite: spriteSize, random: () => 0 }
 }
 
-/** 用真值的输入推会话，一 tick 一拍，推到选「是」的那一拍为止（含）。 */
-function sessionThroughDoor(name: string): { session: RunningSession; trace: Trace; yesTick: number; panels: string[] } {
-  const trace = readTrace(name)
-  const yes = confirmsOf(trace).filter((c) => c.yesNo === YES)
-  const yesTick = yes[0]!.tick
+/** 走过某张卡片那扇门的那条真值。 */
+function doorTraceOf(card: string | undefined): string {
+  const name = DOOR_TRACES.find((n) => cardOfTrace(readTrace(n)) === card)
+  if (name === undefined) throw new Error(`没有一条真值走过卡片 ${card} 那扇门`)
+  return name
+}
+
+interface DoorRun {
+  readonly session: RunningSession
+  readonly trace: Trace
+  readonly yesTick: number
+  readonly panels: string[]
+}
+
+/** 用真值的输入推会话，一 tick 一拍，推到 `last` 那一拍为止（含）。 */
+function sessionUpTo(trace: Trace, last: number): { session: RunningSession; panels: string[] } {
   let s = enterScene(createSession(deps()), replayWorld(trace, getScene))
   const panels: string[] = []
-  for (let i = 0; i <= yesTick; i++) {
+  for (let i = 0; i <= last; i++) {
     s = advanceSession(s, { scene: trace.ticks[i]!.input, battle: [], menu: [] }, trace.script.tickMs)
     panels.push(s.panel)
   }
-  return { session: s, trace, yesTick, panels }
+  return { session: s, panels }
+}
+
+function yesTickOf(trace: Trace): number {
+  return confirmsOf(trace).find((c) => c.yesNo === YES)!.tick
+}
+
+/** 推到选「是」的那一拍为止（含）。 */
+function sessionThroughDoor(name: string): DoorRun {
+  const trace = readTrace(name)
+  const yesTick = yesTickOf(trace)
+  return { ...sessionUpTo(trace, yesTick), trace, yesTick }
 }
 
 /** 按下再松开一颗商店按钮 —— 两拍，与商店真值同一个口径。 */
@@ -295,9 +372,7 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
   })
 
   it('战斗那扇门的交接：场景真值那一拍记下的 BGM == 会话建出来的那场战斗的 BGM', () => {
-    const name = DOOR_TRACES.find((n) => cardOfTrace(readTrace(n)) === CARD_OF.get('battle'))
-    expect(name, '没有一条真值走过战斗那扇门').toBeDefined()
-    const { session, trace, yesTick } = sessionThroughDoor(name!)
+    const { session, trace, yesTick } = sessionThroughDoor(doorTraceOf(CARD_OF.get('battle')))
     const battle = battleWorldOf(session)
     expect(battle).not.toBeNull()
     // 原版这一拍 `BattlePanel.initial` 放的曲子，真值场景那一列记着 ——
@@ -319,13 +394,9 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
   it.each(Object.keys(SHOP_OF_DOOR).map((door) => CARD_OF.get(door)!))(
     '一次 pump 补跑十拍：%s 那扇门「是」那一下不会被同批的下一拍吞掉',
     (card) => {
-      const name = DOOR_TRACES.find((n) => cardOfTrace(readTrace(n)) === card)!
-      const trace = readTrace(name)
-      const yesTick = confirmsOf(trace).find((c) => c.yesNo === YES)!.tick
-      let s = enterScene(createSession(deps()), replayWorld(trace, getScene))
-      for (let i = 0; i < yesTick; i++) {
-        s = advanceSession(s, { scene: trace.ticks[i]!.input, battle: [], menu: [] }, trace.script.tickMs)
-      }
+      const trace = readTrace(doorTraceOf(card))
+      const yesTick = yesTickOf(trace)
+      const s = sessionUpTo(trace, yesTick - 1).session
       expect(s.panel).toBe('scene')
       const burst = advanceSession(
         s,
@@ -337,8 +408,7 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
   )
 
   it('进店之后按「返回游戏」：回到原地、曲子放回来、选择框照原版还开着', () => {
-    const name = DOOR_TRACES.find((n) => cardOfTrace(readTrace(n)) === CARD_OF.get('shop'))!
-    const { session, trace } = sessionThroughDoor(name)
+    const { session, trace } = sessionThroughDoor(doorTraceOf(CARD_OF.get('shop')))
     const shop = shopWorldOf(session)!
     const role = { px: session.scene.world.role.px, py: session.scene.world.role.py }
 
@@ -374,11 +444,14 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
   it('药店里买下的东西：钱从钱包里扣、药进背包 —— 进门时也是从那两处现读的', () => {
     addCoins(90000)
     addDrug(DRUGS[0]!.name, 3)
-    const name = DOOR_TRACES.find((n) => cardOfTrace(readTrace(n)) === CARD_OF.get('shop'))!
-    const { session } = sessionThroughDoor(name)
+    // 期望值进门**之前**记下来：进门那一拍店里就写回一次钱包，事后比
+    // `shop.coins === getCoins()` 是恒真的（/code-review Standards 轴指出）。
+    const wallet = getCoins()
+    const { session } = sessionThroughDoor(doorTraceOf(CARD_OF.get('shop')))
     const shop = shopWorldOf(session)!
     // 进门时现读：钱与背包都是此刻那两处 static 的数。
-    expect(shop.coins).toBe(getCoins())
+    expect(shop.coins).toBe(wallet)
+    expect(getCoins()).toBe(wallet)
     expect(shop.pack.drugs[0]).toBe(3)
 
     // 摆一单（加减按钮的几何归 `shop/step.test.ts` 管，这里验的是会话那座桥）。
@@ -394,8 +467,7 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
 
   it('装备超市里买下的东西进菜单装备页那份全局背包', () => {
     addCoins(900000)
-    const name = DOOR_TRACES.find((n) => cardOfTrace(readTrace(n)) === CARD_OF.get('equipmentShop'))!
-    const { session } = sessionThroughDoor(name)
+    const { session } = sessionThroughDoor(doorTraceOf(CARD_OF.get('equipmentShop')))
     const shop = shopWorldOf(session)!
     const slot = shop.equipment.category
     const row = shop.equipment.rows[slot][0]!

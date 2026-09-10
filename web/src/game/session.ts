@@ -88,8 +88,9 @@ export type Panel = 'scene' | 'battle' | 'start' | 'menu' | 'shop'
  * `EquipmentShopPanel`（装备自选超市）。这一层两家店共用一个世界
  * （`shop/types.ts` 的头注），所以落到的是 `ShopWorld.active` 的两个取值。
  *
- * ⚠️ 这张表**有判据**，不是誊抄了事：`game/doors.test.ts` 从 GBK 源码现读
- * `GameLauncher.switchTo` 的卡片名与 `ShopDriver` 的 `open` 名，逐支对撞
+ * ⚠️ 这张表**有判据**，不是誊抄了事：`game/doors.test.ts` 现读原版
+ * `GameLauncher.switchTo` 的卡片名（GBK）与导出器 `ShopDriver` 的 `open` 名
+ * （UTF-8），逐支对撞
  * —— 「场景那侧记下的目标 == 对面那条剧本的起点」。
  */
 export const SHOP_OF_DOOR: Readonly<Record<'shop' | 'equipmentShop', ShopKind>> = {
