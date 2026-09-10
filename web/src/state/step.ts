@@ -224,9 +224,10 @@ function carryDialogue(prev: World | null, script: DialogueScript): DialogueStat
  *
  * `input` 是本 tick 收到的输入事件，按到达顺序（见 `applyInput`）。
  *
- * `random` 是 `Math.random()` 的替身，**只有计步战斗挑场次那一处**读它
- * （`FightEvent.startBattle0`）。做成入参是为了让"走到第 30 格起战斗"这件事
- * 能被断言：默认值就是 `Math.random`，所以生产路径一个字都不变。
+ * `random` 是 `Math.random()` 的替身。读它的有三处：计步战斗挑场次
+ * （`FightEvent.startBattle0`）、答对答错的加扣金币（`SelectEvent.keyPressed`，
+ * xl-yg6.8）、开箱给几个（`TreasureBox.keyPressed`，xl-yg6.10）。做成入参是
+ * 为了这几个数能被断言：默认值就是 `Math.random`，所以生产路径一个字都不变。
  */
 export function step(
   world: World,
@@ -328,7 +329,8 @@ export function step(
   // 根对象名单里 `sp.selectEvent` 就在 `sp.narratage` 与 `sp.npcs` 之间。
   tickSelectTimers(sel, now)
   // 提示框的两个定时器紧跟在选择框之后：根对象名单里 `sp.equipmentEvent` 就排在
-  // `sp.selectEvent` 后面、`sp.npcs` 前面（xl-yg6.10）。
+  // `sp.selectEvent` 后面、`sp.npcs` 前面（xl-yg6.10）。⚠️ 今天的真值分辨不出
+  // 这个落点：整组挪到 NPC 之后，篡改矩阵两边都绿（见 `treasure.test.ts`）。
   tickTreasureTimers(tre, now)
   for (const npc of npcs) tickNpcTimers(npc, now)
 
