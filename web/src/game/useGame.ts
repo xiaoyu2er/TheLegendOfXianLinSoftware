@@ -22,6 +22,8 @@ import {
   currentBgm,
   enterScene,
   isRunning,
+  loadGame,
+  loadTargetOf,
   openMenu,
 } from './session'
 import { menuDrawList } from '../menu/render/drawList'
@@ -428,6 +430,26 @@ export function useGame(
       if (openLoadRef.current) {
         openLoadRef.current = false
         if (session.panel === 'start') session = sessionRef.current = enterSaveLoad(session, 'load', 'start')
+      }
+      // 读档（xl-i06.10）：面板那一下只记了槽号。重建是同步的、场景 JSON 是按需取的，
+      // 所以先把要读进的那个场景取到手，取到的那一拍才 `loadGame`（见 `Session.loadRequest`）。
+      // 取的这几十毫秒里面板上写着「正在读入」，面板不再收输入。
+      const target = loadTargetOf(session)
+      if (target !== null) {
+        const name = target.replace(/\.txt$/, '')
+        if (loadedSceneSource(target) === undefined) {
+          void loadScene(name)
+            .then((loaded) => rememberScene(name, loaded))
+            .catch((e: unknown) => console.error(`读档要进的场景 ${name} 取不到：`, e))
+        } else {
+          session = sessionRef.current = loadGame(session)
+          // 画面跟着世界走：场景名一变，`app/App.tsx` 就换那一张地图的渲染器。
+          sceneRef.current = name
+          setScene(name)
+          signatureRef.current = null
+          setDialogue(null)
+          last = now
+        }
       }
       // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，一拍
       // 都不推。曲子照放 —— 标题那一屏放主题曲，也是会话说了算。

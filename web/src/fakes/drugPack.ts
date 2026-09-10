@@ -25,6 +25,14 @@ export function addDrug(name: string, number: number): void {
   bag.set(name, (bag.get(name) ?? 0) + number)
 }
 
+/**
+ * `Drug.setNumberGOT(number)` —— 直接写件数，不是加。唯一的调用方是读档
+ * （`ShopPanel.initialShopInfo`，xl-i06.10）。
+ */
+export function setDrugCount(name: string, number: number): void {
+  bag.set(name, number)
+}
+
 /** 背包里某个药品有几件。原版是 `Drug.getNumberGOT()`。 */
 export function drugCount(name: string): number {
   return bag.get(name) ?? 0

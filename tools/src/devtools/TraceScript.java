@@ -96,6 +96,14 @@ public final class TraceScript {
     public final String warmup;   // 预热脚本，可为 null
     public final String scene;
     public final boolean isScript;
+    /**
+     * 读档起手（xl-i06.10）：不 {@code initiation(scene)}，而是照原版读档那一下走
+     * {@code Loader.load(load)} 读草稿区的 {@code 存档N.txt}、再 {@code switchTo("scene")}。
+     * {@code null} = 普通起手。写了它，{@code scene} 与 {@code isScript} 就不再是**输入**
+     * 而是**核对项**：读完档之后 {@code ScenePanel.fileName} / {@code isScript} 必须
+     * 与它们相等，不等是硬失败 —— 回显里那两项因此仍然说真话。
+     */
+    public final Integer load;
 
     // ---- 战斗剧本专用 ----
     /** 战斗背景图，就是 Fight 数据那一行的第一列。BattlePanel 照它挑背景音乐。 */
@@ -198,12 +206,12 @@ public final class TraceScript {
     public static final int BATTLE_TICK_MS = 100;
 
     private TraceScript(String driver, String name, String description, String warmup, String scene,
-                        boolean isScript, int tickMs, int maxTicks, List<Instruction> steps,
+                        boolean isScript, Integer load, int tickMs, int maxTicks, List<Instruction> steps,
                         String background, List<String> party, Map<String, Integer> levels,
                         Map<String, Integer> skillNumbers, List<String> enemies, int seed) {
         this.driver = driver;
         this.name = name; this.description = description; this.warmup = warmup;
-        this.scene = scene; this.isScript = isScript;
+        this.scene = scene; this.isScript = isScript; this.load = load;
         this.tickMs = tickMs; this.maxTicks = maxTicks; this.steps = steps;
         this.background = background; this.party = party; this.levels = levels;
         this.skillNumbers = skillNumbers;
@@ -238,6 +246,17 @@ public final class TraceScript {
         String warmup = battle ? null : JsonIn.strOr(m, "warmup", null);
         String scene = battle ? null : JsonIn.str(m, "scene");
         boolean isScript = !battle && JsonIn.boolOr(m, "isScript", false);
+        Integer load = null;
+        if (m.containsKey("load")) {
+            if (battle) throw new IllegalArgumentException("load 只给场景剧本用 —— 读档之后进的是场景");
+            load = JsonIn.i(m, "load");
+            if (load < 0) throw new IllegalArgumentException("load 是槽号，不能是负数，实际 " + load);
+            // isScript 在读档剧本里是核对项（见字段注释），不写就会默认成 false 去核 ——
+            // 那等于替它猜了一个值。
+            if (!m.containsKey("isScript")) {
+                throw new IllegalArgumentException("读档剧本必须显式写 isScript（读完档之后拿它核 ScenePanel.isScript）");
+            }
+        }
         int tickMs = JsonIn.iOr(m, "tickMs", battle ? BATTLE_TICK_MS : 10);
         int maxTicks = JsonIn.iOr(m, "maxTicks", 20000);
 
@@ -392,7 +411,7 @@ public final class TraceScript {
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
-        return new TraceScript(driver, name, description, warmup, scene, isScript, tickMs, maxTicks,
+        return new TraceScript(driver, name, description, warmup, scene, isScript, load, tickMs, maxTicks,
                 steps, background, party, levels, skillNumbers, enemies, seed);
     }
 
@@ -460,6 +479,8 @@ public final class TraceScript {
         b.append(",\"warmup\":").append(Json.str(warmup));
         b.append(",\"scene\":").append(Json.str(scene));
         b.append(",\"isScript\":").append(isScript);
+        // 不写 load 的剧本一个字都不回显 —— 老真值因此逐字节不变。
+        if (load != null) b.append(",\"load\":").append(load);
         b.append(",\"tickMs\":").append(tickMs);
         b.append(",\"maxTicks\":").append(maxTicks);
         b.append(",\"steps\":[");

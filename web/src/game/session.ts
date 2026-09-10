@@ -37,8 +37,14 @@ import type { BattleInfo } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 import { saveSlotsView } from '../save/store'
 import type { SaveSlotsView, SaveStore } from '../save/store'
-import { captureSave } from '../save/capture'
-import type { SaveFile } from '../save/format'
+import { WORN_HEROES, captureSave } from '../save/capture'
+import { readBack } from '../save/format'
+import type { NeverReadBack, ReadBack, SaveFile } from '../save/format'
+import { heroesFromSave } from '../save/load'
+import { worldAfterLoad } from '../state/load'
+import { setParty } from '../fakes/party'
+import { setCoins } from '../fakes/wallet'
+import { setDrugCount } from '../fakes/drugPack'
 
 /**
  * **面板机**：场景 ↔ 战斗 ↔ 标题（xl-rh9.17）↔ 菜单 ↔ 商店（xl-yg6.11）。
@@ -210,12 +216,14 @@ export interface Session {
    */
   readonly lsEntry: { readonly mode: SaveLoadMode; readonly from: SaveLoadFrom } | null
   /**
-   * 读档点中的那个槽，**交给 xl-i06.10**（读档那条重建路径）。`null` = 没有。
+   * 读档点中了、**还没读进来**的那个槽。`null` = 没有。
    *
-   * 这一票只做到面板上那一下：真值里看得见的是「原版本来要切到 scenePanel」
-   * （`saveload/step.ts` 的 `SaveLoadEffect`）。重建场景、回填数值、跳过旁白都归
-   * 那张票，所以这里**不切面板**、留在存读档面板上，面板上说明为什么没动
-   * （`app/App.tsx`）—— 切回场景而不重建，画面上像读档成功了，而进度一样没回来。
+   * 点下去那一下原版是同步的：`loader.load(i)` → `switchTo("scene")`，中间没有空当。
+   * 这一层多一段空当，因为要读进的那个场景的 JSON 是按需取的（`data/loadedScenes.ts`），
+   * 而重建场景（{@link loadGame}）是同步的。所以分两步：面板那一下只记槽号（面板
+   * **不切**：切回场景而不重建，画面上像读档成功了，而进度一样没回来）；调用方按
+   * {@link loadTargetOf} 把场景取到手，再调 {@link loadGame}。空当里面板上不再收输入 ——
+   * 原版此刻已经在场景里了。
    */
   readonly loadRequest: number | null
   readonly deps: SessionDeps
@@ -681,8 +689,9 @@ function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadIn
     lsEntry = null
   }
   for (const input of inputs) {
-    // 切走之后这一批剩下的事件落在别的面板上，这里不再收。
-    if (panel !== 'ls') break
+    // 切走之后这一批剩下的事件落在别的面板上，这里不再收。点了读档也算切走：原版
+    // 那一下同步读完档就 `switchTo("scene")`，这一层只是晚几拍才真的切（见 `loadRequest`）。
+    if (panel !== 'ls' || loadRequest !== null) break
     if (lsEntry !== null || saveload === null) {
       // 没就绪：一个槽都没画出来，点什么都不算；退出键照样回得去（原版 `lastPanel`
       // 在进面板那三句的第一句就设好了）。
@@ -694,7 +703,7 @@ function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadIn
     }
     const fx = applySaveLoadInput(saveload, input, ports)
     for (const to of fx.switches) {
-      // `scene`：读档那一下原版要切回场景。重建归 xl-i06.10，见 `Session.loadRequest`。
+      // `scene`：读档那一下原版要切回场景 —— 等场景取到手才切，见 `Session.loadRequest`。
       if (to === 'menu' || to === 'start') panel = to
     }
     const loaded = fx.loads.at(-1)
@@ -716,7 +725,7 @@ function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadIn
  *   这时存不了也读不了：`write` 会抛，`read` 也会抛。**面板上说清楚并且只留退出键**，
  *   不画槽（规格没定这一支，xl-i06.9 裁定，见关票理由）；
  * - `ready` —— 面板世界，外加最近一次落盘失败的原因（`persistError`，快照已经是新的、
- *   浏览器存储没写进去）与读档交给 xl-i06.10 的那个槽。
+ *   浏览器存储没写进去）与点中了、场景还在取的那个槽（`loadRequest`）。
  */
 export type SaveLoadView =
   | { readonly status: 'loading' }
@@ -740,6 +749,84 @@ export function saveLoadViewOf(session: Session): SaveLoadView | null {
     persistError: store.persistError(),
     loadRequest: session.loadRequest,
   }
+}
+
+/**
+ * 点中的那个槽要读进哪个场景（脚本文件名，如 `脚本38.txt`）；没有待读的档就是 `null`。
+ * 调用方拿它先把场景 JSON 取到手，再调 {@link loadGame}。
+ */
+export function loadTargetOf(session: Session): string | null {
+  return session.loadRequest === null ? null : savedSlot(session, session.loadRequest).scene.fileName
+}
+
+/**
+ * **读档**（xl-i06.10）—— `LoadAndSavePanel.setButton()` 读档分支那三句：
+ * `loader.load(i)` → `if(!t.isAlive()) t.start()` → `switchTo("scene")`。
+ *
+ * 读一半（`save/format.ts` 的 `readBack`）：原版写了但从不读回的三组 —— 装备库存与
+ * 两张答题表 —— 取**读档前的值**，一个字都不取自存档。开机读档时读档前的值就是初值。
+ * 真正回填的交给 {@link applyReadBack}。
+ *
+ * 中间那句多起一条场景循环（中途读档之后双倍速）**不复刻**，归 xl-i06.11 的例外表。
+ */
+export function loadGame(session: Session): RunningSession {
+  const slot = session.loadRequest
+  if (slot === null) throw new Error('没有点中的档可读 —— loadGame 只在 loadRequest 有值时调')
+  const save = savedSlot(session, slot)
+  const owned = ownedEquipment(session.menu)
+  const prev = session.scene?.world ?? null
+  const before: NeverReadBack = {
+    equipmentStock: Object.fromEntries(EQUIP_SLOTS.map((s) => [s, [...owned[s]]])) as unknown as NeverReadBack['equipmentStock'],
+    questionMaps: prev?.recorder.map((r) => r.scene) ?? [],
+    answers: prev?.recorder.map((r) => [...r.answered]) ?? [],
+  }
+  return applyReadBack({ ...session, loadRequest: null }, readBack(save, before))
+}
+
+/**
+ * 把读回来的那一半落到各处 —— `Loader.load` 的回填，按原版的先后：
+ *
+ * 1. 三个英雄 + 菜单装备页三格（`save/load.ts`：`intialFromInfo` ×3、`initialEquipInfo`）；
+ * 2. 场景（`state/load.ts`：`loadSceneInfo`，含**跳过旁白**），与队伍三开关；
+ * 3. 药与钱（`ShopPanel.initialShopInfo`：各药 `setNumberGOT`、末项 `Money.setCoins`）；
+ * 4. 装备店那一行（`initialEquipmentShopInfo`）写进装备店面板**自建**的六张表、下标跳着走
+ *    （xl-1dv.32）—— 全局背包一格都没被写到。这一层没有那几张自建表，全局背包
+ *    （菜单装备页的 `owned`）照原版一个字都不动。
+ *
+ * 然后 `switchTo("scene")`：面板换回场景，场景下一拍把自己的曲子放上（`worldAfterLoad`
+ * 里那句 `SCENE_SIGNAL=1`）。
+ *
+ * **不收 `neverReadBack`**：那三组原版读档一个字都不写，这里也一个字都不写 —— 用类型把
+ * 这句话说死，免得有人顺手把它们落下去。
+ *
+ * 导出给真值回放用（`state/traceReplay.test.ts` 的 `load-slot*`）：那边读回来的那一半由
+ * 原版读取器的**实际**读法解出来（`save/test/originalSave.ts` 的 `loaderReadBack`）。
+ */
+export function applyReadBack(session: Session, rb: Omit<ReadBack, 'neverReadBack'>): RunningSession {
+  const scene = session.deps.scenes(rb.scene.fileName)
+  if (scene === undefined) {
+    throw new Error(`存档要读进 ${rb.scene.fileName}，这个场景还没取到手 —— 先按 loadTargetOf 取`)
+  }
+  const equip = session.menu.world.panels.equipPanel.equip
+  if (equip === null) throw new Error('菜单装备页没有 equip 那一摊 —— 身上的装备无处可落')
+  if (rb.drugs.length < DRUGS.length) {
+    // `drugList.get(i).setNumberGOT(parseInt(shopInfo.get(i)))`：少一项原版当场越界抛。
+    throw new Error(`存档里只有 ${rb.drugs.length} 种药，药包有 ${DRUGS.length} 种`)
+  }
+  const heroes = heroesFromSave(rb, getParty())
+  setParty(heroes.party)
+  for (const h of WORN_HEROES) equip.packs[h] = heroes.packs[h]
+  const world = worldAfterLoad(session.scene?.world ?? null, rb.scene, rb.party, scene)
+  DRUGS.forEach((d, i) => setDrugCount(d.name, rb.drugs[i]!))
+  setCoins(rb.coins)
+  return { ...session, panel: 'scene', scene: createTicker(world), lsEntry: null, loadRequest: null }
+}
+
+/** 点中的那个槽里的档。面板那一下已经判过空槽（`Loader.isNull`），这里再空就是接线错了。 */
+function savedSlot(session: Session, slot: number): SaveFile {
+  const save = session.deps.saves.read(slot)
+  if (save === null) throw new Error(`第 ${slot} 个槽是空的 —— 读档面板点空槽什么都不发生，走不到这里`)
+  return save
 }
 
 /** `switchTo("scene")` 里那句 `SCENE_SIGNAL=1`（见 `World.sceneSignal`）。 */

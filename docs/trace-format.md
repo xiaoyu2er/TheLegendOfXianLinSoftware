@@ -133,6 +133,7 @@ UTF-8 JSON，放在 `tools/traces/scripts/*.json`。
 |---|---|
 | `warmup` | 先加载一遍的脚本，可为 `null`。96 个场景里有 20 个没有 `Dialogue` 段，依赖前一个场景残留的 `dialogueEvent` 对象才能跑，直接进去会 NPE。 |
 | `isScript` | 对应 `ScenePanel.isScript`。`false` 时旁白与主线对话的轮询被跳过 —— 从大地图走进宿舍时原版就是这个状态。 |
+| `load` | **读档起手，可选**（xl-i06.10）。写了槽号 N，导出器就不 `initiation(scene)`，而是照 `LoadAndSavePanel.setButton()` 的读档分支走 `Loader.load(N)` → `switchTo("scene")`（中间那句多起一条场景循环不做，那是 M6 唯一不复刻的一条）。读的是草稿区 `sources/Record/存档N.txt`，起手先核它与 `tools/ground-truth/存档/` 逐字节相同，不同就拒绝运行。写了 `load` 时 `scene` 与 `isScript` **是核对项不是输入**：读完档之后 `ScenePanel.fileName` / `isScript` 必须等于它们，所以 `isScript` 必须显式写。`warmup` 照样可写 —— 那就是「中途读档」（读档之前场景那一侧已经有一局）。不写 `load` 的剧本回显里一个字都没有，老真值逐字节不变。 |
 | `tickMs` | 虚拟时钟的步长，必须整除 10。原版 17 个定时器的间隔是 10/20/30/40/50/80/100/180/200/500，全是 10 的倍数；步长不整除它们，触发时刻就会被舍入。 |
 | `maxTicks` | 整份剧本的 tick 上限；跑满仍未结束是硬失败。 |
 | `every` | **取帧密度，可选，四支驱动器通用**（xl-6lo.3）。跨端逐帧比对每 `every` 步存一张 PNG。不写就走导出器的缺省 25；写了就是这份剧本自己说了算，`--every` 仍能压掉它。`0` 与负数是硬失败（见下）。 |
@@ -293,6 +294,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `audio.bgm` | `MusicPlayer.currentPlayingBGM`。是一个可断言的字符串，不是"调用了 play()"。 |
 | `viewport` | `OtherEvent.calOffset()` 算出的六元组，对应 spec 里的 `computeViewport`。 |
 | `drawOrder` | `npcs-first` / `hero-first`，对应 spec 里的 `computeDrawOrder`。**旁白期间是 `null`** —— 原版 `paint()` 里主角与 NPC 的绘制整个在 `if (!narratage.isNarratage)` 里面，那些帧没有绘制顺序这回事。 |
+| **读档专属八列** | **只在写了 `load` 的剧本里记**（xl-i06.10，`SceneDriver.appendLoadColumns`）。它们是读档回填的落点，普通剧本里全是出厂值，记进老真值是每拍多几十个数、验同一件事。`progress` ← `dialogueEvent.dialogueEventOver` / `dialogueOrder`、`currentScript`、`nextScript`、`fightEvent.battle1Over` / `countOfBattle1`；`partyFlags` ← `SaveAndLoad.zhang/lu/wen`；`heroes.{zhang,lu,yu}` ← 等级、经验、血、灵力、怒气、四项属性（按等级重算再叠装备加成之后）、`isAngry`、`isDead`；`skillNumber` ← 三个英雄类的那个 static（`intialFromInfo` 按等级抬）；`worn` ← 菜单装备页 `heroEquipPack` 三格各六件的名字；`drugs` ← `DrugPack.drugList` 各药件数；`coins` ← `Money.getCoins()`；`stock` ← 全局装备背包 `EquipmentPack` 六张表的件数 —— **读档不写它**（xl-1dv.32），这一列就是「读不回来」的真值。回放端的登记见 `web/src/state/traceReplay.test.ts` 的 `LOAD_ONLY_GROUPS`。 |
 
 ### 回放端拿 `driver` 做什么
 
@@ -1145,3 +1147,6 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `shop-edges` | 商店（`driver` = `shop`） | 原版有分支而 `shop-trade` 一次都没走到的两条路，两个面板各一遍（36 步）：**买一件存货是 0 的**（药店 灵神天药、装备店 茶罗骨环）与**卖一件背包里一份都没有的**（姜黄粉、踏风草鞋）。两处原版都是 `temp=Math.min(要几件, 另一侧还剩几件)`，后果是"这一行什么都没发生、只有 purchase 被清零"—— 与"压根没点"几乎一样，所以每次都**同时给另一行也加一件**，真值里于是看得见"一次点击里一行动了一行没动"，而不是整单被拒。药店店主的两个价位档（以 6000 分档）也在这条里走完（xl-knp.3） |
 | `saveload-menu` | 存读档（`driver` = `saveload`） | 从菜单进来（xl-i06.6）：存进空槽 2，摘要当场重读（原版写档装置的回声）；覆盖槽 0，地图与任务换新而 `roles` 仍留着旧档的第三个人（`isRoleExist` 只置 1 不清零）；退出键回菜单；再以读档进来读刚存的槽 2 —— `intercept.card` = `scenePanel`、`sceneLoopStart` = `true` |
 | `saveload-start` | 存读档（`driver` = `saveload`） | 从标题画面「承」进来（xl-i06.6）：点空槽 1 读档什么都不发生（`current` 仍是 ls、`intercept` 两项皆空、摘要不变）；再读槽 0，拦截到 `scenePanel` |
+| `load-slot0` | `脚本1.txt` → 读档 → `脚本38.txt` | **中途读档**（先进一局 脚本1 再 `Loader.load(0)`）：三人 11 / 10 / 11 级、身上三件武器、59868 钱；`dialogueEventOver=false`、`dialogueOrder=3`。存档0 装备店那一行有 5 格非零，读档之后 `stock` 全 0 —— 读不回来（xl-1dv.32） |
+| `load-slot1` | 读档 → `脚本1.txt` | **跳过旁白**：同一个脚本、同一个 `isScript=true`，`dorm-intro` 开头是 810 拍旁白，这一份一拍都不起来，主角当场走得动 |
+| `load-slot2` | 读档 → `脚本20.txt` | 读进一个**没有 `Dialogue` 段**的脚本：`initiation` 走 `else if (sal.isLoad)` 那一支新建对话对象。脚本20 也没有 NPC 段（`npcs` 恒空，登记在 `EMPTY_COLUMNS`） |

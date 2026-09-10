@@ -36,7 +36,8 @@ export const TITLE_OPTION = ''
  * - `loading`：仓库还在从浏览器存储里读。画布这时是空的，**不画三个空槽**；
  * - `failed`：读不上来。这一次存不了也读不了，只留退出键（规格没定，本票裁定）；
  * - `persistError`：快照已经是新的、浏览器存储没写进去 —— 摘要看着存上了，关掉就没了；
- * - `loadRequest`：读档那条重建路径归 xl-i06.10，这里说一声为什么点了没回到场景。
+ * - `loadRequest`：点中了一个档、要读进的那个场景还在取（xl-i06.10）—— 这几十毫秒里
+ *   面板不再收输入，说一声为什么还停在这里。
  */
 function SaveLoadNotices({
   notice,
@@ -58,7 +59,7 @@ function SaveLoadNotices({
     if (notice.loadRequest !== null) {
       lines.push({
         kind: 'loading',
-        text: `已选中第 ${notice.loadRequest + 1} 个存档；读档之后回到场景那一段还没接上（xl-i06.10）。按 Esc 回去。`,
+        text: `正在读入第 ${notice.loadRequest + 1} 个存档…`,
       })
     }
   }

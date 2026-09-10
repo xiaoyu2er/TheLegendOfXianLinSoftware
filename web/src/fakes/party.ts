@@ -21,9 +21,10 @@ import type { HeroCarry } from '../battle/world'
  *
  * ## 这一份假在哪
  *
- * - **不读存档，也不写存档**。原版的 `intialFromInfo()` 从 `save/` 读回全部
- *   字段，`roleInfo` 再写回去；这里的初值是三个类的**静态字段初值**
- *   （张小凡 1 级、文敏 3 级、陆雪琪 1 级），刷新页面就回到开局。
+ * - **存档不在这里**。原版的 `intialFromInfo()` 从存档读回全部字段、`roleInfo`
+ *   再写回去；这一层写档从 `getParty()` 取（`save/capture.ts`），读档由
+ *   `save/load.ts` 算好、`setParty` 一次落下（xl-i06.10）。初值是三个类的**静态
+ *   字段初值**（张小凡 1 级、文敏 3 级、陆雪琪 1 级），刷新页面就回到开局。
  * - **只记十样**：等级、经验、血、灵力、死没死、怒气，外加四项基础属性。
  *   原版那三个对象上跨场活着的字段还不止这些（`isGetSkill`、`skillNumber`、
  *   `battleState` 里的临时增益…）。少记的那些今天在游戏本体里都还没有来源
@@ -253,6 +254,15 @@ export function rememberMenuParty(heroes: readonly MenuHero[]): void {
  */
 export function expToNextLevel(key: PartyKey): number {
   return Math.max(0, expToLevelUp(party[key].level) - party[key].exp)
+}
+
+/**
+ * 整个换掉三个人 —— 读档（xl-i06.10）。原版是 `loadRoleInfo` 与 `initialEquipInfo`
+ * 逐字段改那三组静态字段；这一层把「读完之后三个人是什么样」算好（`save/load.ts`），
+ * 在这里一次落下。
+ */
+export function setParty(next: Readonly<Record<PartyKey, PartyMemberState>>): void {
+  party = { zhang: { ...next.zhang }, yu: { ...next.yu }, lu: { ...next.lu } }
 }
 
 /**

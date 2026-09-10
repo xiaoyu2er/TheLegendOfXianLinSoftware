@@ -1,0 +1,13 @@
+{
+  "name": "load-slot0",
+  "description": "中途读档（xl-i06.10）：先 initiation 一遍 脚本1（读档之前场景那一侧已经有一局），再 Loader.load(0) → switchTo(\"scene\")。存档0 读进 脚本38，dialogueEventOver=false、dialogueOrder=3 —— 读档回填的剧情进度决定了进场景之后主线对话从哪一段接着走。\n\n读档专属的七列见 SceneDriver.appendLoadColumns。",
+  "warmup": "脚本1.txt",
+  "scene": "脚本38.txt",
+  "isScript": true,
+  "load": 0,
+  "tickMs": 10,
+  "maxTicks": 4000,
+  "steps": [
+    { "op": "wait", "ticks": 200 }
+  ]
+}

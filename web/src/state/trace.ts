@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { repoPath } from '../test/repoPath'
 import type { SceneScript } from '../data/types'
+import { loaderReadBack, readSample } from '../save/test/originalSave'
+import { worldAfterLoad } from './load'
 import { initiate } from './step'
 import type { SceneSource } from './step'
 import type { InputEvent, TilePos, World } from './types'
@@ -37,6 +39,12 @@ export interface Trace {
      * 见 `docs/trace-format.md` 的剧本字段表。
      */
     readonly isScript: boolean
+    /**
+     * 读档起手（xl-i06.10）：不 `initiation(scene)`，而是原版 `Loader.load(load)` 读
+     * `存档N.txt`、再 `switchTo("scene")`。不写就是普通起手 —— 老真值的头里没有这一项。
+     * 写了它，`scene` 与 `isScript` 是导出器读完档之后**核对过**的值，不是输入。
+     */
+    readonly load?: number
   }
   readonly tickCount: number
   readonly ticks: readonly TraceTick[]
@@ -293,8 +301,17 @@ export function sceneNameOf(trace: Trace): string {
  * （`data/sceneLoading.test.ts`）。
  */
 export function replayWorld(trace: Trace, getScene: (name: string) => SceneScript): World {
-  const { warmup, scene, isScript } = trace.script
+  const { warmup, scene, isScript, load } = trace.script
   const warm = warmup === null ? null : initiate(null, getScene(stemOf(warmup)))
+  if (load !== undefined) {
+    // 读档剧本：照原版读取器**实际**的读法把那一份样例档解出来（导出器读的是草稿区，
+    // 与真值目录逐字节相同由 Java 侧 SaveDraftIntactTest 守着），再走读档那一路重建。
+    const rb = loaderReadBack(readSample(`存档${load}.txt`))
+    if (rb.scene.fileName !== scene) {
+      throw new Error(`${trace.script.name}：真值头写 scene=${scene}，存档${load} 读出来是 ${rb.scene.fileName}`)
+    }
+    return worldAfterLoad(warm, rb.scene, rb.party, getScene(stemOf(rb.scene.fileName)))
+  }
   return { ...initiate(warm, getScene(stemOf(scene))), isScript }
 }
 

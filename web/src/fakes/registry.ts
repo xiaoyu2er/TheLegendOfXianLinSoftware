@@ -35,7 +35,7 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
     fakeBecause:
       '不读 sources/Drug/，没有出厂表，于是来者不拒 —— 原版 addDrug 找不到名字时什么都不做；' +
       '也没有 Drug 的价格 / 说明 / 图标。',
-    exports: ['addDrug', 'drugCount', 'drugEntries', 'resetDrugPack'],
+    exports: ['addDrug', 'setDrugCount', 'drugCount', 'drugEntries', 'resetDrugPack'],
   },
   equipmentPack: {
     owner: 'xl-6lo.1',
@@ -49,7 +49,7 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
     owner: 'xl-6lo.1',
     original: 'battle.ZhangXiaoFan / YuJie / LuXueQi 那三组静态字段',
     fakeBecause:
-      '不读也不写 save/，初值是三个类的静态字段初值（1 / 3 / 1 级 + 开局那三把武器的加成），' +
+      '初值是三个类的静态字段初值（1 / 3 / 1 级 + 开局那三把武器的加成），' +
       '刷新页面就回到开局；跨战斗与跨菜单只记等级 / 经验 / 血 / 灵力 / 死没死 / 怒气 / ' +
       '四项基础属性十样，isGetSkill、skillNumber 今天在 web 端还没有来源（M3）；' +
       '装备只记它加出来的属性，"穿的是哪一件"记不住（xl-6lo.18）。',
@@ -61,15 +61,16 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
       'expToNextLevel',
       'resetParty',
       'initialMember',
+      'setParty',
     ],
   },
   wallet: {
     owner: 'xl-knp.1',
     original: 'shop.Money',
     fakeBecause:
-      '初值是抄来的常量 10000 而不是从存档读的（存档归 M6）；加减两个方法都在 ' +
-      '（reduceCoins 的第一个调用方是答错扣钱，xl-yg6.9），setCoins 没做 —— 读档才调它。',
-    exports: ['getCoins', 'addCoins', 'reduceCoins', 'resetWallet'],
+      '初值是抄来的常量 10000；加减两个方法都在（reduceCoins 的第一个调用方是答错扣钱，' +
+      'xl-yg6.9），setCoins 的唯一调用方是读档（xl-i06.10）。',
+    exports: ['getCoins', 'addCoins', 'reduceCoins', 'setCoins', 'resetWallet'],
   },
   memorySaveStore: {
     owner: 'xl-i06.8',

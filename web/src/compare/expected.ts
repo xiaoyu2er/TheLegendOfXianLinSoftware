@@ -2057,6 +2057,24 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '存读档面板的 web 侧还没做，取图页装配不出 driver=saveload',
     issue: 'xl-i06.12',
   },
+  // xl-i06.10：场景驱动器装得出，可这一条的起手是读档，取图页读不了原版存档。
+  'load-slot0': {
+    status: 'unpainted',
+    why: '读档剧本（剧本头有 load）：取图页还不认读档起手，照 scene 起手建出来的是另一个世界 —— replay/main.ts 当场抛，一帧都没比过',
+    issue: 'xl-i06.12',
+  },
+  // xl-i06.10：场景驱动器装得出，可这一条的起手是读档，取图页读不了原版存档。
+  'load-slot1': {
+    status: 'unpainted',
+    why: '读档剧本（剧本头有 load）：取图页还不认读档起手，照 scene 起手建出来的是另一个世界 —— replay/main.ts 当场抛，一帧都没比过',
+    issue: 'xl-i06.12',
+  },
+  // xl-i06.10：场景驱动器装得出，可这一条的起手是读档，取图页读不了原版存档。
+  'load-slot2': {
+    status: 'unpainted',
+    why: '读档剧本（剧本头有 load）：取图页还不认读档起手，照 scene 起手建出来的是另一个世界 —— replay/main.ts 当场抛，一帧都没比过',
+    issue: 'xl-i06.12',
+  },
 }
 
 /**
