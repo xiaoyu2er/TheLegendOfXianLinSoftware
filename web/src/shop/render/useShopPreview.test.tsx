@@ -139,7 +139,8 @@ describe('店里那八格真的在转，而且照原版那条 for 的形状转',
     unmount()
 
     // 空转要响：一帧都没画与「每一帧都对」在下面那两条断言下长得一样。
-    expect(drawn.length, '一帧都没画出来').toBeGreaterThan(count * 2)
+    // 上界也顺手守住了转速：推三圈该画出三圈那么多张，画少了同样红。
+    expect(drawn.length, '推了三圈，画出来的帧数却不够两圈').toBeGreaterThan(count * 2)
 
     const want = loopFrames(loop, drawn.length)
     expect(drawn.map((ops) => mouseFrameOf(ops, count)), '鼠标图那一串').toEqual(want)
