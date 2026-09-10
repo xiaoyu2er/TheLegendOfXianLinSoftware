@@ -33,6 +33,8 @@ import type { BattleInfo } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 import { saveSlotsView } from '../save/store'
 import type { SaveSlotsView, SaveStore } from '../save/store'
+import { captureSave } from '../save/capture'
+import type { SaveFile } from '../save/format'
 
 /**
  * **面板机**：场景 ↔ 战斗 ↔ 标题（xl-rh9.17）↔ 菜单 ↔ 商店（xl-yg6.11）。
@@ -677,6 +679,32 @@ export function currentBgm(session: Session): string | null {
   // 少了它下面那句就得写 `!`。
   if (session.panel === 'start' || session.scene === null) return TITLE_BGM
   return session.scene.world.audio.bgm
+}
+
+/**
+ * 写档装置的来源（xl-i06.9）：`Recorder.save` 读的那几处，在这一层的落点逐个现读，
+ * 交给 `save/capture.ts` 的纯函数拼成一份档。
+ *
+ * - 场景与 `Reader` 那几个静态字段 —— 场景世界；
+ * - 三个人 —— 队伍（`fakes/party.ts`）；
+ * - 身上的装备与六张装备表的持有量 —— 菜单装备页（全局装备背包唯一的落点，
+ *   见 `Session.menu`）；
+ * - 药与钱 —— 药包与钱包。店开着时每一步都写回过（`writeShopBack`），所以这里读到
+ *   的就是此刻的数。
+ *
+ * 只有开了局才存得了档：存档的入口在菜单上，而菜单只从场景进得去。
+ */
+export function captureSession(session: RunningSession): SaveFile {
+  const equip = session.menu.world.panels.equipPanel.equip
+  if (equip === null) throw new Error('菜单装备页没有 equip 那一摊 —— 身上的装备无处可取')
+  return captureSave({
+    world: session.scene.world,
+    party: getParty(),
+    worn: equip.packs,
+    owned: equip.owned,
+    drugs: DRUGS.map((d) => drugCount(d.name)),
+    coins: getCoins(),
+  })
 }
 
 /**
