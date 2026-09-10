@@ -1,10 +1,20 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { DRUGS } from '../battle/drugs'
 import { SCENE_NAMES } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
+import { drugCount, resetDrugPack } from '../fakes/drugPack'
+import { getParty, resetParty } from '../fakes/party'
+import { getCoins, resetWallet } from '../fakes/wallet'
+import { applyReadBack, createSession, enterScene } from '../game/session'
+import type { RunningSession, Session } from '../game/session'
+import { EQUIP_SLOTS } from '../menu/equipment'
+import { WORN_HEROES } from '../save/capture'
+import { createMemorySaveStore } from '../save/memoryStore'
+import { loaderReadBack, readSample } from '../save/test/originalSave'
 import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
-import { step } from './step'
+import { initiate, step } from './step'
 import { roleMoving, roleTileX, roleTileY } from './role'
 import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneNameOf, sceneSourceOf } from './trace'
 import type { Trace, TraceTick } from './trace'
@@ -187,6 +197,85 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
 }
 
 /**
+ * **读档剧本才有的字段组 —— 手写登记**（xl-i06.10）。
+ *
+ * 导出器只在 `load` 剧本里记这几列（`SceneDriver.appendLoadColumns`）：它们是读档回填的
+ * 落点，普通剧本里全是出厂值，记进十一份老真值等于每拍多几十个数、验同一件事。于是
+ * 「每条真值的列名一致」那条对撞按两种剧本分开核：普通剧本 = 基础那几组，读档剧本 =
+ * 基础那几组 + 这张表。**表必须手写**：写成「读档真值比普通真值多出来的那几列」就是让
+ * 被守的东西自己给自己签字 —— 导出器多记或少记一列，这里都跟着变，一条都不红。
+ *
+ * **登记是跑出来的**（2026-09-10）：三份读档剧本 × 9 组基础 + 8 组读档专属，除
+ * `skillNumber`（没有观察函数，一开始就挂 PENDING）外全签进 ALIGNED 跑了一遍：178 条里
+ * 红 1 条 —— `npcs × load-slot2` 的子字段对撞（脚本20 没有 NPC 段，签进 EMPTY_COLUMNS）。
+ * 逐 tick 的格子一格没红。⚠️ 没做反方向那一步（把某格挂进 PENDING 看「欠着的必须真没对上」
+ * 红不红）；各格有没有分辨力由篡改矩阵证（见关票理由：T1 / T7 / T11 / T12 / T14 / T15 / T22）。
+ */
+const LOAD_ONLY_GROUPS: readonly string[] = [
+  'coins',
+  'drugs',
+  'heroes',
+  'partyFlags',
+  'progress',
+  'skillNumber',
+  'stock',
+  'worn',
+]
+
+/**
+ * 读档专属那几组从哪里取。前两组在世界上；其余几组在会话层那几个单例与菜单装备页上 ——
+ * 所以读档剧本的回放**走会话层真正的读档那一路**（`applyReadBack`，见 `loadedSession`），
+ * 不是在这里把存档字段搬一遍。`skillNumber` 没有观察函数：这一层没有它的落点（PENDING）。
+ */
+const LOAD_OBSERVERS: Readonly<Record<string, (world: World, session: RunningSession) => unknown>> = {
+  /** `loadSceneInfo` 回填的剧情进度。`nextScript` 为 null 即原版的 `new String[3]`。 */
+  progress: (w) => ({
+    dialogueEventOver: w.dialogue.eventOver,
+    dialogueOrder: w.dialogue.groupOrder,
+    currentScript: [...w.currentScript],
+    nextScript: w.nextScript === null ? [null, null, null] : [...w.nextScript],
+    battle1Over: w.fight.battle1Over,
+    countOfBattle1: w.fight.countOfBattle1,
+  }),
+  partyFlags: (w) => ({ zhang: w.readerStatics.zhang, lu: w.readerStatics.lu, wen: w.readerStatics.wen }),
+  heroes: () => {
+    const p = getParty()
+    return Object.fromEntries(
+      (['zhang', 'lu', 'yu'] as const).map((k) => {
+        const m = p[k]
+        return [
+          k,
+          {
+            level: m.level,
+            exp: m.exp,
+            hp: m.hp,
+            mp: m.mp,
+            angryValue: m.angryValue,
+            physicalPower: m.physicalPower,
+            sprit: m.sprit,
+            agile: m.agile,
+            strength: m.strength,
+            isAngry: m.isAngry,
+            isDead: m.isDead,
+          },
+        ]
+      }),
+    )
+  },
+  worn: (_w, s) => WORN_HEROES.map((h) => ({ ...equipOf(s).packs[h] })),
+  drugs: () => DRUGS.map((d) => drugCount(d.name)),
+  coins: () => getCoins(),
+  /** 全局装备背包。读档不写它（xl-1dv.32），所以这一格对上的是「读档前的值」。 */
+  stock: (_w, s) => Object.fromEntries(EQUIP_SLOTS.map((slot) => [slot, [...equipOf(s).owned[slot]]])),
+}
+
+function equipOf(s: RunningSession) {
+  const equip = s.menu.world.panels.equipPanel.equip
+  if (equip === null) throw new Error('菜单装备页没有 equip 那一摊')
+  return equip
+}
+
+/**
  * **已经对齐的格子 —— 手写登记。**
  *
  * ⚠️ 这张表**必须手写**。写成"跟着磁盘走"（`Object.keys(OBSERVERS)` 或
@@ -237,6 +326,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   // NPC 七个字段，xl-9bd.9。⚠️ `dorm-walk` / `dorm-exit` 那几条里 NPC 动得少，
   // 守的是"别凭空动起来"；真的走动与被 checkNPCStop 停住在下面那条覆盖用例里
@@ -253,6 +346,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   // 对话框十二个字段，xl-9bd.10。⚠️ 十一条里只有几条真的开过口；一份从头到尾
   // 没有对话的真值上这一格是"全 false 等于全 false"，覆盖靠下面那条数出来的
@@ -272,6 +369,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   // 旁白六个字段，xl-9bd.11。⚠️ 只有 `dorm-intro` 与 `milestone` 真的播过旁白
   // （实测 810 / 1070 个 tick），另三条守的是"没有旁白的剧本里它不许自己起来"。
@@ -287,6 +388,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   // 场景文件名与 isScript，xl-9bd.12（出口切换）。
   scene: [
@@ -301,6 +406,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   isScript: [
     'battle-door',
@@ -314,6 +423,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   // 选择框那 28 个字段，xl-yg6.8。整列来自 `src/scene/SelectEvent.java` 一个
   // 对象（外加那两张 static 表配成的 `recorder`）。十一条全绿是跑出来的：
@@ -330,6 +443,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   // 宝箱与「得到物品」提示框，xl-yg6.10（`EquipmentEvent` + `TreasureBox`）。
   // **跑出来的**：观察函数加上、登记还挂在 PENDING 时跑了一遍，反方向那 11 条
@@ -349,6 +466,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
   // `MusicPlayer.currentPlayingBGM`，xl-9bd.12。
   // `battle-door` 那一格 xl-yg6.11 翻过来：选「是」那一下原版先跑
@@ -367,7 +488,24 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
   ],
+  // ——— 读档专属那几组（xl-i06.10）。读数见 LOAD_ONLY_GROUPS 的注释。———
+  // 剧情进度：对话结束旗标与编号、剧情三元组、两个战斗计数。
+  progress: ['load-slot0', 'load-slot1', 'load-slot2'],
+  // 队伍三开关：`Loader.load` 末三行，压过脚本 Role 段。
+  partyFlags: ['load-slot0', 'load-slot1', 'load-slot2'],
+  // 三个英雄：等级重算的四项属性 + 装备加成 + 存档里的七项。
+  heroes: ['load-slot0', 'load-slot1', 'load-slot2'],
+  // 身上的装备：`initialEquipInfo` 那三格。
+  worn: ['load-slot0', 'load-slot1', 'load-slot2'],
+  drugs: ['load-slot0', 'load-slot1', 'load-slot2'],
+  coins: ['load-slot0', 'load-slot1', 'load-slot2'],
+  // 装备库存**读不回来**：三格全是读档前的值（出厂的 0），而存档0 那一行有 5 格非零。
+  stock: ['load-slot0', 'load-slot1', 'load-slot2'],
 }
 
 /**
@@ -459,9 +597,15 @@ const DEAD_SUBFIELDS: readonly DeadSubfield[] = [
  * 的坑）。分母仍然是磁盘：少写一条，上面那条 `unaccounted` 立刻红。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // **今天是空的，那是一个读数**（xl-yg6.11）。最后一格 `audio × battle-door`
-  // 挪进了 ALIGNED —— 选「是」那一下 `BattlePanel.initial` 按背景图换 BGM 的
-  // 那条线补上了。空着时下面那个 describe 零用例，留了一条明写读数的用例兜底。
+  // xl-yg6.11 把最后一格 `audio × battle-door` 挪进 ALIGNED 之后这里空过一阵。
+  //
+  // 读档之后的技能格数（xl-i06.10 读档真值现读）：原版 `intialFromInfo` 按等级把那三个
+  // static 抬到 3 / 4 / 5，这一层的队伍不记它、战斗建人时也不传 —— 没有落点。
+  skillNumber: {
+    'load-slot0': 'xl-i06.13',
+    'load-slot1': 'xl-i06.13',
+    'load-slot2': 'xl-i06.13',
+  },
 }
 
 /**
@@ -522,6 +666,11 @@ const EMPTY_COLUMNS: Readonly<Record<string, Readonly<Record<string, EmptyColumn
   npcs: {
     'maze-treasure': {
       why: 'script/迷宫1.txt 没有 NPC 段 —— 五份带 TreasureBox 的脚本全都没有',
+    },
+    // xl-i06.10 现读：script/脚本20.txt 的段是 NextScript / Fight / Exit / TreasureBox /
+    // Music / Role / Task，没有 NPC；烘焙产物 npcList 为 null，真值 270 拍条数恒 0。
+    'load-slot2': {
+      why: 'script/脚本20.txt 没有 NPC 段（它也带 TreasureBox，与上一条同族）',
     },
   },
 }
@@ -620,11 +769,44 @@ function stripDead(column: string, value: unknown): unknown {
 /** 把一条真值从头跑到尾，返回每一 tick 的快照。**不做任何比对。** */
 function runAll(name: string): Record<string, unknown>[] {
   const trace = traceOf(name)
-  let world = replayWorld(trace, getScene)
+  const session = trace.script.load === undefined ? null : loadedSession(trace)
+  let world = session?.scene.world ?? replayWorld(trace, getScene)
   return trace.ticks.map((tick) => {
     world = step(world, tick.input, trace.script.tickMs, scenes)
-    return Object.fromEntries(Object.entries(OBSERVERS).map(([group, take]) => [group, take(world)]))
+    const row: Record<string, unknown> = Object.fromEntries(
+      Object.entries(OBSERVERS).map(([group, take]) => [group, take(world)]),
+    )
+    if (session !== null) for (const [group, take] of Object.entries(LOAD_OBSERVERS)) row[group] = take(world, session)
+    return row
   })
+}
+
+/**
+ * 读档剧本的起手：照导出器（`SceneDriver.loadFromSave`）的次序 —— 有 `warmup` 就先进一局，
+ * 然后读档。读档走的是**会话层真正的那一路**（`applyReadBack`），喂进去的那一半由原版
+ * 读取器的**实际**读法从样例档里解出来（`loaderReadBack`）—— 世界、队伍、装备页、药包、
+ * 钱包全是那一路写出来的，这里一个字段都不搬。
+ *
+ * 队伍、钱包、药包是模块级单例：起手先各自回到出厂值，与导出器那个干净 JVM 同一个起点。
+ */
+function loadedSession(trace: Trace): RunningSession {
+  resetParty()
+  resetWallet()
+  resetDrugPack()
+  let s: Session = createSession({
+    scenes,
+    sprite: () => ({ width: 0, height: 0 }),
+    random: () => 0,
+    saves: createMemorySaveStore(),
+  })
+  const { warmup, load } = trace.script
+  if (warmup !== null) s = enterScene(s, initiate(null, getScene(warmup.replace(/\.txt$/, ''))))
+  return applyReadBack(s, loaderReadBack(readSample(`存档${load}.txt`)))
+}
+
+/** 这份真值是不是读档剧本导出来的（剧本头里有 `load`）。 */
+function isLoadTrace(name: string): boolean {
+  return traceOf(name).script.load !== undefined
 }
 
 const snapshotCache = new Map<string, Record<string, unknown>[]>()
@@ -683,12 +865,17 @@ describe('回放行为真值', () => {
     expect(SCENE_TRACE_NAMES.length).toBeGreaterThan(0)
 
     // 每条真值的列名必须一致 —— 不一致说明导出器对两条剧本记的东西不一样，
-    // 那时"这一格不存在"与"这一格没人登记"就分不开了。
-    const groups = groupsOf(traceOf(SCENE_TRACE_NAMES[0]!))
-    expect(groups.length).toBeGreaterThan(0)
+    // 那时"这一格不存在"与"这一格没人登记"就分不开了。读档剧本多出来的那几组是
+    // 手写登记（`LOAD_ONLY_GROUPS`），两种剧本各按各的核。
+    const plain = SCENE_TRACE_NAMES.filter((name) => !isLoadTrace(name))
+    expect(plain.length).toBeGreaterThan(0)
+    const base = groupsOf(traceOf(plain[0]!))
+    expect(base.length).toBeGreaterThan(0)
     for (const name of SCENE_TRACE_NAMES) {
-      expect(groupsOf(traceOf(name)), `${name} 的字段组与其他真值不一致`).toEqual(groups)
+      const want = isLoadTrace(name) ? [...base, ...LOAD_ONLY_GROUPS].sort() : base
+      expect(groupsOf(traceOf(name)), `${name} 的字段组与其他真值不一致`).toEqual(want)
     }
+    const groups = [...base, ...LOAD_ONLY_GROUPS].sort()
 
     const unaccounted: string[] = []
     const both: string[] = []
@@ -703,6 +890,8 @@ describe('回放行为真值', () => {
         continue
       }
       for (const name of SCENE_TRACE_NAMES) {
+        // 这条真值里没有这一组（普通剧本 × 读档专属那几组）：没有格子，也就无从登记。
+        if (!groupsOf(traceOf(name)).includes(group)) continue
         const aligned = (ALIGNED[group] ?? []).includes(name)
         const pending = name in (PENDING[group] ?? {})
         if (!aligned && !pending) unaccounted.push(`${group} × ${name}`)
@@ -722,6 +911,7 @@ describe('回放行为真值', () => {
       expect(groups, `ALIGNED 里的 ${group} 不是真值的字段组`).toContain(group)
       for (const name of names) {
         expect(SCENE_TRACE_NAMES, `ALIGNED[${group}] 里的 ${name} 不在真值目录里`).toContain(name)
+        expect(groupsOf(traceOf(name)), `ALIGNED[${group}] 签了 ${name}，那条真值里却没有这一组`).toContain(group)
       }
     }
     for (const group of Object.keys(ALIGNED_ELSEWHERE)) {
@@ -739,13 +929,16 @@ describe('回放行为真值', () => {
     // 观察函数那张表也要跟磁盘对撞：多一个组名说明它守着一列真值里没有的
     // 东西（那一格的 `toEqual` 会拿 undefined 比 undefined，恒真）。
     for (const group of Object.keys(OBSERVERS)) {
-      expect(groups, `OBSERVERS 里的 ${group} 不是真值的字段组`).toContain(group)
+      expect(base, `OBSERVERS 里的 ${group} 不是真值的字段组`).toContain(group)
+    }
+    for (const group of Object.keys(LOAD_OBSERVERS)) {
+      expect(LOAD_ONLY_GROUPS, `LOAD_OBSERVERS 里的 ${group} 不是读档专属的字段组`).toContain(group)
     }
     // 而登记成"已对齐"的组必须真有人取得出来 —— 没有观察函数的话，快照里
     // 那一列是 undefined，逐格用例会红；这一条把那种红提前到这里，说得清楚
     // 一点。
     for (const group of Object.keys(ALIGNED)) {
-      expect(Object.keys(OBSERVERS), `ALIGNED 里的 ${group} 没有观察函数`).toContain(group)
+      expect([...Object.keys(OBSERVERS), ...Object.keys(LOAD_OBSERVERS)], `ALIGNED 里的 ${group} 没有观察函数`).toContain(group)
     }
   })
 

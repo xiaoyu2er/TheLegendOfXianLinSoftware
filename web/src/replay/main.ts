@@ -87,6 +87,8 @@ interface ReplayTrace {
     readonly tickMs: number
     /** `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。 */
     readonly isScript: boolean
+    /** 读档起手的槽号（xl-i06.10）。取图页还不认它，见 `sceneAssembly.load`。 */
+    readonly load?: number
   }
   readonly tickCount: number
   readonly ticks: readonly ReplayTick[]
@@ -173,6 +175,15 @@ const stem = (file: string) => file.replace(/\.txt$/, '')
 const sceneAssembly: Assembly = {
   async load(traceJson: string) {
     const parsed = JSON.parse(traceJson) as ReplayTrace
+    // 读档剧本（xl-i06.10）：原版不 initiation，而是 Loader.load 读档再进场景。这里照剧本头
+    // 那套 warmup → scene 建出来的是**另一个世界**，比出来的一大片差异是装错了，不是两端不同。
+    // 读原版存档要一个浏览器侧的读取器，那是逐帧比对收口的活。当场抛，不许比。
+    if (parsed.script.load !== undefined) {
+      throw new Error(
+        `${parsed.script.name} 是读档剧本（load=${parsed.script.load}）：取图页还不认读档起手，` +
+          '照 scene 起手建出来的世界与读档之后的不是同一个 —— 归 xl-i06.12',
+      )
+    }
     const sceneName = stem(parsed.script.scene)
     const scene = await take(sceneName)
     renderer ??= await createSceneRenderer(hostFor('scene'))

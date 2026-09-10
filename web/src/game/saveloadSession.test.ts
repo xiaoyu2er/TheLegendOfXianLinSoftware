@@ -92,7 +92,7 @@ describe('菜单 → 存读档面板 → 菜单', () => {
     expect(s.panel).toBe('menu')
   })
 
-  it('再点「提取」：面板世界不重建（只置不清的那份记忆活着），点非空槽把读档交给 xl-i06.10、面板不动', () => {
+  it('再点「提取」：面板世界不重建（只置不清的那份记忆活着），点非空槽只记下槽号、面板先不切（读进来见 loadSession.test.ts）', () => {
     const store = createMemorySaveStore()
     let s = viaMenu(inScene(store), 'saveButton')
     const first = s.saveload
@@ -116,11 +116,15 @@ describe('标题「承」→ 存读档面板（还没开局）', () => {
     let s: Session = enterSaveLoad(createSession(deps(createMemorySaveStore([SAMPLE]))), 'load', 'start')
     expect(s.panel).toBe('ls')
     expect(ready(s).world).toMatchObject({ mode: 'load', lastPanel: 'start' })
-    s = ls(s, slotClick(0))
-    expect(s.loadRequest).toBe(0)
     s = ls(s, ESC)
     expect(s.panel).toBe('start')
     expect(s.scene).toBeNull()
+  })
+
+  it('点非空槽只记下槽号（读进来见 loadSession.test.ts）', () => {
+    const s = ls(enterSaveLoad(createSession(deps(createMemorySaveStore([SAMPLE]))), 'load', 'start'), slotClick(0))
+    expect(s.loadRequest).toBe(0)
+    expect(s.panel).toBe('ls')
   })
 })
 

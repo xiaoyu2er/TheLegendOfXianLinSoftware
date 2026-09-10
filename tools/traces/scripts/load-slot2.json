@@ -1,0 +1,15 @@
+{
+  "name": "load-slot2",
+  "description": "开机读档（xl-i06.10）：Loader.load(2) → switchTo(\"scene\")。存档2 读进 脚本20 —— 这个脚本**没有 Dialogue 段**，于是 ScenePanel.initiation 走的是 else if (sal.isLoad) 那一支：照样 new 一个 DialogueEvent（对话编号为 null）并把 isLoad 清掉；普通进场景的话那个对象会从上一个场景原样留下来。\n\n读档专属的七列见 SceneDriver.appendLoadColumns。",
+  "warmup": null,
+  "scene": "脚本20.txt",
+  "isScript": true,
+  "load": 2,
+  "tickMs": 10,
+  "maxTicks": 4000,
+  "steps": [
+    { "op": "wait", "ticks": 60 },
+    { "op": "walkTo", "x": 24, "y": 2 },
+    { "op": "wait", "ticks": 20 }
+  ]
+}

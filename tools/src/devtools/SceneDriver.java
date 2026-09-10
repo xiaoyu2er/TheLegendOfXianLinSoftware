@@ -8,7 +8,10 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import javax.swing.Timer;
 
@@ -165,8 +168,12 @@ public final class SceneDriver implements TraceDriver {
         // 预热：96 个场景里有 20 个没有 Dialogue 段，它们依赖前一个场景残留的
         // dialogueEvent 对象才能跑；直接 initiation 进去会 NPE。
         if (script.warmup != null) sp.initiation(script.warmup);
-        sp.initiation(script.scene);
-        sp.isScript = script.isScript;
+        if (script.load != null) {
+            loadFromSave();
+        } else {
+            sp.initiation(script.scene);
+            sp.isScript = script.isScript;
+        }
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
         installTimers();
@@ -258,6 +265,113 @@ public final class SceneDriver implements TraceDriver {
             }
         }
         return found;
+    }
+
+    // ================= 读档起手（xl-i06.10） =================
+
+    /**
+     * 照原版读档那一下走：{@code LoadAndSavePanel.setButton()} 的读档分支是
+     * {@code loader.load(i)} → {@code if(!t.isAlive()) t.start()} → {@code switchTo("scene")}。
+     * 中间那句多起一条场景循环是 M6 唯一不复刻的一条（本驱动器本来就不起那条线程，
+     * 一 tick 一次 {@code step()}），另两句一字不差照做。
+     *
+     * <p>{@code Loader.load} 读写的是 {@code GameLauncher} 上那一整排 public static：
+     * 三个英雄（{@code loadRoleInfo}）、场景（{@code sal.loadSceneInfo}）、菜单装备页
+     * （{@code initialEquipInfo}）、药店（{@code initialShopInfo}）、装备店
+     * （{@code initialEquipmentShopInfo}）。所以那几块先立起来 —— 立法同
+     * {@link SaveLoadDriver#start()}，但**倍率要放回来**：场景这边的定时器是
+     * {@code Clock.delay()} 算出来再反算的（{@link #installTimers()}），倍率停在 1e-9
+     * 的话每一个都反算不出来。
+     *
+     * <p>它读的是**草稿区**（{@code sources/Record/}，原版写死的路径）。草稿区与真值
+     * 逐字节不同就拒绝运行 —— 读一份来路不明的档，导出的就是一份来路不明的真值。
+     */
+    private void loadFromSave() {
+        standUpLoadTargets();
+        List<String> problems;
+        try {
+            problems = SaveTruth.draftProblems();
+        } catch (java.io.IOException e) {
+            fail("读不了草稿区或存档真值：" + e);
+            return;
+        }
+        if (!problems.isEmpty()) {
+            fail("草稿区与存档真值对不上，拒绝读档（上一次导出没还原？）：\n  " + String.join("\n  ", problems));
+        }
+        java.io.File save = new java.io.File(SaveTruth.DRAFT_DIR, "存档" + script.load + ".txt");
+        // Loader.loadLine 读不到文件只打一行栈、交回空列表，接着 get(0) 抛 —— 先在这里说清楚。
+        if (!save.isFile()) fail("load=" + script.load + "，草稿区没有这个档：" + save.getPath());
+
+        int tapBefore = tap.count();
+        new start.Loader().load(script.load);
+        GameLauncher.switchTo("scene");
+        if (tap.count() - tapBefore != 1 || !"scenePanel".equals(tap.consume())) {
+            fail("读档之后 switchTo(\"scene\") 应当恰好切一次、切到 scenePanel");
+        }
+        if (!script.scene.equals(sp.fileName)) {
+            fail("剧本写 scene=" + script.scene + "，可存档" + script.load + " 读出来的是 " + sp.fileName);
+        }
+        if (script.isScript != sp.isScript) {
+            fail("剧本写 isScript=" + script.isScript + "，可存档" + script.load + " 读出来的是 " + sp.isScript);
+        }
+    }
+
+    /**
+     * {@code Loader.load} 要写的那几块面板。菜单与两家店的构造函数都起 {@code while(true)}
+     * 线程、第一句就是 {@code Clock.sleep}：先把倍率压到 {@link #BATTLE_PARK_FACTOR}
+     * 再构造，等**每一条新起的游戏线程**都停进 {@code Clock.sleep} 之后再放回来
+     * （理由同 {@link #standUpBattlePanel()} 那段「等它真的睡下去」）。
+     */
+    private void standUpLoadTargets() {
+        if (GameLauncher.battlePanel == null) standUpBattlePanel();
+        Set<Thread> before = new HashSet<>(Thread.getAllStackTraces().keySet());
+        double saved = Clock.getFactor();
+        Clock.setFactor(BATTLE_PARK_FACTOR);
+        // 菜单与商店会出音效（换页、点按钮）；这份真值只记背景音乐。
+        media.MusicReader.closeMusic();
+        GameLauncher.menuPanel = new menu.MenuPanel(GameLauncher.zhangXiaoFan, GameLauncher.luXueQi, GameLauncher.yuJie);
+        // 背包那两份静态列表只有构造函数会填（同 SaveLoadDriver.start()）。
+        new shop.DrugPack();
+        new shop.EquipmentPack();
+        GameLauncher.shopPanel = new shop.ShopPanel();
+        GameLauncher.equipmentShopPanel = new shop.EquipmentShopPanel();
+        awaitNewThreadsParked(before);
+        Clock.setFactor(saved);
+    }
+
+    /** 新起的线程里凡是跑着游戏代码的，都得停在 {@code tools.Clock.sleep} 里。等不到是硬失败。 */
+    private void awaitNewThreadsParked(Set<Thread> before) {
+        long deadline = System.currentTimeMillis() + BATTLE_PARK_TIMEOUT_MS;
+        while (true) {
+            List<String> busy = new ArrayList<>();
+            for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+                Thread t = e.getKey();
+                if (before.contains(t) || !runsGameCode(e.getValue())) continue;
+                if (t.getState() == Thread.State.TIMED_WAITING && inClockSleep(e.getValue())) continue;
+                busy.add(t.getName() + "(" + t.getState() + ")");
+            }
+            if (busy.isEmpty()) return;
+            if (System.currentTimeMillis() > deadline) {
+                fail("等了 " + BATTLE_PARK_TIMEOUT_MS + "ms，这几条线程还没停进 Clock.sleep：" + busy);
+            }
+            Thread.yield();
+        }
+    }
+
+    private static boolean runsGameCode(StackTraceElement[] stack) {
+        for (StackTraceElement st : stack) {
+            String c = st.getClassName();
+            if (c.startsWith("menu.") || c.startsWith("shop.") || c.startsWith("battle.")
+                    || c.startsWith("start.") || c.startsWith("scene.") || c.startsWith("media.")) return true;
+        }
+        return false;
+    }
+
+    private static boolean inClockSleep(StackTraceElement[] stack) {
+        for (StackTraceElement st : stack) {
+            if (st.getClassName().equals("tools.Clock") && st.getMethodName().equals("sleep")) return true;
+        }
+        return false;
     }
 
     // ================= 快照位图 =================
@@ -861,7 +975,105 @@ public final class SceneDriver implements TraceDriver {
          .append("}");
 
         b.append(",\"drawOrder\":").append(Json.str(drawOrder()));
+        if (script.load != null) appendLoadColumns(b);
         return b.append("}").toString();
+    }
+
+    /**
+     * 读档剧本多记的七列（xl-i06.10）。**只在 {@code load} 剧本里记**：它们是读档回填
+     * 的落点，普通剧本里全是出厂值，记进去是把十一份老真值整个重导一遍、每拍多几十个数，
+     * 验的却是同一件事。
+     *
+     * <ul>
+     *   <li>{@code progress} —— {@code loadSceneInfo} 回填的剧情进度：对话结束旗标与编号、
+     *       剧情三元组、两个战斗计数（{@code isScript} / 文件名 / 坐标已经在别的列里）；
+     *   <li>{@code partyFlags} —— {@code SaveAndLoad.zhang / lu / wen}（{@code Loader.load} 末三行）；
+     *   <li>{@code heroes} —— 三个英雄 {@code intialFromInfo} 读回的七项，加上按等级重算、
+     *       再被 {@code initialEquipInfo} 叠上装备加成的四项属性；
+     *   <li>{@code skillNumber} —— {@code intialFromInfo} 按等级抬的那三个 static；
+     *   <li>{@code worn} —— 菜单装备页 {@code heroEquipPack} 三格各六件的名字；
+     *   <li>{@code drugs} / {@code coins} —— {@code initialShopInfo} 写回的药与钱；
+     *   <li>{@code stock} —— 全局装备背包 {@code EquipmentPack} 六张表的件数。**读档不写它**
+     *       （xl-1dv.32），记下来就是那条「读不回来」的真值。
+     * </ul>
+     */
+    private void appendLoadColumns(StringBuilder b) {
+        Object de = sp.dialogueEvent;
+        Object fe = sp.fightEvent;
+        b.append(",\"progress\":{\"dialogueEventOver\":").append(getBool(de, "dialogueEventOver"))
+         .append(",\"dialogueOrder\":").append(getInt(de, "dialogueOrder"))
+         .append(",\"currentScript\":").append(Json.arrStr(Arrays.asList(sp.currentScript)))
+         .append(",\"nextScript\":").append(Json.arrStr(Arrays.asList(sp.nextScript)))
+         .append(",\"battle1Over\":").append(getBool(fe, "battle1Over"))
+         .append(",\"countOfBattle1\":").append(getInt(fe, "countOfBattle1"))
+         .append("}");
+        b.append(",\"partyFlags\":{\"zhang\":").append(scene.SaveAndLoad.zhang)
+         .append(",\"lu\":").append(scene.SaveAndLoad.lu)
+         .append(",\"wen\":").append(scene.SaveAndLoad.wen).append("}");
+        Object[][] heroes = {
+            { "zhang", GameLauncher.zhangXiaoFan },
+            { "lu", GameLauncher.luXueQi },
+            { "yu", GameLauncher.yuJie },
+        };
+        b.append(",\"heroes\":{");
+        for (int i = 0; i < heroes.length; i++) {
+            Object h = heroes[i][1];
+            if (i > 0) b.append(',');
+            b.append(Json.str((String) heroes[i][0])).append(":{");
+            String[] ints = { "level", "exp", "hp", "mp", "angryValue", "physicalPower", "sprit", "agile", "strength" };
+            for (int k = 0; k < ints.length; k++) {
+                if (k > 0) b.append(',');
+                b.append(Json.str(ints[k])).append(':').append(getInt(h, ints[k]));
+            }
+            b.append(",\"isAngry\":").append(getBool(h, "isAngry"))
+             .append(",\"isDead\":").append(getBool(h, "isDead")).append('}');
+        }
+        b.append("}");
+        b.append(",\"skillNumber\":{");
+        for (int i = 0; i < heroes.length; i++) {
+            if (i > 0) b.append(',');
+            b.append(Json.str((String) heroes[i][0])).append(':').append(getInt(heroes[i][1], "skillNumber"));
+        }
+        b.append("}");
+        b.append(",\"worn\":[");
+        List<?> packs = (List<?>) get(GameLauncher.menuPanel.equipPanel, "heroEquipPack");
+        String[] slots = { "weapon", "armor", "helmet", "shoe", "glove", "decoration" };
+        for (int i = 0; i < packs.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append('{');
+            for (int k = 0; k < slots.length; k++) {
+                if (k > 0) b.append(',');
+                Object e = get(packs.get(i), slots[k]);
+                b.append(Json.str(slots[k])).append(':')
+                 .append(Json.str(e == null ? null : ((shop.Equipment) e).getName()));
+            }
+            b.append('}');
+        }
+        b.append("]");
+        b.append(",\"drugs\":[");
+        for (int i = 0; i < shop.DrugPack.drugList.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append(shop.DrugPack.drugList.get(i).getNumberGOT());
+        }
+        b.append("]");
+        b.append(",\"coins\":").append(shop.Money.getCoins());
+        Object[][] stock = {
+            { "helmet", shop.EquipmentPack.helmetList }, { "armor", shop.EquipmentPack.armorList },
+            { "weapon", shop.EquipmentPack.weaponList }, { "glove", shop.EquipmentPack.gloveList },
+            { "shoe", shop.EquipmentPack.shoeList }, { "decoration", shop.EquipmentPack.decorationList },
+        };
+        b.append(",\"stock\":{");
+        for (int i = 0; i < stock.length; i++) {
+            if (i > 0) b.append(',');
+            b.append(Json.str((String) stock[i][0])).append(":[");
+            List<?> list = (List<?>) stock[i][1];
+            for (int k = 0; k < list.size(); k++) {
+                if (k > 0) b.append(',');
+                b.append(((shop.Equipment) list.get(k)).getNumberGOT());
+            }
+            b.append(']');
+        }
+        b.append("}");
     }
 
     /**

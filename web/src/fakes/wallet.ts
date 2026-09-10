@@ -34,6 +34,13 @@ export function reduceCoins(reduceCoins: number): void {
   coins = coins - reduceCoins
 }
 
+/**
+ * `Money.setCoins(coins)`。唯一的调用方是读档（`ShopPanel.initialShopInfo` 末句，xl-i06.10）。
+ */
+export function setCoins(value: number): void {
+  coins = value
+}
+
 /** 回到初值。理由同 `resetDrugPack`。 */
 export function resetWallet(): void {
   coins = INITIAL_COINS

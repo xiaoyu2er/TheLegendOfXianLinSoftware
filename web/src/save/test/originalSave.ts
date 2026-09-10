@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { javaSource } from '../../test/javaSource'
 import { repoPath } from '../../test/repoPath'
+import { DRUGS } from '../../battle/drugs'
 import { EQUIPMENT_LISTS, type EquipSlot } from '../../menu/equipment'
 import {
   HERO_KEYS,
@@ -8,6 +9,7 @@ import {
   parseSave,
   type HeroKey,
   type HeroRecord,
+  type ReadBack,
   type SaveFile,
   type SceneRecord,
   type ScriptTriple,
@@ -485,4 +487,163 @@ function codecOf(list: string): Codec {
   const c = (CODECS as Record<string, Codec | undefined>)[list]
   if (!c) throw new Error(`写档装置写了一个没人认领的列表：${list}`)
   return c
+}
+
+// ---------------------------------------------------------------- 读法 3：原版读档回填（xl-i06.10）
+
+/**
+ * 原版读档那一路**实际的**解法：`Loader.load` 按行 {@link loaderLine} 取出字符串，再交给
+ * 三个英雄的 `intialFromInfo`、`SaveAndLoad.loadSceneInfo`、`EquipPanel.initialEquipInfo`、
+ * `ShopPanel.initialShopInfo`、`EquipmentShopPanel.initialEquipmentShopInfo`，最后三行队伍
+ * 开关。它们**不是用同一种写法解的**：
+ *
+ * - `Integer.parseInt` —— 等级、血、坐标、对话编号……（{@link javaParseInt}）；
+ * - `Boolean.parseBoolean` —— 英雄的怒没怒 / 死没死、队伍三开关（{@link javaParseBoolean}）；
+ * - **手写的** `s.equals("true")` —— 场景那一行的 `isScript`、对话结束旗标、`battle1Over`
+ *   （{@link javaEqualsTrue}）。
+ *
+ * 后两种对原版自己写出来的 `true` / `false` 结果一样，对不上格式的值就不一样了：`"TRUE"`
+ * 前者是真、后者是假。**照抄，不统一**。哪一项是哪一种是手写登记 {@link LOAD_PARSERS}，
+ * 与 GBK 源码现读的对撞、再用篡改过的档逐项钉住行为，见 `loaderReadBack.test.ts`。
+ *
+ * 为什么这件事只活在测试侧：产品的存档是 JSON，布尔就是布尔（`save/format.ts` 的形状检查
+ * 拒掉别的），读档那一路（`state/load.ts`、`save/load.ts`）收的是解好的值 —— 那里没有
+ * 字符串可解。原版文本只在这里被读，解法的差别也就只在这里可观测。
+ *
+ * 出口是 `ReadBack` 去掉 `neverReadBack`：那三组原版读档不回填，由调用方给读档前的值。
+ */
+export function loaderReadBack(text: string): Omit<ReadBack, 'neverReadBack'> {
+  const at = (line: number, i: number): string => {
+    const fields = loaderLine(text, line)
+    if (i >= fields.length) {
+      throw new Error(`IndexOutOfBoundsException：第 ${line} 行只有 ${fields.length} 项，要取第 ${i} 项`)
+    }
+    return fields[i]!
+  }
+  // 1. 三个英雄 —— `loadRoleInfo(roleInfo)` → `intialFromInfo()`，第 2–4 行。
+  const heroes = {} as Record<HeroKey, HeroRecord>
+  HERO_KEYS.forEach((key, h) => {
+    const line = 2 + h
+    heroes[key] = {
+      level: javaParseInt(at(line, 0)),
+      hp: javaParseInt(at(line, 1)),
+      mp: javaParseInt(at(line, 2)),
+      angryValue: javaParseInt(at(line, 3)),
+      isAngry: javaParseBoolean(at(line, 4)),
+      isDead: javaParseBoolean(at(line, 5)),
+      exp: javaParseInt(at(line, 6)),
+    }
+  })
+  // 2. 场景 —— `sal.loadSceneInfo(sceneInfo)`，第 5 行。
+  const scene: SceneRecord = {
+    isScript: javaEqualsTrue(at(5, 0)),
+    fileName: at(5, 1),
+    dialogueEventOver: javaEqualsTrue(at(5, 2)),
+    dialogueOrder: javaParseInt(at(5, 3)),
+    x: javaParseInt(at(5, 4)),
+    y: javaParseInt(at(5, 5)),
+    currentScript: scriptTriple(at(5, 6), 'currentScript'),
+    nextScript: scriptTriple(at(5, 7), 'nextScript'),
+    battle1Over: javaEqualsTrue(at(5, 8)),
+    countOfBattle1: javaParseInt(at(5, 9)),
+  }
+  // 3. 身上的装备 —— `initialEquipInfo(menuInfo)`，第 6 行，三人各六格。`equals("null")` 那一格
+  //    是空的；别的字符串原样交出去，按名字找不找得到是回填那一侧的事（`save/load.ts`）。
+  //    ⚠️ 原版对鞋与饰品只判 get(3) / get(5)，那也归回填那一侧（`WORN_NULL_CHECK`）；这里
+  //    只把 18 项按它们自己的下标取出来 —— 取不到的下标照样越界抛。
+  const wornOf = (i: number): WornRecord =>
+    Object.fromEntries(
+      WORN_ORDER.map((s, k) => {
+        const v = at(6, k + i * WORN_ORDER.length)
+        return [s, v === 'null' ? null : v]
+      }),
+    ) as WornRecord
+  const worn: SaveFile['worn'] = [wornOf(0), wornOf(1), wornOf(2)]
+  // 4. 药与钱 —— `initialShopInfo(shopInfo)`，第 7 行：前 drugList.size() 项是药，下一项是钱。
+  const drugs = DRUGS.map((_, i) => javaParseInt(at(7, i)))
+  const coins = javaParseInt(at(7, DRUGS.length))
+  // 5. 装备店那一行 —— `initialEquipmentShopInfo`，第 8 行。写进的是面板自建的表（xl-1dv.32），
+  //    读回来的值没有去处；但它照样 `parseInt` 了那几个下标，对不上格式的值会让整个读档抛。
+  for (const n of equipmentShopReads()) javaParseInt(at(8, n))
+  // 6. 队伍三开关 —— `Loader.load` 末三行，`getTextInfo` 即第 1 行。
+  const party = {
+    zhang: javaParseBoolean(at(1, 0)),
+    lu: javaParseBoolean(at(1, 1)),
+    wen: javaParseBoolean(at(1, 2)),
+  }
+  return { party, heroes, scene, worn, drugs, coins }
+}
+
+/**
+ * `initialEquipmentShopInfo` 那六个循环**实际**读到的下标：`for(i=0+counter; i<list.size(); i++)
+ * { get(i+counter); counter++; }` —— i 与 counter 一起涨，读的是隔位；第二个循环起点已经越过
+ * 自己那张表的长度，一次都不进（xl-1dv.32 的真 JVM 读数：偶数下标 0..10 与 12..38）。
+ * 照原版的循环逐句模拟，表长取 `EQUIPMENT_LISTS`、次序取 {@link STOCK_ORDER}。
+ */
+export function equipmentShopReads(): number[] {
+  const reads: number[] = []
+  let counter = 0
+  for (const slot of STOCK_ORDER) {
+    for (let i = 0 + counter; i < EQUIPMENT_LISTS[slot].length; i++) {
+      reads.push(i + counter)
+      counter++
+    }
+  }
+  return reads
+}
+
+/** 解法的三种，外加原样交出（文件名）与 `split(" ")`（剧情三元组）。 */
+export type LoadParser = 'parseInt' | 'parseBoolean' | 'equalsTrue' | 'raw' | 'split'
+
+/**
+ * **手写登记**：读档回填时每一项用的是哪种解法，按那一行里的下标排。与 GBK 源码现读的
+ * 对撞、与 {@link loaderReadBack} 的实际行为对撞，都在 `loaderReadBack.test.ts`。
+ */
+export const LOAD_PARSERS: {
+  readonly party: readonly LoadParser[]
+  readonly hero: readonly LoadParser[]
+  readonly scene: readonly LoadParser[]
+} = {
+  party: ['parseBoolean', 'parseBoolean', 'parseBoolean'],
+  hero: ['parseInt', 'parseInt', 'parseInt', 'parseInt', 'parseBoolean', 'parseBoolean', 'parseInt'],
+  scene: ['equalsTrue', 'raw', 'equalsTrue', 'parseInt', 'parseInt', 'parseInt', 'split', 'split', 'equalsTrue', 'parseInt'],
+}
+
+/** `Integer.parseInt` 抛的那个。 */
+export class JavaNumberFormatException extends Error {
+  override name = 'NumberFormatException'
+}
+
+/**
+ * `Integer.parseInt(s)`：可带一个 `+` 或 `-`，其后至少一位十进制数字，结果落在 int 范围内；
+ * 别的（空串、带空格、小数、越界）一律抛。
+ *
+ * ⚠️ 未验证：Java 用 `Character.digit` 认数字，全角数字这类 Unicode 十进制数字也算数；
+ * 这里只认 ASCII。今天的存档里没有这种字符。
+ */
+export function javaParseInt(s: string): number {
+  if (!/^[+-]?[0-9]+$/.test(s)) throw new JavaNumberFormatException(`For input string: "${s}"`)
+  const n = Number(s)
+  if (n < -2147483648 || n > 2147483647) throw new JavaNumberFormatException(`For input string: "${s}"`)
+  return n
+}
+
+/** `Boolean.parseBoolean(s)`：与 `"true"` 不分大小写相等即真，别的一律假，**从不抛**。 */
+export function javaParseBoolean(s: string): boolean {
+  return s.length === 4 && s.toLowerCase() === 'true'
+}
+
+/** 手写的 `s.equals("true")`：只有一模一样的 `true` 才是真。 */
+export function javaEqualsTrue(s: string): boolean {
+  return s === 'true'
+}
+
+/**
+ * `sceneInfo.get(n).split(" ")`。原版收下任意长度的数组；这一层的类型是三段，对不上就抛
+ * （今天三份样例都是三段）。
+ */
+function scriptTriple(s: string, what: string): ScriptTriple {
+  const t = javaSplitExact(s, ' ')
+  if (t.length !== 3) throw new Error(`${what}：${JSON.stringify(s)} split(" ") 之后是 ${t.length} 段，这一层只装得下三段`)
+  return [t[0]!, t[1]!, t[2]!]
 }

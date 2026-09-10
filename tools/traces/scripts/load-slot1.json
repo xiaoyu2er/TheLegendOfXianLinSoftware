@@ -1,0 +1,16 @@
+{
+  "name": "load-slot1",
+  "description": "开机读档（xl-i06.10）：不 initiation，而是照 LoadAndSavePanel.setButton 的读档分支走 Loader.load(1) → switchTo(\"scene\")。存档1 读进 脚本1（isScript=true、有开场旁白），而 SaveAndLoad.loadSceneInfo 在 initiation 之后紧跟一句 narratage.narratageOver = true —— 于是这几拍旁白**不起来**，主角当场就走得动。对照 dorm-intro：同一个脚本、同一个 isScript，那一份开头是 810 拍旁白。\n\n读档专属的七列（progress / partyFlags / heroes / skillNumber / worn / drugs / coins / stock）只在 load 剧本里记，见 SceneDriver.appendLoadColumns。",
+  "warmup": null,
+  "scene": "脚本1.txt",
+  "isScript": true,
+  "load": 1,
+  "tickMs": 10,
+  "maxTicks": 4000,
+  "steps": [
+    { "op": "wait", "ticks": 120 },
+    { "op": "walkTo", "x": 13, "y": 14 },
+    { "op": "walkTo", "x": 13, "y": 15 },
+    { "op": "wait", "ticks": 20 }
+  ]
+}

@@ -106,10 +106,14 @@ describe('跨端比对的期望表', () => {
     // 空着的那一侧不是没人守：`drawList.test.ts` 的「表没说画不出来，那它就
     // 不许在末拍之前抛」逐条剧本地验着 —— 谁让 battleDrawList 又抛起来而
     // 这里还写着 []，那边红。
+    //
+    // xl-i06.10 签进来三条读档剧本：场景驱动器装得出，可起手是 Loader.load，取图页
+    // 读不了原版存档（replay/main.ts 当场抛）。`compare/loadScripts.test.ts` 核「带 load ⇔
+    // 表 unpainted」两个方向；「页面真的抛」那一半只是一条源码文本核对（弱：没在浏览器里起）。
     expect(
       unpainted.map(([name]) => name),
       '表 unpainted 的剧本变了？改这份登记，下面那几条会跟着验它',
-    ).toEqual([])
+    ).toEqual(['load-slot0', 'load-slot1', 'load-slot2'])
     for (const [name, e] of unpainted) assertNothingMeasured(name, e, /^xl-/)
     // 登记空着时上面那个 for 一轮都不跑。分母写死的那一半在这里（xl-knp.10
     // 收 /code-review 时补）：合成一条表态，逐条改坏，确认那四条规矩真会咬人。
