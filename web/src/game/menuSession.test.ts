@@ -543,22 +543,25 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     // 关菜单**那一刻**的快照。`menuWorldOf` 这时是 null（菜单没显示着），
     // 所以从会话自己那一份上取 —— 世界还在，这正是本票要守的事。
     const world = s.menu.world
-    const equip = world.panels.equipPanel.equip!
+    // ⚠️ **每次现取那份 `equip`，不要在外头存一个引用**：存了的话，"再开菜单
+    // 时把装备页整个重建一份"这种改法会读到那个陈的对象，逐字段比对全绿
+    // ——篡改矩阵第 9 条实测撞到的，头一版就是这么写的。
+    const equip = () => world.panels.equipPanel.equip!
     const shot = () => ({
-      equip: snapshotEquip(equip),
+      equip: snapshotEquip(equip()),
       // 快照函数只记**当前那个人**的六个槽位，另外两个人的也要跨过去。
-      packs: structuredClone(equip.packs),
-      owned: structuredClone(equip.owned),
+      packs: structuredClone(equip().packs),
+      owned: structuredClone(equip().owned),
       // 顺带那三样（票面「现象」那一节列的）。
       panel: world.panel,
-      scroll: equip.scroll,
+      scroll: equip().scroll,
       mouse: structuredClone(world.panels.equipPanel.mouse),
     })
     const before = shot()
     // 先证明这份快照**不是一份空货**：穿上的那件在槽位里、背包里还剩一件。
     expect(before.packs[1]!.armor).toBe(armor.name)
     expect(before.equip['equipped']).toMatchObject({ armor: armor.name })
-    expect(equipCount(equip, 'armor', armor.name)).toBe(1)
+    expect(equipCount(equip(), 'armor', armor.name)).toBe(1)
 
     s = openMenu(s)
     expect(menuWorldOf(s), '再开菜单却没有菜单世界').not.toBeNull()
