@@ -371,12 +371,16 @@ export function menuWantsScene(w: MenuWorld): boolean {
  * 清掉。菜单世界从开机活到关机（`game/session.ts`），不清的话下一次开菜单
  * 第一拍就自己关上了 —— 而"按 ESC 开不了菜单"看起来像 ESC 那条路坏了。
  *
- * ⚠️ **`returnButton.isclicked` 不在这里清，那是原版真实的状态**：按下「返回」
- * 之后 CardLayout 把 `menuPanel` 藏了起来，而鼠标监听器挂在 `MenuPanel` 自己
- * 身上（`MenuPanel.setMouse()`）—— 松手那一下根本到不了它，
- * `GameButton.isRelesedButton` 一次都没跑，那个 `isclicked` 就一直是 true。
- * 于是再开菜单、在天书页上按任何一处，那串 if-else 又会走到「返回」那一支
- * （它排在「退出」前面）。这是原版的缺陷，判据在 `menuSession.test.ts`。
+ * ⚠️ **`returnButton.isclicked` 不在这里清，也不需要**：那一下松手会把它清掉。
+ * 原版的松手真的到得了已经被 CardLayout 藏起来的 `menuPanel` —— Swing 的
+ * `LightweightDispatcher` 从按下到松开一直握着 grab，事件按**按下时**那个组件
+ * 重定向，不看它还显不显示（2026-09-10 用一个真 JFrame + CardLayout 量过：
+ * 藏起来那个 `pressed=true released=true`）。落点与按下同一处、必然命中，
+ * `GameButton.isRelesedButton` 里那句 `isclicked=false` 就跑了。
+ *
+ * 这里要清的只有 `exitToScene` 这一个**原版没有**的字段。多清一个
+ * `isclicked` 今天看不出差别（松手已经清过了），但那是把一件别人做过的事
+ * 又做一遍，而它掩盖的恰恰是"松手没送到"这种真的会出问题的情况。
  */
 export function clearMenuExit(w: MenuWorld): void {
   const fb = w.panels.funcPanel.funcButtons

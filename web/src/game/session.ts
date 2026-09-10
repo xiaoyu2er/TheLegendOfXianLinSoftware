@@ -113,8 +113,9 @@ export interface Session {
    *
    * 原版的 `MenuPanel` 是 `GameLauncher` 构造函数里 `new` 的**一份**，
    * `switchTo("menu")` 只调三句 `refreshValue()`、不重建任何东西，而
-   * `init()`（唯一会重建它的地方）在原版里是注释掉的死代码 —— 也就是说
-   * 那一份从开机活到关机。这里照抄，因为它顺手当了两样状态的家，而那两样
+   * `GameLauncher.init()`（唯一会重建它的地方）**没有人调** —— 它自己是活的
+   * 源码，被注释掉的是它唯一的调用点（`StartPanel.startLoadAction()` 的
+   * `//	Game.game.init();`）。也就是说那一份从开机活到关机。这里照抄，因为它顺手当了两样状态的家，而那两样
    * **在这一层没有别的出处**：
    *
    * - `EquipPanelState.packs` —— 六个槽位穿着什么（`equipPack_hero1/2/4`）；
@@ -197,14 +198,14 @@ export function createSession(deps: SessionDeps): Session {
  * 音频那两个开关从 `game/audioSettings.ts` 现读。背包里一件装备、一瓶药都
  * 没有 —— 那正是一个干净进程的样子，来源要等商店（M4 / xl-knp）。
  */
-function createGameMenu(carry = getParty()): MenuTicker {
+function createGameMenu(): MenuTicker {
   return createMenuTicker(
     createMenuWorld({
       // 原版这三个标志位归存档（`SaveAndLoad.zhang/lu/wen`），今天没有存档，
       // 所以照原版三个类的处境给：三个人都在。⚠️ 玉洁那一位的键是 `wen`。
       party: ['zhang', 'lu', 'wen'],
       fullHeal: false,
-      live: liveParty(carry),
+      live: liveParty(getParty()),
       // 原版那两个开关是 static，活得比菜单久（`game/audioSettings.ts`）。
       audio: getAudioSettings(),
     }),
@@ -249,7 +250,8 @@ export function isRunning(session: Session): session is RunningSession {
 export function enterScene(session: Session, world: World): RunningSession {
   // ⚠️ **菜单那一份不重建**：原版「起」那一下是三句
   // （`switchTo("scene")` + `initiation` + 起线程），一句都没碰 `menuPanel`。
-  // 唯一重建它的 `GameLauncher.init()` 在原版里整个是注释掉的死代码。
+  // 唯一重建它的 `GameLauncher.init()` 没有人调 —— 那个方法本身是活的源码，
+  // 被注释掉的是它唯一的调用点（`StartPanel` 里那句 `//	Game.game.init();`）。
   return { ...session, panel: 'scene', scene: createTicker(world), battle: null }
 }
 
@@ -419,24 +421,22 @@ export function advanceSession(
 
   // ——— 菜单那四条线程 ———
   if (panel === 'menu') {
-    // ⚠️ **同一批里「返回」之后的事件一个都不投给菜单。** 原版的分派是逐个
-    // 事件看 `currentPanel` 的（`MenuPanel` 那个 `MouseAdapter` 挂在它自己
-    // 身上，CardLayout 一藏就收不到），所以按下「返回」之后那一下**松手**
-    // 落在场景上，`GameButton.isRelesedButton` 一次都没跑 ——
-    // `returnButton.isclicked` 于是一直是 true（见 `clearMenuExit`）。
+    // ⚠️ **这一批输入整批投进去，「返回」之后的那几个也照投** —— 包括那一下
+    // **松手**。原版的松手真的到得了已经被 CardLayout 藏起来的菜单：Swing 的
+    // `LightweightDispatcher` 从按下到松开一直握着 grab，`isMouseGrab` 对
+    // RELEASED 也为真，于是事件被重定向回**按下时**那个组件，不看它还显不显示。
     //
-    // 整批一次投进去的话，按下与松手落在同一次 `advanceMenu` 里，松手照样
-    // 收得到，那颗按钮就被清干净了。而它**取决于两个事件有没有落在同一帧**
-    // —— 也就是说复刻得对不对随帧率浮动，两种表现都"合法"。逐个投递把它
-    // 钉死成原版那一种。判据在 `menuSession.test.ts`。
-    for (const event of input.menu) {
-      menu = advanceMenu(menu, [event], 0)
-      if (menuWantsScene(menu.world)) break
-    }
-    // 时钟脉冲照旧 —— **菜单还开着才推**。⚠️ 原版那四条 `FatherPanel.run()`
-    // 线程关着菜单也在跑（游标换图、奇术页那段技能动画），这一层今天没有；
-    // 它只影响画面、一个状态字段都不碰，单开一张票：**xl-6lo.19**。
-    if (!menuWantsScene(menu.world)) menu = advanceMenu(menu, [], elapsedMs)
+    // 这不是读文档读来的，是量出来的（2026-09-10，openjdk 17，真 JFrame +
+    // CardLayout，A 面板在 `mousePressed` 里把自己 `cl.show` 掉，再往窗口派
+    // 一条 MOUSE_RELEASED）：`A pressed=true released=true`、B 两个都是 false。
+    // 于是原版走的是 `funcPanel.mouseReleased → isRelesedButton`，落点与按下
+    // 同一处、必然命中，`returnButton.isclicked` **被清掉**。
+    //
+    // ⚠️ 本票起先反着写（逐个投递、见到「返回」就 break，理由是"藏起来就收不到"）
+    // ——那条前提是假的，/code-review 的 Spec 轴起了一个真 JVM 把它证伪的。
+    // 剩下的那一半差别在 `game/useGame.ts`：松手落在**下一帧**时它整个丢掉，
+    // 而原版照样送得到。单开一张票：**xl-z4f**。
+    menu = advanceMenu(menu, input.menu, elapsedMs)
     // 天书页那两颗「背景音乐 开 / 关」改的是菜单世界上的开关，而原版改的是
     // 两个 static。**每一拍都记回去**，不是等关菜单时记 —— 关菜单那条路只有
     // 「返回」一条，而 BGM 该在按下那一拍就停（原版 `closeBGM()` 是同步的）。

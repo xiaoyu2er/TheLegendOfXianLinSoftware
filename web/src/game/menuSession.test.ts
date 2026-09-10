@@ -24,11 +24,13 @@ import {
 } from '../menu/equipPanel'
 import { rowBandTop } from '../menu/scroll'
 import { buttonCenter, clickButton, selectEquipRow } from '../test/menuClicks'
+import { rememberAudioSettings, resetAudioSettings } from './audioSettings'
 import {
   NO_INPUT,
   advanceSession,
   configFor,
   createSession,
+  currentBgm,
   enterScene,
   menuWorldOf,
   openMenu,
@@ -432,7 +434,8 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
  * ## 这张票要守的那条缝
  *
  * 原版的 `MenuPanel` 是 `GameLauncher` 构造函数里 `new` 的**一份**，从开机活到
- * 关机（唯一会重建它的 `GameLauncher.init()` 整个是注释掉的死代码）。这一层
+ * 关机（唯一会重建它的 `GameLauncher.init()` 没有人调 —— 那个方法本身是活的
+ * 源码，被注释掉的是它在 `StartPanel` 里唯一的调用点）。这一层
  * 起先每次开菜单都新建一份，于是**两样在这一层没有别的出处**的状态活不过一次
  * 关菜单：`EquipPanelState.packs`（六个槽位穿着什么）与 `EquipPanelState.owned`
  * （六张装备表的持有量，原版是 `static` 的全局背包）。顺带还有当前在哪一页、
@@ -466,6 +469,21 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
  * `SessionInput.menu`），一个状态字段都不手写。
  */
 describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
+  /**
+   * ⚠️ **这一组里张小凡有两个编号，它们不是同一套**：
+   *
+   * - `packs[ZHANG_SCOLL]` 的 `1` 是**卷轴上的头像编号**（`ScollHero`，
+   *   1 张小凡 / 2 陆雪琪 / **4** 玉洁 —— 3 号原版没做进菜单）；
+   * - `heroes[ZHANG_MENU]` 的 `0` 是 `MENU_HERO_ORDER` 的下标
+   *   （张 / 陆 / 玉），队伍键还是第三套（`zhang` / `lu` / `yu`）。
+   *
+   * 裸下标并排写着的时候，认错一个的表现是"给张小凡穿的东西加到了陆雪琪
+   * 身上"，而两个人的属性都还是合法数字（`equipPanel.ts` 的 `menuHeroOf`
+   * 记着同一件事）。取名字是为了让下一个人不必再对一遍。
+   */
+  const ZHANG_SCOLL = 1
+  const ZHANG_MENU = 0
+
   /** 张小凡用得了、而且**真的加体力**的第一件盔甲。名字与数从表里取。 */
   function armorForZhang() {
     const armor = EQUIPMENT_LISTS.armor.find(
@@ -531,7 +549,9 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     // 也不是"穿完就空"—— 一份分得出"跨过去了"与"重建成 0 了"的存货。
     addEquipment(s.menu.world.panels.equipPanel.equip!, armor.name, 2)
     s = wearArmor(s, armor.name)
-    expect(s.menu.world.panels.equipPanel.equip!.packs[1]!.armor, '这件盔甲没穿上').toBe(armor.name)
+    expect(s.menu.world.panels.equipPanel.equip!.packs[ZHANG_SCOLL]!.armor, '这件盔甲没穿上').toBe(
+      armor.name,
+    )
     return { s, armor }
   }
 
@@ -559,7 +579,7 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     })
     const before = shot()
     // 先证明这份快照**不是一份空货**：穿上的那件在槽位里、背包里还剩一件。
-    expect(before.packs[1]!.armor).toBe(armor.name)
+    expect(before.packs[ZHANG_SCOLL]!.armor).toBe(armor.name)
     expect(before.equip['equipped']).toMatchObject({ armor: armor.name })
     expect(equipCount(equip(), 'armor', armor.name)).toBe(1)
 
@@ -580,16 +600,14 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     const afterFirst = zhang()
     // 反向控制：这一件**真的加了点什么**，否则下面那条"没再动"恒真。
     expect(armor.addPhysicalPower).toBeGreaterThan(0)
-    expect(afterFirst.physicalPower).toBe(
-      menuWorldOf(s)!.heroes[0]!.physicalPower,
-    )
+    expect(afterFirst.physicalPower).toBe(menuWorldOf(s)!.heroes[ZHANG_MENU]!.physicalPower)
 
     s = leaveMenu(s)
     s = openMenu(s)
     // 关菜单之后队伍记着 +5，而槽位里那件盔甲**必须还在** —— 不在的话下面
     // 这串点击会把它再穿一次，四项属性变成 +10。
     expect(
-      menuWorldOf(s)!.panels.equipPanel.equip!.packs[1]!.armor,
+      menuWorldOf(s)!.panels.equipPanel.equip!.packs[ZHANG_SCOLL]!.armor,
       '再开菜单，槽位里那件盔甲不见了',
     ).toBe(armor.name)
 
@@ -615,35 +633,57 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     expect(s.panel).toBe('menu')
   })
 
-  it('⚠️ 但「返回」那颗按钮的 isclicked 照原版留着 —— 再开菜单在天书页上按一下就又出去了', () => {
-    // 先从原版现读：鼠标监听器挂在 `MenuPanel` **自己**身上，所以 CardLayout
-    // 把它藏起来之后松手那一下根本到不了它 —— `isRelesedButton` 一次没跑，
-    // 那个 `isclicked` 就一直是 true。
+  it('⚠️ 那一下松手照样送得到 —— 「返回」的 isclicked 被清掉，再开菜单不会一按就弹出去', () => {
+    // ## 这一条守的是什么，以及它起先是**反着写**的
+    //
+    // `GameButton.isclicked` 只由 `isRelesedButton` 在命中时清零。按下「返回」
+    // 那一下之后 CardLayout 就把 `menuPanel` 藏了起来，而鼠标监听器挂在
+    // `MenuPanel` **自己**身上（`MenuPanel.setMouse()`）—— 看起来那一下松手
+    // 到不了它，`isclicked` 于是永远粘着 true。本票头一版就是这么推的，还照着
+    // 它把会话改成"逐个投递、见到「返回」就 break"。
+    //
+    // **那条推理是假的，是量出来的**（2026-09-10，openjdk 17，真 JFrame +
+    // CardLayout：A 面板在 `mousePressed` 里把自己 `cl.show` 掉，再往窗口派一条
+    // MOUSE_RELEASED，读数是 `A pressed=true released=true`、B 两个都 false）。
+    // Swing 的 `LightweightDispatcher` 从按下到松开一直握着 grab，事件按**按下
+    // 时**那个组件重定向，不看它还显不显示。所以原版是**清掉的**。
+    //
+    // ⚠️ 这条判据本身在 TS 里跑不了那个 JVM，所以它守的是**这一层的行为**；
+    // 那个读数由 `session.ts` 里那段注释记着。剩下的半条缝（松手落在下一帧时
+    // `useGame` 整个丢掉）是 xl-z4f。
     const menuPanel = javaSource('src/menu/MenuPanel.java')
+    // 鼠标监听器确实挂在 MenuPanel 自己身上 —— 上面那条推理的前半段是对的，
+    // 错的是后半段。留着这句是因为它决定了松手到底派给谁。
     expect(menuPanel).toContain('addMouseListener(')
-    expect(menuPanel, '鼠标监听器不在 MenuPanel 自己身上，这条推理就不成立了').toContain(
-      'public void mouseReleased(MouseEvent e)',
-    )
+    expect(menuPanel).toContain('currentPanel.mouseReleased(currentX, currentY);')
+    // 而 `GameButton.isRelesedButton` 命中时清 isclicked —— 落点与按下同一处。
+    expect(javaSource('src/tools/GameButton.java')).toContain('isclicked=false;')
 
     let s = openMenu(inScene('宿舍'))
     s = leaveMenu(s)
     const fb = s.menu.world.panels.funcPanel.funcButtons!
-    expect(fb.main.returnButton.isclicked, '「返回」的 isclicked 被清掉了 —— 原版清不掉').toBe(true)
+    expect(fb.main.returnButton.isclicked, '松手没送到菜单 ——「返回」还按着').toBe(false)
 
-    // 再开菜单：当前页还是天书页（页也跨过来了），在上面按任何一处，
-    // `funcCheckPressed` 那串 if-else 又会走到「返回」那一支 ——「退出」排在
-    // 它后面，所以点「退出」得到的是"又出去了"。
+    // 再开菜单：当前页还是天书页（页跨过来了）。在上面按一颗**排在「返回」
+    // 后面**的按钮（「退出」）—— `isclicked` 要是还粘着，那串 if-else 会先
+    // 命中「返回」，菜单当场又被弹回场景。
     s = openMenu(s)
     expect(menuWorldOf(s)!.panel).toBe('funcPanel')
     s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.main.exitButton)) }, 0)
-    expect(s.panel, '这一下没把菜单弹出去 —— 那个粘住的 isclicked 没复刻上').toBe('scene')
+    expect(s.panel, '一按「退出」菜单就被弹回场景 —— 那个 isclicked 粘住了').toBe('menu')
+    // 反向控制：这一下**真的按到了「退出」**（子菜单第 4 组被打开），
+    // 否则"没被弹出去"与"这一下什么都没点着"长得一样。
+    expect(
+      menuWorldOf(s)!.panels.funcPanel.funcButtons!.sub.exitForSure.isDraw,
+      '这一下根本没点着「退出」—— 上面那条于是恒真',
+    ).toBe(true)
   })
 
   it('再开菜单看到的是队伍此刻的属性 —— 关着的这段时间队伍变了也跟得上', () => {
     // 这一条守的是 `refreshMenuWorld` 那一半（另一半是"刷得太多"，上面第一条
     // 守着）。**关菜单期间**改队伍，走的正是战斗升级与商店将来那条路。
     let s = openMenu(inScene('宿舍'))
-    const menuHpMax = () => menuWorldOf(s)!.heroes[0]!.hpMax
+    const menuHpMax = () => menuWorldOf(s)!.heroes[ZHANG_MENU]!.hpMax
     const opened = menuHpMax()
     s = leaveMenu(s)
 
@@ -654,7 +694,7 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     expect(expected.hpMax).toBeGreaterThan(opened)
 
     s = openMenu(s)
-    const zhang = menuWorldOf(s)!.heroes[0]!
+    const zhang = menuWorldOf(s)!.heroes[ZHANG_MENU]!
     expect(zhang.physicalPower, '再开菜单没把队伍的属性刷进来').toBe(
       getParty().zhang.physicalPower,
     )
@@ -664,7 +704,46 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     resetParty()
   })
 
-  it('「起」不重建菜单 —— 原版那一句 init() 是注释掉的死代码', () => {
+  it('音频那两个开关同理：菜单关着的时候被别处改了，再开菜单跟得上', () => {
+    // 与上一条同一个形状，守的是 `refreshMenuWorld` 的另一半。
+    //
+    // ⚠️ **这一条是篡改矩阵逼出来的**：把 `refreshMenuWorld` 里刷音频那两句
+    // 去掉，整套判据原先是**绿的** —— 因为菜单开着时每一拍都
+    // `rememberAudioSettings` 写回去，世界又跨得过关菜单，两边本来就一直相等。
+    // 也就是说那两句在"只有菜单改得动它"的今天是空操作。它们不是多余的：
+    // 权威在 `game/audioSettings.ts`（原版那两个 static），世界只是它的镜子，
+    // 而将来读档、设置页都从那一头改。这条判据现在就把那条路走一遍。
+    resetAudioSettings()
+    let s = openMenu(inScene('宿舍'))
+    expect(menuWorldOf(s)!.audio, '出厂就该是两个都开着').toEqual({ bgm: true, sfx: true })
+    s = leaveMenu(s)
+
+    // 菜单关着的时候别处把两个都关了（读档将来走的就是这一句）。
+    rememberAudioSettings({ bgm: false, sfx: false })
+    s = openMenu(s)
+    expect(menuWorldOf(s)!.audio, '再开菜单没把音频开关刷进来').toEqual({ bgm: false, sfx: false })
+    // 顺带：`currentBgm` 立刻就该是 null（播放器收到 null 就 pause）。
+    expect(currentBgm(s)).toBeNull()
+
+    // ⚠️ **再走一轮，只翻其中一个** —— 两个一起翻的话，"两句各刷各的"与
+    // "一句把另一句也顺手带上"长得一样（篡改矩阵实测：只翻 bgm 时，删掉刷
+    // `sfx` 那一句整套判据是绿的）。
+    s = leaveMenu(s)
+    rememberAudioSettings({ bgm: true, sfx: false })
+    s = openMenu(s)
+    expect(menuWorldOf(s)!.audio, '两个开关分不开家').toEqual({ bgm: true, sfx: false })
+    expect(currentBgm(s), '背景音乐开回来了，曲子该回来').not.toBeNull()
+    resetAudioSettings()
+  })
+
+  it('「起」不重建菜单 —— 原版那句 init() 的调用点是注释掉的', () => {
+    // ⚠️ **被注释掉的是调用点，不是 `init()` 本身**：`GameLauncher.init()` 是
+    // 一段活的源码（它会 `new MenuPanel(...)`），只是全仓库没有一处非注释的
+    // 调用。本票头一版把这句写成了"`init()` 整个是注释掉的死代码"，结论对、
+    // 理由错 —— /code-review 的 Spec 轴抓到的。判据核的一直是调用点。
+    expect(javaSource('src/main/GameLauncher.java'), 'init() 本身不见了').toContain(
+      'public  void init(){',
+    )
     const start = javaSource('src/start/StartPanel.java')
     // ⚠️ 先切出 `startLoadAction` 再找 `case 0:` —— 这个文件里有**好几个**
     // switch，直接 `/case 0:/` 抓到的是别处那一个（头一版就这么错了，

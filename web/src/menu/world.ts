@@ -164,11 +164,14 @@ export function createMenuWorld(config: MenuConfig): MenuWorld {
 export function refreshMenuWorld(
   w: MenuWorld,
   config: Pick<MenuConfig, 'live' | 'audio'>,
-): MenuWorld {
+): void {
+  // ⚠️ **原地改，不还一份新的**（返回 `void` 是有意的）：还了 `MenuWorld` 的话
+  // 它读起来像 `create*` 那族的不可变写法，而唯一的调用点根本没接返回值 ——
+  // 下一个人照那个签名写 `const next = refreshMenuWorld(...)` 会以为原来那份
+  // 没被动过。菜单世界的规矩是就地改（`types.ts` 文件头注）。
   refreshMenuHeroes(w.heroes, config.live)
   if (config.audio) {
     w.audio.bgm = config.audio.bgm
     w.audio.sfx = config.audio.sfx
   }
-  return w
 }

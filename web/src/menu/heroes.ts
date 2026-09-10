@@ -85,6 +85,30 @@ export interface LiveParty extends Readonly<Attributes> {
   readonly mp: number
 }
 
+/**
+ * 一份 `Attributes` 在 `MenuHero` 上的那四个字段。**建人与刷新共用这一处**。
+ *
+ * 要它是因为**这两套字段名不是逐字对应的**：`Attributes` 那一项拼 `sprit`
+ * （原版字段名），`MenuHero` 那一项叫 `spirit`（菜单真值那一列）。于是
+ * `{...attributesOf(a)}` 是错的 —— 它铺出来的是一个没人读的 `sprit`，四项里
+ * 的精气一个字都没变，而**画面上完全正常**。
+ *
+ * 收成一处是 /code-review 标准轴提的（Duplicated Code + Data Clumps）：这四项
+ * 原先在 `createMenuHeroes` 与 `refreshMenuHeroes` 里各抄了一遍，而
+ * `Attributes` 将来多一项时只有前者跟得上 —— 后者静静地漏，表现正是
+ * `refreshMenuHeroes` 自己注释里写的「关一次菜单丢一样」。
+ */
+export function menuAttributes(
+  a: Readonly<Attributes>,
+): Pick<MenuHero, 'physicalPower' | 'agile' | 'strength' | 'spirit'> {
+  return {
+    physicalPower: a.physicalPower,
+    agile: a.agile,
+    strength: a.strength,
+    spirit: a.sprit,
+  }
+}
+
 /** 建菜单里那三个人。`fullHeal` 就是剧本 `setup.fullHeal` 那一项。 */
 export function createMenuHeroes(
   fullHeal: boolean,
@@ -103,10 +127,7 @@ export function createMenuHeroes(
     return {
       name,
       level,
-      physicalPower: attrs.physicalPower,
-      agile: attrs.agile,
-      strength: attrs.strength,
-      spirit: attrs.sprit,
+      ...menuAttributes(attrs),
       // 空构造函数一个字都不写，static 的 int 停在 0；`fullHeal` 才拉满。
       // 游戏本体喂了实时队伍时用它的血 —— `refreshValue()` 只把超过上限的
       // 夹回去（`if(hp>=hpMax) hp=hpMax`），不往上补。
@@ -180,11 +201,9 @@ export function refreshMenuHeroes(
     const now = live?.[key]
     if (now) {
       h.level = now.level
-      h.physicalPower = now.physicalPower
-      h.agile = now.agile
-      h.strength = now.strength
-      // ⚠️ 原版字段拼 `sprit`，菜单这一列叫 `spirit`（见 `MenuHero`）。
-      h.spirit = now.sprit
+      // 四项走 `menuAttributes` —— 与 `createMenuHeroes` 同一处投影，
+      // 两套字段名对不齐这件事只在那一个函数里说一遍。
+      Object.assign(h, menuAttributes(attributesOf(now)))
       h.hp = now.hp
       h.mp = now.mp
     }
