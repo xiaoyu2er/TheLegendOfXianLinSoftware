@@ -6,7 +6,6 @@ import {
   HERO_KEYS,
   SAVE_VERSION,
   parseSave,
-  serializeSave,
   type HeroKey,
   type HeroRecord,
   type SaveFile,
@@ -469,7 +468,10 @@ export function fromRecorderText(text: string): SaveFile {
   })
   for (const k of HERO_KEYS) if (!d.heroes[k]) throw new Error(`没解出 ${k}`)
   // 出口过一遍产品侧的形状检查：哪一组没解出来，这里就抛，不靠别的测试间接兜。
-  return parseSave(serializeSave({ version: SAVE_VERSION, ...d } as unknown as SaveFile))
+  // ⚠️ 直接 JSON.stringify，**不借道 serializeSave**：样例是判 serializeSave 的真值，
+  // 借道之后 serializeSave 里的错会先污染样例、再在被测那一步抵消（实测：头盔库存
+  // 倒序的篡改让「存全套」那条逐值判据保持绿）。
+  return parseSave(JSON.stringify({ version: SAVE_VERSION, ...d }))
 }
 
 /** {@link SaveFile} → 原版写档装置会写出的文本。行尾由调用方给（原版跟平台走）。 */
