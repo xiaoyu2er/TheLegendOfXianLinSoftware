@@ -161,6 +161,21 @@ export interface TraceTick {
     /** 那两张 static 表配成的记录，见 `state/select.ts` 的 `SelectRecord`。 */
     readonly recorder: readonly { readonly scene: string; readonly answered: readonly boolean[] }[]
   }
+  /**
+   * 宝箱与「得到物品」提示框（xl-yg6.6 加的列，xl-yg6.10 对齐）。来自
+   * `src/scene/EquipmentEvent.java` 与它持有的那批 `TreasureBox`。
+   * 与 `state/treasure.ts` 的 `TreasureState` 有两处名字不一样
+   * （`moving` / `printing`），翻译只在 `traceReplay.test.ts` 的
+   * `OBSERVERS.treasure` 一处。`boxes` 为 `null` = 这个场景没有宝箱段。
+   */
+  readonly treasure: {
+    readonly presenting: boolean
+    readonly x: number
+    readonly wordNo: number
+    readonly moving: boolean
+    readonly printing: boolean
+    readonly boxes: readonly { readonly empty: boolean; readonly near: boolean }[] | null
+  }
   /** `MusicPlayer.currentPlayingBGM`：**一个可断言的字符串**，不是"调用了 play()"。 */
   readonly audio: { readonly bgm: string | null }
   /** `OtherEvent.calOffset()` 的六元组，见 `scene/viewport.ts`。 */

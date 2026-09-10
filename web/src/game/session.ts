@@ -14,6 +14,7 @@ import type { PartyKey } from '../battle/units'
 import { attributesOf, getParty, rememberMenuParty, rememberParty } from '../fakes/party'
 import type { PartyMemberState } from '../fakes/party'
 import { addCoins, reduceCoins } from '../fakes/wallet'
+import { addDrug } from '../fakes/drugPack'
 import type { LiveParty } from '../menu/heroes'
 import { getAudioSettings, rememberAudioSettings } from './audioSettings'
 import { TITLE_BGM } from '../start/assets'
@@ -403,6 +404,10 @@ export function advanceSession(
     if (present.correct) addCoins(present.coins)
     else reduceCoins(present.coins)
   }
+  // 开箱开出来的东西进背包（xl-yg6.10）：`TreasureBox.keyPressed` 里那句
+  // `DrugPack.addDrug(treasureName, i)`，与 `drawString` 同一拍。停批的理由
+  // 与上面那条一样（`state/loop.ts`）。
+  for (const got of scene.world.treasureRequest ?? []) addDrug(got.name, got.count)
 
   if (request !== null && panel === 'scene') {
     battle = createBattleTicker(createBattle(configFor(request, deps)))

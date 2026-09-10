@@ -49,6 +49,16 @@ import {
   toSelectDraft,
 } from './select'
 import type { PresentRequest, SelectDraft, SelectHost } from './select'
+import {
+  checkBoxes,
+  createTreasure,
+  drawString,
+  fromTreasureDraft,
+  tickTreasureTimers,
+  toTreasureDraft,
+  treasureKeyPressed,
+} from './treasure'
+import type { TreasureDraft, TreasureGain } from './treasure'
 import { fireDue } from './timer'
 import { isArrowKey } from './types'
 import type { CollisionMap, InputEvent, TilePos, World } from './types'
@@ -149,10 +159,14 @@ export function initiate(prev: World | null, scene: SceneScript): World {
     fight: createFight(scene),
     select: select.select,
     recorder: select.recorder,
+    // `new EquipmentEvent(this, reader.getTreasureBox())` 排在 `new SelectEvent`
+    // 之后，同样每次 initiation 都新建（xl-yg6.10）。
+    treasure: createTreasure(scene),
     // 只亮一拍的输出，任何一个新建的世界里都是空的。
     battleRequest: null,
     selectPanelRequest: null,
     presentRequest: null,
+    treasureRequest: null,
     showing: prev?.showing ?? true,
   }
 }
@@ -228,6 +242,7 @@ export function step(
   let nar = toNarratageDraft(world.narratage)
   let fight = toFightDraft(world.fight)
   let sel = toSelectDraft(world.select, world.recorder)
+  let tre = toTreasureDraft(world.treasure)
   let base = world
   /** 这一拍起的那场战斗（`World.battleRequest`）。一拍最多起一场。 */
   let battleRequest: BattleInfo | null = null
@@ -235,6 +250,8 @@ export function step(
   let selectPanelRequest: 'shop' | 'equipmentShop' | null = null
   /** 这一拍答对答错的加扣（`World.presentRequest`）。 */
   let presentRequest: PresentRequest | null = null
+  /** 这一拍开箱开出来的东西（`World.treasureRequest`）。 */
+  let treasureRequest: TreasureGain[] | null = null
 
   /**
    * **换过场景之后，手上这几份草稿全部作废** —— 一份一份从新的 `base` 重摊。
@@ -254,6 +271,7 @@ export function step(
     nar = toNarratageDraft(base.narratage)
     fight = toFightDraft(base.fight)
     sel = toSelectDraft(base.select, base.recorder)
+    tre = toTreasureDraft(base.treasure)
   }
 
   /**
@@ -282,12 +300,19 @@ export function step(
     },
     present: (request) => {
       presentRequest = request
+      // `Money.addCoins/reduceCoins` 之后紧跟的那句
+      // `scene.equipmentEvent.drawString(...)`：提示框当拍就弹（xl-yg6.10）。
+      drawString(tre, request.text, now)
     },
     random,
   }
+  /** 开箱开出来的东西。一拍里按两下空格、或一下开两个箱子，都往后接。 */
+  const gain = (gains: readonly TreasureGain[]): void => {
+    if (gains.length > 0) treasureRequest = [...(treasureRequest ?? []), ...gains]
+  }
 
   for (const event of input) {
-    const info = applyInput(base, d, dlg, fight, sel, event, now, host)
+    const info = applyInput(base, d, dlg, fight, sel, tre, event, now, host, gain)
     if (info !== null) requestBattle(info)
   }
 
@@ -302,6 +327,9 @@ export function step(
   // 选择框的三个定时器排在旁白之后、NPC 之前 —— 导出器 `installTimers` 的
   // 根对象名单里 `sp.selectEvent` 就在 `sp.narratage` 与 `sp.npcs` 之间。
   tickSelectTimers(sel, now)
+  // 提示框的两个定时器紧跟在选择框之后：根对象名单里 `sp.equipmentEvent` 就排在
+  // `sp.selectEvent` 后面、`sp.npcs` 前面（xl-yg6.10）。
+  tickTreasureTimers(tre, now)
   for (const npc of npcs) tickNpcTimers(npc, now)
 
   // ——— `ScenePanel.step()` ———
@@ -339,7 +367,10 @@ export function step(
     d.canStop = true
   }
 
-  // 6. 检查宝箱 —— 另一张票（M3 的装备）。
+  // 6. 检查宝箱（xl-yg6.10）。`if (reader.getTreasureBox() != null)` 那道门就是
+  //    `boxes !== null`，在 `checkBoxes` 里。读的是**第 4 步换过场景之后**的
+  //    坐标与草稿 —— 原版 `role.getX()` 是现问的。
+  checkBoxes(tre, rx, ry)
   // 7. 检查计步战斗（xl-rh9.17）。**这一拍已经起过一场就不再查**：原版一拍
   //    里 `startBattle1()` 与 `checkBattle0()` 确实都可能跑到，但两者都调
   //    `battlePanel.initial(...)`，后一场会把前一场整个盖掉，而面板只切一次。
@@ -360,9 +391,11 @@ export function step(
     fight: fromFightDraft(fight),
     select: fromSelectDraft(sel),
     recorder: sel.recorder,
+    treasure: fromTreasureDraft(tre),
     battleRequest,
     selectPanelRequest,
     presentRequest,
+    treasureRequest,
   }
 }
 
@@ -577,8 +610,11 @@ function roleTile(px: number): number {
  *   `checkNPCOral()` **之后** —— 于是弹出选择框的那一下空格，会紧接着又被
  *   选择框自己收一次（`isAnswer` 时那一下就把回答框关掉了）。
  *
- * 宝箱（`equipmentEvent.keyPressed`）与 ESC 进菜单是别的票，那两行在原版里
- * 与这里的分支并列，不影响这几条的先后。
+ * **宝箱（xl-yg6.10）**那一行 `equipmentEvent.keyPressed(keyCode)` 排在
+ * `checkNPCOral()` 之后、`selectEvent.keyPressed` 之前，同在
+ * `if (!npcEvent.isOral)` 那一支里。它只认空格，所以方向键那一支与它不打架。
+ *
+ * ESC 进菜单是别的票，那一行在原版里与这里的分支并列，不影响这几条的先后。
  */
 function applyInput(
   world: World,
@@ -586,9 +622,11 @@ function applyInput(
   dlg: ReturnType<typeof toDialogueDraft>,
   fight: FightDraft,
   sel: SelectDraft,
+  tre: TreasureDraft,
   event: InputEvent,
   now: number,
   host: SelectHost,
+  gain: (gains: readonly TreasureGain[]) => void,
 ): BattleInfo | null {
   if (event.e === 'release') {
     // `ScenePanel.keyReleased` 的 switch 只有四个方向键的分支。
@@ -663,6 +701,10 @@ function applyInput(
       checkSelectEvent(sel, npcNo, now),
     )
   }
+  // `if (reader.getTreasureBox() != null) equipmentEvent.keyPressed(keyCode)`。
+  // 随机数与选择框加扣金币共用同一个 `random`：两者一个只认空格、一个只认回车，
+  // 同一下按键里不会都掷骰。
+  gain(treasureKeyPressed(tre, event.k, now, host.random))
   // `if (selectEvent.isSelect) selectEvent.keyPressed(keyCode)` —— 排在最后，
   // 而且读的是**刚刚可能被 `checkNPCOral` 打开的**那个 `isSelect`。
   if (sel.isSelect) selectKeyPressed(sel, event.k, now, host)

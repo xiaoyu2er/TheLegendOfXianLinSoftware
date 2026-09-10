@@ -90,6 +90,9 @@ export function advance(
     // 一拍，被吞掉的表现是"题答完了、钱一个子儿没动"。它只会在读输入的那一拍
     // （i === 0）亮起，所以停在这里至多少跑一批里剩下的那几拍，留给下一次 pump。
     if (world.presentRequest !== null) break
+    // 开箱开出来的东西（`treasureRequest`，xl-yg6.10）：同一个坑，被吞掉的表现是
+    // "箱子空了、提示框也弹了，背包里却什么都没多"。
+    if (world.treasureRequest !== null) break
   }
   return { ...ticker, world, carryMs: budget - ran * TICK_MS, pending: [] }
 }

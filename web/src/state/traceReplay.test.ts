@@ -167,6 +167,22 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
       recorder: w.recorder.map((r) => ({ scene: r.scene, answered: [...r.answered] })),
     }
   },
+  /**
+   * 宝箱与提示框那一列（xl-yg6.10）。**整列一次取齐**，理由同 `select`。
+   * 两处改名（`moving` / `printing`）只在这里翻译；`boxes` 的 `null` 原样
+   * 递出去 —— 摊平成 `[]` 的话"没有宝箱段"与"一个都没建出来"就分不开了。
+   */
+  treasure: (w) => {
+    const t = w.treasure
+    return {
+      presenting: t.presenting,
+      x: t.x,
+      wordNo: t.wordNo,
+      moving: t.presentImageMove.running,
+      printing: t.wordsRun.running,
+      boxes: t.boxes === null ? null : t.boxes.map((b) => ({ empty: b.empty, near: b.near })),
+    }
+  },
   audio: (w) => ({ bgm: w.audio.bgm }),
 }
 
@@ -315,6 +331,25 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-memory',
     'shop-door',
   ],
+  // 宝箱与「得到物品」提示框，xl-yg6.10（`EquipmentEvent` + `TreasureBox`）。
+  // **跑出来的**：观察函数加上、登记还挂在 PENDING 时跑了一遍，反方向那 11 条
+  // 一起红（11 格逐 tick 全对上），其余 113 条照绿 —— 于是整列挪过来。
+  // 只有三条真的弹过提示框：maze-treasure（开箱）与 question-answer /
+  // question-memory（答对答错的加扣，那两个场景一个宝箱都没有）；另外八条守的
+  // 是"没有宝箱段的场景 boxes 恒为 null、提示框不许自己起来"。
+  treasure: [
+    'battle-door',
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'question-memory',
+    'shop-door',
+  ],
   // `MusicPlayer.currentPlayingBGM`，xl-9bd.12。
   audio: [
     'bigmap-walk',
@@ -419,21 +454,8 @@ const DEAD_SUBFIELDS: readonly DeadSubfield[] = [
  * 的坑）。分母仍然是磁盘：少写一条，上面那条 `unaccounted` 立刻红。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // 宝箱与"得到物品"提示框（`src/scene/EquipmentEvent.java` +
-  // `src/scene/TreasureBox.java`）。归宝箱那张票。
-  treasure: {
-    'battle-door': 'xl-yg6.10',
-    'bigmap-walk': 'xl-yg6.10',
-    'dorm-exit': 'xl-yg6.10',
-    'dorm-intro': 'xl-yg6.10',
-    'dorm-walk': 'xl-yg6.10',
-    'equipshop-door': 'xl-yg6.10',
-    'maze-treasure': 'xl-yg6.10',
-    milestone: 'xl-yg6.10',
-    'question-answer': 'xl-yg6.10',
-    'question-memory': 'xl-yg6.10',
-    'shop-door': 'xl-yg6.10',
-  },
+  // `treasure` 那 11 格 xl-yg6.10 全部挪进了 ALIGNED（读数见那边）。
+  //
   // 这一格不是连带的，是**战斗那扇门自己的**：选「是」的一下原版先跑
   // `FightEvent.fight(...)`，`BattlePanel.initial` 按背景图把 BGM 换成
   // `B6.mp3`（真值这一列记着），而这一层还没有那条线。归三扇门那张票。
