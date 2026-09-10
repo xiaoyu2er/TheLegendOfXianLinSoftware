@@ -1,5 +1,7 @@
 import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
-import { dialogueAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../assets/ids'
+import { dialogueAssetId, mapAssetId, mapOverlayAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../assets/ids'
+import { getCoins } from '../fakes/wallet'
+import { COIN_ICON, COIN_ICON_FILE, COIN_TEXT, OVERLAY_FILES, overlayPlacements } from './mapOverlays'
 import type { AssetId } from '../assets/ids'
 import { resolveAsset, resolveAssetOrNull } from '../assets/resolve'
 import type { SceneScript } from '../data/types'
@@ -86,7 +88,8 @@ export interface SceneRenderer {
  * 场景层渲染器（Pixi）。
  *
  * 现在画地图底图、主角与 NPC，镜头跟着主角走并在地图边缘停住
- * （xl-9bd.6 / .7 / .9）。地图遮掩层（`OtherEvent.addMap`）还没有。
+ * （xl-9bd.6 / .7 / .9）；地图遮掩层与金币 HUD（`OtherEvent.addMap`）由
+ * xl-yg6.12 画上，摆位在 `mapOverlays.ts`。
  *
  * 这一层**没有测试缝**，是 spec 的明确决策：给渲染硬加缝只会得到一堆断言
  * "我调用了 drawSprite" 的实现细节测试。真实像素由跨端剧本逐帧比对兜底
@@ -137,6 +140,29 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   const boxLayer = new Container()
   app.stage.addChild(boxLayer)
   app.stage.addChild(camera)
+
+  // `OtherEvent.addMap` 那一层（xl-yg6.12）：`paint()` 里紧跟在主角与 NPC 之后、
+  // 对话框 / 选择框 / 提示框之前。**不在 `camera` 里**：遮掩图减的是 `firstTile*8`
+  // （与 NPC 同），金币 HUD 是画布坐标。摆位全在 `mapOverlays.ts`。
+  const overlayLayer = new Container()
+  app.stage.addChild(overlayLayer)
+  /** 十张遮掩图各一个精灵（仙一仙二同图不同位，所以按句建、不按文件建）。 */
+  const overlaySprites: Sprite[] = []
+  const overlayTextures = new Map<string, Texture>()
+  const coinIcon = new Sprite()
+  // 金币数自己画在一张小画布上，理由同旁白：原版给的是**基线**坐标。
+  const COIN_ASCENT = COIN_TEXT.fontSize + 6
+  const coinCanvas = document.createElement('canvas')
+  coinCanvas.width = STAGE_WIDTH - COIN_TEXT.x
+  coinCanvas.height = COIN_TEXT.fontSize * 2
+  const coinCtx2d = coinCanvas.getContext('2d')
+  if (!coinCtx2d) throw new Error('取不到金币数那一层的 2D context')
+  const coinCtx = coinCtx2d
+  const coinText = new Sprite(Texture.from(coinCanvas))
+  coinText.position.set(COIN_TEXT.x, COIN_TEXT.baseline - COIN_ASCENT)
+  let drawnCoins: number | null = null
+  /** 遮掩图要看地图名与碰撞网格的行数，那两样在场景里、不在 `world` 里。 */
+  let currentScene: SceneScript | null = null
 
   // 地图这一帧被切成若干块 1:1 贴上去（见 `viewport.ts` 的 `mapTiles`）。
   // 池子按需长大、只增不减：块数只有 1 或 81 两种，来回切场景不值得反复建精灵。
@@ -367,6 +393,45 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     drawnPresentText = t.bufferedText
   }
 
+  /** 遮掩图 18 张 + 金币图标，一次载齐（合计三百来 KB，只载一次）。 */
+  async function loadOverlayTextures(): Promise<void> {
+    if (overlayTextures.size > 0) return
+    const textures = await Promise.all(
+      OVERLAY_FILES.map((file) =>
+        Assets.load<Texture>(resolveAsset(mapOverlayAssetId(file))).then(nearest),
+      ),
+    )
+    OVERLAY_FILES.forEach((file, i) => overlayTextures.set(mapOverlayAssetId(file), textures[i]!))
+    coinIcon.texture = overlayTextures.get(mapOverlayAssetId(COIN_ICON_FILE))!
+    coinIcon.position.set(COIN_ICON.x, COIN_ICON.y)
+  }
+
+  /** `OtherEvent.addMap`：先金币图标与金币数，再十张遮掩图（大地图才有）。 */
+  function drawOverlays(world: World, scene: SceneScript): void {
+    const placements = overlayPlacements(scene.mapName, scene.row, computeViewport(world))
+    while (overlaySprites.length < placements.length) overlaySprites.push(new Sprite())
+    overlayLayer.removeChildren()
+    overlayLayer.addChild(coinIcon, coinText)
+    placements.forEach((p, i) => {
+      const sprite = overlaySprites[i]!
+      const texture = overlayTextures.get(p.asset)
+      // 漏载的表现是「屋檐偶尔不压人」，查不出来，所以响。
+      if (!texture) throw new Error(`遮掩图 ${p.asset} 没载入。`)
+      sprite.texture = texture
+      sprite.position.set(p.x, p.y)
+      overlayLayer.addChild(sprite)
+    })
+    const coins = getCoins()
+    if (coins === drawnCoins) return
+    coinCtx.clearRect(0, 0, coinCanvas.width, coinCanvas.height)
+    coinCtx.font = `bold ${COIN_TEXT.fontSize}px ${FONT_STACK}`
+    coinCtx.fillStyle = COIN_TEXT.color
+    coinCtx.textBaseline = 'alphabetic'
+    coinCtx.fillText(String(coins), 0, COIN_ASCENT)
+    coinText.texture.source.update()
+    drawnCoins = coins
+  }
+
   async function loadRoleTextures(): Promise<void> {
     if (roleTextures.size > 0) return
     const ids: string[] = []
@@ -547,6 +612,8 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     camera.visible = !world.narratage.active
     // 宝箱与提示框同在 `if (!narratage.isNarratage)` 里面（xl-yg6.10）。
     boxLayer.visible = !world.narratage.active
+    // `addMap` 同样在那个 if 里面。
+    overlayLayer.visible = !world.narratage.active
     if (world.narratage.active) {
       selectLayer.visible = false
       presentLayer.visible = false
@@ -558,6 +625,7 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     drawTreasure(world)
     place(world)
     drawNpcs(world)
+    if (currentScene) drawOverlays(world, currentScene)
     // 纹理还没到（首帧、或者场景正在切）就先不画，别画成一个白方块。
     if (roleTextures.size === 0) return
     const sprite = roleSprite(world.role)
@@ -611,6 +679,7 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       await loadSelectTextures()
       await loadTreasureTextures()
       await loadNarratageTextures(scene)
+      await loadOverlayTextures()
       const texture = nearest(
         await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
       )
@@ -630,6 +699,9 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       // 换地图只换碎片指向的源，精灵与 `Texture` 对象留着 —— Assets 的缓存
       // 保住了解码结果，池子保住了精灵。
       mapTexture = texture
+      // 遮掩层要的地图名与行数跟地图**同一处**换：早于这一行换的话，上面那几个
+      // `await` 期间来的 `showWorld` 会拿新场景的名字去摆旧地图上的遮掩图。
+      currentScene = scene
       for (const piece of mapPieces) piece.texture.source = texture.source
 
       // 这个场景的 NPC：先把素材载齐，再按条数重建精灵。**重建而不是复用**，

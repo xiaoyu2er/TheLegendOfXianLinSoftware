@@ -26,6 +26,7 @@ import {
 } from '../menu/equipmentPictures'
 import { repoPath } from '../test/repoPath'
 import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
+import { OVERLAY_FILES } from '../scene/mapOverlays'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
 function headFilesInRepo(): number {
@@ -208,6 +209,9 @@ describe('资产逻辑 ID', () => {
     expect(ids.filter((id) => id.startsWith('start:'))).toHaveLength(
       Object.keys(START_IMAGES).length + startFrames,
     )
+    // 地图遮掩层（xl-yg6.12）。分母是 `OVERLAY_FILES` —— 烘焙器与渲染器共用的那一份，
+    // 它本身由 `scene/mapOverlays.test.ts` 对着 GBK 源码里那十句 `drawImage` 守着。
+    expect(ids.filter((id) => id.startsWith('overlay:'))).toHaveLength(OVERLAY_FILES.length)
     const known = [
       'map:',
       'role:walk:',
@@ -234,6 +238,8 @@ describe('资产逻辑 ID', () => {
       // 与那几张数据表之外的那批。**没有代码引用的 13 张不在这张表里**，
       // 它们照烘但不进主包 —— 见 `shop/shopAssets.ts`。
       'shop:',
+      // `OtherEvent.addMap` 那一层（xl-yg6.12）：大地图遮掩图与金币图标，在 `maps/` 下。
+      'overlay:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })
