@@ -51,7 +51,7 @@ import {
   tickSelectTimers,
   toSelectDraft,
 } from './select'
-import type { SelectDraft, SelectHost } from './select'
+import type { SelectDraft, SelectHost, SelectRecord } from './select'
 import {
   checkBoxes,
   createTreasure,
@@ -104,8 +104,8 @@ export function npcTilesOf(scene: SceneScript): TilePos[] {
  * 与 `DialogueEvent.checkDialogue` 里都写着 `scene.isScript`），所以这里也只存
  * 一份，挂在 `World` 上，不再往 `DialogueScript` 里抄一遍。
  */
-export function createWorld(scene: SceneScript, isScript = true): World {
-  return { ...initiate(null, scene), isScript }
+export function createWorld(scene: SceneScript, isScript = true, recorder: readonly SelectRecord[] = []): World {
+  return { ...initiate(null, scene, recorder), isScript }
 }
 
 /**
@@ -134,12 +134,15 @@ export const START_SCRIPT: readonly string[] = ['7/7', '宿舍.txt', '脚本1.tx
  * `isScript` 在原版里不归 `initiation` 管：它是调用方在 `initiation` 前后
  * 自己置的（`ExitEvent` 的三条分支各置各的）。所以这里原样带过来，
  * 由调用方覆盖。
+ *
+ * `recorder` 只在 `prev` 为 `null` 时用：那两张答题表是 static，新开一局时（「起」）
+ * 它们是上一局留下的（xl-i06.11，见 `game/session.ts` 的 `carryIntoNewGame`）。
  */
-export function initiate(prev: World | null, scene: SceneScript): World {
+export function initiate(prev: World | null, scene: SceneScript, recorder: readonly SelectRecord[] = []): World {
   const script = dialogueScriptOf(scene)
   // `new SelectEvent(...)` 的构造函数会往那两张 static 表里登记一条，所以它
   // 同时产出一张**可能长了一条**的 recorder（见 `state/select.ts`）。
-  const select = createSelect(scene, prev?.recorder ?? [])
+  const select = createSelect(scene, prev?.recorder ?? recorder)
   return {
     timeMs: prev?.timeMs ?? 0,
     scene: scene.script,
@@ -173,6 +176,8 @@ export function initiate(prev: World | null, scene: SceneScript): World {
     // `GameLauncher.SCENE_SIGNAL` 是 static，`initiation` 不碰它。
     sceneSignal: prev?.sceneSignal ?? false,
     readerStatics: readerStaticsAfter(prev, scene),
+    // `else if (sal.isLoad) { …; sal.isLoad = false; }`：只有无对话编号的场景清它（见 `World.isLoad`）。
+    isLoad: script.code !== null && (prev?.isLoad ?? false),
   }
 }
 
@@ -202,10 +207,13 @@ function readerStaticsAfter(prev: World | null, scene: SceneScript): ReaderStati
  * 于是新场景没有 `Dialogue` 段时，`DialogueEvent` 的六个字段整个从上一个
  * 场景带过来。少带一个（尤其是 `eventOver`）就会让出口走错分支，而画面上
  * 的表现只是"走回宿舍时进的场景不对"——查不出来的那种。
+ *
+ * **例外是读档之后**（`else if (sal.isLoad)` 那一支，xl-i06.11）：`isLoad` 还亮着时，没有
+ * `Dialogue` 段的场景也新建一份（编号为 null → `eventOver` 为真、进度 0），不带上一份。
  */
 function carryDialogue(prev: World | null, script: DialogueScript): DialogueState {
   const fresh = createDialogue(script)
-  if (prev === null || script.code !== null) return fresh
+  if (prev === null || script.code !== null || prev.isLoad) return fresh
   const d = prev.dialogue
   return {
     ...fresh,

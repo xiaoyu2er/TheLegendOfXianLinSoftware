@@ -28,8 +28,9 @@ import type { World } from './types'
  * `else if (sal.isLoad)` 那一支：照样新建一个（对话编号为 null），并把 `isLoad` 清掉。
  * 于是**读档之后对话状态一律是新的**，只有结束旗标与编号由第 5 步填回去。
  *
- * ⚠️ 有 `Dialogue` 段的脚本走第一支，`isLoad` **不清**、一直留到下一个没有
- * `Dialogue` 段的场景 —— 那是读档之后的残留（xl-1dv.33），归 xl-i06.11，这里不建模。
+ * ⚠️ 有 `Dialogue` 段的脚本走第一支，`isLoad` **不清**、一直留到之后第一个没有
+ * `Dialogue` 段的场景，那里不沿用上一份对话事件而是新建一份 —— 读档之后的残留（xl-1dv.33，
+ * xl-i06.11 复刻，`World.isLoad`）。
  *
  * ## 读档**不碰**的
  *
@@ -62,6 +63,8 @@ export function loadSceneInfo(
     // `Loader.load` 末三行：`SaveAndLoad.zhang/lu/wen = Boolean.parseBoolean(...)`，排在
     // `loadSceneInfo` 之后，所以压过 `initiation` 里 `Reader` 从 `Role` 段写进去的那三个。
     readerStatics: { ...base.readerStatics, zhang: party.zhang, lu: party.lu, wen: party.wen },
+    // 第 1 步 `isLoad = true`，第 3 步的 `initiation` 在无对话编号的场景里当场清掉它。
+    isLoad: base.script.code !== null,
   }
 }
 

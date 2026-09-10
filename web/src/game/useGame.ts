@@ -35,7 +35,7 @@ import { shopTextureIds } from '../shop/render/assets'
 import { shopDrawList } from '../shop/render/drawList'
 import type { ShopRenderer } from '../shop/render/shopRenderer'
 import type { ShopInput } from '../shop/step'
-import { NO_INPUT, enterSaveLoad, saveLoadViewOf, shopWorldOf } from './session'
+import { NO_INPUT, carryIntoNewGame, enterSaveLoad, saveLoadViewOf, shopWorldOf } from './session'
 import type { Panel, Session, SessionDeps } from './session'
 import { saveLoadDrawList, saveLoadTextureIds } from '../saveload/render/drawList'
 import type { SaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
@@ -239,7 +239,11 @@ export function useGame(
     let disposed = false
     // 会话**当场就有**，只是还没开局（`scene: null`，见 `session.ts`）：
     // 有它才有"标题这一屏该放主题曲"这句话可说，pump 也才有东西可读。
-    sessionRef.current = createSession(SESSION_DEPS)
+    //
+    // 「起」带进新局的那两样（xl-i06.11）：原版里是 static 的装备库存与答题记录，从上一局的
+    // 会话里取出来再建新的。开机那一次上一局是 `null`，什么都不带。
+    const carry = carryIntoNewGame(sessionRef.current)
+    sessionRef.current = createSession(SESSION_DEPS, carry)
     queueRef.current = []
     clicksRef.current = []
     menuInputRef.current = []
@@ -292,7 +296,7 @@ export function useGame(
       void loadScene(sceneName).then(async (loaded) => {
         if (disposed) return
         rememberScene(sceneName, loaded)
-        const world = createWorld(loaded)
+        const world = createWorld(loaded, true, carry.recorder)
         // 先把这个场景出口的目标取到手，走到门口才切得动（见 data/loadedScenes.ts）。
         await prepareExits(world)
         // 怪物的出场图也要先量 —— `createBattle` 是同步的，见 `enemySprites.ts`。

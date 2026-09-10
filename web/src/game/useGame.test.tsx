@@ -5,6 +5,9 @@ import { prepareExits } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
 import { readTrace } from '../state/trace'
 import { getParty, initialMember, rememberParty, resetParty } from '../fakes/party'
+import { getCoins, resetWallet, setCoins } from '../fakes/wallet'
+import { addDrug, drugCount, resetDrugPack } from '../fakes/drugPack'
+import { DRUGS } from '../battle/drugs'
 import { getScene } from '../data/scenesEager'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { roleTileX, roleTileY } from '../state/role'
@@ -244,6 +247,33 @@ describe('useGame 接线', () => {
     expect(seen.length).toBeGreaterThan(walked)
     expect(seen.at(-1)!.px).toBe(12 * 32)
     expect(roleTileX(seen.at(-1)!)).toBe(12)
+  })
+
+  /**
+   * 重开一局**不清钱与药**（xl-i06.11）：原版「起」一句都不碰 `Money` / `DrugPack`（源码现读
+   * 见 `save/test/loadResidueOriginal.test.ts`；JVM 读数：读 存档0 → 起，钱 59868、药原样）。
+   * 这一层它们是两个模块单例，会话重建碰不到 —— 唯一清得掉它们的就是 `restart()` 本身，
+   * 所以判据落在这里，不落在会话层。
+   */
+  it('重开一局：钱与药是上一局的', async () => {
+    resetParty()
+    resetWallet()
+    resetDrugPack()
+    const { result } = await mount()
+    const drug = DRUGS[0]!.name
+    // 前提：与出厂值不同，否则「没清」与「清了」分不开。
+    expect(getCoins()).not.toBe(12345)
+    expect(drugCount(drug)).toBe(0)
+    setCoins(12345)
+    addDrug(drug, 3)
+    act(() => {
+      result.current.restart()
+    })
+    await act(async () => {
+      await loadScene('宿舍')
+    })
+    expect(getCoins()).toBe(12345)
+    expect(drugCount(drug)).toBe(3)
   })
 
   /**
