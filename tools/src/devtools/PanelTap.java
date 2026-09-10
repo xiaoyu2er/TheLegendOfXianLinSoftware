@@ -1,7 +1,9 @@
 package devtools;
 
 /**
- * 面板跳转的观察点。**四支驱动器共用**（战斗与场景现在各用一个实例）。
+ * 面板跳转的观察点。**两支驱动器共用**（战斗与场景各建一个实例）—— 菜单与
+ * 商店那两支驱动器不装它：它们的剧本词汇里根本没有会切面板的按钮
+ * （见 {@code MenuScript} 里那几条点不得的理由）。
  *
  * {@code GameLauncher.switchTo} 走的是 {@code switcher.show(c, "xxxPanel")}，
  * 而导出器里 {@code GameLauncher} 从没被构造过 —— {@code c} 是 null，

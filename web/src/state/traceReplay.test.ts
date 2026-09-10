@@ -175,6 +175,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'maze-treasure',
     'milestone',
     'question-answer',
+    'question-memory',
     'shop-door',
   ],
   // 对话框十二个字段，xl-9bd.10。⚠️ 五条里只有几条真的开过口；一份从头到尾
@@ -189,6 +190,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'maze-treasure',
     'milestone',
     'question-answer',
+    'question-memory',
     'shop-door',
   ],
   // 旁白六个字段，xl-9bd.11。⚠️ 只有 `dorm-intro` 与 `milestone` 真的播过旁白
@@ -203,6 +205,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'maze-treasure',
     'milestone',
     'question-answer',
+    'question-memory',
     'shop-door',
   ],
   // 场景文件名与 isScript，xl-9bd.12（出口切换）。
@@ -216,6 +219,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'maze-treasure',
     'milestone',
     'question-answer',
+    'question-memory',
     'shop-door',
   ],
   isScript: [
@@ -228,6 +232,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'maze-treasure',
     'milestone',
     'question-answer',
+    'question-memory',
     'shop-door',
   ],
   // `MusicPlayer.currentPlayingBGM`，xl-9bd.12。
@@ -240,6 +245,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'maze-treasure',
     'milestone',
     'question-answer',
+    'question-memory',
     'shop-door',
   ],
 }
@@ -345,6 +351,7 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     'maze-treasure': 'xl-yg6.8',
     milestone: 'xl-yg6.8',
     'question-answer': 'xl-yg6.8',
+    'question-memory': 'xl-yg6.8',
     'shop-door': 'xl-yg6.8',
   },
   // 宝箱与"得到物品"提示框（`src/scene/EquipmentEvent.java` +
@@ -359,6 +366,7 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     'maze-treasure': 'xl-yg6.10',
     milestone: 'xl-yg6.10',
     'question-answer': 'xl-yg6.10',
+    'question-memory': 'xl-yg6.10',
     'shop-door': 'xl-yg6.10',
   },
   // ⚠️ **xl-yg6.7 起，早就对齐的那几组也开始有欠账了**，而这是新真值该有的
@@ -366,13 +374,16 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   // （`ScenePanel.keyPressed` 的 `if (!selectEvent.isSelect)`）在状态层一个字
   // 都还没写。于是同一下方向键，原版拿去挪光标、这一层拿去挪主角。
   //
-  // 逐格实测（xl-yg6.7 把十条剧本 × 七组全填进 ALIGNED 跑了一遍，红的挪到
-  // 这里）：`role` 四条红、`npcs` 与 `dialogue` 各一条、`audio` 一条，其余
-  // 全绿 —— 包括 `maze-treasure` 整条七组（开宝箱按的是空格，不碰方向键）。
+  // 逐格实测（xl-yg6.7 把十一条剧本 × 七组全填进 ALIGNED 跑了一遍，红的挪到
+  // 这里）：`role` 五条红、`dialogue` 与 `audio` 各一条，其余全绿 —— 包括
+  // `maze-treasure` 整条七组（开宝箱按的是空格，不碰方向键），以及
+  // `question-memory` 的 `scene` 与 `audio`（它出门进大地图又走回来，
+  // 两次场景切换与三次背景音乐切换这一层已经对齐）。
   role: {
     'battle-door': 'xl-yg6.8',
     'equipshop-door': 'xl-yg6.8',
     'question-answer': 'xl-yg6.8',
+    'question-memory': 'xl-yg6.8',
     'shop-door': 'xl-yg6.8',
   },
   // 主角**朝向**变了（`RoleEvent.switchWalk` 里那一句 `role.setEvent(方向)`

@@ -212,6 +212,13 @@ public final class TraceScript {
 
     public boolean isBattle() { return driver.equals("battle"); }
 
+    /**
+     * 场景剧本认得的指令名单。**包内可见**：{@code tools/test} 下的
+     * {@code SceneSelectOpTest} 拿它当分母，去撞 {@code SceneDriver.exec} 那个
+     * switch 里真正处理了的 case 标签。两边只改一头，那条断言红。
+     */
+    static List<String> sceneOps() { return SCENE_OPS; }
+
     /** 带目标格的三条指令。 */
     static boolean isMove(String op) {
         return op.equals("walkTo") || op.equals("runTo") || op.equals("exitTo");
@@ -365,6 +372,15 @@ public final class TraceScript {
                 panel = JsonIn.str(s, "panel");
                 if (!PANELS.contains(panel)) {
                     throw new IllegalArgumentException("不认识的面板 " + panel + "，可用的是 " + PANELS);
+                }
+                // 场景的 awaitExit 是**当拍就判**的（跳转发生在 confirm 那一下的
+                // 按键分发里，同步完成），没有"等几步"这回事。写了 max 而它一次都
+                // 走不到，读剧本的人会以为那是个判据 —— 所以硬失败，不静默吞掉
+                // （/code-review 的 Standards 轴提的：同一份文件对不认识的
+                // op / key / button 一律硬失败，这里却对一个无意义参数放行）。
+                if (!battle && s.containsKey("max")) {
+                    throw new IllegalArgumentException(
+                            "场景剧本的 awaitExit 不接受 max —— 它当拍就判，那个上限一次都走不到");
                 }
                 // 全灭图对开 512px（每步 8px = 64 拍）再数 10 下才跳转，共 73 次
                 // update、真值上 72 步（两份打输的真值实测都是 72）。默认给 300 是

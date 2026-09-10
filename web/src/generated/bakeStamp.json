@@ -3667,6 +3667,7 @@
     "tools/traces/out/menu-scroll.trace.json": "03817d7e131b7026ec2e83844512b51ff49bc27e246aa7b24447e989e89c74b6",
     "tools/traces/out/milestone.trace.json": "2b72fb746cce6eeb27475d492a4405e422c46051447eeb03832d31979a5ad05d",
     "tools/traces/out/question-answer.trace.json": "440279f7488eb917e73976376de63c6e43edfbed282b704c8af2b46a0be61e85",
+    "tools/traces/out/question-memory.trace.json": "1f96710bed5923d9c8beded469b0a44dcb0b475c71f840b7bf90ed74c7b7fe93",
     "tools/traces/out/shop-categories.trace.json": "1b142756d239ffad9894051f0067b73bc5455bf112c2ec7a093372c824ca2a69",
     "tools/traces/out/shop-door.trace.json": "76d25a8204482825e29fbd6c1769ffcbc91613f8992ca548b3f58601490464cc",
     "tools/traces/out/shop-edges.trace.json": "365d93dd9cc09a626ddd4693071eb9a1ec2c023638146e8dec0540684d93781b",

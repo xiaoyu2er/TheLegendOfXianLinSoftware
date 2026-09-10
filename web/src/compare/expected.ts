@@ -1694,6 +1694,15 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '大活.png 的重编码差异 + 选择框 / 问题框 / 加扣金币的提示框都还没画',
     issue: 'xl-yg6.9 / xl-yg6.12',
   },
+  'question-memory': {
+    status: 'gap',
+    // 实测最差帧 #900 **38.0360%** @ (262,70)-(993,630)（98 帧全偏）；上界 2 倍。
+    // 与 `question-answer` 同一帧、同一个数 —— 两条剧本的前半截是同一段（走到
+    // 同一个 NPC、答同一道题），最会差的那一帧就落在问题框撑开之后。
+    maxRatio: 0.7608,
+    why: '大活.png 的重编码差异 + 选择框 / 问题框 / 扣金币的提示框都还没画',
+    issue: 'xl-yg6.9 / xl-yg6.12',
+  },
   'battle-door': {
     status: 'gap',
     // 实测最差帧 #550 **38.5582%**（93 帧全偏）；上界 2 倍。与同一张地图上的

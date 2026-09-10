@@ -79,6 +79,7 @@ public final class SceneDriver implements TraceDriver {
     private String sceneAtEntry;               // 进入当前指令时所在的场景（exitTo 用）
     private int boxesOpenedAtEntry;            // 进入 openBox 时已经开过几个宝箱
     private final List<String> pending = new ArrayList<>();   // 本 tick 的输入事件
+    private int pressesThisTick;               // 本 tick 已经按下过几次键（松手不算）
 
     private boolean started;    // start() 是否已经跑过
     private int ticks;          // 已经产出的 tick 数（只用于 maxTicks 判据）
@@ -112,6 +113,7 @@ public final class SceneDriver implements TraceDriver {
         if (ip >= script.steps.size()) return false;
         if (ticks >= script.maxTicks) fail("超过剧本的 maxTicks=" + script.maxTicks + "，剧本没有跑完");
         pending.clear();
+        pressesThisTick = 0;
         advanceScript();
         if (ip >= script.steps.size() && pending.isEmpty()) return false;  // 最后一条指令在本 tick 之初就完成了
 
@@ -239,14 +241,23 @@ public final class SceneDriver implements TraceDriver {
     }
 
     private Thread findBattleLoopThread() {
+        Thread found = null;
         for (java.util.Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
             for (StackTraceElement st : e.getValue()) {
                 if (st.getClassName().equals("battle.BattlePanel") && st.getMethodName().equals("run")) {
-                    return e.getKey();
+                    // 不止一条就是硬失败，与 BattleDriver.findLoopThread 同一条规矩
+                    // （/code-review 提的：照抄的时候把这道守卫抄漏了）。一次场景
+                    // 导出只该立一个战斗面板；立了两个的话，等到的那条可能不是
+                    // 后面真正被 initial() 的那条 —— 而"等错了线程"与"等对了"
+                    // 在倍率放回去那一刻长得一模一样。
+                    if (found != null && found != e.getKey()) {
+                        ExportTrace.die("找到不止一条 BattlePanel.run() 线程 —— 一次场景导出只立一个战斗面板");
+                    }
+                    found = e.getKey();
                 }
             }
         }
-        return null;
+        return found;
     }
 
     // ================= 快照位图 =================
@@ -445,7 +456,7 @@ public final class SceneDriver implements TraceDriver {
                     return false;
                 }
                 if (openedBoxes() != boxesOpenedAtEntry + 1) {
-                    fail("按了空格但没有宝箱被打开（开过的宝箱数仍是 " + boxesOpenedAtEntry
+                    fail("按下去了但没有宝箱被打开（开过的宝箱数仍是 " + boxesOpenedAtEntry
                             + "），主角在 (" + role().getX() + "," + role().getY()
                             + ") —— 旁边没有还装着东西的宝箱");
                 }
@@ -538,11 +549,15 @@ public final class SceneDriver implements TraceDriver {
         // 至少一次事件分发；一拍里按两下会让 Web 侧的回放无从展开
         // （trace 的 input 是一个数组，两条 press 谁先谁后没有别的依据），
         // 而那份 trace 看上去仍然规整。
-        for (String e : pending) {
-            if (e.startsWith("{\"e\":\"press\"")) {
-                fail("同一个 tick 里按了两次键（已经有 " + e + "，又要按 " + keyName(keyCode) + "）");
-            }
+        //
+        // 数的是一个计数器，不是去 pending 里认那串 JSON 的前缀（/code-review
+        // 的 Standards 轴提的）：那串 JSON 的写法一变，守卫就**静默地再也匹配
+        // 不到**，而"这一拍没按两次"与"守卫失效了"长得一模一样。
+        if (pressesThisTick > 0) {
+            fail("同一个 tick 里按了两次键（本拍已经按过 " + pressesThisTick
+                    + " 次，又要按 " + keyName(keyCode) + "）");
         }
+        pressesThisTick++;
         sp.keyPressed(keyCode, ctrl);
         pending.add("{\"e\":\"press\",\"k\":" + Json.str(keyName(keyCode)) + ",\"ctrl\":" + ctrl + "}");
     }
