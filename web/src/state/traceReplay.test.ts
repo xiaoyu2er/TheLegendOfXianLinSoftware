@@ -351,7 +351,12 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'shop-door',
   ],
   // `MusicPlayer.currentPlayingBGM`，xl-9bd.12。
+  // `battle-door` 那一格 xl-yg6.11 翻过来：选「是」那一下原版先跑
+  // `FightEvent.fight` → `BattlePanel.initial`，按背景图把 BGM 换成战斗曲
+  // （`state/step.ts` 的 `requestBattle`）。**跑出来的**：先只补实现、登记还挂在
+  // PENDING 时跑了一遍，反方向那条（「已经逐 tick 对上了，把它挪进 ALIGNED」）红了。
   audio: [
+    'battle-door',
     'bigmap-walk',
     'dorm-exit',
     'dorm-intro',
@@ -454,20 +459,9 @@ const DEAD_SUBFIELDS: readonly DeadSubfield[] = [
  * 的坑）。分母仍然是磁盘：少写一条，上面那条 `unaccounted` 立刻红。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // `treasure` 那 11 格 xl-yg6.10 全部挪进了 ALIGNED（读数见那边）。
-  //
-  // 这一格不是连带的，是**战斗那扇门自己的**：选「是」的一下原版先跑
-  // `FightEvent.fight(...)`，`BattlePanel.initial` 按背景图把 BGM 换成
-  // `B6.mp3`（真值这一列记着），而这一层还没有那条线。归三扇门那张票。
-  //
-  // ⚠️ xl-yg6.8 把选择框整层做出来之后，**它是这十一条剧本上最后一个欠账**
-  // （填满格子跑了一遍，红的只有这一格 —— 见 `ALIGNED` 那段注释里的读数）。
-  // 选择框这一头已经把 `battleRequest` 发出来了（`World.battleRequest`，
-  // 走的是 `FightEvent.fight` 那条既有的路），欠的是战斗面板那一头
-  // `initial()` 里按背景图挑 BGM 的那个 switch。
-  audio: {
-    'battle-door': 'xl-yg6.11',
-  },
+  // **今天是空的，那是一个读数**（xl-yg6.11）。最后一格 `audio × battle-door`
+  // 挪进了 ALIGNED —— 选「是」那一下 `BattlePanel.initial` 按背景图换 BGM 的
+  // 那条线补上了。空着时下面那个 describe 零用例，留了一条明写读数的用例兜底。
 }
 
 /**

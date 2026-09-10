@@ -273,6 +273,25 @@ export interface World {
    * 也恒为 `true` —— 导出器驱动的就是场景面板本身。
    */
   readonly showing: boolean
+  /**
+   * `reader.getSceneMusic()`：这个场景**自己的**曲子（xl-yg6.11）。
+   *
+   * 与 `audio.bgm` 不是一回事：后者是"此刻在放哪首"，进战斗那一下会被
+   * `BattlePanel.initial` 换成战斗曲（`MusicPlayer.currentPlayingBGM` 是全局的，
+   * 真值 `battle-door` 那一列记着），而回到场景时原版要的是**这一首**
+   * （见 `sceneSignal`）。只存 `audio` 的话，打完回来就没处取了。
+   */
+  readonly sceneMusic: string | null
+  /**
+   * `GameLauncher.SCENE_SIGNAL`（xl-yg6.11）：`switchTo("scene")` 置 1，
+   * `ScenePanel.step()` 末尾读到就 `readBGM(reader.getSceneMusic())` 再清 0 ——
+   * **从战斗 / 商店 / 菜单回到场景时把场景的曲子放回去**的就是它。
+   *
+   * 原版是一个 static，不属于任何场景，所以换场景时原样带过去。置它的是会话
+   * （`game/session.ts`，面板翻回 `scene` 那一下），读它的只有 `step()`。
+   * 回放真值时恒为 `false`：导出器从不 `switchTo("scene")`。
+   */
+  readonly sceneSignal: boolean
 }
 
 /** 世界声明此刻该放的背景音乐。见 `World.audio`。 */

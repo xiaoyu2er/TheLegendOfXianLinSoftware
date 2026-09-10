@@ -13,8 +13,15 @@ import type { MenuWorld } from '../menu/types'
 import type { PartyKey } from '../battle/units'
 import { attributesOf, getParty, rememberMenuParty, rememberParty } from '../fakes/party'
 import type { PartyMemberState } from '../fakes/party'
-import { addCoins, reduceCoins } from '../fakes/wallet'
-import { addDrug } from '../fakes/drugPack'
+import { addCoins, getCoins, reduceCoins } from '../fakes/wallet'
+import { addDrug, drugCount } from '../fakes/drugPack'
+import { DRUGS } from '../battle/drugs'
+import { EQUIP_SLOTS } from '../menu/equipment'
+import { applyShopInput, stepShop } from '../shop/step'
+import type { ShopInput } from '../shop/step'
+import { createShopWorld } from '../shop/world'
+import type { ShopKind } from '../shop/layout'
+import type { ShopWorld } from '../shop/types'
 import type { LiveParty } from '../menu/heroes'
 import { getAudioSettings, rememberAudioSettings } from './audioSettings'
 import { TITLE_BGM } from '../start/assets'
@@ -69,7 +76,24 @@ import type { InputEvent, World } from '../state/types'
  *    状态）建一场战斗塞进会话里，跑到结算结束，看会话回没回场景、经验有没有
  *    记进队伍。
  */
-export type Panel = 'scene' | 'battle' | 'start' | 'menu'
+export type Panel = 'scene' | 'battle' | 'start' | 'menu' | 'shop'
+
+/**
+ * 选择框那两扇商店门 → 进哪一家（xl-yg6.11）。
+ *
+ * 原版是两步：`switchTo("shop")` 把卡片翻到 `shopPanel`，而那张卡片上挂的
+ * 是 `ShopPanel`（药店）；`"equipmentShop"` → `equipmentShopPanel` →
+ * `EquipmentShopPanel`（装备自选超市）。这一层两家店共用一个世界
+ * （`shop/types.ts` 的头注），所以落到的是 `ShopWorld.active` 的两个取值。
+ *
+ * ⚠️ 这张表**有判据**，不是誊抄了事：`game/doors.test.ts` 从 GBK 源码现读
+ * `GameLauncher.switchTo` 的卡片名与 `ShopDriver` 的 `open` 名，逐支对撞
+ * —— 「场景那侧记下的目标 == 对面那条剧本的起点」。
+ */
+export const SHOP_OF_DOOR: Readonly<Record<'shop' | 'equipmentShop', ShopKind>> = {
+  shop: 'drug',
+  equipmentShop: 'equipment',
+}
 
 /** 会话跟外界打交道的三样东西。全是入参，所以整个模块可以在 node 上跑。 */
 export interface SessionDeps {
@@ -135,6 +159,24 @@ export interface Session {
    * 了，于是再穿一次变成 +10。判据在 `menuSession.test.ts`（xl-6lo.18）。
    */
   readonly menu: MenuTicker
+  /**
+   * 两家店那一份（xl-yg6.11）。`null` = **这一局还没进过店**。
+   *
+   * 原版 `GameLauncher` 构造函数里就把 `ShopPanel` 与 `EquipmentShopPanel`
+   * 都 `new` 好了，存货在那一刻逐件 `Math.random()` 掷定、从此不变。这里推迟到
+   * **头一次进门**才建：玩家进门之前看不见存货，两者观察不到差别；而开机就建
+   * 会在 `createSession` 里多摇 `deps.random()` 一次，把每一条拿定值序列喂
+   * 随机数的用例整体错一位 —— 那种错位在断言里只表现为"挑中的是另一场架"。
+   *
+   * 建好之后同菜单那一份一样**活到关机**：再进门不重建，存货与两家店各自的
+   * 光标、店主上一句话都留着。
+   *
+   * ⚠️ 钱、药、装备**不以这里为准**：那三样在原版里是 static（`Money` /
+   * `DrugPack` / `EquipmentPack`），这一层的落点分别是 `fakes/wallet.ts`、
+   * `fakes/drugPack.ts` 与菜单装备页的 `owned`。进门时从那三处现读进来，
+   * 店里每一步再写回去 —— 见 `enterShop` / `writeShopBack`。
+   */
+  readonly shop: ShopWorld | null
   readonly deps: SessionDeps
 }
 
@@ -155,9 +197,14 @@ export interface SessionInput {
   readonly battle: readonly BattleInput[]
   /** 菜单里的鼠标事件。**没有键盘那一种** —— 见 `menu/step.ts` 的 `menuWantsScene`。 */
   readonly menu: readonly MenuInput[]
+  /**
+   * 店里的鼠标事件（xl-yg6.11）。与菜单一样**纯鼠标**：按下 / 松开 / 移动。
+   * 可省：进店之前的每一处调用方都不必改。
+   */
+  readonly shop?: readonly ShopInput[]
 }
 
-export const NO_INPUT: SessionInput = { scene: [], battle: [], menu: [] }
+export const NO_INPUT: SessionInput = { scene: [], battle: [], menu: [], shop: [] }
 
 /** 场景收不到键的那几拍喂它。常量，省得每拍新建一个数组。 */
 const NO_KEYS: readonly InputEvent[] = []
@@ -190,7 +237,7 @@ export function createSession(deps: SessionDeps): Session {
   // 菜单**开机就建**，与原版同一句：`GameLauncher` 构造函数里那句
   // `menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)` 排在
   // `switchTo("start")` 之前。见 `Session.menu`。
-  return { panel: 'start', scene: null, battle: null, menu: createGameMenu(), deps }
+  return { panel: 'start', scene: null, battle: null, menu: createGameMenu(), shop: null, deps }
 }
 
 /**
@@ -203,9 +250,8 @@ export function createSession(deps: SessionDeps): Session {
 function createGameMenu(): MenuTicker {
   return createMenuTicker(
     createMenuWorld({
-      // 原版这三个标志位归存档（`SaveAndLoad.zhang/lu/wen`），今天没有存档，
-      // 所以照原版三个类的处境给：三个人都在。⚠️ 玉洁那一位的键是 `wen`。
-      party: ['zhang', 'lu', 'wen'],
+      // 见 `GAME_PARTY`：与商店读的是同一份名单。
+      party: GAME_PARTY,
       fullHeal: false,
       live: liveParty(getParty()),
       // 原版那两个开关是 static，活得比菜单久（`game/audioSettings.ts`）。
@@ -385,7 +431,7 @@ export function advanceSession(
   // ⚠️ 顺带复刻一个坑：按住方向键的时候开菜单，那一下**松手事件也被吃掉**
   // （`keyReleased` 同一个门），于是回到场景主角还在往那边走，要再按一次
   // 那个键才停。原版就是这样，ADR-0001 说照抄。
-  const scene = advance(
+  let scene = advance(
     before,
     panel === 'scene' ? input.scene : NO_KEYS,
     elapsedMs,
@@ -423,6 +469,24 @@ export function advanceSession(
     )
   }
 
+  // 选择框那两扇商店门（xl-yg6.11）：`SelectEvent.keyPressed` 里选「是」那一句
+  // `GameLauncher.switchTo("shop" | "equipmentShop")`。只亮一拍，`advance` 在
+  // 它亮的那一拍停批（`state/loop.ts`），所以读的就是这一拍的。
+  //
+  // ⚠️ 原版「是」那一支**只有一句 switchTo**，不清 `isSelect` / `shopSelect`：
+  // 从店里「返回游戏」回来，场景还停在选择框上，再按一下回车又进店。照抄 ——
+  // 这一层什么都不用做，那两个旗标本来就没人动。
+  let shop = session.shop
+  const door = scene.world.selectPanelRequest
+  if (door !== null && panel === 'scene') {
+    shop = enterShop(shop, SHOP_OF_DOOR[door], menu, deps)
+    panel = 'shop'
+  } else if (door !== null) {
+    // 今天到不了：选择框只收场景面板的键，而场景不显示时一个键都收不到。
+    // 真到了是**抛**，理由同上面那一场架。
+    throw new Error(`${scene.world.scene} 在 ${panel} 面板上又要进店（${door}）`)
+  }
+
   // ——— 战斗那条线程 ———
   if (panel === 'battle' && battle !== null) {
     battle = advanceBattle(battle, input.battle, elapsedMs)
@@ -432,6 +496,9 @@ export function advanceSession(
       // 出口末尾都有一句 `heroes.clear()`，拿它记等于一个人都没记。
       rememberParty(battle.world.party)
       panel = exit === 'scenePanel' ? 'scene' : 'start'
+      // `switchTo("scene")` 里那句 `SCENE_SIGNAL=1`：下一拍场景把自己的曲子
+      // 放回去（进战斗那一下 BGM 被 `initial()` 换成了战斗曲，xl-yg6.11）。
+      if (panel === 'scene') scene = signalScene(scene)
       battle = null
     }
   }
@@ -466,13 +533,111 @@ export function advanceSession(
     rememberMenuParty(menu.world.heroes)
     if (menuWantsScene(menu.world)) {
       panel = 'scene'
+      // 天书页「返回」走的也是 `switchTo("scene")`，同一句 `SCENE_SIGNAL=1`。
+      scene = signalScene(scene)
       // 一次性信号，读了就收 —— 菜单世界活着，不清的话下次开菜单第一拍
       // 又关上了。`returnButton.isclicked` **不清**，见 `clearMenuExit`。
       clearMenuExit(menu.world)
     }
   }
 
-  return { ...session, panel, scene, battle, menu }
+  // ——— 商店（xl-yg6.11）———
+  //
+  // 两家店的 `while(true)` 线程只换鼠标图与四条人物动画的帧（`shop/step.ts`
+  // 的头注），一个状态字段都不碰，所以这里**只在有输入时推一步**：一步 = 一次
+  // 输入事件，与商店真值同一个口径。帧号归绘制层（`game/useGame.ts`）。
+  if (panel === 'shop' && shop !== null) {
+    const clicks = input.shop ?? NO_SHOP_INPUT
+    if (clicks.length > 0) stepShop(shop, clicks)
+    // **每一步都写回去**，理由与菜单那三个人同一条：原版买下的那一刻
+    // `Money` / `DrugPack` / `EquipmentPack` 就变了，别处当场看得见。
+    writeShopBack(shop, menu)
+    if (shop.leaving) {
+      // 「返回游戏」：`ShopPanel` / `EquipmentShopPanel` 里那句
+      // `GameLauncher.switchTo("scene")`。**回到的就是进门时那个场景、那一格**
+      // —— 场景那条线程一直在跑，从没被换掉。
+      shop.leaving = false
+      panel = 'scene'
+      scene = signalScene(scene)
+    }
+  }
+
+  return { ...session, panel, scene, battle, menu, shop }
+}
+
+const NO_SHOP_INPUT: readonly ShopInput[] = []
+
+/** `switchTo("scene")` 里那句 `SCENE_SIGNAL=1`（见 `World.sceneSignal`）。 */
+function signalScene(ticker: Ticker): Ticker {
+  return { ...ticker, world: { ...ticker.world, sceneSignal: true } }
+}
+
+/**
+ * 队伍名单（`SaveAndLoad.zhang/lu/wen`）。原版这三个标志位归存档，今天没有
+ * 存档，所以照三个类的处境给：三个人都在。菜单与商店读的是**同一份**。
+ * ⚠️ 玉洁那一位的键是 `wen`。
+ */
+const GAME_PARTY: readonly string[] = ['zhang', 'lu', 'wen']
+
+/**
+ * 进门：`switchTo("shop" | "equipmentShop")`（xl-yg6.11）。
+ *
+ * 头一次进门才建两家店（见 `Session.shop`）；每一次进门都把钱、药、装备从
+ * 那三处 static 的落点**现读**进来 —— 两次进门之间打过架、开过箱、在菜单里
+ * 弃过装备，店里看到的都得是此刻的数。
+ */
+function enterShop(
+  shop: ShopWorld | null,
+  kind: ShopKind,
+  menu: MenuTicker,
+  deps: SessionDeps,
+): ShopWorld {
+  const w =
+    shop ??
+    createShopWorld({
+      party: GAME_PARTY,
+      coins: getCoins(),
+      // 原版存货是 `Math.random()` 现掷的，没有种子；这一层的商店世界带一个
+      // `JavaRandom`（真值要可复现），所以现摇一个 —— 与战斗那一处同一个取舍
+      // （见 `SessionDeps.random`）。
+      seed: Math.trunc(deps.random() * 0x7fffffff),
+    })
+  w.coins = getCoins()
+  w.pack.drugs = DRUGS.map((d) => drugCount(d.name))
+  const owned = ownedEquipment(menu)
+  for (const slot of EQUIP_SLOTS) w.pack.equipment[slot] = [...owned[slot]]
+  // 换店不派发鼠标事件，只换引用 —— 与 `ShopDriver.open()` 同一个动作。
+  applyShopInput(w, { e: 'open', shop: kind })
+  return w
+}
+
+/** 店里这一步之后，把钱、药、装备写回那三处 static 的落点。 */
+function writeShopBack(w: ShopWorld, menu: MenuTicker): void {
+  const coins = w.coins - getCoins()
+  if (coins > 0) addCoins(coins)
+  else if (coins < 0) reduceCoins(-coins)
+  DRUGS.forEach((d, i) => {
+    const delta = (w.pack.drugs[i] ?? 0) - drugCount(d.name)
+    if (delta !== 0) addDrug(d.name, delta)
+  })
+  // 就地改：菜单装备页读的就是这几个数组（`EquipPanelState.owned`）。
+  const owned = ownedEquipment(menu)
+  for (const slot of EQUIP_SLOTS) owned[slot].splice(0, owned[slot].length, ...w.pack.equipment[slot])
+}
+
+/**
+ * 全局装备背包 —— 原版那六张 static 表，这一层唯一的落点是菜单装备页
+ * （`Session.menu` 的头注）。它没建出来就是菜单那一层坏了，**抛**，不是当成空。
+ */
+function ownedEquipment(menu: MenuTicker) {
+  const equip = menu.world.panels.equipPanel.equip
+  if (equip === null) throw new Error('菜单装备页没有 equip 那一摊 —— 全局装备背包无处可落')
+  return equip.owned
+}
+
+/** 商店世界，店没开着就是 `null`。渲染层要它。 */
+export function shopWorldOf(session: Session): ShopWorld | null {
+  return session.panel === 'shop' ? session.shop : null
 }
 
 /**
