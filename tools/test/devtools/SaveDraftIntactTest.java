@@ -37,11 +37,11 @@ public final class SaveDraftIntactTest {
         byte[] draft = "ab\r\ncdXef\r\n".getBytes();
         Checks.eq("同一份字节不报差异", null, SaveTruth.describeDiff("x.txt", truth, truth.clone()));
         Checks.eq("差异报出文件名、字节偏移、行列与两边的字节",
-                "x.txt：第 6 字节起不同（第 2 行第 3 字节），真值 [41 65 66 0D 0A] / 草稿区 [58 65 66 0D 0A]"
+                "x.txt：偏移 6（从 0 数）起不同，即第 2 行第 3 字节，真值 [41 65 66 0D 0A] / 草稿区 [58 65 66 0D 0A]"
                         + "；长度 真值 11 / 草稿区 11",
                 SaveTruth.describeDiff("x.txt", truth, draft));
         Checks.eq("草稿区被截短也报出来（不是只比公共前缀）",
-                "x.txt：第 4 字节起不同（第 2 行第 1 字节），真值 [63 64 41 65 66 0D 0A] / 草稿区 [文件已结束]"
+                "x.txt：偏移 4（从 0 数）起不同，即第 2 行第 1 字节，真值 [63 64 41 65 66 0D 0A] / 草稿区 [文件已结束]"
                         + "；长度 真值 11 / 草稿区 4",
                 SaveTruth.describeDiff("x.txt", truth, "ab\r\n".getBytes()));
     }

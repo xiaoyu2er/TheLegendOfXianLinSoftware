@@ -92,7 +92,8 @@ public final class SaveTruth {
         for (int i = 0; i < at; i++) {
             if (truth[i] == '\n') { line++; lineStart = i + 1; }
         }
-        return name + "：第 " + at + " 字节起不同（第 " + line + " 行第 " + (at - lineStart + 1) + " 字节）"
+        // 偏移从 0 数、行列从 1 数（cmp 报的 char 是从 1 数的，比它小一）。
+        return name + "：偏移 " + at + "（从 0 数）起不同，即第 " + line + " 行第 " + (at - lineStart + 1) + " 字节"
                 + "，真值 " + hex(truth, at) + " / 草稿区 " + hex(draft, at)
                 + "；长度 真值 " + truth.length + " / 草稿区 " + draft.length;
     }
