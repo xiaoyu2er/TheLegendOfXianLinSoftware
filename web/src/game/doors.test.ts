@@ -356,9 +356,19 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
     // 回来时选择框还开着，再按一下回车又进店 —— **进的是同一份店**（存货不重掷）。
     expect(next.scene.world.select.isSelect).toBe(true)
     expect(next.scene.world.select.shop).toBe(true)
+    // 两次进门之间钱变了（打架、答题、开箱都会动它）—— 再进门时店里必须是**此刻**
+    // 的数。头一次进门看不出这一条：店是那一刻才建的，建的时候本来就读过钱包。
+    //
+    // ⚠️ 期望值要在进门**之前**记下来：进门那一拍店里立刻写回一次钱包，所以
+    // 事后比 `shop.coins === getCoins()` 是恒真的 —— 进门不现读时，写回会把钱包
+    // 拽回店里那个旧数，两边照样相等（篡改实测，那一版这条是绿的）。
+    addCoins(777)
+    const wallet = getCoins()
     const again = advanceSession(next, { scene: [{ e: 'press', k: 'enter', ctrl: false }], battle: [], menu: [] }, 10)
     expect(again.panel).toBe('shop')
     expect(shopWorldOf(again)).toBe(shop)
+    expect(shop.coins).toBe(wallet)
+    expect(getCoins(), '进门那一下把钱包里多出来的钱弄丢了').toBe(wallet)
   })
 
   it('药店里买下的东西：钱从钱包里扣、药进背包 —— 进门时也是从那两处现读的', () => {

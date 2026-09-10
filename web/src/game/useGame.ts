@@ -27,6 +27,12 @@ import { menuDrawList } from '../menu/render/drawList'
 import { menuTextureIds } from '../menu/render/assets'
 import type { MenuRenderer } from '../menu/render/menuRenderer'
 import type { MenuInput } from '../menu/step'
+import { previewFrame } from '../shop/preview'
+import { shopTextureIds } from '../shop/render/assets'
+import { shopDrawList } from '../shop/render/drawList'
+import type { ShopRenderer } from '../shop/render/shopRenderer'
+import type { ShopInput } from '../shop/step'
+import { shopWorldOf } from './session'
 import type { Panel, Session, SessionDeps } from './session'
 
 /**
@@ -79,6 +85,13 @@ export interface GameView {
    * 而战斗那一侧只认按下 —— 合成一个入口就得在这一层猜"这一下算哪种"。
    */
   readonly menuInput: (input: MenuInput) => void
+  /** 商店贴图还在载入 —— 进门那一下、以及装备店换一栏商品时各有这几十毫秒。 */
+  readonly shopLoading: boolean
+  /**
+   * 店里的一次鼠标事件（舞台**逻辑坐标**）。店没开着时收下就丢掉（xl-yg6.11）。
+   * 与菜单同一个理由：按下 / 松开 / 移动三种都要送。
+   */
+  readonly shopInput: (input: ShopInput) => void
   /**
    * 世界此刻在哪个场景（注册表名，如 `大地图`）。
    *
@@ -137,12 +150,25 @@ export function useGame(
   sceneName: string | null,
   battleRenderer: BattleRenderer | null = null,
   menuRenderer: MenuRenderer | null = null,
+  shopRenderer: ShopRenderer | null = null,
 ): GameView {
   const sessionRef = useRef<Session | null>(null)
   const queueRef = useRef<InputEvent[]>([])
   const clicksRef = useRef<BattleInput[]>([])
   /** 菜单里的鼠标事件，攒到下一拍。**没有键盘那一种。** */
   const menuInputRef = useRef<MenuInput[]>([])
+  /** 店里的鼠标事件，攒到下一拍（xl-yg6.11）。 */
+  const shopInputRef = useRef<ShopInput[]>([])
+  const [shopLoading, setShopLoading] = useState(false)
+  /** 已经载过贴图的那一份商店名单（按内容比）。装备店换一栏就要重载商品图。 */
+  const loadedShopRef = useRef<string | null>(null)
+  const shopLoadingRef = useRef(false)
+  /**
+   * 这一次进店是什么时候（`performance.now()`）。`null` = 店没开着。
+   * 鼠标图与四条人物动画的帧号从它数起 —— 原版那条动画线程是面板建好就在跑的，
+   * 帧号本来就不对应任何状态，从进门那一刻数只是让它从第 0 格起。
+   */
+  const shopSinceRef = useRef<number | null>(null)
   /** 按 ESC 那一下：下一拍开菜单。原版 `ScenePanel.keyPressed` 的那句。 */
   const openMenuRef = useRef(false)
   const [dialogue, setDialogue] = useState<DialogueState | null>(null)
@@ -188,6 +214,11 @@ export function useGame(
     loadedMenuRef.current = null
     menuLoadingRef.current = false
     setMenuLoading(false)
+    shopInputRef.current = []
+    loadedShopRef.current = null
+    shopLoadingRef.current = false
+    shopSinceRef.current = null
+    setShopLoading(false)
     // 载入那几十毫秒里显示的是**场景**（"正在载入 X…"），不是标题。
     //
     // **这一点跟原版是一致的**，而 xl-w16 的票面写反了（它说"原版是
@@ -395,10 +426,12 @@ export function useGame(
         scene: queueRef.current,
         battle: clicksRef.current,
         menu: menuInputRef.current,
+        shop: shopInputRef.current,
       }
       queueRef.current = []
       clicksRef.current = []
       menuInputRef.current = []
+      shopInputRef.current = []
       // 按 ESC 开菜单。**在推进之前**：晚一拍开的话那一拍的方向键还会被场景
       // 收走，表现为"按了 ESC 主角又多走一步"。
       const opening = openMenuRef.current
@@ -412,6 +445,7 @@ export function useGame(
       }
       drawBattle(next)
       drawMenu(next)
+      drawShop(next, now)
       // 战斗面板显示的时候场景那张画布看不见，画它是白费；而**世界照样在推**
       // （原版那条线程没停），所以这里跳的只有绘制。
       if (next.panel !== 'scene') return
@@ -480,9 +514,42 @@ export function useGame(
       menuRenderer.draw(menuDrawList(world))
     }
 
+    /**
+     * 商店那张画布（xl-yg6.11）。与菜单同构：贴图按**内容**比，装备店换一栏
+     * 商品图就换一批，要重载；空窗里不画。
+     *
+     * **每一拍都画**，不像菜单那样只在世界变了才有得画：那条动画线程
+     * （鼠标图 + 四条人物动画，120 ms 一格）不碰状态，帧号从进门那一刻现数
+     * （`shop/preview.ts` 的 `previewFrame` —— 名字是预览那时起的，数法就是
+     * 原版那个"先赋值后睡"的循环，进店的正路与预览共用这一份）。
+     */
+    function drawShop(next: Session, now: number): void {
+      const world = shopWorldOf(next)
+      if (world === null) {
+        shopSinceRef.current = null
+        return
+      }
+      if (shopSinceRef.current === null) shopSinceRef.current = now
+      if (!shopRenderer) return
+      const wanted = shopTextureIds(world).join(' ')
+      if (loadedShopRef.current !== wanted) {
+        loadedShopRef.current = wanted
+        shopLoadingRef.current = true
+        setShopLoading(true)
+        void shopRenderer.load(shopTextureIds(world)).then(() => {
+          if (loadedShopRef.current !== wanted) return
+          shopLoadingRef.current = false
+          setShopLoading(false)
+        })
+        return
+      }
+      if (shopLoadingRef.current) return
+      shopRenderer.draw(shopDrawList(world, previewFrame(now - shopSinceRef.current)))
+    }
+
     const id = window.setInterval(pump, TICK_MS)
     return () => window.clearInterval(id)
-  }, [renderer, battleRenderer, menuRenderer])
+  }, [renderer, battleRenderer, menuRenderer, shopRenderer])
 
   const click = (x: number, y: number): void => {
     const world = sessionRef.current?.battle?.world
@@ -501,12 +568,29 @@ export function useGame(
     menuInputRef.current.push(input)
   }
 
+  /** 店里的一次鼠标事件（舞台**逻辑坐标**）。店没开着就丢掉。 */
+  const shopInput = (input: ShopInput): void => {
+    if (sessionRef.current?.panel !== 'shop') return
+    shopInputRef.current.push(input)
+  }
+
   const restart = (): void => {
     resetParty()
     setGeneration((n) => n + 1)
   }
 
-  return { dialogue, scene, panel, battleLoading, menuLoading, click, menuInput, restart }
+  return {
+    dialogue,
+    scene,
+    panel,
+    battleLoading,
+    menuLoading,
+    shopLoading,
+    click,
+    menuInput,
+    shopInput,
+    restart,
+  }
 }
 
 /**

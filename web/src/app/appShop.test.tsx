@@ -21,14 +21,22 @@ import type { ShopInput } from '../shop/step'
  */
 const shopInput = vi.fn<(input: ShopInput) => void>()
 const loading = { current: false }
+/** 游戏那一侧（从选择框的门真进店，xl-yg6.11）：面板、店里的鼠标、载入中。 */
+const game = {
+  panel: 'scene' as GameView['panel'],
+  shopLoading: false,
+  shopInput: vi.fn<(input: ShopInput) => void>(),
+}
 
 vi.mock('../game/useGame', () => ({
   useGame: (): GameView => ({
     dialogue: null,
-    panel: 'scene',
+    panel: game.panel,
     battleLoading: false,
     menuLoading: false,
     menuInput: () => {},
+    shopInput: game.shopInput,
+    shopLoading: game.shopLoading,
     click: () => {},
     scene: null,
     restart: () => {},
@@ -44,6 +52,9 @@ const { App } = await import('./App')
 beforeEach(() => {
   shopInput.mockClear()
   loading.current = false
+  game.panel = 'scene'
+  game.shopLoading = false
+  game.shopInput.mockClear()
 })
 afterEach(cleanup)
 
@@ -118,6 +129,53 @@ describe('App 与商店预览', () => {
     loading.current = true
     render(<App />)
     choose('drug')
+    expect(screen.getByRole('status')).toHaveTextContent('正在载入商店…')
+  })
+})
+
+/**
+ * **进店的正路**（xl-yg6.11）：场景里选择框选「是」，会话把面板翻成 `shop`。
+ * 这一截的错法与预览同型 —— 画布藏着、鼠标没送进去、送错了主人 —— 都长得像
+ * "进了店却点不动"，而状态层那边的判据全绿。
+ */
+describe('App 与从门里进的店', () => {
+  it('会话翻到 shop：商店那张露出来，场景那张藏起来，对话框也不画', () => {
+    game.panel = 'shop'
+    render(<App />)
+    expect(screen.getByTestId('shop-host')).not.toHaveAttribute('hidden')
+    for (const id of ['scene-host', 'battle-host', 'menu-host']) {
+      expect(screen.getByTestId(id), id).toHaveAttribute('hidden')
+    }
+  })
+
+  it('鼠标三种都送给**游戏**，不送给预览', () => {
+    game.panel = 'shop'
+    render(<App />)
+    const host = screen.getByTestId('shop-host')
+    stubBox(host, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(host, { clientX: 880, clientY: 30 })
+    fireEvent.mouseUp(host, { clientX: 880, clientY: 30 })
+    fireEvent.mouseMove(host, { clientX: 600, clientY: 190 })
+    expect(game.shopInput.mock.calls.map(([i]) => i)).toEqual([
+      { e: 'press', x: 880, y: 30 },
+      { e: 'release', x: 880, y: 30 },
+      { e: 'move', x: 600, y: 190 },
+    ])
+    expect(shopInput).not.toHaveBeenCalled()
+  })
+
+  it('不在店里时一条都不送给游戏', () => {
+    render(<App />)
+    const host = screen.getByTestId('shop-host')
+    stubBox(host, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(host, { clientX: 10, clientY: 10 })
+    expect(game.shopInput).not.toHaveBeenCalled()
+  })
+
+  it('游戏那一侧的店在载素材时也有那句提示', () => {
+    game.panel = 'shop'
+    game.shopLoading = true
+    render(<App />)
     expect(screen.getByRole('status')).toHaveTextContent('正在载入商店…')
   })
 })
