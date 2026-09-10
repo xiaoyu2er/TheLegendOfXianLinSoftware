@@ -138,6 +138,23 @@ describe('isLoad 只在无对话编号的场景里清（xl-1dv.33）', () => {
     expect(map.dialogue.groupOrder).toBe(5)
   })
 
+  /**
+   * 篡改矩阵里逮到的洞：上面几条都是从读档那个场景**直接**走进无对话场景，「中间经过一个有
+   * 对话的场景标志仍留着」这一支一条都没走到（把 `initiate` 里的 isLoad 写死成 false，全绿）。
+   * JVM 读数：读 存档0 → 再 `initiation("脚本1.txt")`（有 Dialogue）→ `isLoad` 仍为 true。
+   */
+  it('中间隔一个有 Dialogue 段的场景：标志一路留着，到第一个无 Dialogue 段的场景才换', () => {
+    fresh()
+    const loaded = loadGame(pickedFromMenu([SLOT0])).scene.world
+    const via = walkInto(loaded, '脚本1')
+    expect(via.script.code).not.toBeNull()
+    expect(via.isLoad).toBe(true)
+    const dirty: World = { ...via, dialogue: { ...via.dialogue, eventOver: true, groupOrder: 9 } }
+    const dorm = walkInto(dirty, '宿舍')
+    expect(dorm.dialogue).toEqual(createDialogue(dorm.script))
+    expect(dorm.isLoad).toBe(false)
+  })
+
   it('对照：没读过档时，同一条路上无 Dialogue 段的场景沿用上一份', () => {
     const w = createWorld(getScene('脚本38'))
     const dirty: World = { ...w, dialogue: { ...w.dialogue, eventOver: true, groupOrder: 9 } }
