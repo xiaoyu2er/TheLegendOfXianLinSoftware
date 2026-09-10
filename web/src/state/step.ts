@@ -40,6 +40,15 @@ import {
   tickWalk,
   toDraft,
 } from './role'
+import {
+  checkSelectEvent,
+  createSelect,
+  fromSelectDraft,
+  selectKeyPressed,
+  tickSelectTimers,
+  toSelectDraft,
+} from './select'
+import type { PresentRequest, SelectDraft, SelectHost } from './select'
 import { fireDue } from './timer'
 import { isArrowKey } from './types'
 import type { CollisionMap, InputEvent, TilePos, World } from './types'
@@ -114,6 +123,9 @@ export const START_SCRIPT: readonly string[] = ['7/7', '宿舍.txt', '脚本1.tx
  */
 export function initiate(prev: World | null, scene: SceneScript): World {
   const script = dialogueScriptOf(scene)
+  // `new SelectEvent(...)` 的构造函数会往那两张 static 表里登记一条，所以它
+  // 同时产出一张**可能长了一条**的 recorder（见 `state/select.ts`）。
+  const select = createSelect(scene, scene.script, prev?.recorder ?? [])
   return {
     timeMs: prev?.timeMs ?? 0,
     scene: scene.script,
@@ -135,8 +147,12 @@ export function initiate(prev: World | null, scene: SceneScript): World {
     // FightEvent 同样是 initiation 里 new 出来的，所以 battle1Over 与
     // countOfBattle1 每换一个场景都回到起点（xl-rh9.17）。
     fight: createFight(scene),
+    select: select.select,
+    recorder: select.recorder,
     // 只亮一拍的输出，任何一个新建的世界里都是空的。
     battleRequest: null,
+    selectPanelRequest: null,
+    presentRequest: null,
     showing: prev?.showing ?? true,
   }
 }
@@ -211,9 +227,14 @@ export function step(
   let dlg = toDialogueDraft(world.dialogue)
   let nar = toNarratageDraft(world.narratage)
   let fight = toFightDraft(world.fight)
+  let sel = toSelectDraft(world.select, world.recorder)
   let base = world
   /** 这一拍起的那场战斗（`World.battleRequest`）。一拍最多起一场。 */
   let battleRequest: BattleInfo | null = null
+  /** 这一拍选择框要切去哪块面板（`World.selectPanelRequest`）。 */
+  let selectPanelRequest: 'shop' | 'equipmentShop' | null = null
+  /** 这一拍答对答错的加扣（`World.presentRequest`）。 */
+  let presentRequest: PresentRequest | null = null
 
   /**
    * `FightEvent.fight()` 开头那两句跨世界的动作：**打赢会推进剧情的那几场**
@@ -229,13 +250,30 @@ export function step(
       dlg = toDialogueDraft(base.dialogue)
       nar = toNarratageDraft(base.narratage)
       fight = toFightDraft(base.fight)
+      sel = toSelectDraft(base.select, base.recorder)
     }
     // `scene.role.setEvent(true)` —— 起战斗就松手，回来时主角不会接着走。
     d.canStop = true
   }
 
+  /**
+   * 选择框那三件跨对象的动作（见 `state/select.ts` 的 `SelectHost`）。
+   * 三件都**明写在这里**，一件都不静默丢：`fight` 走场景已有的那条路，
+   * 另外两件做成只亮一拍的输出，各自归后面那两张票。
+   */
+  const host: SelectHost = {
+    fight: (info) => requestBattle(info),
+    switchTo: (panel) => {
+      selectPanelRequest = panel
+    },
+    present: (request) => {
+      presentRequest = request
+    },
+    random,
+  }
+
   for (const event of input) {
-    const info = applyInput(base, d, dlg, fight, event, now)
+    const info = applyInput(base, d, dlg, fight, sel, event, now, host)
     if (info !== null) requestBattle(info)
   }
 
@@ -247,6 +285,9 @@ export function step(
   fireDue(d.walk, now, ROLE_TIMER_MS, () => tickWalk(d, world.collision, tiles), '走路定时器')
   tickDialogueTimers(dlg, now)
   tickNarratageTimers(nar, now)
+  // 选择框的三个定时器排在旁白之后、NPC 之前 —— 导出器 `installTimers` 的
+  // 根对象名单里 `sp.selectEvent` 就在 `sp.narratage` 与 `sp.npcs` 之间。
+  tickSelectTimers(sel, now)
   for (const npc of npcs) tickNpcTimers(npc, now)
 
   // ——— `ScenePanel.step()` ———
@@ -278,6 +319,7 @@ export function step(
     dlg = toDialogueDraft(base.dialogue)
     nar = toNarratageDraft(base.narratage)
     fight = toFightDraft(base.fight)
+    sel = toSelectDraft(base.select, base.recorder)
     // 第 5 步读的是**换过场景之后**的主角坐标：原版 `checkLocationDialogue`
     // 现问 `scene.role.getX()`，而那时 role 已经是新场景里站在入口上的那一个。
     rx = roleTile(d.px)
@@ -307,7 +349,11 @@ export function step(
     dialogue: fromDialogueDraft(dlg),
     narratage: fromNarratageDraft(nar),
     fight: fromFightDraft(fight),
+    select: fromSelectDraft(sel),
+    recorder: sel.recorder,
     battleRequest,
+    selectPanelRequest,
+    presentRequest,
   }
 }
 
@@ -513,16 +559,27 @@ function roleTile(px: number): number {
  * 所以它是照着 `ScenePanel.keyPressed` 抄的，由 `step.test.ts` 钉住，不是从
  * trace 里读出来的。
  *
- * 选择框（`selectEvent.isSelect`）、宝箱、ESC 进菜单各是别的票，那几行在原版
- * 里与这里的分支并列，不影响这几条的先后。
+ * **选择框（xl-yg6.8）**在原版里占两处，位置都要紧：
+ *
+ * - 方向键那一支外面套着 `if (!selectEvent.isSelect)` —— 选择框开着就走不动，
+ *   同一下方向键归光标。⚠️ 它套在 `checkRun()` **外面**，所以选择框开着时
+ *   连"按住 Ctrl 起跑"都不发生；
+ * - `if (selectEvent.isSelect) selectEvent.keyPressed(keyCode)` 排在
+ *   `checkNPCOral()` **之后** —— 于是弹出选择框的那一下空格，会紧接着又被
+ *   选择框自己收一次（`isAnswer` 时那一下就把回答框关掉了）。
+ *
+ * 宝箱（`equipmentEvent.keyPressed`）与 ESC 进菜单是别的票，那两行在原版里
+ * 与这里的分支并列，不影响这几条的先后。
  */
 function applyInput(
   world: World,
   d: ReturnType<typeof toDraft>,
   dlg: ReturnType<typeof toDialogueDraft>,
   fight: FightDraft,
+  sel: SelectDraft,
   event: InputEvent,
   now: number,
+  host: SelectHost,
 ): BattleInfo | null {
   if (event.e === 'release') {
     // `ScenePanel.keyReleased` 的 switch 只有四个方向键的分支。
@@ -531,8 +588,15 @@ function applyInput(
   }
   if (world.narratage.active) return null
 
-  // 跳过逐字打印。**原版没有这个键**，见 `dialogue.ts` 的 `skipPrinting`。
-  if (event.k === 'skip') {
+  // 回车有两个身份。**选择框开着时它是原版的确认键**（往下走，交给
+  // `SelectEvent.keyPressed`）；没开着时它是那个加出来的"跳过逐字打印"
+  // （原版没有这个键，见 `dialogue.ts` 的 `skipPrinting`）。
+  //
+  // 两者不会打架，而这是**数出来的**：11 条场景真值里一共 13 次回车，
+  // **没有一次**落在选择框之外（判据取的是上一拍末的 `select.active`，
+  // 也就是按键真正到达的那个时刻 —— 取本拍的快照会把"这一下正好把框关掉"
+  // 误判成"落在框外"）。所以这条分支一次都碰不到真值管着的行为。
+  if (event.k === 'enter' && !sel.isSelect) {
     skipPrinting(dlg, now)
     return null
   }
@@ -578,15 +642,20 @@ function applyInput(
     return null
   }
   if (isArrowKey(event.k)) {
-    // 原版 `ScenePanel.keyPressed`：先 `checkRun()`（只做 setRun(true)），
-    // 再 `switchWalk()`。按住控制键**只在按下方向键的那一刻**置位跑步，
-    // 松开控制键什么也不做——跑步是在跑步定时器停下时自己清掉的。
-    if (event.ctrl) d.running = true
-    pressDirection(d, event.k, now)
-    return null
+    if (!sel.isSelect) {
+      // 原版 `ScenePanel.keyPressed`：先 `checkRun()`（只做 setRun(true)），
+      // 再 `switchWalk()`。按住控制键**只在按下方向键的那一刻**置位跑步，
+      // 松开控制键什么也不做——跑步是在跑步定时器停下时自己清掉的。
+      if (event.ctrl) d.running = true
+      pressDirection(d, event.k, now)
+    }
+  } else if (space && !started) {
+    checkNpcOral(dlg, world.npcs, roleTile(d.px), roleTile(d.py), now, (npcNo) =>
+      checkSelectEvent(sel, npcNo, now),
+    )
   }
-  if (space && !started) {
-    checkNpcOral(dlg, world.script, world.npcs, roleTile(d.px), roleTile(d.py), now)
-  }
+  // `if (selectEvent.isSelect) selectEvent.keyPressed(keyCode)` —— 排在最后，
+  // 而且读的是**刚刚可能被 `checkNPCOral` 打开的**那个 `isSelect`。
+  if (sel.isSelect) selectKeyPressed(sel, event.k, now, host)
   return null
 }

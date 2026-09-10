@@ -18,6 +18,7 @@ import type { ExitTable } from './exit'
 import type { BattleInfo, FightState } from './fight'
 import type { NarratageState } from './narratage'
 import type { NpcState } from './npc'
+import type { PresentRequest, SelectRecord, SelectState } from './select'
 
 /** 主角朝向。原版是 `Role.DOWN/UP/LEFT/RIGHT` = 0/8/16/24。 */
 export type Direction = 'down' | 'up' | 'left' | 'right'
@@ -205,6 +206,45 @@ export interface World {
    * `game/session.ts`。
    */
   readonly battleRequest: BattleInfo | null
+  /**
+   * 选择框 / 答题那套状态机（xl-yg6.8）。整个来自 `src/scene/SelectEvent.java`，
+   * 真值按这一个对象整列记（`select`）。
+   *
+   * **它同时是一道闸**：`isSelect` 为真时方向键归光标、主角走不动
+   * （`ScenePanel.keyPressed` 的 `if (!selectEvent.isSelect)`），所以
+   * `applyInput` 要读它；渲染层也要读它（原版 `paint()` 的第 3 步）。
+   */
+  readonly select: SelectState
+  /**
+   * `SelectEvent.mapName` / `answeredRecorder` 那两张 **static** 表配成的
+   * 记录：这一局游戏里哪个场景的哪几道题答过了。
+   *
+   * 它**不属于任何一个场景**，所以在这里而不在 `select` 里 —— 换场景时由
+   * `initiate` 原样带过去，跟 `currentScript` / `nextScript` 同一个道理。
+   * 真值里看得见（`question-memory` 走出去又走回来，`answered` 归零而
+   * 这张表没有）。
+   */
+  readonly recorder: readonly SelectRecord[]
+  /**
+   * **这一拍选择框要切到药店或装备超市**（`GameLauncher.switchTo(...)`）。
+   * `null` = 这一拍不切。与 `battleRequest` 同一个形状：只亮一拍的输出，
+   * 不是常驻状态。
+   *
+   * ⚠️ **今天没有消费者** —— 接上药店与装备超市两块面板是 **xl-yg6.11**
+   * 的正题。这里先把它发出来，是因为"选了是"与"选了否"在别处一模一样
+   * （`isSelect` 两条路上都留着，见 `docs/trace-format.md`），不发出来就
+   * 没有任何东西分得开这两条路。
+   */
+  readonly selectPanelRequest: 'shop' | 'equipmentShop' | null
+  /**
+   * **这一拍答对或答错了**：加扣多少金币、"得到物品"提示框该吐哪句话。
+   * `null` = 这一拍没有。
+   *
+   * ⚠️ 同样**今天没有消费者**：钱包与提示框分别归 **xl-yg6.9** 与
+   * **xl-yg6.10**（提示框就是真值 `treasure` 那一列的 `presenting` /
+   * `wordNo`，两张票共用同一个对象，见 `src/scene/EquipmentEvent.java`）。
+   */
+  readonly presentRequest: PresentRequest | null
   /**
    * `GameLauncher.currentPanel == scenePanel`（xl-rh9.17）。
    *

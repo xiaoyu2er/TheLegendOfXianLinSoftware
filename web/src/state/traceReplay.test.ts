@@ -127,6 +127,46 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
   },
   scene: (w) => w.scene,
   isScript: (w) => w.isScript,
+  /**
+   * 选择框那 28 个字段（xl-yg6.8）。**整列一次取齐**，不手挑 —— 手挑正是
+   * `role.stepNum` 那条漏了十几个月的成因（见 `DEAD_SUBFIELDS`）。
+   *
+   * `recorder` 那一列不属于这个场景（原版是两个 static 字段），所以它挂在
+   * `World` 上而不在 `World.select` 里；这里把两处拼回真值那一列的形状。
+   */
+  select: (w) => {
+    const s = w.select
+    return {
+      active: s.isSelect,
+      shop: s.shop,
+      equipShop: s.equipShop,
+      battle: s.battle,
+      question: s.question,
+      asking: s.asking,
+      answering: s.answering,
+      yesNo: s.yesNo,
+      abcd: s.abcd,
+      battleNo: s.battleNo,
+      questionNo: s.questionNo,
+      boxW: s.boxW,
+      boxH: s.boxH,
+      qx1: s.qx1,
+      qy1: s.qy1,
+      qx2: s.qx2,
+      qy2: s.qy2,
+      sentenceNo: s.sentenceNo,
+      wordNo: s.wordNo,
+      lineNo: s.lineNo,
+      maxLength: s.maxLength,
+      boxMoving: s.selectImageMove.running,
+      qBoxMoving: s.questionImageMove.running,
+      printing: s.wordsRun.running,
+      answered: [...s.answered],
+      fought: [...s.fought],
+      sceneNo: s.sceneNo,
+      recorder: w.recorder.map((r) => ({ scene: r.scene, answered: [...r.answered] })),
+    }
+  },
   audio: (w) => ({ bgm: w.audio.bgm }),
 }
 
@@ -143,24 +183,44 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
  * 这里分母仍然是磁盘上的 `SCENE_TRACE_NAMES` 与真值自己的列名，写死的是
  * "谁已经有人对齐了"这份需要人签字的登记。
  *
- * ⚠️ **这份「全满」是跑出来的，不是宣布的**：xl-yg6.4 把格子全填进来跑了
+ * ⚠️ **这份表是跑出来的，不是宣布的**：xl-yg6.4 把格子全填进来跑了
  * 一遍，红的两样当场登记到了别的表里（`viewport`/`drawOrder` 归
  * `ALIGNED_ELSEWHERE`，`role.stepNum` 归 `DEAD_SUBFIELDS`），剩下 7 组 ×
- * 5 条剧本一条都没红。别把「全满」读成「这张表没用了」—— 它现在守的是两件事：
+ * 5 条剧本一条都没红。
+ *
+ * ⚠️ **xl-yg6.8 又跑了一遍，读数在这里**：把 `select` × 11、`role` × 11、
+ * `dialogue` × 11、`audio` × 11 全填进来（也就是把上一轮所有挂在
+ * `xl-yg6.8` 名下的 `PENDING` 一次清空）跑，**红的只有一格 ——
+ * `audio × battle-door`**，而那一格本来就归 xl-yg6.11（战斗面板
+ * `initial()` 里换 BGM 那条线）。于是这一票翻过来的是 **13 格**：
+ * `select` 11 格 + `role` 的 battle-door / equipshop-door / question-answer /
+ * question-memory / shop-door 五格 + `dialogue` 的 battle-door 一格，
+ * 其中 `select` 那 11 格里有 6 格原先根本没有观察函数。
+ * **哪几格翻是判据裁决的，不是读代码猜的。**
+ *
+ * 别把「几乎全满」读成「这张表没用了」—— 它现在守的是两件事：
  *   1. 新真值或新列进来时先红一次 —— **xl-yg6.6 加 `select` / `treasure` 两列时
- *      它真的红了**（十个格子一起掉进"没人登记"），那两列现在挂在 `PENDING` 上；
+ *      它真的红了**（十个格子一起掉进"没人登记"）；
  *   2. 谁把某一组改回去时那一格立刻红。
  */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   // 主角九个字段（格子坐标 / 像素坐标 / 朝向 / 走跑两套帧号 / 走跑两个旗标），
   // M1 的 xl-9bd.6 与 xl-u39。第十个 `stepNum` 见 `DEAD_SUBFIELDS`。
+  // ⚠️ 后五条剧本（三扇门 + 两条答题）**xl-yg6.8 之前是红的**：它们在选择框
+  // 开着时按方向键，而原版那一下归光标（`ScenePanel.keyPressed` 的
+  // `if (!selectEvent.isSelect)`）、这一层却拿去挪主角。补上那道闸才翻过来。
   role: [
+    'battle-door',
     'bigmap-walk',
     'dorm-exit',
     'dorm-intro',
     'dorm-walk',
+    'equipshop-door',
     'maze-treasure',
     'milestone',
+    'question-answer',
+    'question-memory',
+    'shop-door',
   ],
   // NPC 七个字段，xl-9bd.9。⚠️ `dorm-walk` / `dorm-exit` 那几条里 NPC 动得少，
   // 守的是"别凭空动起来"；真的走动与被 checkNPCStop 停住在下面那条覆盖用例里
@@ -178,10 +238,14 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-memory',
     'shop-door',
   ],
-  // 对话框十二个字段，xl-9bd.10。⚠️ 五条里只有几条真的开过口；一份从头到尾
+  // 对话框十二个字段，xl-9bd.10。⚠️ 十一条里只有几条真的开过口；一份从头到尾
   // 没有对话的真值上这一格是"全 false 等于全 false"，覆盖靠下面那条数出来的
   // 用例兜。
+  // ⚠️ `battle-door` 这一格是被 `role` 连累的：主角**朝向**变了
+  // （`RoleEvent.switchWalk` 里那句 `role.setEvent(方向)` 在挡不挡得住之前
+  // 就跑了），于是 `checkNPCOral` 那一路跟着变。上面那道闸一补就一起翻了。
   dialogue: [
+    'battle-door',
     'bigmap-walk',
     'dorm-exit',
     'dorm-intro',
@@ -223,6 +287,22 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'shop-door',
   ],
   isScript: [
+    'battle-door',
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'question-memory',
+    'shop-door',
+  ],
+  // 选择框那 28 个字段，xl-yg6.8。整列来自 `src/scene/SelectEvent.java` 一个
+  // 对象（外加那两张 static 表配成的 `recorder`）。十一条全绿是跑出来的：
+  // 三扇门各选是与否、答对答错、以及"走出去再走回来题还记得"都在里面。
+  select: [
     'battle-door',
     'bigmap-walk',
     'dorm-exit',
@@ -339,21 +419,6 @@ const DEAD_SUBFIELDS: readonly DeadSubfield[] = [
  * 的坑）。分母仍然是磁盘：少写一条，上面那条 `unaccounted` 立刻红。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // 选择框那套状态机（`src/scene/SelectEvent.java` 一整个对象）。骨架那张票
-  // （选择框 UI + 新列落地）把它翻成已对齐。
-  select: {
-    'battle-door': 'xl-yg6.8',
-    'bigmap-walk': 'xl-yg6.8',
-    'dorm-exit': 'xl-yg6.8',
-    'dorm-intro': 'xl-yg6.8',
-    'dorm-walk': 'xl-yg6.8',
-    'equipshop-door': 'xl-yg6.8',
-    'maze-treasure': 'xl-yg6.8',
-    milestone: 'xl-yg6.8',
-    'question-answer': 'xl-yg6.8',
-    'question-memory': 'xl-yg6.8',
-    'shop-door': 'xl-yg6.8',
-  },
   // 宝箱与"得到物品"提示框（`src/scene/EquipmentEvent.java` +
   // `src/scene/TreasureBox.java`）。归宝箱那张票。
   treasure: {
@@ -369,34 +434,15 @@ const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     'question-memory': 'xl-yg6.10',
     'shop-door': 'xl-yg6.10',
   },
-  // ⚠️ **xl-yg6.7 起，早就对齐的那几组也开始有欠账了**，而这是新真值该有的
-  // 样子：那五条新剧本走的是选择框开着时的按键，而"选择框开着就走不动"
-  // （`ScenePanel.keyPressed` 的 `if (!selectEvent.isSelect)`）在状态层一个字
-  // 都还没写。于是同一下方向键，原版拿去挪光标、这一层拿去挪主角。
-  //
-  // 逐格实测（xl-yg6.7 把十一条剧本 × 七组全填进 ALIGNED 跑了一遍，红的挪到
-  // 这里）：`role` 五条红、`dialogue` 与 `audio` 各一条，其余全绿 —— 包括
-  // `maze-treasure` 整条七组（开宝箱按的是空格，不碰方向键），以及
-  // `question-memory` 的 `scene` 与 `audio`（它出门进大地图又走回来，
-  // 两次场景切换与三次背景音乐切换这一层已经对齐）。
-  role: {
-    'battle-door': 'xl-yg6.8',
-    'equipshop-door': 'xl-yg6.8',
-    'question-answer': 'xl-yg6.8',
-    'question-memory': 'xl-yg6.8',
-    'shop-door': 'xl-yg6.8',
-  },
-  // 主角**朝向**变了（`RoleEvent.switchWalk` 里那一句 `role.setEvent(方向)`
-  // 在挡不挡得住之前就跑了），所以 `checkNPCOral` 那一路跟着变。
-  // ⚠️ `npcs` 这一格**不在这里** —— 这条剧本挪光标用的是上键，正上方那一格
-  // 被 NPC 占着，主角一步都没挪，十三个 NPC 的走停判据（`checkNPCStop` 看的是
-  // 主角**坐标**）因此没受影响，实测逐 tick 全对。
-  dialogue: {
-    'battle-door': 'xl-yg6.8',
-  },
   // 这一格不是连带的，是**战斗那扇门自己的**：选「是」的一下原版先跑
   // `FightEvent.fight(...)`，`BattlePanel.initial` 按背景图把 BGM 换成
   // `B6.mp3`（真值这一列记着），而这一层还没有那条线。归三扇门那张票。
+  //
+  // ⚠️ xl-yg6.8 把选择框整层做出来之后，**它是这十一条剧本上最后一个欠账**
+  // （填满格子跑了一遍，红的只有这一格 —— 见 `ALIGNED` 那段注释里的读数）。
+  // 选择框这一头已经把 `battleRequest` 发出来了（`World.battleRequest`，
+  // 走的是 `FightEvent.fight` 那条既有的路），欠的是战斗面板那一头
+  // `initial()` 里按背景图挑 BGM 的那个 switch。
   audio: {
     'battle-door': 'xl-yg6.11',
   },
@@ -423,27 +469,17 @@ interface BlockedAt {
 }
 
 /**
- * xl-yg6.4 那一趟是空的（填满格子跑了一遍，一格都没停在半截上）；xl-yg6.7 起
- * 有了一条 —— `shop-door` 的主角一路对到**选择框开着时按下的那一下下键**才分岔，
- * 那正是这张表的形状：前半截全对，卡在别人那张票上。
+ * **今天又是空的，那是一个读数。**
  *
- * 只登记了这一格，不是挑着写：另外三条 `role` 的分岔点同样是"选择框开着时的
- * 那一下方向键"，但它们的剧本里**走路阶段也按过同一个键**，而这张表认那一 tick
- * 靠的是「第一条 (场景, 事件, 键) 命中」—— 认到的会是走路那一下，登记就成了
- * 一句错话。`shop-door` 从头到尾只按过一次下键，所以只有它认得准。
+ * xl-yg6.4 那一趟是空的（填满格子跑了一遍，一格都没停在半截上）；xl-yg6.7 起
+ * 有过一条 —— `shop-door` 的 `role` 一路对到"选择框开着时按下的那一下下键"
+ * 才分岔。**xl-yg6.8 把那道闸补上之后那一格整条对齐，登记跟着撤掉**，于是
+ * 这张表回到空。
+ *
+ * 空着的时候这个 `describe` 一条用例都不生成，所以下面留了一条明写读数的
+ * 用例（非空时它自己就没了）。
  */
-const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {
-  role: {
-    'shop-door': {
-      scene: '金陵大学医院.txt',
-      event: 'press',
-      key: 'down',
-      why:
-        '选择框开着时原版把方向键交给光标（ScenePanel.keyPressed 的 if (!selectEvent.isSelect)），' +
-        '这一层还没有那道闸，同一下键被拿去挪主角 —— 归 xl-yg6.8',
-    },
-  },
-}
+const BLOCKED_AT: Readonly<Record<string, Readonly<Record<string, BlockedAt>>>> = {}
 
 /**
  * **整条真值上这一列都是空数组的格子 —— 手写登记，写明为什么空。**

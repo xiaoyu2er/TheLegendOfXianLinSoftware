@@ -43,9 +43,9 @@ describe('键盘映射', () => {
     })
   })
 
-  it('回车认成 skip（跳过逐字打印，原版没有这个键，见 keyboard.ts）', () => {
+  it('回车认成 enter —— 与 trace 里的键名逐字一致（选择框的确认键）', () => {
     expect(toInputEvent({ type: 'keydown', key: 'Enter', ctrlKey: false, shiftKey: false })).toEqual(
-      { e: 'press', k: 'skip', ctrl: false },
+      { e: 'press', k: 'enter', ctrl: false },
     )
   })
 

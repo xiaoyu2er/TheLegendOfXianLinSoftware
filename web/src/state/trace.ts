@@ -118,6 +118,47 @@ export interface TraceTick {
    */
   readonly scene: string
   readonly isScript: boolean
+  /**
+   * 选择框 / 答题那套状态机（xl-yg6.6 加的列，xl-yg6.8 对齐）。整列来自
+   * `src/scene/SelectEvent.java` 一个对象，字段名与 `state/select.ts` 的
+   * `SelectState` 逐字对应 —— 只差 `active` ← `isSelect` 这一处改名，
+   * 那是导出器为了跟 `dialogue.active` / `narratage.active` 齐口径改的。
+   *
+   * 逐条字段对应源码里的哪一个，见 `docs/trace-format.md` 的字段表。
+   */
+  readonly select: {
+    readonly active: boolean
+    readonly shop: boolean
+    readonly equipShop: boolean
+    readonly battle: boolean
+    readonly question: boolean
+    readonly asking: boolean
+    readonly answering: boolean
+    /** `count_selectYesNo`。**取值是 2 和 3**，不是 0/1。 */
+    readonly yesNo: number
+    readonly abcd: number
+    readonly battleNo: number
+    readonly questionNo: number
+    readonly boxW: number
+    readonly boxH: number
+    readonly qx1: number
+    readonly qy1: number
+    readonly qx2: number
+    readonly qy2: number
+    /** `count_sentence`，**初值 1**。 */
+    readonly sentenceNo: number
+    readonly wordNo: number
+    readonly lineNo: number
+    readonly maxLength: number
+    readonly boxMoving: boolean
+    readonly qBoxMoving: boolean
+    readonly printing: boolean
+    readonly answered: readonly boolean[]
+    readonly fought: readonly boolean[]
+    readonly sceneNo: number
+    /** 那两张 static 表配成的记录，见 `state/select.ts` 的 `SelectRecord`。 */
+    readonly recorder: readonly { readonly scene: string; readonly answered: readonly boolean[] }[]
+  }
   /** `MusicPlayer.currentPlayingBGM`：**一个可断言的字符串**，不是"调用了 play()"。 */
   readonly audio: { readonly bgm: string | null }
   /** `OtherEvent.calOffset()` 的六元组，见 `scene/viewport.ts`。 */

@@ -29,17 +29,22 @@ const ARROWS: Readonly<Record<string, string>> = {
  * `KeyEvent.VK_SPACE` 那几条分支），trace 里也是这个名字，所以状态层收到的
  * 键名与真值逐字一致。
  *
- * `skip` **不是**原版的 —— 原版没有跳过逐字打印这回事。这一票的验收标准要求
- * 有，所以它挂在回车上，而**不是**挂在空格上。理由是可证伪性：真值里的空格
- * 永远只在整句打完或整屏打满之后才按下，往空格上加一条"打印中就跳过"的分支，
- * 逐 tick 比对一次都踩不到，那条分支会成为状态层唯一没有真值管着的行为，
- * 而它改的恰恰是别人都在对齐的那个游标。详见 `state/dialogue.ts` 的
- * `skipPrinting`。
+ * `enter` 是原版的（`SelectEvent.keyPressed` 的 `VK_ENTER`，trace 里也是这个
+ * 名字）。**跳过逐字打印**那个加出来的功能也搭在它上面，而**不是**搭在空格上：
+ * 真值里的空格永远只在整句打完或整屏打满之后才按下，往空格上加一条"打印中
+ * 就跳过"的分支，逐 tick 比对一次都踩不到，那条分支会成为状态层唯一没有真值
+ * 管着的行为，而它改的恰恰是别人都在对齐的那个游标。详见 `state/dialogue.ts`
+ * 的 `skipPrinting`。
  */
 const KEYS: Readonly<Record<string, string>> = {
   ' ': 'space',
   Spacebar: 'space',
-  Enter: 'skip',
+  // 回车有两个身份，**分辨它们的是选择框开没开着**（`state/step.ts` 的
+  // `applyInput`）：开着时它是原版的确认键（`SelectEvent.keyPressed` 的
+  // `VK_ENTER`，真值里就叫 `enter`）；没开着时它是那个加出来的"跳过逐字打印"。
+  // 所以这里发的键名一律是 `enter` —— 发两个名字的话，"这一下该给谁"就得在
+  // 键盘层判一次选择框状态，而键盘层看不见世界。
+  Enter: 'enter',
 }
 
 /**
