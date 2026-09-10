@@ -74,18 +74,6 @@ export interface DialogueScript {
   readonly code: readonly string[] | null
   /** `Reader.dialogue`：`[段][句] = [样式, 头像号或名字, 正文]`。 */
   readonly groups: readonly (readonly (readonly string[])[])[] | null
-  /**
-   * `SelectEvent.checkSelectEvent` 会截胡的那些 NPC 序号。
-   *
-   * 选择框本身是另一张票，但**这里必须知道它会截胡**：原版
-   * `NPCEvent.checkNPCOral` 是 `if (!selectEvent.checkSelectEvent(i)) sayOral(i)`，
-   * 漏掉这一句，走到商店大爷跟前按空格，Web 版会弹一句口头语而原版弹的是
-   * "要不要进商店"。那是"多了个对话框"，不是"少了个面板"，肉眼分不出对错。
-   *
-   * 名单从四段选择数据的第 0 列现算（`haveFighted` / `haveAnswered` 都是
-   * 进场时的全 false），不写死。
-   */
-  readonly selectNpcs: readonly number[]
 }
 
 /**
@@ -217,37 +205,9 @@ export function createDialogue(script: DialogueScript): DialogueState {
  * `createWorld`），要用的地方按参数传进来。
  */
 export function dialogueScriptOf(scene: SceneScript): DialogueScript {
-  return {
-    code: scene.dialogueCode,
-    groups: scene.dialogue,
-    selectNpcs: selectNpcsOf(scene),
-  }
+  return { code: scene.dialogueCode, groups: scene.dialogue }
 }
 
-/**
- * `SelectEvent.checkSelectEvent` 里被拿去跟 NPC 序号比的那几个数：四段选择
- * 数据各自的第 0 列。进场时 `haveFighted` / `haveAnswered` 全是 false，
- * 所以每一条都还生效。
- */
-function selectNpcsOf(scene: SceneScript): number[] {
-  const rows: (readonly string[] | undefined)[] = [
-    scene.selectShopPanel ?? undefined,
-    scene.selectEquipmentShopPanel ?? undefined,
-    ...(scene.selectBattlePanel ?? []),
-    ...(scene.selectQuestion ?? []),
-  ]
-  const npcs: number[] = []
-  for (const row of rows) {
-    const head = row?.[0]
-    if (head === undefined) continue
-    const n = Number.parseInt(head, 10)
-    // 原版这里是 Integer.parseInt，解不出来就是异常。数据里没有这种情况
-    // （96 个脚本实测），解不出来时宁可不截胡也不悄悄当成 0 —— 0 是一个真实的
-    // NPC 序号，当成 0 会让第一个 NPC 莫名其妙说不了话。
-    if (Number.isInteger(n)) npcs.push(n)
-  }
-  return npcs
-}
 
 // ============================ 草稿 ============================
 
@@ -539,14 +499,25 @@ function sayOral(d: DialogueDraft, npcs: readonly NpcState[], index: number, now
  *
  * 循环不 break —— 原版就没有。同时贴着两个该说话的 NPC，两次 `sayOral` 都会
  * 跑，后一次覆盖前一次。真值里没踩到，但它是原版的行为。
+ *
+ * `checkSelect` 就是原版那句 `if (!selectEvent.checkSelectEvent(i))` ——
+ * **截胡的那一支返回 true，这个 NPC 就不说话了**。它是回调而不是一份名单：
+ * `checkSelectEvent` 会跳过已经打过的选择战与已经答过的题，还会在选择框
+ * 已经开着时改弦更张（见 `state/select.ts`），而一份进场时算好的名单
+ * 表达不出这三件事里的任何一件。
+ *
+ * ⚠️ 这一版之前这里确实是一份名单（`DialogueScript.selectNpcs`，四段选择
+ * 数据的第 0 列）。它对"走到商店大爷跟前按空格弹的是选择框不是口头语"是够的，
+ * 对"打过一架之后同一个 NPC 改说口头语"就不够 —— 而后者与前者在画面上
+ * 长得一样。
  */
 export function checkNpcOral(
   d: DialogueDraft,
-  script: DialogueScript,
   npcs: readonly NpcState[],
   roleX: number,
   roleY: number,
   now: number,
+  checkSelect: (npcNo: number) => boolean,
 ): void {
   for (let i = 0; i < npcs.length; i++) {
     const npc = npcs[i]!
@@ -554,7 +525,7 @@ export function checkNpcOral(
     const eligible =
       npc.type === 0 ? near : npc.type === 1 ? !npc.walk.running : npc.type === 2 ? !npc.action.running : false
     if (!eligible) continue
-    if (script.selectNpcs.includes(i)) continue
+    if (checkSelect(i)) continue
     sayOral(d, npcs, i, now)
   }
 }
@@ -735,7 +706,9 @@ export function pressSpace(
  * 在句子还没打完时什么也不做，玩家只能等。这一票的验收标准要求"按键可跳过
  * 打印直接显示整句"，所以它是**加出来的**，而不是移植出来的。
  *
- * 因此它**不挂在空格上**（`game/keyboard.ts` 把它挂在回车）。理由是可证伪性：
+ * 因此它**不挂在空格上**（`game/keyboard.ts` 把它挂在回车 —— 而回车同时是
+ * 选择框的确认键，两个身份由 `state/step.ts` 的 `applyInput` 按
+ * `select.isSelect` 分开，那里数过真值里的每一次回车）。理由是可证伪性：
  * 真值里的空格永远只在 `sentenceOver || pageOver` 之后才按下（三份 trace 里
  * 25 次空格实测无一例外），所以往空格上加一条"打印中就跳过"的分支，逐 tick
  * 比对**一次都不会踩到**——那条分支会成为整个状态层唯一没有真值管着的行为，

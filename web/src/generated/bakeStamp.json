@@ -1,10 +1,10 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "c3c1f6980a3a1e937d0a90c398fa202279ef09a763836841adcd10d9d2871b57",
+    "web/scripts/bake.ts": "8427a38a00d042f5ed0ed8681a40f5b84a2347aa2ad1b86a6e0bbebecd83decb",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
     "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
-    "web/src/assets/ids.ts": "a86aef00c10ce40545b68af8cde40778765858218c1400109b45d2f0b2950cb4",
+    "web/src/assets/ids.ts": "10f157b608fe0ab415c5289a66e84a40dc7c3f2e47f5cd8eecd7e528cc28b78e",
     "web/src/assets/knownMissing.ts": "38e78118acacd0c676a82b159b3410e6698ffab10d88155257dc9a3d087ca3f5",
     "web/src/assets/listFiles.ts": "fb1c2ddfb2d2834afbcd527b014bdb42e8e246182aa39f6b66b99a93b0698dec",
     "web/src/assets/menuAssets.ts": "09dbaedb21455d93d67a1617a57fe4c8d9e58f6761e22092899cb96ced882a18",
@@ -40,14 +40,15 @@
     "web/src/shop/shopReferences.ts": "d0338a2ca8692bc488ea9480490626da5f3798e89dc775c82f47b17ce0c3f5b3",
     "web/src/stage/constants.ts": "5e67338cf7b79f3e2a01b01403f2f6d1927f746e8357e33564c00228d928c481",
     "web/src/start/assets.ts": "becfbff09fb1130a90ac6306b24a2aef8903d8b74b366d881525589e7737cd20",
-    "web/src/state/dialogue.ts": "314abf6abadbf594fc30cd3dc9698ea1bcac6c51e93e1ad018cc9c414ffbc41b",
+    "web/src/state/dialogue.ts": "2b7c4b270476972ded5fc5a98d157d8925c0bf6c7683b041aee87b611140f915",
     "web/src/state/exit.ts": "ea688ea78d3d4a3b8819ca9b9aa304e82b188fd0645ba650d083a6f1d0e0abbc",
     "web/src/state/fight.ts": "3863f5a19b2018fc080309d6429932141cddfaef640e19d5b427e27b6799b047",
     "web/src/state/narratage.ts": "219ef613e81f9afa9dc89afbdb426e9544bc36c9edcc41a15be41fce56579240",
     "web/src/state/npc.ts": "9694fa399c2f44026ca018e8f7afe37a95185b9ea7d4ad0464ed9c44dd6b6553",
     "web/src/state/role.ts": "3b2ca2f6d64483d21639e1645f48b20879222a59ba563b5c821b1ec70fd23da3",
+    "web/src/state/select.ts": "a920ffea6f5173d23e6f15dfbe0d7f208d5174b4b2c9e4a07e405ce56f60c0b5",
     "web/src/state/timer.ts": "836ef72b45e1930db3aeea089bbe6b699eee75a9d0af483990be80b7be0f7056",
-    "web/src/state/types.ts": "2b723551f576abc7adf2053899a43b128ec43b05c616b24f2faefa7b0f1c015d"
+    "web/src/state/types.ts": "1d816c3aa2e3159976426f91612ae417fba03721a6dafba512c90fdad716b28d"
   },
   "inputs": {
     "NPCs/厨师1/1.png": "d339407f5881072d19597ab27cf154d8170c9b04ceb0c16db18d7a13be560535",
@@ -473,8 +474,10 @@
     "backImages/NarratageBackImages/all_magic_21-9.png": "97d286799724d076f97d3e607544566a2a0f1cd67deb7859539d2304919b6249",
     "dialogue/36-18.png": "f2226537fcacbc44b4729b6c4f200726b709fdd5974b2d865dfa6c6e537b5f25",
     "dialogue/36-19.png": "4e2efd831ce27375fd0e46d34c45778756b780031e1cca6511ed924cbdd5b814",
+    "dialogue/icon.png": "71c3254f24e2e70fbb37fa691004f47cb5873209d48e46f0237796fd65360143",
     "dialogue/name.png": "f6d189de251384a9053336c0d25166d44943c577bdc4870f8fd316d0ead79388",
     "dialogue/对话框.png": "a2148f982ec765b581861af7d6a055c02f48b2fa29b6d78a1ab3e53a93b09c1a",
+    "dialogue/选择框.png": "e52cb4072a6ddfcebdeccd10dcccef0e2b0d77f4dd279a02a7db0f82b8b8f354",
     "heads/heads (1).png": "ada26df13d76bf5302a848656c89edd4ef4236208942e797e1707ce30772e0b8",
     "heads/heads (10).png": "fd3fa5a2a3fc7912f6d4a93ff19ba89da381a36a055322cac7d8bcd405c00328",
     "heads/heads (11).png": "1f70aacf44c91aa33ac3ae0299d089e0ee67bb264400a8a99e73971806dcdaf9",

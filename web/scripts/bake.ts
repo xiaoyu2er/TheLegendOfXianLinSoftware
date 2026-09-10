@@ -68,6 +68,7 @@ import {
   startAssetId,
   startFrameAssetId,
 } from '../src/assets/ids'
+import type { DialogueImageName } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
 import { listFiles } from '../src/assets/listFiles'
 import { scanSceneAssets } from '../src/assets/sceneAssets'
@@ -133,12 +134,16 @@ const ROLE_SPRITES = {
 const HEAD_COUNT = 91
 
 /** 逻辑名 → 仓库里的文件。`dialogueAssetId` 的另一半。 */
-const DIALOGUE_IMAGES = {
+const DIALOGUE_IMAGES: Readonly<Record<DialogueImageName, string>> = {
   box: 'dialogue/对话框.png',
   name: 'dialogue/name.png',
   icon0: 'dialogue/36-18.png',
   icon1: 'dialogue/36-19.png',
-} as const
+  // 选择框那两张（xl-yg6.8）。`SelectEvent` 的构造函数读的是
+  // `dialogue//选择框.png` 与 `dialogue//icon.png`。
+  select: 'dialogue/选择框.png',
+  selectIcon: 'dialogue/icon.png',
+}
 
 /**
  * 旁白的背景动画。张数与文件编号都照抄原版 `scene.Narratage` 的构造函数：
@@ -388,7 +393,7 @@ function main(): void {
       continue
     }
     const relative = `dialogue/${name}.webp`
-    manifest[dialogueAssetId(name as keyof typeof DIALOGUE_IMAGES)] = relative
+    manifest[dialogueAssetId(name as DialogueImageName)] = relative
     bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
   }
   for (let index = 0; index < HEAD_COUNT; index++) {

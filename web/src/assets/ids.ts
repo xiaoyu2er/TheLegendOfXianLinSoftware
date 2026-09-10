@@ -68,11 +68,18 @@ export function headAssetId(index: number): AssetId {
 }
 
 /**
- * 对话框自己的几张固定图（`Dialogue` 的构造函数一次性读的那四张）。
+ * `dialogue/` 目录下那几张固定图的逻辑名。前四张是 `Dialogue` 的构造函数一次性
+ * 读的，后两张是 `SelectEvent` 的构造函数读的（xl-yg6.8）。
+ *
  * `name` 是这里定义的逻辑名，不是文件名 —— 文件名里有中文和 `36-18` 这种
  * 编号，都不该漏进渲染层。映射见 `scripts/bake.ts` 的 `DIALOGUE_IMAGES`。
+ *
+ * 还差两张没进来，各自归后面那张票：`问题框.png`（xl-yg6.9）与
+ * `提示框.png`（xl-yg6.10）。
  */
-export function dialogueAssetId(name: 'box' | 'name' | 'icon0' | 'icon1'): AssetId {
+export type DialogueImageName = 'box' | 'name' | 'icon0' | 'icon1' | 'select' | 'selectIcon'
+
+export function dialogueAssetId(name: DialogueImageName): AssetId {
   return `dialogue:${name}`
 }
 

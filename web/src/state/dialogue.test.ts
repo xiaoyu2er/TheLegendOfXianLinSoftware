@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
-import { dialogueScriptOf } from './dialogue'
 import { TICK_MS, createWorld, step } from './step'
 import { readTrace, sceneNameOf } from './trace'
 import type { World } from './types'
@@ -43,7 +42,7 @@ describe('跳过逐字打印（原版没有的加法）', () => {
     expect(t).toBeLessThan(trace.ticks.length)
 
     // 一条路：按一下跳过键。
-    const skipped = step(world, [{ e: 'press', k: 'skip', ctrl: false }], TICK_MS)
+    const skipped = step(world, [{ e: 'press', k: 'enter', ctrl: false }], TICK_MS)
 
     // 另一条路：照着真值继续喂，直到原版自己把这一句打完。
     let waited = world
@@ -72,7 +71,7 @@ describe('跳过逐字打印（原版没有的加法）', () => {
     }
     expect(t).toBeLessThan(trace.ticks.length)
 
-    const skipped = step(world, [{ e: 'press', k: 'skip', ctrl: false }], TICK_MS)
+    const skipped = step(world, [{ e: 'press', k: 'enter', ctrl: false }], TICK_MS)
     const idle = step(world, [], TICK_MS)
     // 跳过键不能把弹出动画一起跳掉：那会让 isPrint 提前变真，而 isPrint 什么
     // 时候变真是逐 tick 对着真值断言的。
@@ -105,7 +104,9 @@ describe('选择框会截胡 NPC 的口头语', () => {
     // 夹具本身先验一遍：这个场景确实把 0 号 NPC 挂在了商店选择框上。
     expect(scene.selectShopPanel?.[0]).toBe('0')
     const world = facingTheDoctor(createWorld(scene))
-    expect(world.script.selectNpcs).toContain(0)
+    // 拦截那一支现在由 `checkSelectEvent` 现算（xl-yg6.8），不再是一份进场时
+    // 算好的名单 —— 夹具改成核"这个场景确实有选择数据"，见上面那条 expect。
+    expect(world.select.script.shop?.[0]).toBe('0')
 
     const after = step(world, [{ e: 'press', k: 'space', ctrl: false }], TICK_MS)
     expect(after.dialogue.oral).toBe(false)
@@ -113,7 +114,13 @@ describe('选择框会截胡 NPC 的口头语', () => {
 
   it('同一个夹具去掉选择数据之后，他就说话了', () => {
     const scene = getScene(SCENE)
-    const bare = { ...createWorld(scene), script: { ...dialogueScriptOf(scene), selectNpcs: [] } }
+    const full = createWorld(scene)
+    // 反面夹具：把这个场景的选择数据整个摘掉。摘的是 `select.script`，
+    // 也就是 `checkSelectEvent` 唯一读的那份数据。
+    const bare = {
+      ...full,
+      select: { ...full.select, script: { ...full.select.script, shop: null } },
+    }
     const world = facingTheDoctor(bare)
 
     const after = step(world, [{ e: 'press', k: 'space', ctrl: false }], TICK_MS)

@@ -1,5 +1,5 @@
 import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
-import { mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../assets/ids'
+import { dialogueAssetId, mapAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../assets/ids'
 import type { AssetId } from '../assets/ids'
 import { resolveAsset, resolveAssetOrNull } from '../assets/resolve'
 import type { SceneScript } from '../data/types'
@@ -13,6 +13,16 @@ import { TEXT_FONT_STACK } from '../textFont'
 import { FONT_SIZE, baselineY, layoutLine } from './narratageLayout'
 import { npcSprite } from './npcSprite'
 import { roleSprite } from './roleSprite'
+import {
+  FONT_SIZE as SELECT_FONT_SIZE,
+  ICON_LEFT,
+  ICON_SIZE,
+  boxRect,
+  iconY,
+  selectBoxKind,
+  selectCells,
+  selectLines,
+} from './selectLayout'
 import { computeDrawOrder, computeViewport, mapTiles, npcLayerOffset } from './viewport'
 
 /** 一个瓦片的边长（像素）。原版 `scene.Map.CS = 32`。 */
@@ -130,6 +140,26 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   // 原版在那几处画的是一个宽度 −1 的空壳，也就是什么都没画。
   const npcTextures = new Map<AssetId, Texture | null>()
 
+  // 选择框（xl-yg6.8）。**全 Pixi，画在场景这张画布上** —— 原版就是画进
+  // 场景的离屏图的（`ScenePanel.paint()` 的第 3 步），不像菜单与商店是独立
+  // 面板。所以它挂在 `app.stage` 上，不走 `stage/Stage.tsx` 那层 DOM overlay。
+  //
+  // ⚠️ 与对话框的先后**与原版反了**，这是已知偏离：原版 `paint()` 先画对话框
+  // 再画选择框，而对话框在这一侧是 DOM overlay（`ui/DialogueBox.tsx`），
+  // 永远压在画布上面。两者同时开着的那一帧今天走不到（选择框开着时
+  // `checkSelectEvent` 会把口头语截胡），所以没有真值分辨得出来。
+  const selectLayer = new Container()
+  selectLayer.visible = false
+  app.stage.addChild(selectLayer)
+  const selectBox = new Sprite()
+  const selectCursor = new Sprite()
+  selectLayer.addChild(selectBox)
+  selectLayer.addChild(selectCursor)
+  /** `选择框.png` 与 `icon.png`，两张一起载，跟主角那 48 帧同一个理由。 */
+  let selectTexture: Texture | null = null
+  /** 选择框那张图这一帧露出的那块。`dynamic` 要开，理由同地图碎片。 */
+  let selectFrame: Texture | null = null
+
   // 旁白：一张铺满画布的背景动画 + 一层文字（xl-9bd.11）。
   //
   // 整层挂在最上面，**旁白进行中把地图与人物那两层整个藏掉**——原版
@@ -158,6 +188,18 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   // 上一次画的是哪几行。每帧重画一次要把 1024×640 的画布重新上传一遍纹理，
   // 而这几行 50 ms 才变一次。
   let drawnText = ''
+
+  // 选择框的正文同样自己画在一张离屏画布上，理由与旁白那层一样：原版给的是
+  // **基线**坐标，而 Pixi 的 `Text` 摆的是行盒左上角。
+  const selectCanvas = document.createElement('canvas')
+  selectCanvas.width = STAGE_WIDTH
+  selectCanvas.height = STAGE_HEIGHT
+  const selectCtx2d = selectCanvas.getContext('2d')
+  if (!selectCtx2d) throw new Error('取不到选择框文字层的 2D context')
+  const selectTextCtx = selectCtx2d
+  const selectText = new Sprite(Texture.from(selectCanvas))
+  selectLayer.addChild(selectText)
+  let drawnSelectText = ''
 
   // 主角的 48 帧一次性载入。逐帧按需加载会让走动的第一圈掉帧，而这批图
   // 一共 100 KB 出头，没有按需的理由。
@@ -200,6 +242,26 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       ),
     )
     narratageTextures.push(...textures)
+  }
+
+  /**
+   * 选择框那两张图。**一次载齐**，两张加起来几 KB；按需载会让选择框弹出来的
+   * 第一帧画不出来，而那一帧恰好是滑入动画的起点。
+   */
+  async function loadSelectTextures(): Promise<void> {
+    if (selectTexture !== null) return
+    const [box, icon] = await Promise.all([
+      Assets.load<Texture>(resolveAsset(dialogueAssetId('select'))).then(nearest),
+      Assets.load<Texture>(resolveAsset(dialogueAssetId('selectIcon'))).then(nearest),
+    ])
+    selectTexture = box
+    selectFrame = new Texture({
+      source: box.source,
+      frame: new Rectangle(0, 0, 1, 1),
+      dynamic: true,
+    })
+    selectBox.texture = selectFrame
+    selectCursor.texture = icon
   }
 
   async function loadRoleTextures(): Promise<void> {
@@ -312,6 +374,60 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     }
   }
 
+  /**
+   * 选择框这一帧：`SelectEvent.drawSelectImage` 那两支。
+   *
+   * 摆位全部来自 `selectLayout.ts`（对着原版逐行核过），这里只负责贴。
+   */
+  function drawSelect(world: World): void {
+    const kind = selectBoxKind(world.select)
+    if (kind === null || selectTexture === null || selectFrame === null) {
+      selectLayer.visible = false
+      return
+    }
+    selectLayer.visible = true
+
+    const rect = boxRect(world.select)
+    selectFrame.frame.x = 0
+    selectFrame.frame.y = 0
+    // 宽或高为 0 的 `Rectangle` 会让 Pixi 算出一张 0 尺寸的纹理；滑入的第一帧
+    // 就是 0×0（`showSelectShopPanel` 把两个游标清成 0，下一拍才 +50/+15）。
+    selectBox.visible = rect.width > 0 && rect.height > 0
+    if (selectBox.visible) {
+      selectFrame.frame.width = rect.width
+      selectFrame.frame.height = rect.height
+      selectFrame.update()
+      selectBox.position.set(rect.x, rect.y)
+      selectBox.setSize(rect.width, rect.height)
+    }
+
+    const lines = selectLines(world.select, kind)
+    const cursor = lines.find((line) => line.selected)
+    selectCursor.visible = cursor !== undefined
+    if (cursor !== undefined) {
+      selectCursor.position.set(ICON_LEFT, iconY(cursor.row))
+      selectCursor.setSize(ICON_SIZE, ICON_SIZE)
+    }
+
+    // 正文只在真的变了的时候重画：一整张 1024×640 的画布每帧重传纹理太贵，
+    // 而逐字游标 30 ms 才动一次。键里带上光标行号 —— 只按文字比的话，
+    // 上下键翻光标那一下颜色不会跟着变。
+    const key = `${cursor?.row ?? -1}|${lines.map((line) => `${line.row}:${line.text}`).join('\n')}`
+    if (key === drawnSelectText) return
+    selectTextCtx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+    selectTextCtx.font = `bold ${SELECT_FONT_SIZE}px ${FONT_STACK}`
+    selectTextCtx.textBaseline = 'alphabetic'
+    const measure = (char: string): number => selectTextCtx.measureText(char).width
+    for (const line of lines) {
+      selectTextCtx.fillStyle = line.color
+      for (const cell of selectCells(line, measure)) {
+        selectTextCtx.fillText(cell.char, cell.x, line.baseline)
+      }
+    }
+    selectText.texture.source.update()
+    drawnSelectText = key
+  }
+
   function showWorld(world: World): void {
     // 旁白进行中：地图与人物那两层整个不画，跟原版 `paint()` 的那个 if 一致。
     // `narratageOver` 也要看——原版的 else 分支里还套着 `if (!narratageOver)`，
@@ -321,10 +437,12 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
     mapLayer.visible = !world.narratage.active
     camera.visible = !world.narratage.active
     if (world.narratage.active) {
+      selectLayer.visible = false
       if (showingNarratage) drawNarratage(world.narratage)
       return
     }
 
+    drawSelect(world)
     place(world)
     drawNpcs(world)
     // 纹理还没到（首帧、或者场景正在切）就先不画，别画成一个白方块。
@@ -377,6 +495,7 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   return {
     async showScene(scene: SceneScript): Promise<void> {
       await loadRoleTextures()
+      await loadSelectTextures()
       await loadNarratageTextures(scene)
       const texture = nearest(
         await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
