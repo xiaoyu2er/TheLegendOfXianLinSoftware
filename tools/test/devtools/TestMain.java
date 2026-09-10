@@ -52,6 +52,7 @@ public final class TestMain {
             "SceneSelectOpTest",   // xl-yg6.7 选择框那八条场景指令的解析层拒绝
             "MenuFuncOpTest",      // xl-6lo.7 func 指令的两道拒绝与那张表的分母
             "SaveDraftIntactTest", // xl-i06.5 存档草稿区没有覆盖掉真值
+            "SaveLoadScriptTest",  // xl-i06.6 存读档剧本的解析层拒绝
     };
 
     public static void main(String[] args) {
