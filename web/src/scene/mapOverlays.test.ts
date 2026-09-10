@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { repoPath } from '../test/repoPath'
+import { javaSource } from '../test/javaSource'
 import { OVERLAY_FILES, overlayPlacements } from './mapOverlays'
 import type { SceneViewport } from './viewport'
 
@@ -14,12 +13,12 @@ const at = (firstTileX: number, firstTileY: number): SceneViewport => ({
 })
 
 /** 原版 `OtherEvent.addMap` 的源码（GBK），拿来对数，不手抄第二份。 */
-const javaSource = new TextDecoder('gbk').decode(readFileSync(repoPath('src/scene/OtherEvent.java')))
+const otherEvent = javaSource('src/scene/OtherEvent.java')
 
 describe('OtherEvent.addMap 的遮掩图', () => {
   it('十张的文件、世界坐标与次序逐句等于原版那十句 drawImage', () => {
     const fromJava = [
-      ...javaSource.matchAll(/"maps\/\/(\w+)" \+ type \+ "\.png"\),\s*(\d+) - firstTileX \* 8, (\d+) - firstTileY \* 8/g),
+      ...otherEvent.matchAll(/"maps\/\/(\w+)" \+ type \+ "\.png"\),\s*(\d+) - firstTileX \* 8, (\d+) - firstTileY \* 8/g),
     ].map((m) => `${m[1]}@${m[2]},${m[3]}`)
     // 分母写死在这里是有意的：正则写坏了会匹配出 0 条，而 0 条与「全对上了」不许长得一样。
     expect(fromJava).toHaveLength(10)
