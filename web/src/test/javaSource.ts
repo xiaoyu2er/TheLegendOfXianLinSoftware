@@ -32,6 +32,8 @@ import { repoPath } from './repoPath'
  *   ⚠️ 那个文件还被 `assets/bakeStamp.test.ts` 的烘焙指纹守着，**连改一行
  *   注释都会让它红**（xl-xh3 实测：`bakeScript.ts` 的哈希变了，一条用例失败）
  *   —— 所以那一处的理由写在这里，而不是写在它自己身上。
+ * - `save/test/originalSave.ts`（xl-i06.7）—— 同上，读的是原版存出来的样例存档
+ *   （`tools/ground-truth/存档/`）；它读 Java 源码的那一半走的正是这个 helper。
  * - `shop/shopReferences.ts`（xl-knp.5）—— **烘焙器的一部分**，Node 侧但不是
  *   测试。它收 `repoRoot` 做参数，而这个 helper 从 `import.meta.url` 把仓库根
  *   算死了。那个参数不是装饰：`shopAssets.test.ts` 靠它把扫描器指到临时目录里
