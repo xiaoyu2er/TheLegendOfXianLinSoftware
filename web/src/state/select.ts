@@ -39,6 +39,12 @@ export const WORDS_MS = 30
 export const SELECT_IMAGE_MS = 40
 export const QUESTION_IMAGE_MS = 50
 
+/**
+ * 招呼语恒为 4 行：第 1 行是触发它的 NPC 序号，随后 3 行是文案
+ * （一句招呼 + 两个选项）。原版那两个 `for (int i = 0; i < 4; i++)`。
+ */
+export const GREETING_LINES = 4
+
 /** `maxLine`：`bufferedText` 有几行。写到第 20 行原版是数组越界。 */
 export const MAX_LINE = 20
 
@@ -124,8 +130,18 @@ export interface SelectRecord {
 }
 
 /**
- * 选择框的全部状态。字段名跟 trace 的 `select` 那一列逐字对齐（见
- * `docs/trace-format.md` 的字段表），比对时不必再翻译一道。
+ * 选择框的全部状态。字段名基本跟 trace 的 `select` 那一列对齐（见
+ * `docs/trace-format.md` 的字段表），**有四处不一样**，逐条列出来免得下一个人
+ * 以为它是逐字的：
+ *
+ * | 这里 | trace | 为什么不同 |
+ * |---|---|---|
+ * | `isSelect` | `active` | 导出器为了跟 `dialogue.active` / `narratage.active` 齐口径改的 |
+ * | `selectImageMove.running` | `boxMoving` | 这里存的是整个定时器（要 `dueMs`），真值只记它跑没跑 |
+ * | `questionImageMove.running` | `qBoxMoving` | 同上 |
+ * | `wordsRun.running` | `printing` | 同上 |
+ *
+ * 那四处的翻译写在 `traceReplay.test.ts` 的 `OBSERVERS.select` 里，一处。
  *
  * `sentences` / `text` 两样**不在真值里**：题面与选项来自脚本，数据层已经
  * 逐字段钉住了。它们在这里是因为绘制要用（`scene/selectLayout.ts`）与逐字
@@ -200,10 +216,14 @@ const STOPPED: TimerState = { running: false, dueMs: 0 }
  */
 export function createSelect(
   scene: SceneScript,
-  fileName: string,
   recorder: readonly SelectRecord[],
 ): { readonly select: SelectState; readonly recorder: readonly SelectRecord[] } {
   const script = selectScriptOf(scene)
+  // 原版收的是 `ScenePanel.initiation` 传下来的 `fileName`，而那与
+  // `scene.script` 恒是同一个字符串（`ScenePanel.initiation` 第一句就是
+  // `this.fileName = fileName`，烘焙器写进 `script` 的也是它）。收成两个入参
+  // 就多了一种"两者不一致"的状态，而那种不一致没有任何东西会响。
+  const fileName = scene.script
   let answered: readonly boolean[] = []
   let sceneNo = 0
   let recordIndex: number | null = null
@@ -392,6 +412,12 @@ export function fromSelectDraft(d: SelectDraft): SelectState {
  *   药店与装备超市那两扇门 —— 归 **xl-yg6.11**；
  * - `present` ← `Money.addCoins/reduceCoins` + `equipmentEvent.drawString(...)`，
  *   答对答错的加扣金币与"得到物品"提示框 —— 归 **xl-yg6.9 / xl-yg6.10**。
+ *   ⚠️ `present` 这个词是**原版自己的**（`EquipmentEvent` 的
+ *   `x_presentImage` / `presentImageMove` / `drawPresentation`），不是"呈现"。
+ *
+ * 后两件在 `state/step.ts` 里落成两个**只亮一拍**的字段，一拍里调第二次会盖掉
+ * 第一次 —— 那正是原版的行为（`switchTo` 连调两次是后一次的卡片赢，
+ * `drawString` 连调两次是后一句把前一句的游标清掉重来）。
  *
  * `random` 是 `Math.random()` 的替身，**只有加扣金币那一处读它**
  * （`500 + (int)(500 * Math.random())`）。做成入参是为了那个数能被断言。
@@ -461,13 +487,32 @@ export function checkSelectEvent(d: SelectDraft, npcNo: number, now: number): bo
 /**
  * 一段选择数据的第 0 列：触发它的 NPC 序号。
  *
- * 原版是 `Integer.parseInt(...)`，解不出来就抛。数据里没有这种情况（96 个
- * 脚本实测），解不出来时给一个**不可能命中的**值而不是 0 —— 0 是一个真实的
- * NPC 序号，当成 0 会让第一个 NPC 莫名其妙说不了话。
+ * 原版是 `Integer.parseInt(...)`，**解不出来就抛**。这里照抄那个抛：
+ * 数据里没有这种情况（96 个脚本实测），而给一个不命中的值只会让这个 NPC
+ * 悄悄改说口头语 —— 那与"这个 NPC 本来就没有选择事件"长得一模一样。
  */
 function npcNoOf(row: readonly string[]): number {
   const n = Number.parseInt(row[0] ?? '', 10)
-  return Number.isInteger(n) ? n : Number.NaN
+  if (!Number.isInteger(n)) {
+    throw new Error(`选择数据的第 0 列不是 NPC 序号：${JSON.stringify(row[0])}`)
+  }
+  return n
+}
+
+/**
+ * 招呼语那四行（`showSelectBattlePanel` / `showSelectQuestion` 里那个
+ * `for (int i = 0; i < 4; i++) currentSentences.add(row[i])`）。
+ *
+ * **不足四行就抛**，照抄原版那条 `ArrayIndexOutOfBoundsException`：切一段短的
+ * 出来只会少吐一句话，而"这一组数据坏了"与"这句话本来就短"分不开。
+ */
+function greeting(row: readonly string[] | undefined, where: string): readonly string[] {
+  if (row === undefined || row.length < GREETING_LINES) {
+    throw new Error(
+      `${where} 的招呼语只有 ${row?.length ?? 0} 行，原版要取满 ${GREETING_LINES} 行`,
+    )
+  }
+  return row.slice(0, GREETING_LINES)
 }
 
 /** `showSelectShopPanel` / `showSelectEquipmentShopPanel` / `showSelectBattlePanel`
@@ -494,18 +539,18 @@ export function showSelectEquipmentShopPanel(d: SelectDraft, now: number): void 
   showSelectBox(d, d.script.equipShop ?? [], now)
 }
 
-/** 选择战的招呼语只取那一行的**前 4 列**（原版那个 `for (i < 4)`）。 */
+/** 选择战的招呼语只取那一行的**前 4 列**（原版那个 `for (i < 4)`，见 `greeting`）。 */
 export function showSelectBattlePanel(d: SelectDraft, battleNo: number, now: number): void {
   d.isSelect = true
   d.battle = true
-  showSelectBox(d, (d.script.battlePanel?.[battleNo] ?? []).slice(0, 4), now)
+  showSelectBox(d, greeting(d.script.battlePanel?.[battleNo], `选择战第 ${battleNo} 场`), now)
 }
 
 export function showSelectQuestion(d: SelectDraft, questionNo: number, now: number): void {
   d.questionNo = questionNo
   d.isSelect = true
   d.question = true
-  showSelectBox(d, (d.script.question?.[questionNo] ?? []).slice(0, 4), now)
+  showSelectBox(d, greeting(d.script.question?.[questionNo], `第 ${questionNo} 道题`), now)
 }
 
 /**

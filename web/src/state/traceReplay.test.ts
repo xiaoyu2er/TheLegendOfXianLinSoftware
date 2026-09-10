@@ -937,8 +937,16 @@ describe('回放行为真值', () => {
     // 报错，那是它替我们兜的底，别指望它一直兜）。所以放一条明写当前读数的
     // 用例在这里：今天是空的，非空时它自己就没了。
     if (Object.keys(BLOCKED_AT).length === 0) {
-      it('今天没有「只对到半截」的格子 —— 这是读数，不是这张表的形状', () => {
-        expect(BLOCKED_AT).toEqual({})
+      // ⚠️ 这里**不能**写 `expect(BLOCKED_AT).toEqual({})` —— 它在这个 `if`
+      // 里面按构造成立，是一条装饰（`docs/agents/dispatch.md` 纪律 3 的第二族）。
+      // 改成断言"这张表空掉的**原因**"：xl-yg6.7 登记过的那一格
+      // （role × shop-door，卡在选择框那道闸上）现在整条对齐了，所以登记撤了。
+      // 谁把那道闸改回去，它会掉出 ALIGNED，这一条立刻红。
+      it('这张表空掉是因为 role × shop-door 整条对齐了，不是因为没人登记', () => {
+        expect(ALIGNED.role, 'role × shop-door 不在 ALIGNED 里，那这张表就不该是空的').toContain(
+          'shop-door',
+        )
+        expect(PENDING.role, 'role 又欠上了，却没人登记卡在哪一 tick').toBeUndefined()
       })
     }
     for (const [group, byTrace] of Object.entries(BLOCKED_AT)) {

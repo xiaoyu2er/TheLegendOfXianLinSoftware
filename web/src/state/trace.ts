@@ -120,9 +120,11 @@ export interface TraceTick {
   readonly isScript: boolean
   /**
    * 选择框 / 答题那套状态机（xl-yg6.6 加的列，xl-yg6.8 对齐）。整列来自
-   * `src/scene/SelectEvent.java` 一个对象，字段名与 `state/select.ts` 的
-   * `SelectState` 逐字对应 —— 只差 `active` ← `isSelect` 这一处改名，
-   * 那是导出器为了跟 `dialogue.active` / `narratage.active` 齐口径改的。
+   * `src/scene/SelectEvent.java` 一个对象。
+   *
+   * 与 `state/select.ts` 的 `SelectState` **有四处名字不一样**
+   * （`active` / `boxMoving` / `qBoxMoving` / `printing`），逐条列在那边的
+   * 类型注释里；翻译只发生在 `traceReplay.test.ts` 的 `OBSERVERS.select` 一处。
    *
    * 逐条字段对应源码里的哪一个，见 `docs/trace-format.md` 的字段表。
    */

@@ -125,7 +125,7 @@ export function initiate(prev: World | null, scene: SceneScript): World {
   const script = dialogueScriptOf(scene)
   // `new SelectEvent(...)` 的构造函数会往那两张 static 表里登记一条，所以它
   // 同时产出一张**可能长了一条**的 recorder（见 `state/select.ts`）。
-  const select = createSelect(scene, scene.script, prev?.recorder ?? [])
+  const select = createSelect(scene, prev?.recorder ?? [])
   return {
     timeMs: prev?.timeMs ?? 0,
     scene: scene.script,
@@ -237,20 +237,34 @@ export function step(
   let presentRequest: PresentRequest | null = null
 
   /**
+   * **换过场景之后，手上这几份草稿全部作废** —— 一份一份从新的 `base` 重摊。
+   *
+   * 一个 tick 里有两处会换场景（起一场推进剧情的战斗、走出一道门），两处摊的
+   * 必须是同一批草稿：漏掉一份的表现是"那一层还留在上一个场景里"，而画面上
+   * 只是"走回宿舍时进的场景不对"。抽成一处，加一份新草稿时就不会只加到其中
+   * 一边 —— 这一票加 `sel` 时原本正是要往两处各加一行。
+   *
+   * `d` 是 `Object.assign` 而不是重新赋值：它是 `const`，而下面每一处都在就地
+   * 改它。
+   */
+  const resync = (): void => {
+    Object.assign(d, toDraft(base.role))
+    npcs = base.npcs.map(toNpcDraft)
+    dlg = toDialogueDraft(base.dialogue)
+    nar = toNarratageDraft(base.narratage)
+    fight = toFightDraft(base.fight)
+    sel = toSelectDraft(base.select, base.recorder)
+  }
+
+  /**
    * `FightEvent.fight()` 开头那两句跨世界的动作：**打赢会推进剧情的那几场**
    * 先 `exitEvent.nextScript()` 把整个场景换掉，然后 `role.setEvent(true)`。
-   * 换场景之后四份草稿全部作废，跟第 4 步走出门那一处是同一套。
    */
   const requestBattle = (info: BattleInfo): void => {
     battleRequest = info
     if (advancesScript(info)) {
       base = nextScriptAdvance(base, scenes)
-      Object.assign(d, toDraft(base.role))
-      npcs = base.npcs.map(toNpcDraft)
-      dlg = toDialogueDraft(base.dialogue)
-      nar = toNarratageDraft(base.narratage)
-      fight = toFightDraft(base.fight)
-      sel = toSelectDraft(base.select, base.recorder)
+      resync()
     }
     // `scene.role.setEvent(true)` —— 起战斗就松手，回来时主角不会接着走。
     d.canStop = true
@@ -314,12 +328,7 @@ export function step(
   const exited = checkExit(base, fight, rx, ry, dlg, scenes)
   if (exited !== null) {
     base = exited
-    Object.assign(d, toDraft(base.role))
-    npcs = base.npcs.map(toNpcDraft)
-    dlg = toDialogueDraft(base.dialogue)
-    nar = toNarratageDraft(base.narratage)
-    fight = toFightDraft(base.fight)
-    sel = toSelectDraft(base.select, base.recorder)
+    resync()
     // 第 5 步读的是**换过场景之后**的主角坐标：原版 `checkLocationDialogue`
     // 现问 `scene.role.getX()`，而那时 role 已经是新场景里站在入口上的那一个。
     rx = roleTile(d.px)

@@ -24,7 +24,12 @@ import type { World } from './types'
  * 而那与"原版真的改掉了"长得一模一样。
  */
 function javaStatements(file: string): string {
-  return javaSource(file).replace(/\s+/g, ' ')
+  const source = javaSource(file).replace(/\s+/g, ' ')
+  // 空转要响：GBK 解码要是出了岔子，下面每一条 `toContain` 都会红成"原版改了"，
+  // 而每一条 `not.toContain` 会**全绿** —— 后者与"这一行确实不在源码里"长得
+  // 一模一样（`test/javaSource.ts` 明写了这条规矩）。
+  if (source.length === 0) throw new Error(`${file} 读出来是空的`)
+  return source
 }
 
 /**
@@ -61,8 +66,8 @@ function recordingHost(random = 0.5): {
 }
 
 /** 把一份 `SelectState` 摊成草稿，带上那张跨场景的表。 */
-function draftOf(scene: string, file: string, recorder: readonly SelectRecord[] = []) {
-  const built = createSelect(getScene(scene), file, recorder)
+function draftOf(scene: string, recorder: readonly SelectRecord[] = []) {
+  const built = createSelect(getScene(scene), recorder)
   return { draft: toSelectDraft(built.select, built.recorder), recorder: built.recorder }
 }
 
@@ -96,9 +101,9 @@ describe('选择框：真值盖不到的分支', () => {
     expect(source, '写回那张表按的是 count_scene').toContain('answeredRecorder.remove(count_scene);')
 
     // 大活先登记（18 道题），食堂后登记（1 道题）。
-    const first = draftOf('大活', '大活.txt')
+    const first = draftOf('大活')
     expect(first.recorder).toHaveLength(1)
-    const second = createSelect(getScene('食堂'), '食堂.txt', first.recorder)
+    const second = createSelect(getScene('食堂'), first.recorder)
     expect(second.recorder.map((r) => r.scene)).toEqual(['大活.txt', '食堂.txt'])
     // 正题：这个场景的记录在下标 1 上，而 count_scene 停在 0。
     expect(second.select.recordIndex).toBe(1)
@@ -120,7 +125,7 @@ describe('选择框：真值盖不到的分支', () => {
     expect(d.recorder[0]).toEqual({ scene: '大活.txt', answered: [true] })
 
     // 后果是可观察的：再走回大活，它认领到的是那条被写坏的记录。
-    const back = createSelect(getScene('大活'), '大活.txt', d.recorder)
+    const back = createSelect(getScene('大活'), d.recorder)
     expect(back.select.answered).toEqual([true])
     expect(getScene('大活').question).toHaveLength(18)
   })
@@ -133,7 +138,7 @@ describe('选择框：真值盖不到的分支', () => {
    * 那一场整条跳过，于是这个 NPC 从"弹选择框"改成"说口头语"。
    */
   it('打过的那一场不再问：checkSelectEvent 不再截胡，同一个 NPC 改说口头语', () => {
-    const { draft: d } = draftOf('大地图', '大地图.txt')
+    const { draft: d } = draftOf('大地图')
     const npcNo = Number(getScene('大地图').selectBattlePanel![0]![0])
     // 头一次：截胡并弹框。
     expect(checkSelectEvent(d, npcNo, 0)).toBe(true)
@@ -171,7 +176,7 @@ describe('选择框：真值盖不到的分支', () => {
    * 只有"这个 NPC 的题全答完了"那一刻 —— 今天的真值走不到，所以在这里造。
    */
   it('选择框开着时，题全答完的 NPC 也不说口头语 —— 那句 if (isSelect) 不看 npcNo', () => {
-    const { draft: d } = draftOf('大活', '大活.txt')
+    const { draft: d } = draftOf('大活')
     const npcNo = Number(getScene('大活').selectQuestion![0]![0])
     // 先把这个 NPC 名下的题全标成答过 —— 大活 18 道题都挂在 0..4 号 NPC 上，
     // 这里直接全标，夹具才不依赖"哪几道是他的"。
@@ -202,7 +207,7 @@ describe('选择框：真值盖不到的分支', () => {
     )
     expect(source, '左右键在 SelectEvent 里根本没出现过').not.toContain('VK_LEFT')
 
-    const { draft: d } = draftOf('金陵大学医院', '金陵大学医院.txt')
+    const { draft: d } = draftOf('金陵大学医院')
     const { host } = recordingHost()
     checkSelectEvent(d, 0, 0)
     const now = settle(d)
@@ -223,14 +228,14 @@ describe('选择框：真值盖不到的分支', () => {
    * "选了是什么也没发生"。
    */
   it('选「是」进药店 / 装备超市：这一拍把面板请求发出来（归 xl-yg6.11）', () => {
-    for (const [scene, file, want] of [
-      ['金陵大学医院', '金陵大学医院.txt', 'shop'],
-      ['金陵大学装备超市', '金陵大学装备超市.txt', 'equipmentShop'],
+    for (const [scene, want] of [
+      ['金陵大学医院', 'shop'],
+      ['金陵大学装备超市', 'equipmentShop'],
     ] as const) {
       const data = getScene(scene)
       const row = want === 'shop' ? data.selectShopPanel : data.selectEquipmentShopPanel
       expect(row, `${scene} 应该有这一段选择数据`).not.toBeNull()
-      const { draft: d } = draftOf(scene, file)
+      const { draft: d } = draftOf(scene)
       const { host, panels } = recordingHost()
       expect(checkSelectEvent(d, Number(row![0]), 0)).toBe(true)
       const now = settle(d)
@@ -243,7 +248,7 @@ describe('选择框：真值盖不到的分支', () => {
   })
 
   it('选「否」：什么都不发生，框关掉、回到走路', () => {
-    const { draft: d } = draftOf('金陵大学医院', '金陵大学医院.txt')
+    const { draft: d } = draftOf('金陵大学医院')
     const { host, panels, fights, presents } = recordingHost()
     checkSelectEvent(d, 0, 0)
     let now = settle(d)
@@ -273,7 +278,7 @@ describe('选择框：真值盖不到的分支', () => {
       [right, true],
       [right + 1, false],
     ] as const) {
-      const { draft: d } = draftOf('大活', '大活.txt')
+      const { draft: d } = draftOf('大活')
       const { host, presents } = recordingHost(0.5)
       showSelectQuestion(d, 0, 0)
       let now = settle(d)
@@ -309,7 +314,7 @@ describe('选择框：真值盖不到的分支', () => {
       '.substring(maxLength - 1, count_word)',
     )
 
-    const { draft: d } = draftOf('金陵大学医院', '金陵大学医院.txt')
+    const { draft: d } = draftOf('金陵大学医院')
     const lines = getScene('金陵大学医院').selectShopPanel!
     checkSelectEvent(d, 0, 0)
     settle(d)
@@ -354,14 +359,49 @@ describe('选择框接进 ScenePanel 的那两处', () => {
     expect(walking.role.walk.running).toBe(true)
   })
 
-  it('step() 把面板请求与加扣请求发到世界上（只亮一拍）', () => {
+  /** 推到选择框那三个定时器都停下来（滑入 + 逐字吐完）。 */
+  function settleWorld(world: World): World {
+    let s = world
+    for (let i = 0; i < 2000; i++) {
+      const t = s.select
+      if (!t.selectImageMove.running && !t.questionImageMove.running && !t.wordsRun.running) return s
+      s = step(s, [], TICK_MS)
+    }
+    throw new Error('选择框 2000 拍还没停下来')
+  }
+
+  it('step() 把面板请求发到世界上（只亮一拍）', () => {
     const world = facing(createWorld(getScene('金陵大学医院')))
-    let s = step(world, press('space'), TICK_MS)
-    expect(s.selectPanelRequest).toBeNull()
-    for (let i = 0; i < 400 && s.select.wordsRun.running !== false; i++) s = step(s, [], TICK_MS)
-    const chosen = step(s, press('enter'), TICK_MS)
+    const opened = step(world, press('space'), TICK_MS)
+    expect(opened.selectPanelRequest).toBeNull()
+    const chosen = step(settleWorld(opened), press('enter'), TICK_MS)
     expect(chosen.selectPanelRequest).toBe('shop')
     // 只亮一拍：下一拍就落回 null。
     expect(step(chosen, [], TICK_MS).selectPanelRequest).toBeNull()
+  })
+
+  it('step() 把答对答错的加扣请求发到世界上（只亮一拍）', () => {
+    // 大活的 0 号 NPC 是原地运动型（状态码 2），要等 `checkNPCStop` 把它的
+    // 动画停下来才搭得上话 —— 所以先空推几拍。
+    let s = facing(createWorld(getScene('大活')))
+    for (let i = 0; i < 5; i++) s = step(s, [], TICK_MS)
+    s = settleWorld(step(s, press('space'), TICK_MS))
+    expect(s.select.question, '第一下空格该弹出「要不要答题」').toBe(true)
+
+    s = settleWorld(step(s, press('enter'), TICK_MS)) // 选「是」→ 问题框
+    expect(s.select.asking).toBe(true)
+    expect(s.presentRequest, '题还没交，不该有加扣').toBeNull()
+
+    const answered = step(s, press('enter'), TICK_MS) // 交卷
+    expect(answered.presentRequest).not.toBeNull()
+    // 金额是 `500 + (int)(500 * Math.random())`，随机的 —— 断言的是区间与那句
+    // 拼法，不是某一个数（`select.test.ts` 上面那条钉死 random 之后核过全等）。
+    const request = answered.presentRequest!
+    expect(request.coins).toBeGreaterThanOrEqual(500)
+    expect(request.coins).toBeLessThan(1000)
+    expect(request.text).toBe(
+      request.correct ? `得到${request.coins}个金币` : `回答错误，扣掉${request.coins}个金币`,
+    )
+    expect(step(answered, [], TICK_MS).presentRequest).toBeNull()
   })
 })
