@@ -71,7 +71,7 @@ function mouseFrameOf(ops: readonly ShopDrawOp[], frames: number): number {
 
 /** 同一份清单里，四条人物动画各自落在第几格（去重之后应当只剩一个数）。 */
 function iconFramesOf(ops: readonly ShopDrawOp[], frames: number): number[] {
-  const ids = ops.filter((o) => o.kind === 'image' && o.layer === 'icon').map((o) => o.id)
+  const ids = ops.flatMap((o) => (o.kind === 'image' && o.layer === 'icon' ? [o.id] : []))
   const roles = [...PARTY_ROLES.map((r) => r.role), KEEPER_ROLE.drug, KEEPER_ROLE.equipment]
   const got: number[] = []
   for (const id of ids) {
