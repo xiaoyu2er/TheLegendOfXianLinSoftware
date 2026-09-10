@@ -8,6 +8,7 @@ import { repoPath } from '../test/repoPath'
 import { getScene } from '../data/scenesEager'
 import { getParty, rememberParty, resetParty } from '../fakes/party'
 import { getCoins, resetWallet } from '../fakes/wallet'
+import { drugCount, resetDrugPack } from '../fakes/drugPack'
 import { HEROES, derive } from '../battle/units'
 import type { PartyKey } from '../battle/units'
 import { readBattleTrace } from '../battle/trace'
@@ -665,5 +666,56 @@ describe('答题 → 钱包', () => {
     const next = advanceSession(burst, scene([]), SCENE_PUMP_MS)
     expect(next.scene.world.presentRequest).toBeNull()
     expect(getCoins()).toBe(10000 - 750)
+  })
+})
+
+/**
+ * 开箱开出来的东西进背包（xl-yg6.10）。
+ *
+ * 原版是 `TreasureBox.keyPressed` 里那句 `DrugPack.addDrug(treasureName, i)`，
+ * 与 `drawString` 同一拍。状态层把它做成只亮一拍的 `World.treasureRequest`，
+ * 这里验的是**会话真的把它记进了背包**，而且一个箱子只记一次。
+ *
+ * 真值不记背包（数量是 `Math.random()` 现掷的），`random` 钉成 0.5，
+ * 数量恒为 `1 + (int)(2 * 0.5)` = 2。
+ */
+describe('开箱 → 背包', () => {
+  beforeEach(() => {
+    resetDrugPack()
+  })
+
+  /** 站在迷宫1 那个 (4,17) 宝箱的正上方 (4,16) —— maze-treasure 的同一个摆法。 */
+  function maze(): RunningSession {
+    const world = createWorld(getScene('迷宫1'), false)
+    return openSession(
+      { ...world, role: { ...world.role, px: 4 * 32, py: 16 * 32 } },
+      deps(fixedRandom(0.5)),
+    )
+  }
+
+  const scene = (keys: InputEvent[]) => ({ scene: keys, battle: [], menu: [] })
+
+  it('按空格：金疮药进背包 2 件；再按一下，同一个箱子不再给', () => {
+    // 先走一拍，让第 6 步 checBoxes 把 near 置真。
+    let s = advanceSession(maze(), scene([]), SCENE_PUMP_MS)
+    expect(drugCount('金疮药')).toBe(0)
+    s = advanceSession(s, scene([press('space')]), SCENE_PUMP_MS)
+    expect(s.scene.world.treasureRequest).toEqual([{ name: '金疮药', count: 2 }])
+    expect(drugCount('金疮药')).toBe(2)
+    for (let i = 0; i < 5; i++) s = advanceSession(s, scene([]), SCENE_PUMP_MS)
+    s = advanceSession(s, scene([press('space')]), SCENE_PUMP_MS)
+    expect(s.scene.world.treasureRequest).toBeNull()
+    expect(drugCount('金疮药'), '同一个箱子给了第二次').toBe(2)
+  })
+
+  it('一次 pump 补跑很多拍，开箱那一拍的东西不会被吞掉', () => {
+    const s = advanceSession(maze(), scene([]), SCENE_PUMP_MS)
+    const burst = advanceSession(s, scene([press('space')]), 500)
+    expect(burst.scene.world.treasureRequest, '开箱那一拍被同一批的下一拍吞掉了').not.toBeNull()
+    expect(drugCount('金疮药')).toBe(2)
+    expect(burst.scene.carryMs).toBeGreaterThan(0)
+    const next = advanceSession(burst, scene([]), SCENE_PUMP_MS)
+    expect(next.scene.world.treasureRequest).toBeNull()
+    expect(drugCount('金疮药')).toBe(2)
   })
 })
