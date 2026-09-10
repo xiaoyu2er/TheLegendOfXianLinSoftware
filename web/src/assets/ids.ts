@@ -74,10 +74,17 @@ export function headAssetId(index: number): AssetId {
  * `name` 是这里定义的逻辑名，不是文件名 —— 文件名里有中文和 `36-18` 这种
  * 编号，都不该漏进渲染层。映射见 `scripts/bake.ts` 的 `DIALOGUE_IMAGES`。
  *
- * 还差两张没进来，各自归后面那张票：`问题框.png`（xl-yg6.9）与
- * `提示框.png`（xl-yg6.10）。
+ * `question` 是 `问题框.png`（xl-yg6.9）。还差一张没进来：`提示框.png`
+ * （xl-yg6.10）。
  */
-export type DialogueImageName = 'box' | 'name' | 'icon0' | 'icon1' | 'select' | 'selectIcon'
+export type DialogueImageName =
+  | 'box'
+  | 'name'
+  | 'icon0'
+  | 'icon1'
+  | 'select'
+  | 'selectIcon'
+  | 'question'
 
 export function dialogueAssetId(name: DialogueImageName): AssetId {
   return `dialogue:${name}`
