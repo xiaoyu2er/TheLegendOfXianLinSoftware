@@ -264,6 +264,19 @@ export interface World extends SceneRequests {
    * 初值是原版字段初值：`task = null`、三个开关 `false`。
    */
   readonly readerStatics: ReaderStaticFields
+  /**
+   * `SaveAndLoad.isLoad`（xl-i06.11）：读档置真，**只在无对话编号的场景里才清**。
+   *
+   * 它唯一的读者是 `initiation` 里新建对话事件那一段（`state/step.ts` 的 `carryDialogue`）：
+   * 新场景没有 `Dialogue` 段时，平常沿用上一个场景的对话事件；`isLoad` 为真则**新建一份**
+   * （编号为 null → 结束旗标为真、进度 0）并清掉它。有 `Dialogue` 段的场景走第一支、不碰它 ——
+   * 于是读进一个有对话的场景之后它一直留着，直到之后第一个没有对话的场景（xl-1dv.33）。
+   *
+   * 它是 `sal` 的实例字段、`sal` 跟着场景面板活到关机，所以换场景时原样带过去；「起」也不清
+   * （全仓只有两处写它，源码现读见 `save/test/loadResidueOriginal.test.ts`）—— 但这一层的「起」
+   * 整个世界重建，这一条归 xl-9rv。开机值 `false`。
+   */
+  readonly isLoad: boolean
 }
 
 /** 见 `World.readerStatics`。 */

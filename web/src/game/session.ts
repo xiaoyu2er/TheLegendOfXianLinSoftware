@@ -21,6 +21,8 @@ import { addCoins, getCoins, reduceCoins } from '../fakes/wallet'
 import { addDrug, drugCount } from '../fakes/drugPack'
 import { DRUGS } from '../battle/drugs'
 import { EQUIP_SLOTS } from '../menu/equipment'
+import type { EquipSlot } from '../menu/equipment'
+import type { SelectRecord } from '../state/select'
 import { applyShopInput, stepShop } from '../shop/step'
 import type { ShopInput } from '../shop/step'
 import { createShopWorld } from '../shop/world'
@@ -284,20 +286,63 @@ const NO_KEYS: readonly InputEvent[] = []
  * 换曲子由它自己收尾。照抄成一秒延迟，等于把一个别人家的竞态修补，变成
  * 我们自己的一秒黑屏。
  */
-export function createSession(deps: SessionDeps): Session {
+export function createSession(deps: SessionDeps, carry: NewGameCarry = NOTHING_CARRIED): Session {
   // 菜单**开机就建**，与原版同一句：`GameLauncher` 构造函数里那句
   // `menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)` 排在
   // `switchTo("start")` 之前。见 `Session.menu`。
+  const menu = createGameMenu()
+  if (carry.owned !== null) {
+    const owned = ownedEquipment(menu)
+    for (const slot of EQUIP_SLOTS) owned[slot].splice(0, owned[slot].length, ...carry.owned[slot])
+  }
   return {
     panel: 'start',
     scene: null,
     battle: null,
-    menu: createGameMenu(),
+    menu,
     shop: null,
     saveload: null,
     lsEntry: null,
     loadRequest: null,
     deps,
+  }
+}
+
+/**
+ * 「起」带进新局的东西（xl-i06.11）：原版点「起」只做 `switchTo("scene")` +
+ * `initiation("脚本1.txt")` + 起线程，**一样都不清**（`GameLauncher.init()` 那句被注释掉，
+ * xl-lly）。这一层的「起」把会话整个重建（`game/useGame.ts` 的 `restart`），所以原版里活过
+ * 「起」的东西要从上一局的会话里显式带过来 —— 除非它另有落点：
+ *
+ * - **钱、药**：落点是 `fakes/wallet.ts` / `fakes/drugPack.ts` 两个模块单例，重建会话碰不到，
+ *   本来就带着，这里不管；
+ * - **装备库存**（`EquipmentPack` 六张 static 表）：落点在菜单装备页的 `owned`
+ *   （`Session.menu`），会话一重建就没了 —— `owned`；
+ * - **答题记录**（`SelectEvent.mapName` / `answeredRecorder` 两张 static 表）：落点在场景世界的
+ *   `recorder`，同样随会话没了 —— `recorder`，由调用方交给新世界（`createWorld` 第三个参数）。
+ *
+ * **不带**、归 xl-9rv 裁的：三个人的等级 / 血 / 经验（web 的「起」故意回出厂状态，xl-lly 的
+ * 例外）、身上的装备（四项加成算在属性上，与等级绑在一起：只带装备不带属性，弃用那一下会把加成
+ * 扣成负的）、剧情三元组 `currentScript` / `isLoad` / 任务文本（原版也活过「起」，于是「新局」的
+ * 剧情接着上一局走；这一层的新世界回到开机值），以及菜单停在哪一页。JVM 读数与判据见
+ * `game/loadResidue.test.ts` 最后一组。
+ */
+export interface NewGameCarry {
+  /** 上一局的装备库存；`null` = 没有上一局（开机）。 */
+  readonly owned: Readonly<Record<EquipSlot, readonly number[]>> | null
+  /** 上一局的答题记录；开机是空的。 */
+  readonly recorder: readonly SelectRecord[]
+}
+
+const NOTHING_CARRIED: NewGameCarry = { owned: null, recorder: [] }
+
+/** 从上一局的会话里取出「起」要带进新局的那几样（见 {@link NewGameCarry}）。`null` = 开机。 */
+export function carryIntoNewGame(prev: Session | null): NewGameCarry {
+  if (prev === null) return NOTHING_CARRIED
+  const owned = ownedEquipment(prev.menu)
+  return {
+    owned: Object.fromEntries(EQUIP_SLOTS.map((s) => [s, [...owned[s]]])) as Record<EquipSlot, number[]>,
+    recorder: prev.scene?.world.recorder ?? [],
   }
 }
 
@@ -767,7 +812,9 @@ export function loadTargetOf(session: Session): string | null {
  * 两张答题表 —— 取**读档前的值**，一个字都不取自存档。开机读档时读档前的值就是初值。
  * 真正回填的交给 {@link applyReadBack}。
  *
- * 中间那句多起一条场景循环（中途读档之后双倍速）**不复刻**，归 xl-i06.11 的例外表。
+ * 中间那句多起一条场景循环（中途读档之后双倍速）**不复刻**：ADR-0001 例外表的
+ * 「读档多起一条场景循环」那一行，判据在 `game/loadResidue.test.ts`。读档之后留下来的
+ * 其余几样（`isLoad`、装备页 `heroEquipment`、任务文本……）也在那份文件里逐条断言。
  */
 export function loadGame(session: Session): RunningSession {
   const slot = session.loadRequest
