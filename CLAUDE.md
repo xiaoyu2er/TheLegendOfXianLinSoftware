@@ -105,9 +105,16 @@ The Java side has **three** checks. Two are re-export-and-diff, and both must
 come back empty:
 
 - `tools/export-truth.sh` — data layer. Re-run it and `git diff
-  tools/ground-truth` must be empty (96 scripts × 26 fields).
-- `tools/export-trace.sh --check` — behaviour layer, **all four drivers**
-  (scene / battle / menu / shop; how many scripts that is, is whatever
+  tools/ground-truth` must be empty. It covers two families: the parsed
+  scripts (one JSON per `script/*.txt`, 26 top-level fields — 96 × 26 on
+  2026-09-10, count it) and, since M6 (xl-i06.5), the original sample saves
+  under `tools/ground-truth/存档/`: a byte-for-byte copy of each `存档N.txt`
+  (truth — the exporter never writes it) plus the JSON the original
+  `Loader.loadLine` actually reads out of it. The exporter refuses to write
+  when the draft area `sources/Record/` differs from those copies, and
+  `SaveDraftIntactTest` (in `tools/test.sh`) checks the same thing.
+- `tools/export-trace.sh --check` — behaviour layer, **every driver**
+  (which ones exist is `ExportTrace.pickDriver`; how many scripts that is, is whatever
   `tools/traces/scripts/*.json` holds — count it, don't trust a number written
   here). Re-run it and `git diff tools/traces/out` must be empty; `--check`
   additionally exports each script twice in separate JVMs and `cmp`s them, which is what makes the traces usable
@@ -188,13 +195,13 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
 - `tools.Reader.readImage` warns on stderr for missing files; `tools.Clock`
   scales all timing with `factor` defaulting to `1.0` (identity), and has a
   default-off timer-freeze mode used only by the trace exporter.
-- **Behaviour truth lives in `tools/traces/`, and it now covers four drivers.**
+- **Behaviour truth lives in `tools/traces/`, and it now covers five drivers.**
   Declarative scripts in `traces/scripts/`, exported traces in `traces/out/` —
   both committed, and any diff in `out/` is a signal. One exporter
-  (`tools/export-trace.sh`, one command for all four) dispatches on the script's
+  (`tools/export-trace.sh`, one command for all of them) dispatches on the script's
   own `driver` field: `scene` (a step = one tick), `battle` (a step = one
-  `BattlePanel.run()` loop body + one `paint()`), `menu` and `shop` (a step =
-  one input event). **How many scripts each driver has is not written down
+  `BattlePanel.run()` loop body + one `paint()`), `menu`, `shop` and `saveload`
+  (a step = one input event). **How many scripts each driver has is not written down
   here** — that number has already gone stale twice in one day; read it off
   disk:
 
@@ -204,10 +211,11 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   done | sort | uniq -c
   ```
 
-  (2026-09-10 on this branch that printed 13 battle / 11 scene / 5 menu /
-  4 shop = 33 — a reading, not a spec. This spot has now gone stale three
-  times: 21 on 2026-09-07, 24 on 2026-09-09, 33 today. M5's xl-yg6.7 added
-  six scene scripts in one go; xl-knp.11 had added a fourth shop one.) An unrecognised
+  (2026-09-10 on the xl-i06.12 branch that printed 13 battle / 5 menu /
+  2 saveload / 14 scene / 4 shop = 38 — a reading, not a spec. This spot has
+  now gone stale four times: 21 on 2026-09-07, 24 on 2026-09-09, 33 and then
+  38 on 2026-09-10. M6 added the fifth driver and three scene scripts that
+  start from a save via a `load` field.) An unrecognised
   name is a hard failure, never a guess — but a **missing** `driver` field
   defaults to `scene`, the exporter's one and only leniency (the scene
   scripts predate the field; giving them one would change the script echo and
@@ -216,11 +224,15 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
   the state or viewport layers; read them out of a trace. Overview table,
   per-driver formats and pitfalls: `docs/trace-format.md`.
 - **Cross-end frame comparison: which drivers the capture page assembles is a reading, not a constant.**
-  `tools/compare-frames.sh` runs the original side for all four, but the capture
+  `tools/compare-frames.sh` runs the original side for every driver, but the capture
   page only assembles the drivers listed in `web/src/replay/implemented.ts`
   (`IMPLEMENTED_DRIVERS` — that array is the single source of truth; read it
-  off disk, don't trust a list written here. As of 2026-09-10 **all four are
-  wired**, M4 having added `shop`.) The machinery for an unassembled driver is
+  off disk, don't trust a list written here. As of 2026-09-10 every driver
+  the exporter has is wired, M6 / xl-i06.12 having added `saveload`.) Scripts
+  that start from an original save (saveload, and scene scripts with `load`)
+  get that save parsed on the Node side by the same test-side readers the
+  state-layer checks use (`web/src/compare/saveFixtures.ts`) — there is no
+  second, browser-side save reader. The machinery for an unassembled driver is
   still there and still worth knowing: such a script makes the pipeline
   **exit non-zero and name the driver plus its owning issue** — a script that
   was never assembled compares as "zero frames differ", which looks exactly

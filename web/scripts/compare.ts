@@ -15,6 +15,8 @@ import { DEFAULT_TOLERANCE, diffImage, frameDiff, summarize } from '../src/compa
 import type { FrameResult, SequenceResult } from '../src/compare/diff'
 import { expectationOf, scriptNames } from '../src/compare/expected'
 import type { Expectation } from '../src/compare/expected'
+import { saveFixtureOf } from '../src/compare/saveFixtures'
+import type { FixtureHeader } from '../src/compare/saveFixtures'
 import { checkStanding, unassembledLine } from '../src/compare/unassembled'
 import type { DriverStanding } from '../src/compare/unassembled'
 import { IMPLEMENTED_DRIVERS } from '../src/replay/implemented'
@@ -190,7 +192,7 @@ async function capture(
 function slimTrace(json: string): string {
   const trace = JSON.parse(json) as {
     driver: string
-    script: { name: string; scene: string; tickMs: number; isScript: boolean }
+    script: FixtureHeader['script']
     tickCount: number
     ticks: {
       t: number
@@ -222,6 +224,10 @@ function slimTrace(json: string): string {
       ip: tick.ip,
       input: tick.input,
     })),
+    // 起手要的原版存档（xl-i06.12）：读档剧本读的那一份、saveload 剧本草稿区那三个槽。
+    // 在这里（Node）按状态层判据用的同一个读取器解好再送进去，理由见
+    // `src/compare/saveFixtures.ts`。别的剧本得到 `undefined`，键整个去掉，字节与从前相同。
+    fixture: saveFixtureOf(trace),
   })
 }
 

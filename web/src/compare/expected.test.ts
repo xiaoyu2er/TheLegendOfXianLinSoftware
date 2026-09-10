@@ -107,13 +107,13 @@ describe('跨端比对的期望表', () => {
     // 不许在末拍之前抛」逐条剧本地验着 —— 谁让 battleDrawList 又抛起来而
     // 这里还写着 []，那边红。
     //
-    // xl-i06.10 签进来三条读档剧本：场景驱动器装得出，可起手是 Loader.load，取图页
-    // 读不了原版存档（replay/main.ts 当场抛）。`compare/loadScripts.test.ts` 核「带 load ⇔
-    // 表 unpainted」两个方向；「页面真的抛」那一半只是一条源码文本核对（弱：没在浏览器里起）。
+    // xl-i06.10 签进来过三条读档剧本（取图页读不了原版存档，当场抛）；xl-i06.12 让取图页
+    // 收比对器在 Node 那一半解好的存档起手（`compare/saveFixtures.ts`），三条换成了真量出来
+    // 的分区表态，**这张表又空了**。
     expect(
       unpainted.map(([name]) => name),
       '表 unpainted 的剧本变了？改这份登记，下面那几条会跟着验它',
-    ).toEqual(['load-slot0', 'load-slot1', 'load-slot2'])
+    ).toEqual([])
     for (const [name, e] of unpainted) assertNothingMeasured(name, e, /^xl-/)
     // 登记空着时上面那个 for 一轮都不跑。分母写死的那一半在这里（xl-knp.10
     // 收 /code-review 时补）：合成一条表态，逐条改坏，确认那四条规矩真会咬人。
@@ -138,13 +138,12 @@ describe('跨端比对的期望表', () => {
     // 验着「表说 unassembled 而页面装得出 → 抛」两个方向，分母写死，不依赖磁盘上
     // 碰巧还剩几条没接线的。
     //
-    // xl-i06.6 签进两条：第五支驱动器（saveload，存读档面板）的真值先落了，web 侧
-    // 面板与取图页装配归 xl-i06.12。那张票接上之后这两条要改成量出来的表态，
-    // 这份登记跟着清空。
+    // xl-i06.6 签进来过两条：第五支驱动器（saveload，存读档面板）的真值先落了；
+    // xl-i06.12 把取图页的装配接上，两条换成了真量出来的分区表态，**这张表又空了**。
     expect(
       unassembled.map(([name]) => name),
       '表 unassembled 的剧本变了？改这份登记，下面那几条会跟着验它',
-    ).toEqual(['saveload-menu', 'saveload-start'])
+    ).toEqual([])
     for (const [name, e] of unassembled) assertNothingMeasured(name, e, /./)
     // 同上：登记空着时上面那个 for 一轮都不跑，分母写死的那一半在这里。
     assertRulesBite('unassembled', /./)

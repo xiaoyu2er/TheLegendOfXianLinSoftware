@@ -1,6 +1,7 @@
 import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
 import { dialogueAssetId, mapAssetId, mapOverlayAssetId, narratageBgAssetId, npcAssetId, roleAssetId } from '../assets/ids'
 import { getCoins } from '../fakes/wallet'
+import { checkMapSize } from './mapSize'
 import { COIN_ICON, COIN_ICON_FILE, COIN_TEXT, OVERLAY_FILES, overlayPlacements } from './mapOverlays'
 import type { AssetId } from '../assets/ids'
 import { resolveAsset, resolveAssetOrNull } from '../assets/resolve'
@@ -684,17 +685,9 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
         await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
       )
 
-      // 地图图片必须正好是 瓦片数 × 32。原版就是这么画的（`Map.drawMap` 的源
-      // 矩形直接用世界像素），对不上就意味着碰撞网格和图对不齐 —— 那种错在
-      // 画面上表现为"墙的位置有点怪"，不查是查不出来的，所以这里直接拒绝渲染。
-      const expected = `${scene.col * TILE}×${scene.row * TILE}`
-      const actual = `${texture.width}×${texture.height}`
-      if (expected !== actual) {
-        throw new Error(
-          `${scene.script} 的地图 ${scene.mapName} 是 ${actual}，` +
-            `但碰撞网格是 ${scene.col}×${scene.row} 瓦片，应为 ${expected}。`,
-        )
-      }
+      // 地图图片至少要有 瓦片数 × 32 那么大（`Map.drawMap` 的源矩形直接用世界
+      // 像素）。三种处境与各自的理由在 `mapSize.ts`；比网格小的那一种拒绝渲染。
+      checkMapSize(scene.script, scene.mapName, texture, scene.col, scene.row)
 
       // 换地图只换碎片指向的源，精灵与 `Texture` 对象留着 —— Assets 的缓存
       // 保住了解码结果，池子保住了精灵。
