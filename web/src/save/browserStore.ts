@@ -64,17 +64,17 @@ export function createBrowserSaveStore(backend: SaveBackend): BrowserSaveStore {
     }
   })()
 
+  const state = { status: () => status, error: () => error }
   return {
-    status: () => status,
-    error: () => error,
+    ...state,
     read(slot) {
       checkSlot(slot)
-      requireReady({ status: () => status, error: () => error }, `读槽位 ${slot}`)
+      requireReady(state, `读槽位 ${slot}`)
       return slots[slot]!
     },
     write(slot, save) {
       checkSlot(slot)
-      requireReady({ status: () => status, error: () => error }, `写槽位 ${slot}`)
+      requireReady(state, `写槽位 ${slot}`)
       // 序列化在这里当场做，不留到队列里：排队期间调用方再改那个对象，落盘的
       // 就不是存档那一刻的样子了。
       const text = serializeSave(save)
@@ -135,7 +135,11 @@ export function indexedDbBackend(factory: IDBFactory | undefined = globalThis.in
       const out: (string | null)[] = []
       for (let i = 0; i < SAVE_SLOT_COUNT; i++) {
         const v: unknown = await done(store.get(i))
-        out.push(typeof v === 'string' ? v : null)
+        // 没有这个键才是空槽；键在而值读不懂是坏档，**抛** —— 当成空槽的话下一次
+        // 存档就把它覆盖了（见 `SaveStoreStatus` 的 failed）。
+        if (v === undefined) out.push(null)
+        else if (typeof v === 'string') out.push(v)
+        else throw new Error(`IndexedDB 里槽位 ${i} 的值不是文本：${Object.prototype.toString.call(v)}`)
       }
       return out
     },

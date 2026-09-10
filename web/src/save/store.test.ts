@@ -132,7 +132,7 @@ describe('槽位数：与原版源码、与真值对撞', () => {
     const src = javaSource('src/start/LoadAndSavePanel.java')
     expect(src).toContain('maps.add("无");')
     expect(src).toContain('tasks.add("无");')
-    expect(slotSummary(null)).toEqual(EMPTY_SLOT_SUMMARY)
+    expect(EMPTY_SLOT_SUMMARY).toEqual({ roles: [false, false, false], map: '无', task: '无' })
     const save = sampleOfSlot(0)
     expect(slotSummary({ ...save, summary: { ...save.summary, task: null } }).task).toBe('null')
   })
@@ -256,7 +256,9 @@ describe('关掉再打开，进度还在', () => {
   it('同一个槽连存两次，后存的那份最后落盘（写队列是串行的）', async () => {
     const disk: (string | null)[] = []
     // 每一次落盘都由用例手动放行。并发写的话两次 save 当场都发出去了，而后端先
-    // 完成哪一次由它说了算 —— 这里故意让**头一次**最后完成。
+    // 完成哪一次由它说了算。**起判别作用的是中间那两句 `pending` 的长度**：
+    // 串行时头一次没落完、第二次根本还没发出去。末尾那句盘上是 b 只是收尾的
+    // 一致性检查 —— 放行次序是用例定的，它本身分不开串行与并发。
     const pending: { slot: number; text: string; done: () => void }[] = []
     const backend: SaveBackend = {
       loadAll: async () => [...disk],
@@ -272,7 +274,7 @@ describe('关掉再打开，进度还在', () => {
     await settle()
     // 串行：头一次没落完，第二次根本还没发出去。
     expect(pending.map((p) => p.text)).toEqual([serializeSave(a)])
-    // 就算后端把它们倒着完成，也轮不到：放行头一次，第二次才发出去。
+    // 放行头一次，第二次才发出去。
     const land = (i: number) => {
       disk[pending[i]!.slot] = pending[i]!.text
       pending[i]!.done()
