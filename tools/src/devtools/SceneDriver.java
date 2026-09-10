@@ -443,7 +443,17 @@ public final class SceneDriver implements TraceDriver {
         if (!(v instanceof List)) {
             throw new RuntimeException(name + " 不是 List，而是 " + v.getClass().getName());
         }
-        List<?> list = (List<?>) v;
+        return boolJson((List<?>) v);
+    }
+
+    /**
+     * 一串 Boolean 摊成 JSON 数组。{@link #boolList} 与
+     * {@link #answeredRecorder} 共用它 —— 两处原本各写了一份逐字同形的循环，
+     * 而**只有其中一份带类型守卫**，那正是 /code-review 的 Standards 轴提的。
+     *
+     * 元素不是 Boolean 就抛（`(Boolean)` 那道强转），不静默给一个值。
+     */
+    private static String boolJson(List<?> list) {
         StringBuilder b = new StringBuilder("[");
         for (int i = 0; i < list.size(); i++) {
             if (i > 0) b.append(',');
@@ -598,8 +608,10 @@ public final class SceneDriver implements TraceDriver {
      *                                          （size()-5 .. size()-2）
      *   battleNo      ← count_battle2         这次问的是第几场战斗（checkSelectEvent 里定的下标）
      *   questionNo    ← count_questionAndAnswer 这次问的是第几道题
-     *   boxW / boxH   ← x_selectImage / y_selectImage   选择框滑入的宽高游标（每 40ms +50/+15，
-     *                                          到 500 停下并起打字机）
+     *   boxW / boxH   ← x_selectImage / y_selectImage   选择框滑入的宽高游标：每 40ms +50/+15，
+     *                                          **判据是自增前的 x &lt;= 500**，所以终值是
+     *                                          550/165（不是 500/150），下一拍才停下起打字机
+     *                                          —— 照跑了一遍那个循环体确认的
      *   qx1/qy1/qx2/qy2 ← x1/y1/x2/y2_questionImage     问题框从屏幕中心 (512,320) 每 50ms
      *                                          向四角各撑 25px，撑到 x1 &lt; 262 停
      *   sentenceNo    ← count_sentence        逐字打印吐到第几句（**初值 1**，第 0 句是 null 占位）
@@ -616,12 +628,27 @@ public final class SceneDriver implements TraceDriver {
      *                                          里认领同一个 List 对象
      *   fought        ← haveFighted           每一场选择战斗"打过没"（打过之后 checkSelectEvent
      *                                          不再问）
-     *   sceneNo       ← count_scene           这个场景在下面那张 recorder 里的下标
+     *   sceneNo       ← count_scene           这个场景在下面那张 recorder 里的下标。
+     *                                          ⚠️ **只有有题的场景才是下标**：原版只在
+     *                                          question != null 且认领到旧记录时才给它赋值，
+     *                                          其余场景它就停在初值 0 —— 而那时 recorder
+     *                                          可能非空（别的场景留下的），于是 0 指着别人
      *   recorder      ← SelectEvent.mapName / answeredRecorder（两张 static 表配对）
      *                                          "答过没"真正活在的地方。只有 answered 的话，
      *                                          一份走出去又走回来的真值里"记住了"与"重新
      *                                          问了一遍"要靠推断；记下这张表就直接可断言
      * </pre>
+     *
+     * <h3>answered 与 recorder 是同一份数据，为什么两个都记</h3>
+     *
+     * 有题的场景里 {@code haveAnswered} 就是 {@code answeredRecorder.get(count_scene)}
+     * **同一个对象**（构造函数第一支认领的就是它），所以 {@code answered} 确实可以由
+     * {@code recorder} + {@code sceneNo} 推出来 —— /code-review 的 Standards 轴提的。
+     *
+     * 两个都留，是因为**那条推导正是被守的东西之一**：原版靠"同一个对象"维持记忆，
+     * 哪天有人把它改成拷贝一份，两列当场分岔，而只记其中一列的话这件事无声无息。
+     * 加上上面那条 {@code sceneNo} 的警告 —— 无题场景里那条推导根本不成立 ——
+     * 冗余那一列在这里是判据，不是重复。
      *
      * <h3>没有记的那一个，以及为什么</h3>
      *
@@ -674,7 +701,7 @@ public final class SceneDriver implements TraceDriver {
      */
     private String answeredRecorder() {
         List<String> names = scene.SelectEvent.mapName;
-        List<java.util.ArrayList<Boolean>> rec = scene.SelectEvent.answeredRecorder;
+        List<ArrayList<Boolean>> rec = scene.SelectEvent.answeredRecorder;
         if (names.size() != rec.size()) {
             fail("SelectEvent.mapName 有 " + names.size() + " 项而 answeredRecorder 有 "
                     + rec.size() + " 项 —— 两张 static 表脱钩了");
@@ -682,13 +709,9 @@ public final class SceneDriver implements TraceDriver {
         StringBuilder b = new StringBuilder("[");
         for (int i = 0; i < names.size(); i++) {
             if (i > 0) b.append(',');
-            b.append("{\"scene\":").append(Json.str(names.get(i))).append(",\"answered\":[");
-            List<Boolean> flags = rec.get(i);
-            for (int j = 0; j < flags.size(); j++) {
-                if (j > 0) b.append(',');
-                b.append(flags.get(j).booleanValue());
-            }
-            b.append("]}");
+            b.append("{\"scene\":").append(Json.str(names.get(i)))
+             .append(",\"answered\":").append(boolJson(rec.get(i)))
+             .append("}");
         }
         return b.append("]").toString();
     }
@@ -703,10 +726,13 @@ public final class SceneDriver implements TraceDriver {
      *
      * <pre>
      *   presenting  ← EquipmentEvent.isDrawString        提示框在不在场
-     *   x           ← EquipmentEvent.x_presentImage      提示框滑到哪了。从 -320 起每 50ms +32，
-     *                                                    到 352 停下并起打字机；打完再从 352
-     *                                                    继续 +32 滑出屏幕（>1024 才停）——
-     *                                                    进场与退场共用这一个游标
+     *   x           ← EquipmentEvent.x_presentImage      提示框滑到哪了，**进场与退场共用这一个
+     *                                                    游标**，而两段的步长不一样（照跑了一遍
+     *                                                    那个循环体确认的）：进场 -320 起每 50ms
+     *                                                    +32，到 352 停下起打字机；退场重新
+     *                                                    start() 之后**头一拍是 +64**（352 那一拍
+     *                                                    三个 if 里第一个与第三个都成立），此后
+     *                                                    每拍 +32，终值 1056，再下一拍才停
      *   wordNo      ← EquipmentEvent.count_word          那句话吐到第几个字（每 100ms 一个）
      *   moving      ← presentImageMove.isRunning()       滑入/滑出定时器
      *   printing    ← wordsRun.isRunning()               逐字打印定时器
