@@ -178,6 +178,9 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   // 正文自己画在一张小画布上，**跟着框一起挪**：框每 50 ms 挪 32 px，而字
   // 100 ms 才多一个 —— 每挪一下就重传一张整屏画布太贵。基线在这张小画布里的
   // 高度是 `PRESENT_TEXT_ASCENT`，贴的时候再减回去。
+  // 小画布里基线离顶的距离：一个字号的 ascent 再留 6 px 余量，免得粗体的笔画
+  // 顶到画布上沿被裁掉。它只决定字在小画布里画在哪，贴的时候整个减回去，
+  // 所以对落点没有影响 —— 不是原版的数，原版没有这张小画布。
   const PRESENT_TEXT_ASCENT = PRESENT_FONT_SIZE + 6
   const presentCanvas = document.createElement('canvas')
   presentCanvas.width = STAGE_WIDTH

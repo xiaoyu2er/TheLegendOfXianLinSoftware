@@ -52,10 +52,10 @@ export interface ViewportInput {
 }
 
 /** 碰撞格的边长。原版 `Map.CS = 32`。 */
-const TILE_PX = 32
+export const TILE_PX = 32
 
 /** 地图源矩形的单位：8 px。原版 `Map.tilesToPixels` 是 `tiles * 8`。 */
-const MAP_UNIT = 8
+export const MAP_UNIT = 8
 
 /**
  * Java 的 `int / int`：向零截断，**不是** `Math.floor`。

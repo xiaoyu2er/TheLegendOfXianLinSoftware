@@ -279,8 +279,22 @@ describe('真值走不到的分支', () => {
   })
 
   it('没有宝箱段的场景：boxes 是 null 不是 []，按空格什么都不开', () => {
-    const world = createWorld(getScene('宿舍'), false)
+    let world = createWorld(getScene('宿舍'), false)
     expect(getScene('宿舍').treasureBox).toBeNull()
     expect(world.treasure.boxes).toBeNull()
+    let rolls = 0
+    world = step(world, [{ e: 'press', k: 'space', ctrl: false }], TICK_MS, undefined, () => {
+      rolls++
+      return 0
+    })
+    expect(world.treasureRequest).toBeNull()
+    expect(world.treasure.presenting).toBe(false)
+    expect(rolls, '没有宝箱的场景按空格也掷了骰').toBe(0)
+  })
+
+  it('坐标写法不是原版 Integer.parseInt 认的整数：硬失败，不宽松解析', () => {
+    expect(() => createTreasure(withBoxes([['5abc/4', '金疮药']]))).toThrow(/原版要的是/)
+    expect(() => createTreasure(withBoxes([['5/4/1', '金疮药']]))).toThrow(/原版要的是/)
+    expect(createTreasure(withBoxes([['+5/4', '金疮药']])).boxes![0]!.x).toBe(5)
   })
 })

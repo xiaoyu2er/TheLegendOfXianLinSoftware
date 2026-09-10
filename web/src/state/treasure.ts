@@ -169,9 +169,13 @@ export function createTreasure(scene: SceneScript): TreasureState {
         : rows.map((row, i) => {
             const [location, name] = row
             const parts = (location ?? '').split('/')
-            const x = Number.parseInt(parts[0] ?? '', 10)
-            const y = Number.parseInt(parts[1] ?? '', 10)
-            if (!Number.isInteger(x) || !Number.isInteger(y) || name === undefined) {
+            // `Integer.parseInt` 只认 `[+-]?\d+`，`Number.parseInt` 会把 "5abc"
+            // 解成 5 —— 那样就不是"照抄那条异常"了，所以先按原版的字面规则筛。
+            const strict = (s: string | undefined): number =>
+              s !== undefined && /^[+-]?\d+$/.test(s) ? Number.parseInt(s, 10) : Number.NaN
+            const x = strict(parts[0])
+            const y = strict(parts[1])
+            if (parts.length !== 2 || !Number.isInteger(x) || !Number.isInteger(y) || name === undefined) {
               throw new Error(
                 `${scene.script} 的第 ${i} 个宝箱写成了 ${JSON.stringify(row)}，` +
                   '原版要的是 ["x/y", 物品名]',
@@ -191,7 +195,7 @@ export interface TreasureDraft {
   bufferedText: string | null
   presentImageMove: MutableTimer
   wordsRun: MutableTimer
-  boxes: { x: number; y: number; name: string; empty: boolean; near: boolean }[] | null
+  boxes: { -readonly [K in keyof TreasureBoxState]: TreasureBoxState[K] }[] | null
 }
 
 export function toTreasureDraft(t: TreasureState): TreasureDraft {

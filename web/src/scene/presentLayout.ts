@@ -1,6 +1,7 @@
 import type { TreasureBoxState } from '../state/treasure'
 import { isFullWidth } from './narratageLayout'
 import type { Cell } from './narratageLayout'
+import { MAP_UNIT, TILE_PX } from './viewport'
 import type { SceneViewport } from './viewport'
 
 /**
@@ -42,11 +43,6 @@ export function presentCells(text: string, measure: (char: string) => number): C
   return cells
 }
 
-/** 一个格子是地图上的 32 px（`scene.Map.CS`）。 */
-const TILE = 32
-/** `firstTileX * 8`：`OtherEvent` 的镜头单位（与 `npcLayerOffset` 同一个量）。 */
-const MAP_UNIT = 8
-
 /**
  * `TreasureBox.paintBox`：`x * 32 - firstTileX * 8`、`y * 32 - firstTileY * 8`，
  * 开过画 `emptyBox`、没开画 `fullBox`。**画在画布坐标上**，不经过主角那个
@@ -57,8 +53,8 @@ export function boxPlacement(
   viewport: SceneViewport,
 ): { readonly x: number; readonly y: number; readonly image: 'fullBox' | 'emptyBox' } {
   return {
-    x: box.x * TILE - viewport.firstTileX * MAP_UNIT,
-    y: box.y * TILE - viewport.firstTileY * MAP_UNIT,
+    x: box.x * TILE_PX - viewport.firstTileX * MAP_UNIT,
+    y: box.y * TILE_PX - viewport.firstTileY * MAP_UNIT,
     image: box.empty ? 'emptyBox' : 'fullBox',
   }
 }

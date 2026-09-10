@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
 import {
   PRESENT_BASELINE,
-  PRESENT_COLOR,
   PRESENT_FONT_SIZE,
   PRESENT_TEXT_DX,
   PRESENT_Y,
@@ -40,7 +39,8 @@ describe('drawPresentation', () => {
     expect(Number(size)).toBe(PRESENT_FONT_SIZE)
     const [color] = once(src, /g\.setColor\(Color\.(\w+)\)/)
     expect(color).toBe('red')
-    expect(PRESENT_COLOR).toBe('#ff0000')
+    // `Color.red` → `PRESENT_COLOR` 这一层映射是手写的，拿常量比它自己的字面值
+    // 是恒真的装饰，所以这里不比 —— 颜色对不对由逐帧比对说话（maze-treasure）。
   })
 
   it('全角字按字号整格步进，半角字按量出来的宽度', () => {
