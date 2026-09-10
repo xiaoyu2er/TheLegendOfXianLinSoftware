@@ -147,7 +147,8 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
  * 一遍，红的两样当场登记到了别的表里（`viewport`/`drawOrder` 归
  * `ALIGNED_ELSEWHERE`，`role.stepNum` 归 `DEAD_SUBFIELDS`），剩下 7 组 ×
  * 5 条剧本一条都没红。别把「全满」读成「这张表没用了」—— 它现在守的是两件事：
- *   1. 新真值或新列进来时先红一次（M5 的 xl-yg6.6 就要往里加列）；
+ *   1. 新真值或新列进来时先红一次 —— **xl-yg6.6 加 `select` / `treasure` 两列时
+ *      它真的红了**（十个格子一起掉进"没人登记"），那两列现在挂在 `PENDING` 上；
  *   2. 谁把某一组改回去时那一格立刻红。
  */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
@@ -251,11 +252,35 @@ const DEAD_SUBFIELDS: readonly DeadSubfield[] = [
  * 这两张表是**对撞**的：真值目录里冒出一份两边都没有的剧本，或者真值多出
  * 一列没人登记，下面第一条用例立刻红。
  *
- * ⚠️ **今天它是空的，那是读数不是形状。** 留着它与它下面那个 describe，是因为
- * xl-yg6.6 往场景快照里加列时它就是登记该走的地方 —— 那时"这一列还没做"
- * 与"这一列没人对"必须继续分得开。
+ * ⚠️ **xl-yg6.6 起它不再是空的。** 那张票给场景快照加了 `select` 与 `treasure`
+ * 两列（选择框 / 答题 / 宝箱那几样会变的游标与旗标），而状态层这一头一个字都
+ * 还没写 —— 于是十个格子全落在这里。**这正是这张表存在的理由**：没有它，
+ * 那两列会掉进"没人登记"里，而"这一列还没做"与"这一列没人对"就长得一样了。
+ *
+ * ⚠️ 五条剧本名是**手写**的，不是 `SCENE_TRACE_NAMES` 摊出来的 —— 摊出来的话
+ * 新真值进目录时会被自动算作"已登记还欠着"，那条对撞就白设了（同上，xl-rh9.8
+ * 的坑）。分母仍然是磁盘：少写一条，上面那条 `unaccounted` 立刻红。
  */
-const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {}
+const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  // 选择框那套状态机（`src/scene/SelectEvent.java` 一整个对象）。骨架那张票
+  // （选择框 UI + 新列落地）把它翻成已对齐。
+  select: {
+    'bigmap-walk': 'xl-yg6.8',
+    'dorm-exit': 'xl-yg6.8',
+    'dorm-intro': 'xl-yg6.8',
+    'dorm-walk': 'xl-yg6.8',
+    milestone: 'xl-yg6.8',
+  },
+  // 宝箱与"得到物品"提示框（`src/scene/EquipmentEvent.java` +
+  // `src/scene/TreasureBox.java`）。归宝箱那张票。
+  treasure: {
+    'bigmap-walk': 'xl-yg6.10',
+    'dorm-exit': 'xl-yg6.10',
+    'dorm-intro': 'xl-yg6.10',
+    'dorm-walk': 'xl-yg6.10',
+    milestone: 'xl-yg6.10',
+  },
+}
 
 /**
  * **`PENDING` 里那些「前半截已经对上了」的格子 —— 手写登记，写明卡在哪。**

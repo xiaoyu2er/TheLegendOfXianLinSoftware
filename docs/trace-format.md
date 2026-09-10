@@ -202,6 +202,15 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
                  "printing":false,"sentenceOver":false,"pageOver":false},
      "narratage":{"active":false,"over":true,"line":0,"cursor":0,"row":0,"bg":0},
      "scene":"宿舍.txt","isScript":false,
+     "select":{"active":false,"shop":false,"equipShop":false,"battle":false,
+               "question":false,"asking":false,"answering":false,
+               "yesNo":2,"abcd":0,"battleNo":0,"questionNo":0,
+               "boxW":0,"boxH":0,"qx1":0,"qy1":0,"qx2":0,"qy2":0,
+               "sentenceNo":1,"wordNo":0,"lineNo":0,"maxLength":22,
+               "boxMoving":false,"qBoxMoving":false,"printing":false,
+               "answered":[],"fought":[],"sceneNo":0,"recorder":[]},
+     "treasure":{"presenting":false,"x":0,"wordNo":0,
+                 "moving":false,"printing":false,"boxes":null},
      "audio":{"bgm":"舒缓.mp3"},
      "viewport":{"offsetX":0,"offsetY":0,"firstTileX":0,"lastTileX":128,
                  "firstTileY":0,"lastTileY":80},
@@ -231,6 +240,8 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `narratage.line/cursor/row/bg` | 第几句 / 第几个字 / 第几行 / 背景动画帧。 |
 | `scene` | `ScenePanel.fileName`，当前这一 tick 走的是哪个脚本。出口生效的那一 tick 它就变了 —— 只记主角坐标的话，"切到了大地图"与"在原地被瞬移"分不开。 |
 | `isScript` | `ScenePanel.isScript`。出口的三条分支各自把它置成什么，是可断言的（见 `scene/ExitEvent.java`）。 |
+| `select.*` | **选择框 / 答题那套状态机**（xl-yg6.6），整列来自 `src/scene/SelectEvent.java` 一个对象。`active` ← `isSelect`（它同时是"走不动"的那道门）；`shop`/`equipShop`/`battle`/`question` ← 四个 `*Select` 旗标，**各记各的、不合成枚举**；`asking`/`answering` ← `isQuestion`/`isAnswer`；`yesNo` ← `count_selectYesNo`（**原版取值是 2 和 3**，照记不翻译）；`abcd` ← `count_selectABCD`；`battleNo`/`questionNo` ← `count_battle2`/`count_questionAndAnswer`；`boxW`/`boxH` ← 选择框滑入游标 `x_selectImage`/`y_selectImage`；`qx1..qy2` ← 问题框撑开游标 `x1..y2_questionImage`；`sentenceNo`/`wordNo`/`lineNo` ← 逐字打印的 `count_sentence`（**初值 1**）/`count_word`/`count_bufferedSentence`；`maxLength` ← 一行几个字（选择框 22、问题框 44，**会变**）；`boxMoving`/`qBoxMoving`/`printing` ← 三个定时器在不在跑；`answered`/`fought` ← `haveAnswered`/`haveFighted`；`sceneNo` ← `count_scene`；`recorder` ← `SelectEvent.mapName` 与 `answeredRecorder` 两张 static 表配对，"答过没"跨场景活在那里。<br>**题面与选项文本一律不进来**（`currentSentences`/`bufferedText`）：它们来自脚本，数据层已经逐字段钉住 —— 文本对不对归数据层，吐到第几个字归这里。`haveEnteredTheScene` 也不进来：它在构造函数里置真又立刻置回假，取快照时恒为 `false`，记进来是按构造成立的装饰。 |
+| `treasure.*` | **宝箱与"得到物品"提示框**（xl-yg6.6），来自 `src/scene/EquipmentEvent.java` 与它持有的那批 `src/scene/TreasureBox.java`。`presenting` ← `isDrawString`；`x` ← `x_presentImage`（**进场与退场共用这一个游标**：-320 起每 50ms +32，到 352 停下起打字机，打完再继续 +32 滑出屏幕）；`wordNo` ← `count_word`；`moving`/`printing` ← 两个定时器；`boxes[].empty` ← `TreasureBox.isEmpty`；`boxes[].near` ← `TreasureBox.AroundHero`（⚠️ 原版**只置真、从不置回假**，走开之后照样是真 —— 照记不修）。<br>没有宝箱段的场景 `boxes` 是 **`null` 而不是 `[]`**："这个场景没有宝箱"与"有宝箱但一个都没建出来"必须分得开。提示语本身（`text`）不记：物品名归数据层，而数量与金额是 `Math.random()` 现掷的，记进来这一列每次导出都不同、`--check` 当场红。 |
 | `audio.bgm` | `MusicPlayer.currentPlayingBGM`。是一个可断言的字符串，不是"调用了 play()"。 |
 | `viewport` | `OtherEvent.calOffset()` 算出的六元组，对应 spec 里的 `computeViewport`。 |
 | `drawOrder` | `npcs-first` / `hero-first`，对应 spec 里的 `computeDrawOrder`。**旁白期间是 `null`** —— 原版 `paint()` 里主角与 NPC 的绘制整个在 `if (!narratage.isNarratage)` 里面，那些帧没有绘制顺序这回事。 |
