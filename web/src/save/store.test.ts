@@ -255,25 +255,32 @@ describe('关掉再打开，进度还在', () => {
 
   it('同一个槽连存两次，后存的那份最后落盘（写队列是串行的）', async () => {
     const disk: (string | null)[] = []
-    // 头一次写慢、第二次写快：并发写的话盘上留下的是头一次那份。
-    let calls = 0
+    // 每一次落盘都由用例手动放行。并发写的话两次 save 当场都发出去了，而后端先
+    // 完成哪一次由它说了算 —— 这里故意让**头一次**最后完成。
+    const pending: { slot: number; text: string; done: () => void }[] = []
     const backend: SaveBackend = {
       loadAll: async () => [...disk],
-      save: (slot, text) =>
-        new Promise((resolve) => {
-          const delay = calls++ === 0 ? 20 : 0
-          setTimeout(() => {
-            disk[slot] = text
-            resolve()
-          }, delay)
-        }),
+      save: (slot, text) => new Promise<void>((done) => pending.push({ slot, text, done })),
     }
+    const settle = () => new Promise((r) => setTimeout(r, 0))
     const store = createBrowserSaveStore(backend)
     await store.whenLoaded()
     const a = sampleOfSlot(0)
     const b = sampleOfSlot(2)
     store.write(0, a)
     store.write(0, b)
+    await settle()
+    // 串行：头一次没落完，第二次根本还没发出去。
+    expect(pending.map((p) => p.text)).toEqual([serializeSave(a)])
+    // 就算后端把它们倒着完成，也轮不到：放行头一次，第二次才发出去。
+    const land = (i: number) => {
+      disk[pending[i]!.slot] = pending[i]!.text
+      pending[i]!.done()
+    }
+    land(0)
+    await settle()
+    expect(pending).toHaveLength(2)
+    land(1)
     await store.flush()
     expect(disk[0]).toBe(serializeSave(b))
   })
