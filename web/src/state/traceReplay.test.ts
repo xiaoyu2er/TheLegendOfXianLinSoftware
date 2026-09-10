@@ -204,6 +204,12 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
  * 「每条真值的列名一致」那条对撞按两种剧本分开核：普通剧本 = 基础那几组，读档剧本 =
  * 基础那几组 + 这张表。**表必须手写**：写成「读档真值比普通真值多出来的那几列」就是让
  * 被守的东西自己给自己签字 —— 导出器多记或少记一列，这里都跟着变，一条都不红。
+ *
+ * **登记是跑出来的**（2026-09-10）：三份读档剧本 × 9 组基础 + 8 组读档专属，除
+ * `skillNumber`（没有观察函数，一开始就挂 PENDING）外全签进 ALIGNED 跑了一遍：178 条里
+ * 红 1 条 —— `npcs × load-slot2` 的子字段对撞（脚本20 没有 NPC 段，签进 EMPTY_COLUMNS）。
+ * 逐 tick 的格子一格没红。⚠️ 没做反方向那一步（把某格挂进 PENDING 看「欠着的必须真没对上」
+ * 红不红）；各格有没有分辨力由篡改矩阵证（见关票理由：T1 / T7 / T11 / T12 / T14 / T15 / T22）。
  */
 const LOAD_ONLY_GROUPS: readonly string[] = [
   'coins',
@@ -320,7 +326,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -340,7 +346,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -363,7 +369,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -382,7 +388,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -400,7 +406,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -417,7 +423,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -437,7 +443,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -460,7 +466,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
@@ -482,12 +488,12 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'question-answer',
     'question-memory',
     'shop-door',
-    // 读档三份（xl-i06.10）：填满跑一遍，这一组三格没红。
+    // 读档三份（xl-i06.10）：读数见 LOAD_ONLY_GROUPS 的注释。
     'load-slot0',
     'load-slot1',
     'load-slot2',
   ],
-  // ——— 读档专属那几组（xl-i06.10）。**跑出来的**：全填进来跑一遍，红的挪去 PENDING。———
+  // ——— 读档专属那几组（xl-i06.10）。读数见 LOAD_ONLY_GROUPS 的注释。———
   // 剧情进度：对话结束旗标与编号、剧情三元组、两个战斗计数。
   progress: ['load-slot0', 'load-slot1', 'load-slot2'],
   // 队伍三开关：`Loader.load` 末三行，压过脚本 Role 段。

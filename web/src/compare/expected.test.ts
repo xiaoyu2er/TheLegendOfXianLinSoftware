@@ -108,8 +108,8 @@ describe('跨端比对的期望表', () => {
     // 这里还写着 []，那边红。
     //
     // xl-i06.10 签进来三条读档剧本：场景驱动器装得出，可起手是 Loader.load，取图页
-    // 读不了原版存档（replay/main.ts 当场抛）。「它们真的比不了」由
-    // `compare/loadScripts.test.ts` 两个方向核（带 load ⇔ 表 unpainted，外加那道拦截）。
+    // 读不了原版存档（replay/main.ts 当场抛）。`compare/loadScripts.test.ts` 核「带 load ⇔
+    // 表 unpainted」两个方向；「页面真的抛」那一半只是一条源码文本核对（弱：没在浏览器里起）。
     expect(
       unpainted.map(([name]) => name),
       '表 unpainted 的剧本变了？改这份登记，下面那几条会跟着验它',

@@ -7,6 +7,7 @@ import { getCoins, resetWallet } from '../fakes/wallet'
 import { createMemorySaveStore } from '../save/memoryStore'
 import type { SaveStore } from '../save/store'
 import { draftSlots } from '../saveload/test/replayTrace'
+import { fromRecorderText, loaderReadBack, readSample, sampleNames } from '../save/test/originalSave'
 import type { SaveLoadInput } from '../saveload/step'
 import { slotCenter } from '../saveload/world'
 import { roleTileX, roleTileY } from '../state/role'
@@ -170,7 +171,40 @@ describe('读一半：原版读不回来的那三组取读档前的值', () => {
     const { neverReadBack: _dropped, ...half } = { ...SAMPLE }
     // @ts-expect-error —— neverReadBack 不在 applyReadBack 的入参类型里
     const typed: Parameters<typeof applyReadBack>[1] = { ...half, neverReadBack: SAMPLE.neverReadBack }
-    expect(typed).toBeDefined()
+    void typed // 判据是上一行的 @ts-expect-error（pnpm typecheck 核它），不是运行时的任何断言
     expect(applyReadBack(s, half).panel).toBe('scene')
+  })
+})
+
+describe('产品那一路与真值回放那一路读出来是同一回事', () => {
+  /**
+   * 逐 tick 对齐真值的 `traceReplay.test.ts` 走的是 `applyReadBack(loaderReadBack(原版文本))`；
+   * 玩家走的是 `loadGame`：仓库里的 JSON 档 → `readBack` → `applyReadBack`。两条路之间
+   * 缺一座桥的话，「真值对齐了」说的是测试替身，不是产品（/code-review Spec 轴）。
+   * 分母是真值目录里的样例份数。
+   */
+  it('每一份样例：loadGame 与 applyReadBack(loaderReadBack) 读出来的世界、三个人、装备页、药、钱逐项相等', () => {
+    const names = sampleNames()
+    expect(names.length).toBeGreaterThan(0)
+    const snap = (s: RunningSession) => ({
+      world: s.scene.world,
+      party: structuredClone(getParty()),
+      packs: structuredClone(s.menu.world.panels.equipPanel.equip!.packs),
+      owned: structuredClone(s.menu.world.panels.equipPanel.equip!.owned),
+      drugs: DRUGS.map((d) => drugCount(d.name)),
+      coins: getCoins(),
+    })
+    for (const name of names) {
+      const text = readSample(name)
+      fresh()
+      const viaStore = ls(
+        enterSaveLoad(createSession(deps(createMemorySaveStore([fromRecorderText(text)]))), 'load', 'start'),
+        slotClick(0),
+      )
+      const product = snap(loadGame(viaStore))
+      fresh()
+      const replay = snap(applyReadBack(createSession(deps(createMemorySaveStore())), loaderReadBack(text)))
+      expect(product, name).toEqual(replay)
+    }
   })
 })

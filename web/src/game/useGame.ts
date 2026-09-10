@@ -440,7 +440,13 @@ export function useGame(
         if (loadedSceneSource(target) === undefined) {
           void loadScene(name)
             .then((loaded) => rememberScene(name, loaded))
-            .catch((e: unknown) => console.error(`读档要进的场景 ${name} 取不到：`, e))
+            .catch((e: unknown) => {
+              // 取不到就把这一次读档撤掉，面板重新收输入（退出键回得去）。不撤的话每一拍都重取、
+              // 面板停在「正在读入」又不收输入 —— 一个没有出口的状态（/code-review Spec 轴）。
+              console.error(`读档要进的场景 ${name} 取不到，这一次读档撤销：`, e)
+              const now = sessionRef.current
+              if (now !== null && now.loadRequest !== null) sessionRef.current = { ...now, loadRequest: null }
+            })
         } else {
           session = sessionRef.current = loadGame(session)
           // 画面跟着世界走：场景名一变，`app/App.tsx` 就换那一张地图的渲染器。
