@@ -31,6 +31,8 @@ import type { SceneSource } from '../state/step'
 import { BATTLE_INFO_COLUMNS, COL_BACKGROUND, COL_PARTY, enemySlots } from '../state/fight'
 import type { BattleInfo } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
+import { saveSlotsView } from '../save/store'
+import type { SaveSlotsView, SaveStore } from '../save/store'
 
 /**
  * **面板机**：场景 ↔ 战斗 ↔ 标题（xl-rh9.17）↔ 菜单 ↔ 商店（xl-yg6.11）。
@@ -113,6 +115,12 @@ export interface SessionDeps {
    * 种子**出来 —— 那是这一层与原版的一处明写出来的差别，不是疏忽。
    */
   readonly random: () => number
+  /**
+   * 存档仓库（xl-i06.8）。**读写都是同步的**，对一份内存快照 —— 这一层从头到尾
+   * 是同步纯函数，异步的「快照与浏览器存储对齐」在它外头（`save/store.ts`）。
+   * 运行时是 `save/browserStore.ts`，测试与真值回放是 `save/memoryStore.ts`。
+   */
+  readonly saves: SaveStore
 }
 
 export interface Session {
@@ -669,6 +677,14 @@ export function currentBgm(session: Session): string | null {
   // 少了它下面那句就得写 `!`。
   if (session.panel === 'start' || session.scene === null) return TITLE_BGM
   return session.scene.world.audio.bgm
+}
+
+/**
+ * 存读档面板此刻该画的几个槽（xl-i06.8）。没就绪就是 `loading` / `failed`，
+ * **不是**三个空槽 —— 见 `save/store.ts` 的就绪标志。面板本身归 xl-i06.9。
+ */
+export function saveSlotsOf(session: Session): SaveSlotsView {
+  return saveSlotsView(session.deps.saves)
 }
 
 /** 菜单世界，菜单没开着就是 `null`。渲染层要它。 */

@@ -7,6 +7,7 @@ import { TITLE_BGM } from '../start/assets'
 import { repoPath } from '../test/repoPath'
 import { getScene } from '../data/scenesEager'
 import { getParty, rememberParty, resetParty } from '../fakes/party'
+import { createMemorySaveStore } from '../save/memoryStore'
 import { getCoins, resetWallet } from '../fakes/wallet'
 import { drugCount, resetDrugPack } from '../fakes/drugPack'
 import { HEROES, derive } from '../battle/units'
@@ -75,7 +76,7 @@ function fixedRandom(value = 0): () => number {
 }
 
 function deps(random: () => number = fixedRandom()): SessionDeps {
-  return { scenes: sceneSourceOf(getScene), sprite: spriteSize, random }
+  return { scenes: sceneSourceOf(getScene), sprite: spriteSize, random, saves: createMemorySaveStore() }
 }
 
 /**

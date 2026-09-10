@@ -7,6 +7,7 @@ import { getScene } from '../data/scenesEager'
 import { normalizePath } from '../assets/path'
 import { DRUGS } from '../battle/drugs'
 import { resetParty } from '../fakes/party'
+import { createMemorySaveStore } from '../save/memoryStore'
 import { addCoins, getCoins, resetWallet } from '../fakes/wallet'
 import { addDrug, drugCount, resetDrugPack } from '../fakes/drugPack'
 import { BACK_BOX, BUY_BOX } from '../shop/layout'
@@ -301,7 +302,7 @@ function spriteSize(name: string): { width: number; height: number } {
 }
 
 function deps(): SessionDeps {
-  return { scenes, sprite: spriteSize, random: () => 0 }
+  return { scenes, sprite: spriteSize, random: () => 0, saves: createMemorySaveStore() }
 }
 
 /** 走过某张卡片那扇门的那条真值。 */

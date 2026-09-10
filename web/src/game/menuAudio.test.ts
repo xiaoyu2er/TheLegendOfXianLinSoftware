@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
 import { getScene } from '../data/scenesEager'
 import { resetParty } from '../fakes/party'
+import { createMemorySaveStore } from '../save/memoryStore'
 import { sceneSourceOf } from '../state/trace'
 import { createWorld } from '../state/step'
 import { createBgmPlayer } from '../audio/bgmPlayer'
@@ -44,6 +45,7 @@ const DEPS: SessionDeps = {
   scenes: sceneSourceOf(getScene),
   sprite: () => ({ width: 1, height: 1 }),
   random: () => 0.5,
+  saves: createMemorySaveStore(),
 }
 
 function inScene(name: string): RunningSession {
