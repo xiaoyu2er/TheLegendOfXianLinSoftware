@@ -95,7 +95,9 @@ import {
 } from '../src/shop/shopAssets'
 import { scanShopReferences } from '../src/shop/shopReferences'
 import { OVERLAY_FILES } from '../src/scene/mapOverlays'
-import { bakeScript } from '../src/data/bakeScript'
+import { bakeScript, readerStaticsOf } from '../src/data/bakeScript'
+import { LS_IMAGES, LS_SEQUENCES, lsFrameId, lsImageId } from '../src/saveload/assets'
+import type { LsImageName, LsSequenceName } from '../src/saveload/assets'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
 import {
@@ -253,6 +255,7 @@ function tracedFromTruth(): { scenes: string[]; bgm: string[] } {
 }
 
 const SCENES_OUT = resolve(WEB, 'src/generated/scenes')
+const READER_STATICS_OUT = resolve(WEB, 'src/generated/readerStatics.json')
 const ASSETS_OUT = resolve(WEB, 'src/generated/assets')
 const MANIFEST_OUT = resolve(WEB, 'src/generated/assets.json')
 const MISSING_OUT = resolve(WEB, 'src/generated/missingAssets.json')
@@ -296,10 +299,14 @@ function main(): void {
     .filter((f) => f.endsWith('.txt'))
     .map((f) => f.replace(/\.txt$/, ''))
     .sort()
-  const scenes = names.map((name) =>
-    bakeScript(readFileSync(useInput(resolve(SCRIPTS, `${name}.txt`))), `${name}.txt`),
-  )
+  const raws = names.map((name) => readFileSync(useInput(resolve(SCRIPTS, `${name}.txt`))))
+  const scenes = names.map((name, i) => bakeScript(raws[i]!, `${name}.txt`))
   console.log(`烘焙 ${scenes.length} 个场景`)
+  // `Role` / `Task` 两段另出一份（xl-i06.9）：它们不在那 26 个真值字段里，
+  // 场景 JSON 的键集合被 `bakeScript.test.ts` 钉着，塞不进去。
+  const readerStatics = Object.fromEntries(
+    names.map((name, i) => [`${name}.txt`, readerStaticsOf(raws[i]!, `${name}.txt`)]),
+  )
 
   // 先校验后落盘：校验红了还写出半套产物，下一次构建就分不清"这批是好的"
   // 还是"上次失败留下的"。
@@ -317,6 +324,7 @@ function main(): void {
   for (const scene of scenes) {
     writeFileSync(resolve(SCENES_OUT, `${stem(scene.script)}.json`), stringifyScene(scene), 'utf8')
   }
+  writeFileSync(READER_STATICS_OUT, `${JSON.stringify(readerStatics, null, 2)}\n`, 'utf8')
 
   // 28 张地图被 96 个场景共用，按逻辑 ID 去重，一张只转一次。
   const manifest: Record<string, string> = {}
@@ -546,6 +554,36 @@ function main(): void {
     `开始界面素材 ${Object.keys(START_IMAGES).length} 张 + 动画 ${startFrames} 帧 → start/*.webp` +
       (aliasFrames > 0 ? `（另有 ${aliasFrames} 帧走别名，不出产物）` : ''),
   )
+
+  // 存读档面板（xl-i06.9）。路径同样写死在原版 `start.LoadAndSavePanel` 里，
+  // 与开始界面同一类；「鼠标」那段复用开始界面的 `start:cursor:*`，不再烘一份。
+  let lsFiles = 0
+  for (const [name, source] of Object.entries(LS_IMAGES) as [LsImageName, string][]) {
+    const absolute = resolve(REPO, source)
+    if (!existsSync(absolute)) {
+      missing.push(`存读档面板素材 ${source}`)
+      continue
+    }
+    const relative = `ls/${name}.webp`
+    manifest[lsImageId(name)] = relative
+    bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
+    lsFiles++
+  }
+  for (const [name, sequence] of Object.entries(LS_SEQUENCES) as [LsSequenceName, { dir: string; count: number }][]) {
+    for (let frame = 0; frame < sequence.count; frame++) {
+      const source = startFrameSource(sequence.dir, frame)
+      const absolute = resolve(REPO, source)
+      if (!existsSync(absolute)) {
+        missing.push(`存读档面板动画 ${source}`)
+        continue
+      }
+      const relative = `ls/${name}/${frame}.webp`
+      manifest[lsFrameId(name, frame)] = relative
+      bytes += toWebp(absolute, resolve(ASSETS_OUT, relative))
+      lsFiles++
+    }
+  }
+  console.log(`存读档面板素材 ${lsFiles} 张 → ls/*.webp`)
 
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)

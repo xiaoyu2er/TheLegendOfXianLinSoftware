@@ -1,0 +1,566 @@
+{
+  "仙一102.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一102夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼一楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼一楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼三楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼三楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼二楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼二楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼四楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙一教学楼四楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二205.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二205夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼一楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼一楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼三楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼三楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼二楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼二楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼四楼.txt": {
+    "task": null,
+    "role": null
+  },
+  "仙二教学楼四楼夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "剧情1.txt": {
+    "task": null,
+    "role": null
+  },
+  "商塔道馆一层.txt": {
+    "task": null,
+    "role": null
+  },
+  "商塔道馆一层夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "商塔道馆三层.txt": {
+    "task": null,
+    "role": null
+  },
+  "商塔道馆三层夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "商塔道馆二层.txt": {
+    "task": null,
+    "role": null
+  },
+  "商塔道馆二层夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "基础实验楼乙五层.txt": {
+    "task": null,
+    "role": null
+  },
+  "基础实验楼乙五层夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "大地图.txt": {
+    "task": null,
+    "role": null
+  },
+  "大地图夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "大活.txt": {
+    "task": null,
+    "role": null
+  },
+  "大活夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "大迷宫1.txt": {
+    "task": null,
+    "role": null
+  },
+  "宿舍.txt": {
+    "task": null,
+    "role": null
+  },
+  "宿舍夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "脚本1.txt": {
+    "task": "快去大活看演出吧",
+    "role": [
+      true,
+      false,
+      false
+    ]
+  },
+  "脚本10.txt": {
+    "task": "应该去仙二去探查一下消息",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本11.txt": {
+    "task": "应该去仙二去探查一下消息",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本12.txt": {
+    "task": "应该去仙二去探查一下消息",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本13.txt": {
+    "task": "去食堂去汇报吧，钦鎏仙杰在那里",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本14.txt": {
+    "task": "藏经仙阁应该位于校园的东北方",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本15.txt": {
+    "task": "藏经仙阁应该位于校园的东北方",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本16.txt": {
+    "task": "藏经仙阁三楼使我们的目的地",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本17.txt": {
+    "task": "回门主堂啊，快走吧，我们成功与文学谷联盟啦",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本18.txt": {
+    "task": "商塔，应该是位于练武场的北面吧",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本19.txt": {
+    "task": "商塔，应该是位于练武场的北面吧",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本2.txt": {
+    "task": "看完演出了，天色太晚了，回宿舍吧",
+    "role": [
+      true,
+      false,
+      false
+    ]
+  },
+  "脚本2+.txt": {
+    "task": "没什么事可做了",
+    "role": [
+      true,
+      false,
+      false
+    ]
+  },
+  "脚本20.txt": {
+    "task": "向出口前进吧，商塔就在前方",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本21.txt": {
+    "task": "商塔的三楼可能有秘密的情报",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本22.txt": {
+    "task": "战个痛快，骚年",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本23.txt": {
+    "task": "门主堂的道蓄真人还在等着我们呢",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本24.txt": {
+    "task": "门主堂的道蓄真人还在等着我们呢",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本24+.txt": {
+    "task": "门主堂的道蓄真人还在等着我们呢",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本25.txt": {
+    "task": "门主堂的道蓄真人还在等着我们呢",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本26.txt": {
+    "task": "门主堂的道蓄真人还在等着我们呢",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本27.txt": {
+    "task": "回宿舍吧，君子报仇，十年不晚",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本28.txt": {
+    "task": "回宿舍吧，君子报仇，十年不晚",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本29.txt": {
+    "task": "【仙二教学楼】,目标【205】教室",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本3.txt": {
+    "task": "到处转转吧",
+    "role": [
+      true,
+      true,
+      false
+    ]
+  },
+  "脚本3+.txt": {
+    "task": "雪琪说还是回寝室吧",
+    "role": [
+      true,
+      true,
+      false
+    ]
+  },
+  "脚本30.txt": {
+    "task": "【仙二教学楼】,目标【205】教室",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本31.txt": {
+    "task": "【仙二教学楼】,目标【205】教室",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本32.txt": {
+    "task": "到食堂去找钦鎏仙杰",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本33.txt": {
+    "task": "到食堂去找钦鎏仙杰",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本34.txt": {
+    "task": "到食堂去找钦鎏仙杰",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本35.txt": {
+    "task": "现在也只能回宿舍休息了",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本36.txt": {
+    "task": "现在要去练武场一决胜负了",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本37.txt": {
+    "task": "现在要去练武场一决胜负了",
+    "role": [
+      true,
+      false,
+      true
+    ]
+  },
+  "脚本38.txt": {
+    "task": "现在要去练武场一决胜负了",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本39.txt": {
+    "task": "现在要去练武场一决胜负了",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本4.txt": {
+    "task": "快去仙一102，钦鎏仙杰在找你",
+    "role": [
+      true,
+      true,
+      false
+    ]
+  },
+  "脚本40.txt": {
+    "task": "现在要去练武场一决胜负了",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本41.txt": {
+    "task": "现在要去练武场一决胜负了",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本5.txt": {
+    "task": "快去实验楼乙区的藏宝阁，寻寻看有无蛛丝马迹",
+    "role": [
+      true,
+      true,
+      false
+    ]
+  },
+  "脚本6.txt": {
+    "task": "快去实验楼乙区的藏宝阁，寻寻看有无蛛丝马迹",
+    "role": [
+      true,
+      true,
+      false
+    ]
+  },
+  "脚本7.txt": {
+    "task": "快去实验楼乙区的藏宝阁，寻寻看有无蛛丝马迹",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本7+.txt": {
+    "task": "快回仙一102向钦鎏仙杰汇报",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本8.txt": {
+    "task": "应该去仙二去探查一下消息",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "脚本9.txt": {
+    "task": "应该去仙二去探查一下消息",
+    "role": [
+      true,
+      true,
+      true
+    ]
+  },
+  "藏经阁一层.txt": {
+    "task": null,
+    "role": null
+  },
+  "藏经阁一层夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "藏经阁三层.txt": {
+    "task": null,
+    "role": null
+  },
+  "藏经阁三层夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "藏经阁二层.txt": {
+    "task": null,
+    "role": null
+  },
+  "藏经阁二层夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "迷宫1.txt": {
+    "task": null,
+    "role": null
+  },
+  "金陵大学医院.txt": {
+    "task": null,
+    "role": null
+  },
+  "金陵大学医院夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "金陵大学装备超市.txt": {
+    "task": null,
+    "role": null
+  },
+  "金陵大学装备超市夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "门主堂.txt": {
+    "task": null,
+    "role": null
+  },
+  "门主堂夜.txt": {
+    "task": null,
+    "role": null
+  },
+  "食堂.txt": {
+    "task": null,
+    "role": null
+  },
+  "食堂夜.txt": {
+    "task": null,
+    "role": null
+  }
+}

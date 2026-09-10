@@ -70,6 +70,15 @@ export const FAKE = declareFake('party')
  */
 export interface PartyMemberState extends HeroCarry, Attributes {
   level: number
+  /**
+   * `isAngry`（xl-i06.9）。原版是英雄实例字段，初值 `false`；战斗里
+   * `Enemy` 把它置真、`LaunchAttack` 放完怒气技再置假，**打完不清** —— 所以
+   * 战斗外它是上一场收尾时的值，存档第 2–4 行的第 5 项存的就是它。
+   *
+   * **只记不读**：它不在 `HeroCarry` 里，下一场战斗建人时不从这里取（那是另一回事，
+   * 与存档无关）。存档要它，所以从战斗那边记回来。
+   */
+  isAngry: boolean
 }
 
 /**
@@ -116,6 +125,7 @@ export function initialMember(key: PartyKey): PartyMemberState {
     mp: before.mpMax,
     isDead: false,
     angryValue: 0,
+    isAngry: false,
   }
   // 第 2 步末尾那句 `refreshValue()` 的两句夹上限。**这三把开局武器**的四个
   // 加成都非负，上限只涨不跌，所以在这个函数里它是空操作 —— 照抄是因为
@@ -185,6 +195,7 @@ export function rememberParty(
       mp: h.mp,
       isDead: h.isDead,
       angryValue: h.angryValue,
+      isAngry: h.isAngry,
     }
   }
 }
