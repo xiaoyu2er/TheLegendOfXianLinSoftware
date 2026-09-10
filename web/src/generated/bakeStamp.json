@@ -51,7 +51,7 @@
     "web/src/state/select.ts": "c6f0f0e0edb88c39bbcdc15e727e18952a3370a47c4f734009d69ec567228da9",
     "web/src/state/timer.ts": "836ef72b45e1930db3aeea089bbe6b699eee75a9d0af483990be80b7be0f7056",
     "web/src/state/treasure.ts": "c3e115a47f90d241a61c544e254729b5ac3e6ce84bd210e4e894853c87d3fafb",
-    "web/src/state/types.ts": "33456fcfeee19b24518f9dbe578defcf3df7a917f4a22062542a003c47c5f13b"
+    "web/src/state/types.ts": "c33ca320004b36f8191833d6d62d6379cee024bf636a817d111239d8cdcd1bf3"
   },
   "inputs": {
     "NPCs/厨师1/1.png": "d339407f5881072d19597ab27cf154d8170c9b04ceb0c16db18d7a13be560535",
