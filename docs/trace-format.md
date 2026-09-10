@@ -10,9 +10,9 @@
 
 这里导出的每一个 tick 都是原版自己跑出来的结果，Web 侧只能对齐，不能协商。
 
-## 四种驱动器一览（xl-1vu 收口）
+## 驱动器一览（xl-1vu 收口时四支，xl-i06.6 加了第五支）
 
-一套设施、四支驱动器（`tools/src/devtools/TraceDriver.java` 那三件事：推进一步 /
+一套设施、几支驱动器（名单是下面这张表，`tools/src/devtools/TraceDriver.java` 那三件事：推进一步 /
 快照可断言状态 / 快照真的画出来的位图）。剧本一律在 `tools/traces/scripts/*.json`，
 真值一律在 `tools/traces/out/<剧本>.trace.json`，**两处都入库**。
 
@@ -33,7 +33,7 @@ for f in tools/traces/scripts/*.json; do
 done | sort | uniq -c
 ```
 
-**导出命令只有一条，四支通用**（选哪一支由剧本自报的 `driver` 字段定，
+**导出命令只有一条，各支通用**（选哪一支由剧本自报的 `driver` 字段定，
 `ExportTrace.pickDriver` 认不出的名字一律硬失败）：
 
 ```bash
@@ -42,7 +42,7 @@ tools/export-trace.sh battle-min      # 只导一份
 tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 ```
 
-### 判据：两条回归，四支驱动器一视同仁
+### 判据：两条回归，每支驱动器一视同仁
 
 与数据层那条（`tools/export-truth.sh` + `git diff tools/ground-truth` 为空）
 并列，行为层是这两条，**缺一不可**：
@@ -1092,7 +1092,12 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 每一步记：`current`（当前面板，按 `switchTo` 那套名字 ls / menu / start / scene）、
 `mode`（save / load）、`lastPanel`、`slots`（每槽 `roles` / `map` / `task`，就是原版
 画出来的那三样）、`intercept`（`card`：这一步拦下来的面板切换；`sceneLoopStart`：
-读档时原版多起的那条场景循环，起了就是 `true`）、`music`（这个面板一声都不出，
+读档时原版多起的那条场景循环，起了就是 `true`）。⚠️ **两套名字**：`current` 与
+`lastPanel` 用的是 `switchTo` 的入参（`ls` / `scene`），`intercept.card` 用的是
+**卡片名**（`lsPanel` / `scenePanel`）—— 后者照抄 `PanelTap` 的约定，记的是
+`CardLayout.show` 上观察到的那个字符串本身。进面板与退出键那两步也会有 `card`；
+「读档的目标」是 `card` = `scenePanel` 且 `sceneLoopStart` = `true` 的那一步。
+另外还有 `music`（这个面板一声都不出，
 驱动器用的是 `MusicTap.armAllowingSilence`）。
 
 **不记动画帧号与鼠标坐标**：那条 10 Hz 的动画线程只推绘制量，与点击、槽位空不空、

@@ -219,6 +219,8 @@ public final class SaveLoadDriver implements TraceDriver {
      * 动画），那些属于**进来之前那个面板**，不在这份真值里。
      */
     private void enter(String mode, String from) {
+        // ⚠️ 对第一条 enter 这条核对**按构造成立**：start() 就是照它的 from 摆的
+        // 当前面板。它守的是后面几条 —— 例如退出键回了菜单之后再写 from=start。
         String now = currentName();
         if (!now.equals(from)) {
             fail("enter from=" + from + "，可当前面板是 " + now + " —— 原版只有站在那个面板上才走得到这三行");
@@ -478,7 +480,12 @@ public final class SaveLoadDriver implements TraceDriver {
      *       {@code isRoleExist} 的原值 —— {@code prepareScenes} 只把它往 1 置、从不清零，
      *       于是一个槽被覆盖成更少的人之后，摘要里仍然留着旧档的人（原版缺陷，照记）；
      *   <li>{@code intercept} —— 这一步拦下来的跨面板动作：切到哪块卡片、有没有起
-     *       那条场景循环（见类注释）。
+     *       那条场景循环（见类注释）。⚠️ {@code card} 是**卡片名**（{@code lsPanel}
+     *       / {@code scenePanel}），与 {@code current} 用的 {@code switchTo} 入参
+     *       （{@code ls} / {@code scene}）不是一套：照抄 {@link PanelTap} 的约定，记
+     *       观察到的字符串本身，不誊抄原版那张入参↔卡片名的表。进面板与退出键两步
+     *       也有 {@code card}；读档的目标是 {@code card=scenePanel} 且
+     *       {@code sceneLoopStart=true} 的那一步。
      * </ul>
      *
      * 动画帧号与鼠标坐标**不记**，理由见类注释。存档文件的内容也不记：那是数据层
