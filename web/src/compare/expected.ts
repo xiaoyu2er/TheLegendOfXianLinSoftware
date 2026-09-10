@@ -2046,6 +2046,17 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '选择框与右下角金币数的字形；卷动的大地图、遮掩图、主角与 NPC 逐像素相等',
     issue: 'xl-9bd.17',
   },
+  // 存读档面板（driver=saveload，xl-i06.6）。真值先行，web 侧面板与取图页装配都还没做。
+  'saveload-menu': {
+    status: 'unassembled',
+    why: '存读档面板的 web 侧还没做，取图页装配不出 driver=saveload',
+    issue: 'xl-i06.12',
+  },
+  'saveload-start': {
+    status: 'unassembled',
+    why: '存读档面板的 web 侧还没做，取图页装配不出 driver=saveload',
+    issue: 'xl-i06.12',
+  },
 }
 
 /**

@@ -1,0 +1,17 @@
+{
+  "driver": "saveload",
+  "name": "saveload-start",
+  "description": "从标题画面按「承」进存读档面板（xl-i06.6）：mode=load，lastPanel=start。先点空槽 1 —— 读档什么都不发生：当前面板仍是 ls、intercept 两项都空、摘要一个字没变（Loader.isNull 是一次磁盘读，那个档开局就被删了）。再点非空槽 0 读入库样例：intercept.card = scenePanel、sceneLoopStart = true。\n\n⚠️ 这份剧本**不按退出键**：lastPanel=start 时退出键走 switchTo(\"start\")，那里的 Clock.sleep(1000) 在冻结倍率下会挂死导出、openBGM() 会真的开音频设备放主题曲 —— 驱动器对这一支硬失败（见 SaveLoadDriver.escape）。「退出键回到进来时那个面板」由 saveload-menu 那一份走。",
+  "setup": {
+    "scene": "脚本1.txt",
+    "party": ["zhang"],
+    "emptySlots": [1]
+  },
+  "maxSteps": 50,
+  "every": 1,
+  "steps": [
+    { "op": "enter", "mode": "load", "from": "start" },
+    { "op": "slot", "n": 1 },
+    { "op": "slot", "n": 0 }
+  ]
+}

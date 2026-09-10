@@ -133,10 +133,14 @@ describe('跨端比对的期望表', () => {
     // 空着的那一侧不是没人守：`unassembled.test.ts` 拿一条**合成的** ghost 剧本
     // 验着「表说 unassembled 而页面装得出 → 抛」两个方向，分母写死，不依赖磁盘上
     // 碰巧还剩几条没接线的。
+    //
+    // xl-i06.6 签进两条：第五支驱动器（saveload，存读档面板）的真值先落了，web 侧
+    // 面板与取图页装配归 xl-i06.12。那张票接上之后这两条要改成量出来的表态，
+    // 这份登记跟着清空。
     expect(
       unassembled.map(([name]) => name),
       '表 unassembled 的剧本变了？改这份登记，下面那几条会跟着验它',
-    ).toEqual([])
+    ).toEqual(['saveload-menu', 'saveload-start'])
     for (const [name, e] of unassembled) assertNothingMeasured(name, e, /./)
     // 同上：登记空着时上面那个 for 一轮都不跑，分母写死的那一半在这里。
     assertRulesBite('unassembled', /./)

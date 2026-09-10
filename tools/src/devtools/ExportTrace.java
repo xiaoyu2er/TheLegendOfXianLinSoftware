@@ -250,9 +250,18 @@ public final class ExportTrace {
                 scriptJson = s.toJson();
                 return new ShopDriver(s);
             }
+            case "saveload": {
+                SaveLoadScript s = SaveLoadScript.load(scriptFile);
+                scriptName = s.name;
+                // 存读档面板同菜单：一步是一次输入事件，没有时长。
+                scriptScene = "saveload";
+                scriptTickMs = 0;
+                scriptJson = s.toJson();
+                return new SaveLoadDriver(s);
+            }
             default:
                 die(scriptFile.getPath() + " 的 driver 是 \"" + want
-                        + "\"，导出器只认 scene / battle / menu / shop");
+                        + "\"，导出器只认 scene / battle / menu / shop / saveload");
                 return null;
         }
     }

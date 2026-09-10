@@ -1,0 +1,20 @@
+{
+  "driver": "saveload",
+  "name": "saveload-menu",
+  "description": "从菜单进存读档面板（xl-i06.6）。先按「存档」进来（mode=save，lastPanel=menu），点空槽 2 存进去 —— 原版当场 prepareScenes() 重读一遍盘，那个槽的摘要从「无」变成这一局的地图名与任务，这是写档装置的回声；再点槽 0 覆盖入库样例 —— 地图与任务换成这一局的，而 roles 仍是三个人都在：prepareScenes() 只把 isRoleExist 往 1 置、从不清零，旧档里的文敏留在了摘要上（原版缺陷，照记）。按退出键回菜单。再按「提取」进来（mode=load），点刚存进去的槽 2 读档：intercept 里看得见原版本来要切到哪一块（scenePanel）、以及那条多起的场景循环（sceneLoopStart）。\n\n⚠️ 草稿区里的档此刻是**本机写出来的**：BufferedWriter.newLine() 跟平台走，macOS 上是 LF，而入库样例是 CRLF。读档照样读得回来（readLine 两种都认），但写出来的字节与样例的换行不同 —— 这件事不在这份真值里（存档内容不进快照），归数据层那边。\n\n⚠️ 第二次进面板时 changeStateTo() 又挂了一对鼠标监听器（第三对）。一次按下会被三个监听器各处理一遍，读档却只发生一次：第一个监听器松手时 setButton() 先读档、isRelesedButton() 再把 isclicked 清掉，后两个看到的已经是没按下的按钮。",
+  "setup": {
+    "scene": "脚本1.txt",
+    "party": ["zhang", "lu"],
+    "emptySlots": [2]
+  },
+  "maxSteps": 50,
+  "every": 1,
+  "steps": [
+    { "op": "enter", "mode": "save", "from": "menu" },
+    { "op": "slot", "n": 2 },
+    { "op": "slot", "n": 0 },
+    { "op": "escape" },
+    { "op": "enter", "mode": "load", "from": "menu" },
+    { "op": "slot", "n": 2 }
+  ]
+}

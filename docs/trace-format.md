@@ -10,9 +10,9 @@
 
 这里导出的每一个 tick 都是原版自己跑出来的结果，Web 侧只能对齐，不能协商。
 
-## 四种驱动器一览（xl-1vu 收口）
+## 驱动器一览（xl-1vu 收口时四支，xl-i06.6 加了第五支）
 
-一套设施、四支驱动器（`tools/src/devtools/TraceDriver.java` 那三件事：推进一步 /
+一套设施、几支驱动器（名单是下面这张表，`tools/src/devtools/TraceDriver.java` 那三件事：推进一步 /
 快照可断言状态 / 快照真的画出来的位图）。剧本一律在 `tools/traces/scripts/*.json`，
 真值一律在 `tools/traces/out/<剧本>.trace.json`，**两处都入库**。
 
@@ -22,6 +22,7 @@
 | `battle` | `BattlePanel.run()` 的一次循环体 + 一次 `paint()` | `tools/traces/scripts/battle-*.json`（这一列原先是写死的五个名字，xl-rh9.11 加了一份、xl-rh9.14 又加了六份都没跟上 —— 名单在磁盘上，别再抄一份） | `BattleDriver.java` |
 | `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
 | `shop` | 一次输入事件 | `tools/traces/scripts/shop-*.json`（这一列同样别抄第二份 —— xl-knp.3 一次就加了两份） | `ShopDriver.java` |
+| `saveload` | 一次输入事件（进面板 / 槽位的按下与松开 / 退出键） | `tools/traces/scripts/saveload-*.json` | `SaveLoadDriver.java`（xl-i06.6） |
 
 **「剧本」这一列里写出来的名字是 2026-09-07 的读数，不是名单。** 权威的名单在
 磁盘上，每份剧本自报 `driver`（缺省算 `scene`）；现数一遍：
@@ -32,7 +33,7 @@ for f in tools/traces/scripts/*.json; do
 done | sort | uniq -c
 ```
 
-**导出命令只有一条，四支通用**（选哪一支由剧本自报的 `driver` 字段定，
+**导出命令只有一条，各支通用**（选哪一支由剧本自报的 `driver` 字段定，
 `ExportTrace.pickDriver` 认不出的名字一律硬失败）：
 
 ```bash
@@ -41,7 +42,7 @@ tools/export-trace.sh battle-min      # 只导一份
 tools/export-trace.sh --check         # 每份导两遍，cmp 两份产物
 ```
 
-### 判据：两条回归，四支驱动器一视同仁
+### 判据：两条回归，每支驱动器一视同仁
 
 与数据层那条（`tools/export-truth.sh` + `git diff tools/ground-truth` 为空）
 并列，行为层是这两条，**缺一不可**：
@@ -1056,6 +1057,62 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 顺带一处原版的写法差异：`ShopPanel` 的买 / 卖循环写死 `i<6`（`drug.txt` 恰好
 6 行），`EquipmentShopPanel` 那边才是按 `listTable(equipment).size()` 走的。
 
+## 存读档剧本与存读档真值（`driver` = `saveload`）
+
+`start.LoadAndSavePanel`，第五支（xl-i06.6）。一步 = 一个输入事件。正典在
+`SaveLoadDriver` 与 `SaveLoadScript` 的类注释里，这里只记读的人最先要知道的几件。
+
+### 剧本
+
+```json
+{
+  "driver": "saveload",
+  "name": "saveload-menu",
+  "setup": { "scene": "脚本1.txt", "party": ["zhang", "lu"], "emptySlots": [2] },
+  "every": 1,
+  "steps": [
+    { "op": "enter", "mode": "save", "from": "menu" },
+    { "op": "slot", "n": 2 },
+    { "op": "escape" }
+  ]
+}
+```
+
+| 指令 | 参数 | 语义 |
+|---|---|---|
+| `enter` | `mode`（save / load）、`from`（menu / start） | 进面板：原版替它做的那三行 `setLastPanel` / `changeStateTo` / `switchTo("ls")`。当前面板不是 `from` —— 硬失败。第一条指令必须是它 |
+| `slot` | `n`（从 0 起） | 点第 n 个槽：按下 + 松开两步，落点从按钮几何反算，按下后没 `isclicked` —— 硬失败 |
+| `escape` | — | 退出键。`lastPanel` 是 `start` 时**硬失败**：`switchTo("start")` 里的 `Clock.sleep(1000)` 在冻结倍率下挂死，`openBGM()` 会真的放主题曲 |
+
+`setup.emptySlots` 删掉草稿区里那几个槽的档 —— 入库样例把每个槽都占满了，不删走不到
+「点空槽读档什么都不发生」。
+
+### 真值
+
+每一步记：`current`（当前面板，按 `switchTo` 那套名字 ls / menu / start / scene）、
+`mode`（save / load）、`lastPanel`、`slots`（每槽 `roles` / `map` / `task`，就是原版
+画出来的那三样）、`intercept`（`card`：这一步拦下来的面板切换；`sceneLoopStart`：
+读档时原版多起的那条场景循环，起了就是 `true`）。⚠️ **两套名字**：`current` 与
+`lastPanel` 用的是 `switchTo` 的入参（`ls` / `scene`），`intercept.card` 用的是
+**卡片名**（`lsPanel` / `scenePanel`）—— 后者照抄 `PanelTap` 的约定，记的是
+`CardLayout.show` 上观察到的那个字符串本身。进面板与退出键那两步也会有 `card`；
+「读档的目标」是 `card` = `scenePanel` 且 `sceneLoopStart` = `true` 的那一步。
+另外还有 `music`（这个面板一声都不出，
+驱动器用的是 `MusicTap.armAllowingSilence`）。
+
+**不记动画帧号与鼠标坐标**：那条 10 Hz 的动画线程只推绘制量，与点击、槽位空不空、
+摘要走的是不相交的两条链；记了帧号就等于要求 Web 侧复刻那条停不下来的线程。
+**不记存档文件的内容**：那是数据层真值（`tools/ground-truth/存档/`）的事。
+
+### 写盘：草稿区
+
+原版把 `sources/Record/存档N.txt` 写死在源码里，那里现在是草稿区（xl-i06.5）。
+驱动器起手核草稿区与真值逐字节相同，不同就拒绝运行；然后挂关机钩子，收尾从真值
+目录逐字节写回、连权限位一起，写回后再核一遍，不过就 `halt(3)`。被 `kill -9`
+的那种由 `tools/test.sh` 里的 `SaveDraftIntactTest` 兜底。
+
+⚠️ 本机写出来的档是 **LF**：`BufferedWriter.newLine()` 跟平台走，入库样例是 CRLF。
+
 ## 现有的剧本
 
 | 剧本 | 场景 | 覆盖 |
@@ -1086,3 +1143,5 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `shop-trade` | 商店（`driver` = `shop`） | 药店与装备超市各走一条完整的买卖：买 2 份金创药 → 钱不够被拒（金钱与背包一个数都没动） → 卖回 1 份 → 装备超市买月苗刀 → 切到鞋子那栏卖掉皮靴 → 切回武器栏确认刚买的还在。加减按钮的两端也都走到了 |
 | `shop-categories` | 商店（`driver` = `shop`） | 装备自选超市六类全走一遍（weapon → helmet → armor → glove → shoe → decoration → 回 weapon，25 步）。它钉的是**装备店那 56 次掷骰的次数与顺序** —— `shop-trade` 只看得见 weapon 与 shoe 两栏，抽多抽少或换序时另外四栏错位它一个字都看不见。（药店那 6 次这条读不出来，它一次都没开药店；直接读数在 `shop-edges` 第 0 拍。）顺带把装备店店主对白的三个价位档（`<10000` / `<30000` / `<100000`，原版没有 else）一次走完（xl-knp.3） |
 | `shop-edges` | 商店（`driver` = `shop`） | 原版有分支而 `shop-trade` 一次都没走到的两条路，两个面板各一遍（36 步）：**买一件存货是 0 的**（药店 灵神天药、装备店 茶罗骨环）与**卖一件背包里一份都没有的**（姜黄粉、踏风草鞋）。两处原版都是 `temp=Math.min(要几件, 另一侧还剩几件)`，后果是"这一行什么都没发生、只有 purchase 被清零"—— 与"压根没点"几乎一样，所以每次都**同时给另一行也加一件**，真值里于是看得见"一次点击里一行动了一行没动"，而不是整单被拒。药店店主的两个价位档（以 6000 分档）也在这条里走完（xl-knp.3） |
+| `saveload-menu` | 存读档（`driver` = `saveload`） | 从菜单进来（xl-i06.6）：存进空槽 2，摘要当场重读（原版写档装置的回声）；覆盖槽 0，地图与任务换新而 `roles` 仍留着旧档的第三个人（`isRoleExist` 只置 1 不清零）；退出键回菜单；再以读档进来读刚存的槽 2 —— `intercept.card` = `scenePanel`、`sceneLoopStart` = `true` |
+| `saveload-start` | 存读档（`driver` = `saveload`） | 从标题画面「承」进来（xl-i06.6）：点空槽 1 读档什么都不发生（`current` 仍是 ls、`intercept` 两项皆空、摘要不变）；再读槽 0，拦截到 `scenePanel` |
