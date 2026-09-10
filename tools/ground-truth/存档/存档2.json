@@ -1,0 +1,17 @@
+{
+  "file": "存档2.txt",
+  "slot": 2,
+  "physicalLines": 9,
+  "reads": [
+    { "line": 1, "readBy": ["getTextInfo()","isNull()"], "fields": ["true","true","true","大迷宫.png","向出口前进吧，商塔就在前方"] },
+    { "line": 2, "readBy": ["zhangXiaoFanInfo"], "fields": ["8","1119","450","1479","true","false","6077"] },
+    { "line": 3, "readBy": ["luXueQiInfo"], "fields": ["8","823","1050","434","false","false","6077"] },
+    { "line": 4, "readBy": ["yuJieInfo"], "fields": ["8","1725","90","1583","true","false","4746"] },
+    { "line": 5, "readBy": ["sceneInfo"], "fields": ["true","脚本20.txt","true","0","20","2","1/20 商塔道馆一层.txt 脚本20.txt","16/16 商塔道馆一层.txt 脚本21.txt","false","0"] },
+    { "line": 6, "readBy": ["menuInfo"], "fields": ["月苗刀","null","null","null","null","null","藏璎环","null","null","null","null","null","鸳鸯刀","null","null","null","null","null"] },
+    { "line": 7, "readBy": ["shopInfo"], "fields": ["32","17","4","1","4","1","91068"] },
+    { "line": 8, "readBy": ["equipmentShopInfo"], "fields": ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","仙一教学楼一楼.txt"] },
+    { "line": 9, "readBy": ["questionInfo"], "fields": ["false "] },
+    { "line": 10, "readBy": ["answerInfo"], "fields": [] }
+  ]
+}
