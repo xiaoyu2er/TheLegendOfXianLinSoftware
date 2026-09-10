@@ -95,7 +95,8 @@ export interface SceneRenderer {
  * 场景层渲染器（Pixi）。
  *
  * 现在画地图底图、主角与 NPC，镜头跟着主角走并在地图边缘停住
- * （xl-9bd.6 / .7 / .9）。地图遮掩层（`OtherEvent.addMap`）还没有。
+ * （xl-9bd.6 / .7 / .9）；地图遮掩层与金币 HUD（`OtherEvent.addMap`）由
+ * xl-yg6.12 画上，摆位在 `mapOverlays.ts`。
  *
  * 这一层**没有测试缝**，是 spec 的明确决策：给渲染硬加缝只会得到一堆断言
  * "我调用了 drawSprite" 的实现细节测试。真实像素由跨端剧本逐帧比对兜底
