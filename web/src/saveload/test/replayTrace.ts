@@ -1,45 +1,27 @@
 import { readFileSync } from 'node:fs'
 import type { SceneScript } from '../../data/types'
-import { resetDrugPack } from '../../fakes/drugPack'
-import { resetParty } from '../../fakes/party'
-import { resetWallet } from '../../fakes/wallet'
-import { captureSession, createSession, enterScene } from '../../game/session'
-import type { RunningSession } from '../../game/session'
 import { fromRecorderText, readSample, sampleNames } from '../../save/test/originalSave'
-import { createMemorySaveStore } from '../../save/memoryStore'
 import type { SaveFile } from '../../save/format'
 import { SAVE_SLOT_COUNT } from '../../save/store'
 import type { SaveStore } from '../../save/store'
-import { initiate } from '../../state/step'
 import { traceNamesOf } from '../../state/trace'
-import type { World } from '../../state/types'
 import { repoPath } from '../../test/repoPath'
+import { startSaveLoadReplay } from '../replay'
+import type { SaveLoadSetup } from '../replay'
 import { CARD_OF, snapshotSaveLoad } from '../snapshot'
-import { applySaveLoadInput } from '../step'
-import type { SaveLoadInput, SaveLoadTarget } from '../step'
-import { createSaveLoadWorld } from '../world'
+import type { SaveLoadInput } from '../step'
 import type { SaveLoadWorld } from '../world'
+
+export type { SaveLoadSetup } from '../replay'
 
 /**
  * saveload 真值的读取与回放（xl-i06.9）。**只给判据用**，跑在 Node 上。
  *
  * 回放**只读剧本头**（`script.setup`）与每一步的 `input`，一个状态字段都不从真值里
- * 取。起手照导出器 `SaveLoadDriver.start()` 的那几件事：
- *
- * 1. 仓库 = 草稿区：入库样例 `存档N.txt` 按原版写档装置的写法解析（测试侧解析器，
- *    xl-i06.7），`setup.emptySlots` 那几个槽删掉；
- * 2. 场景 = `initiation(warmup?)` 再 `initiation(scene)`，之后 `SaveAndLoad.zhang/lu/wen`
- *    被剧本的 `party` 覆盖（导出器写死这三个静态字段，**在** initiation 之后）；
- * 3. 其余（三个人、装备、药、钱）是一个干净进程的样子 —— 快照里看不见它们，但
- *    存档时 `captureSession` 要读，读的就是那份出厂值。
+ * 取。起手与逐步推进在 `../replay.ts`（取图页用的是同一份，xl-i06.12）；这里只多做
+ * Node 才做得了的两件事：从磁盘读真值，以及按原版写档装置的写法现读草稿区那几份档
+ * （{@link draftSlots}）。
  */
-export interface SaveLoadSetup {
-  readonly scene: string
-  readonly warmup?: string
-  readonly party: readonly string[]
-  readonly emptySlots: readonly number[]
-}
-
 export interface SaveLoadTraceTick {
   readonly t: number
   readonly ip: number
@@ -77,8 +59,6 @@ export function draftSlots(emptySlots: readonly number[]): (SaveFile | null)[] {
   })
 }
 
-const stem = (s: string) => s.replace(/\.txt$/, '')
-
 /**
  * 烘焙好的场景 JSON，用 node fs 现读。不走 `data/scenesEager.ts`：那个模块的导入方
  * 被 `sceneLoading.test.ts` 钉着只许是测试文件与 `scripts/`，而这里是测试辅助件。
@@ -87,60 +67,30 @@ function getScene(name: string): SceneScript {
   return JSON.parse(readFileSync(repoPath('web/src/generated/scenes', `${name}.json`), 'utf8')) as SceneScript
 }
 
-/** 照剧本头立起一个已开局的会话（存档时要从它身上取数）。 */
-export function setupSession(setup: SaveLoadSetup, store: SaveStore): RunningSession {
-  resetParty()
-  resetWallet()
-  resetDrugPack()
-  let world: World | null = null
-  if (setup.warmup) world = initiate(world, getScene(stem(setup.warmup)))
-  world = initiate(world, getScene(stem(setup.scene)))
-  world = {
-    ...world,
-    readerStatics: {
-      ...world.readerStatics,
-      zhang: setup.party.includes('zhang'),
-      lu: setup.party.includes('lu'),
-      wen: setup.party.includes('wen'),
-    },
-  }
-  const session = createSession({
-    scenes: (file) => getScene(stem(file)),
-    sprite: () => ({ width: 0, height: 0 }),
-    random: () => 0,
-    saves: store,
-  })
-  return enterScene(session, world)
-}
-
 /** 回放出来的一行：真值里除 `t` / `ip` / `input` 之外的每一列。 */
 export type ReplayedRow = Record<string, unknown>
 
-/**
- * 逐步回放。`current` 起手是第一条 `enter` 的 `from`（导出器照它摆当前面板）；
- * 之后只要这一步 `switchTo` 过就换成最后那一处。
- */
+/** 逐步回放。一步恰好一个输入事件，多一个少一个都是硬失败。 */
 export function replaySaveLoad(trace: SaveLoadTrace): { rows: ReplayedRow[]; world: SaveLoadWorld; store: SaveStore } {
-  const store = createMemorySaveStore(draftSlots(trace.script.setup.emptySlots))
-  const session = setupSession(trace.script.setup, store)
-  const world = createSaveLoadWorld(store)
-  const first = trace.ticks[0]!.input[0]
-  if (!first || first.e !== 'enter') throw new Error(`${trace.script.name} 第 0 步不是 enter`)
-  let current: SaveLoadTarget = first.from
+  const replay = startSaveLoadReplay(
+    trace.script.name,
+    trace.script.setup,
+    draftSlots(trace.script.setup.emptySlots),
+    getScene,
+    trace.ticks[0]!.input[0],
+  )
   const rows = trace.ticks.map((tick) => {
     if (tick.input.length !== 1) throw new Error(`第 ${tick.t} 步有 ${tick.input.length} 个输入事件，一步应当恰好一个`)
-    const fx = applySaveLoadInput(world, tick.input[0]!, { store, capture: () => captureSession(session) })
-    if (fx.switches.length > 1) throw new Error(`第 ${tick.t} 步切了 ${fx.switches.length} 次面板，导出器那边这是硬失败`)
+    const fx = replay.step(tick.input[0]!)
     const to = fx.switches[0]
-    if (to !== undefined) current = to
     return {
       // 这个面板一声都不出：`LoadAndSavePanel.java` 里没有任何 `MusicReader` 调用
       // （`saveloadTrace.test.ts` 现读核对）。
       music: [],
-      current,
-      ...snapshotSaveLoad(world),
+      current: replay.current,
+      ...snapshotSaveLoad(replay.world),
       intercept: { card: to === undefined ? null : CARD_OF[to], sceneLoopStart: fx.sceneLoopStart },
     }
   })
-  return { rows, world, store }
+  return { rows, world: replay.world, store: replay.store }
 }

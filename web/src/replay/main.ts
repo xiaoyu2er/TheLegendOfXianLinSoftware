@@ -50,6 +50,23 @@ import type { ImplementedDriver } from './implemented'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { initiate, step } from '../state/step'
 import type { InputEvent, World } from '../state/types'
+// 同菜单那一条的理由：类型从 `compare/saveFixtures.ts` 取。那个模块转手 `node:fs`
+// （它在比对器那一半解原版存档），而 `import type` 会被整个擦掉。
+import type { SaveFixture } from '../compare/saveFixtures'
+import type { SceneScript } from '../data/types'
+import { resetDrugPack } from '../fakes/drugPack'
+import { resetParty } from '../fakes/party'
+import { resetWallet } from '../fakes/wallet'
+import { applyReadBack, createSession, enterScene } from '../game/session'
+import type { Session } from '../game/session'
+import { createMemorySaveStore } from '../save/memoryStore'
+import { saveLoadDrawList, FIRST_FRAMES } from '../saveload/render/drawList'
+import type { SaveLoadDrawOp } from '../saveload/render/drawList'
+import { createSaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
+import type { SaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
+import { startSaveLoadReplay } from '../saveload/replay'
+import type { SaveLoadReplay, SaveLoadSetup } from '../saveload/replay'
+import type { SaveLoadInput } from '../saveload/step'
 
 /**
  * 取图页：**只在跨端逐帧比对里用**，不进游戏产物（`vite build` 只打
@@ -87,11 +104,13 @@ interface ReplayTrace {
     readonly tickMs: number
     /** `ScenePanel.isScript`：false 时旁白与主线对话的轮询整个跳过。 */
     readonly isScript: boolean
-    /** 读档起手的槽号（xl-i06.10）。取图页还不认它，见 `sceneAssembly.load`。 */
+    /** 读档起手的槽号（xl-i06.10）。起手见 `worldFromSave`。 */
     readonly load?: number
   }
   readonly tickCount: number
   readonly ticks: readonly ReplayTick[]
+  /** 比对器在 Node 那一半解好的原版存档（`compare/saveFixtures.ts`）。只有读档剧本带。 */
+  readonly fixture?: SaveFixture
 }
 
 /**
@@ -175,15 +194,12 @@ const stem = (file: string) => file.replace(/\.txt$/, '')
 const sceneAssembly: Assembly = {
   async load(traceJson: string) {
     const parsed = JSON.parse(traceJson) as ReplayTrace
-    // 读档剧本（xl-i06.10）：原版不 initiation，而是 Loader.load 读档再进场景。这里照剧本头
-    // 那套 warmup → scene 建出来的是**另一个世界**，比出来的一大片差异是装错了，不是两端不同。
-    // 读原版存档要一个浏览器侧的读取器，那是逐帧比对收口的活。当场抛，不许比。
-    if (parsed.script.load !== undefined) {
-      throw new Error(
-        `${parsed.script.name} 是读档剧本（load=${parsed.script.load}）：取图页还不认读档起手，` +
-          '照 scene 起手建出来的世界与读档之后的不是同一个 —— 归 xl-i06.12',
-      )
-    }
+    // 钱、药、队伍是模块单例，而一个页面连着装好几条剧本：上一条读档剧本写进去的钱会画在
+    // 下一条的金币 HUD 上。每条剧本起手都回出厂值 —— 状态层判据每份真值各起一个干净的
+    // 会话，同一个意思。
+    resetParty()
+    resetWallet()
+    resetDrugPack()
     const sceneName = stem(parsed.script.scene)
     const scene = await take(sceneName)
     renderer ??= await createSceneRenderer(hostFor('scene'))
@@ -199,7 +215,10 @@ const sceneAssembly: Assembly = {
     // 照剧本头建世界：先 warmup 再进 scene（跟 `state/trace.ts` 的 `replayWorld`
     // 是同一件事，这里不能 import 它 —— 那个模块跑在 node 上）。
     const warm = parsed.script.warmup === null ? null : initiate(null, await take(stem(parsed.script.warmup)))
-    world = { ...initiate(warm, scene), isScript: parsed.script.isScript }
+    world =
+      parsed.script.load === undefined
+        ? { ...initiate(warm, scene), isScript: parsed.script.isScript }
+        : worldFromSave(parsed, warm)
     next = 0
     renderer.showWorld(world)
     drawOverlay(world)
@@ -232,6 +251,140 @@ const sceneAssembly: Assembly = {
     drawOverlay(world)
     await twoFrames()
     return { t, timeMs: world.timeMs, x: world.role.px >> 5, y: world.role.py >> 5 }
+  },
+}
+
+/**
+ * 读档剧本的起手（xl-i06.12）：原版不 `initiation(scene)`，而是 `Loader.load(N)` 读档
+ * 再 `switchTo("scene")`。照剧本头那套 `warmup → scene` 建出来的是**另一个世界**。
+ *
+ * 走的是产品读档那一路的 `applyReadBack`（`game/session.ts`）—— 不只重建场景，还把
+ * 钱、药、三个人落到各自的模块单例上：金币 HUD 画的是 `getCoins()`，只建场景世界的话
+ * 那一格会画出厂的钱，与原版画的存档里的钱是两个数（M5 收口时 `WALLET_NOT_REPLAYED`
+ * 就是那个形状）。它与状态层判据用的 `replayWorld` 是同一个世界，由
+ * `game/loadSession.test.ts` 的等价用例接着。
+ *
+ * 那一份档读成什么样由比对器在 Node 那一半解好送来（`compare/saveFixtures.ts`）：
+ * 没送来就抛 —— 当场抛是「比不了」，照 `scene` 起手画一个错的世界是「比出来一大片差」。
+ */
+function worldFromSave(parsed: ReplayTrace, warm: World | null): World {
+  const f = parsed.fixture
+  if (f?.kind !== 'readBack' || f.slot !== parsed.script.load) {
+    throw new Error(
+      `${parsed.script.name} 是读档剧本（load=${parsed.script.load}），比对器却没送来那一份档的读法` +
+        `（收到 ${JSON.stringify(f?.kind ?? null)}）—— 见 compare/saveFixtures.ts`,
+    )
+  }
+  let session: Session = createSession({
+    scenes: loadedSceneSource,
+    sprite: () => ({ width: 0, height: 0 }),
+    random: () => 0,
+    saves: createMemorySaveStore([]),
+  })
+  // 中途读档（load-slot0）：读档之前场景那一侧已经有一局 —— `applyReadBack` 从它身上带
+  // `initiate(prev, …)` 本来就带的那几样。开机读档没有上一局，与状态层 `replayWorld` 同。
+  if (warm !== null) session = enterScene(session, warm)
+  return applyReadBack(session, f.readBack).scene.world
+}
+
+/* ===================== 存读档面板（xl-i06.12） ===================== */
+
+interface SaveLoadReplayTrace {
+  readonly driver: string
+  readonly script: { readonly name: string; readonly setup: SaveLoadSetup }
+  readonly tickCount: number
+  readonly ticks: readonly { readonly t: number; readonly input: readonly SaveLoadInput[] }[]
+  readonly fixture?: SaveFixture
+}
+
+let lsRenderer: SaveLoadRenderer | null = null
+let lsTrace: SaveLoadReplayTrace | null = null
+let lsReplay: SaveLoadReplay | null = null
+let lsNext = 0
+/**
+ * 原版位图此刻停在的那一帧的绘制清单。**不是每一步都重画**：导出器只在当前面板还是
+ * 存读档面板时才 `paint`（`SaveLoadDriver.stepUnguarded`），离开的那一步（退出键回
+ * 菜单、读档切回场景）位图停在离开前最后一帧。这里照做 —— 离开那一步照状态重画的话，
+ * 画的是一块原版此刻根本没在画的面板。
+ */
+let lsOps: SaveLoadDrawOp[] | null = null
+/** 上一次真的画出去的那份清单（引用），省掉没变的重画。 */
+let lsDrawn: SaveLoadDrawOp[] | null = null
+
+/**
+ * 逐帧比对里这个面板的动画停在**第 0 格**（鼠标、按钮光效、三个人）。
+ *
+ * 与商店那一条（`SHOP_FROZEN_FRAME`）同一个既成事实：`SaveLoadDriver` 把 Clock 的倍率
+ * 设成 1e-9，那条 10 Hz 的 `while(true)` 线程整次导出一次都没醒过（驱动器头注）。
+ * 帧号本来就不在状态层里（`saveload/world.ts` 头注），这条流水线守不住它们怎么循环。
+ */
+const LS_FROZEN_FRAMES = FIRST_FRAMES
+
+/** **故意改坏一处渲染**（`--self-check` 的注入点），存读档版。整帧一起挪，理由同商店。 */
+function breakSaveLoadOps(ops: SaveLoadDrawOp[], t: number): SaveLoadDrawOp[] {
+  const b = window.__xlBreak
+  if (!b || t < b.fromTick) return ops
+  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
+}
+
+const saveloadAssembly: Assembly = {
+  async load(traceJson: string) {
+    const parsed = JSON.parse(traceJson) as SaveLoadReplayTrace
+    const f = parsed.fixture
+    if (f?.kind !== 'slots') {
+      throw new Error(
+        `${parsed.script.name} 是存读档真值，比对器却没送来草稿区那几份档` +
+          `（收到 ${JSON.stringify(f?.kind ?? null)}）—— 见 compare/saveFixtures.ts`,
+      )
+    }
+    lsRenderer ??= await createSaveLoadRenderer(hostFor('saveload'))
+    activate('saveload')
+    const { setup } = parsed.script
+    const scenes = new Map<string, SceneScript>()
+    for (const file of [setup.warmup, setup.scene]) {
+      if (file) scenes.set(stem(file), await take(stem(file)))
+    }
+    const getScene = (name: string): SceneScript => {
+      const s = scenes.get(name)
+      if (!s) throw new Error(`存读档起手要场景 ${name}，没取到手`)
+      return s
+    }
+    // 起手与逐步推进与状态层判据是同一份（`saveload/replay.ts`）。
+    lsReplay = startSaveLoadReplay(parsed.script.name, setup, f.slots, getScene, parsed.ticks[0]?.input[0])
+    lsTrace = parsed
+    lsNext = 0
+    lsOps = null
+    lsDrawn = null
+    // `scene` 这一栏对这个面板来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
+    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+  },
+
+  async seek(t: number) {
+    const trace = lsTrace
+    const replay = lsReplay
+    const renderer = lsRenderer
+    if (!trace || !replay || !renderer) throw new Error('还没 load 就 seek')
+    if (t < lsNext - 1) {
+      throw new Error(`取图只能往前：当前在第 ${lsNext - 1} 步，要去第 ${t} 步`)
+    }
+    if (t >= trace.ticks.length) {
+      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
+    }
+    for (; lsNext <= t; lsNext++) {
+      const input = trace.ticks[lsNext]!.input
+      if (input.length !== 1) throw new Error(`第 ${lsNext} 步有 ${input.length} 个输入事件，一步应当恰好一个`)
+      replay.step(input[0]!)
+      if (replay.current === 'ls') lsOps = saveLoadDrawList(replay.world, LS_FROZEN_FRAMES)
+    }
+    if (lsOps === null) throw new Error(`到第 ${t} 步为止当前面板一次都不是存读档面板 —— 原版一帧都还没画`)
+    if (lsOps !== lsDrawn) {
+      await renderer.load(lsOps.flatMap((op) => (op.kind === 'image' ? [op.id] : [])))
+      lsDrawn = lsOps
+    }
+    renderer.draw(breakSaveLoadOps(lsOps, t))
+    await twoFrames()
+    // 一步是一次输入事件，没有虚拟时间可言（`SaveLoadDriver` 不推时钟）。同菜单 / 商店。
+    return { t, timeMs: 0, x: replay.world.currentX, y: replay.world.currentY }
   },
 }
 
@@ -547,6 +700,7 @@ const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = {
   battle: battleAssembly,
   menu: menuAssembly,
   shop: shopAssembly,
+  saveload: saveloadAssembly,
 }
 
 /** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */

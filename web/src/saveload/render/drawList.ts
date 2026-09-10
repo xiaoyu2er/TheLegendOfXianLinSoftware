@@ -11,7 +11,7 @@ import type { SaveLoadWorld } from '../world'
  *
  * 纯函数：世界 + 动画帧号 → 一串「把哪张图贴在哪 / 把哪句话画在哪」。不碰 Pixi、
  * 不碰 DOM，次序与坐标全在 `drawList.test.ts` 里逐条断言（坐标从 GBK 源码现读）。
- * 真实像素归跨端逐帧比对，而 saveload 那条流水线还没装配（xl-i06.12）。
+ * 真实像素归跨端逐帧比对（xl-i06.12 接上，分区表态见 `compare/expected.ts` 的 saveload-*）。
  *
  * ## paint() 的次序就是 z 序
  *
