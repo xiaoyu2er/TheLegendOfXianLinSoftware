@@ -44,11 +44,25 @@ public final class SceneDriver implements TraceDriver {
     /** 冻结基数：24 小时。真实 TimerQueue 在一次导出里绝无可能走到。 */
     private static final long FREEZE_BASE = 24L * 60 * 60 * 1000;
 
+    /**
+     * 立战斗面板时把 {@code Clock} 的倍率压到这个数，好让 {@code BattlePanel.run()}
+     * 头一句 {@code Clock.sleep(100)} 变成约 11 天 —— 那条线程从此停在那里，
+     * 一次循环体都跑不了。与 {@code BattleDriver.FREEZE_FACTOR} 是同一个数、
+     * 同一个用法，但**两支驱动器不共用**：战斗那边要把它调回来接着跑，场景这边
+     * 是一停到底。
+     */
+    private static final double BATTLE_PARK_FACTOR = 1e-9;
+
+    /** 等那条线程真的睡下去最多等多久（毫秒）。等不到是硬失败。 */
+    private static final long BATTLE_PARK_TIMEOUT_MS = 30000;
+
     private final TraceScript script;
     private final VirtualClock clock = new VirtualClock();
     private final List<VirtualTimer> timers = new ArrayList<>();
     private ScenePanel sp;
     private Graphics sink;
+    /** 面板跳转观察点。三扇门（药店 / 装备超市 / 战斗）唯一的可断言事实。 */
+    private PanelTap tap;
 
     // ---- 剧本执行状态 ----
     private int ip;                 // 当前指令
@@ -63,6 +77,7 @@ public final class SceneDriver implements TraceDriver {
     private int stallPos = Integer.MIN_VALUE;  // 上次观察到的当前轴坐标
     private int stallTicks;                    // 该坐标已经卡了多少 tick
     private String sceneAtEntry;               // 进入当前指令时所在的场景（exitTo 用）
+    private int boxesOpenedAtEntry;            // 进入 openBox 时已经开过几个宝箱
     private final List<String> pending = new ArrayList<>();   // 本 tick 的输入事件
 
     private boolean started;    // start() 是否已经跑过
@@ -100,6 +115,7 @@ public final class SceneDriver implements TraceDriver {
         advanceScript();
         if (ip >= script.steps.size() && pending.isEmpty()) return false;  // 最后一条指令在本 tick 之初就完成了
 
+        requireExitAnnounced();
         fireTimers();
         sp.step();
         sp.paint(sink);
@@ -134,6 +150,12 @@ public final class SceneDriver implements TraceDriver {
         media.MusicReader.closeBGM();
         MusicPlayer.CAN_PLAY_BGM = MusicPlayer.NO;
 
+        // 观察点要在建面板之前装好：切面板这件事是原版自己在按键分发里做的，
+        // 装晚了就有一段"切了而没人记"的窗口，而那段窗口里的失败长得像成功。
+        tap = new PanelTap();
+        GameLauncher.switcher = tap;
+        if (needsBattlePanel()) standUpBattlePanel();
+
         sp = new ScenePanel(null);
         GameLauncher.scenePanel = sp;
         GameLauncher.currentPanel = sp;
@@ -146,6 +168,85 @@ public final class SceneDriver implements TraceDriver {
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
         installTimers();
+    }
+
+    /**
+     * 这份剧本要不要一个真的战斗面板 —— **从剧本自己推导，不加字段**：
+     * 有一条 {@code awaitExit} 指着 {@code battlePanel} 就要。
+     *
+     * 为什么只有战斗那扇门要：药店与装备超市那两支
+     * （{@code SelectEvent.keyPressed} 里的 shopSelect / equipmentSelect）
+     * 直接就是一句 {@code GameLauncher.switchTo(...)}，观察点接住就完了。
+     * 战斗那一支在切之前先跑 {@code fightEvent.fight(...)}，而那里面有一句
+     * <b>不判空</b>的 {@code GameLauncher.battlePanel.initial(...)}。没有面板的
+     * 表现不是"这一扇门没接住"，是一条 NPE ——
+     * 而它抛在原版的按键分发里，导出当场少掉后面所有的拍。
+     */
+    private boolean needsBattlePanel() {
+        for (TraceScript.Instruction in : script.steps) {
+            if (in.op.equals("awaitExit") && "battlePanel".equals(in.panel)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 把战斗面板与我方三人立起来，好让战斗那扇门走得到 {@code switchTo("battle")}。
+     *
+     * <b>立起来的东西一拍都不会跑。</b> {@code BattlePanel} 的构造函数最后一句
+     * 就把 {@code run()} 线程起来了，而那条线程的循环体第一句是
+     * {@code Clock.sleep(100)}。这里先把倍率压到 {@link #BATTLE_PARK_FACTOR}
+     * 再构造，那一句于是变成约 11 天 —— 线程停在那儿，一次循环体都跑不了；
+     * 等它**真的睡下去**之后才把倍率放回来。
+     *
+     * ⚠️ 「等它真的睡下去」不是保险起见：{@code Thread.start()} 之后那条线程什么
+     * 时候读到 {@code Clock.factor} 是竞态的。放回倍率放早了，它读到的是 1.0，
+     * 于是每 100ms 醒一次、在一个 {@code initial()} 都还没跑过的面板上
+     * {@code update()} —— 那条 NPE 会静静地杀掉线程（原版的 try/catch 只包住
+     * sleep），而两次导出会因此不一样。判据是 {@code --check}。
+     *
+     * 三个人**无论出不出战都建**：原版 {@code GameLauncher.init()} 就是这么做的，
+     * 而 {@code FightEvent.fight} 按 Fight 数据那一行挑谁上场，挑的就是这三个
+     * public static 引用。
+     */
+    private void standUpBattlePanel() {
+        double saved = Clock.getFactor();
+        Clock.setFactor(BATTLE_PARK_FACTOR);
+        battle.BattlePanel bp = new battle.BattlePanel();
+        awaitParked(bp);
+        Clock.setFactor(saved);
+        GameLauncher.battlePanel  = bp;
+        GameLauncher.zhangXiaoFan = new battle.ZhangXiaoFan(560, 160, bp);
+        GameLauncher.yuJie        = new battle.YuJie(750, 150, bp);
+        GameLauncher.luXueQi      = new battle.LuXueQi(800, 330, bp);
+    }
+
+    /**
+     * 等 {@code BattlePanel.run()} 那条线程停进 {@code Thread.sleep} 里。
+     *
+     * 按**栈**认线程而不是按名字（名字是 "Thread-N"，编号取决于这个 JVM 之前建过
+     * 几条线程），做法照抄 {@code BattleDriver.findLoopThread}。等到超时是硬失败：
+     * 一条没睡下去的线程会让两次导出不一样，而"偶尔不一样"比"每次都错"难查得多。
+     */
+    private void awaitParked(battle.BattlePanel bp) {
+        long deadline = System.currentTimeMillis() + BATTLE_PARK_TIMEOUT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            Thread t = findBattleLoopThread();
+            if (t != null && t.getState() == Thread.State.TIMED_WAITING) return;
+            Thread.yield();
+        }
+        ExportTrace.die(script.name + "：等了 " + BATTLE_PARK_TIMEOUT_MS
+                + "ms，BattlePanel.run() 那条线程还没停进 sleep —— 立不住一个不会跑的战斗面板");
+    }
+
+    private Thread findBattleLoopThread() {
+        for (java.util.Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+            for (StackTraceElement st : e.getValue()) {
+                if (st.getClassName().equals("battle.BattlePanel") && st.getMethodName().equals("run")) {
+                    return e.getKey();
+                }
+            }
+        }
+        return null;
     }
 
     // ================= 快照位图 =================
@@ -233,7 +334,8 @@ public final class SceneDriver implements TraceDriver {
                 sceneAtEntry = sp.fileName;
                 left = in.op.equals("wait") ? in.ticks
                      : in.op.equals("advance") ? in.times
-                     : in.op.equals("advanceAll") ? in.max : 0;
+                     : in.op.equals("advanceAll") ? in.max
+                     : in.op.equals("cursor") ? in.times : 0;
                 pressedKey = -1;
             }
             if (exec(in)) { ip++; entered = false; continue; }
@@ -292,6 +394,71 @@ public final class SceneDriver implements TraceDriver {
                 return !roleMoving();
             case "waitNarratage":
                 return getBool(sp.narratage, "narratageOver");
+            case "select":
+                if (phase == 0) { pressSpace(); phase = 1; return false; }
+                // 没弹出来就得响。checkSelectEvent 是同步的，按完这一 tick 就该
+                // isSelect=true；不拦的话，一次差一格的 walkTo 会导出一份干干净净、
+                // 退出码 0、却一个选择框都没有的 trace。
+                if (!selectActive()) {
+                    fail("按了空格但没有弹出选择框，主角在 (" + role().getX() + ","
+                            + role().getY() + ") —— 旁边没有带选择事件的 NPC，或者它不在停下的那一格上");
+                }
+                // 同一下空格把某个 NPC 的口头语也说起来了（checkNPCOral 对每个
+                // NPC 都走一遍，选择事件不中的那些会 sayOral）。之后
+                // ScenePanel.keyPressed 的分发就整个改道去 npcEvent.keyPress，
+                // cursor / confirm 全被对话吞掉 —— **而吞掉与按下去长得一样**。
+                if (dialogueActive()) {
+                    fail("弹出选择框的同一下空格还说起了 NPC 口头语 —— 之后的按键会被对话吞掉");
+                }
+                return true;
+            case "cursor":
+                if (left == 0) return true;
+                if (!selectActive()) fail("选择框已经不在了，还剩 " + left + " 次光标没按");
+                press(cursorKey(in), false);
+                left--;
+                return false;
+            case "confirm":
+                if (!selectActive()) fail("选择框不在，按回车什么都选不中");
+                press(KeyEvent.VK_ENTER, false);
+                // **按完当拍就算完**，与 talk / select 那种"下一拍再验"不同：
+                // 三扇门的跳转就发生在这一下的按键分发里，而 awaitExit 必须在
+                // 同一拍里把它接走 —— 拖到下一拍的话，本拍收尾的
+                // requireExitAnnounced 会看见一次没人认领的跳转并当场硬失败。
+                // 一拍里不会因此按两次键：press() 自己拦着（见那里）。
+                return true;
+            case "dismiss":
+                if (phase == 0) { pressSpace(); phase = 1; return false; }
+                if (selectActive()) fail("按了空格但选择系统还占着（isSelect 仍为真）");
+                return true;
+            case "awaitSelect":
+                if (!selectActive()) fail("选择框不在，等不到它滑完");
+                return !timerRunning(sp.selectEvent, "selectImageMove")
+                        && !timerRunning(sp.selectEvent, "questionImageMove")
+                        && !timerRunning(sp.selectEvent, "wordsRun");
+            case "awaitExit":
+                return awaitExit(in);
+            case "openBox":
+                if (phase == 0) {
+                    boxesOpenedAtEntry = openedBoxes();
+                    pressSpace();
+                    phase = 1;
+                    return false;
+                }
+                if (openedBoxes() != boxesOpenedAtEntry + 1) {
+                    fail("按了空格但没有宝箱被打开（开过的宝箱数仍是 " + boxesOpenedAtEntry
+                            + "），主角在 (" + role().getX() + "," + role().getY()
+                            + ") —— 旁边没有还装着东西的宝箱");
+                }
+                // 开了箱却没弹提示框，等于东西给了而玩家看不见。TreasureBox.keyPressed
+                // 里这两件事是同一个 if 里的两句，分开的那一天要红。
+                if (!getBool(sp.equipmentEvent, "isDrawString")) {
+                    fail("宝箱开了，却没有弹出「得到物品」的提示框");
+                }
+                return true;
+            case "awaitPresent":
+                if (!getBool(sp.equipmentEvent, "isDrawString")) fail("提示框不在，等不到它走完");
+                return !timerRunning(sp.equipmentEvent, "presentImageMove")
+                        && !timerRunning(sp.equipmentEvent, "wordsRun");
             default:
                 fail("不认识的指令 " + in.op);
                 return true;
@@ -367,6 +534,15 @@ public final class SceneDriver implements TraceDriver {
     // ================= 输入 =================
 
     private void press(int keyCode, boolean ctrl) {
+        // 一个 tick 最多按一次键。原版里按键在 EDT 上，两次按键之间必然隔着
+        // 至少一次事件分发；一拍里按两下会让 Web 侧的回放无从展开
+        // （trace 的 input 是一个数组，两条 press 谁先谁后没有别的依据），
+        // 而那份 trace 看上去仍然规整。
+        for (String e : pending) {
+            if (e.startsWith("{\"e\":\"press\"")) {
+                fail("同一个 tick 里按了两次键（已经有 " + e + "，又要按 " + keyName(keyCode) + "）");
+            }
+        }
         sp.keyPressed(keyCode, ctrl);
         pending.add("{\"e\":\"press\",\"k\":" + Json.str(keyName(keyCode)) + ",\"ctrl\":" + ctrl + "}");
     }
@@ -385,6 +561,7 @@ public final class SceneDriver implements TraceDriver {
             case KeyEvent.VK_UP:    return "up";
             case KeyEvent.VK_DOWN:  return "down";
             case KeyEvent.VK_SPACE: return "space";
+            case KeyEvent.VK_ENTER: return "enter";
             default: return "vk" + keyCode;
         }
     }
@@ -399,6 +576,104 @@ public final class SceneDriver implements TraceDriver {
 
     private boolean dialogueActive() {
         return getBool(sp.npcEvent, "isOral") || getBool(sp.dialogueEvent, "isSpeaking");
+    }
+
+    /** 选择系统占着没有 —— 就是 ScenePanel 用来挡走路、决定画不画的那个字段。 */
+    private boolean selectActive() { return sp.selectEvent.isSelect; }
+
+    private static int cursorKey(TraceScript.Instruction in) {
+        return in.key.equals("down") ? KeyEvent.VK_DOWN : KeyEvent.VK_UP;
+    }
+
+    /**
+     * 已经开过的宝箱数。{@code openBox} 拿它前后一减，判"这一下真的开出了一个"。
+     *
+     * 为什么不是"看 isDrawString 有没有变真"：答对/答错加扣金币走的是同一个提示框
+     * （{@code SelectEvent} 里那两句 {@code equipmentEvent.drawString}），
+     * 只看提示框的话，一份"站在宝箱旁边按空格、其实弹的是金币提示"的真值会通过。
+     *
+     * 没有宝箱段的场景返回 0（{@code treasureBoxes} 为 null）—— 那时 openBox
+     * 的前后差必为 0，照样红。
+     */
+    private int openedBoxes() {
+        Object boxes = get(sp.equipmentEvent, "treasureBoxes");
+        if (boxes == null) return 0;
+        int n = 0;
+        for (Object box : (List<?>) boxes) if (getBool(box, "isEmpty")) n++;
+        return n;
+    }
+
+    /**
+     * 断言原版这一下把面板切到了哪一块，并把那次跳转**取走**。
+     *
+     * 场景这边是**当拍就判**的：三扇门都发生在 {@code confirm} 那一下的按键分发
+     * 里，同步完成，所以走到这条指令时观察点上要么已经有名字、要么这一下压根没切。
+     * 「切了别的一块」与「一次都没切」分开报，因为两者的成因完全不同：前者是
+     * {@code SelectEvent} 里挑分支挑错了，后者多半是光标停在"否"上。
+     *
+     * <p>与 {@link #requireExitAnnounced()} 是同一条规则的两半：这里拦"该切而没切"，
+     * 那里拦"切了而没人接"。改一处记得看另一处。
+     */
+    private boolean awaitExit(TraceScript.Instruction in) {
+        String card = tap.card();
+        if (card == null) {
+            fail("原版一次都没切面板 —— 剧本要的出口是 " + in.panel
+                    + "（选择框 " + (selectActive() ? "还开着" : "已经关了")
+                    + "，是/否光标停在 " + getInt(sp.selectEvent, "count_selectYesNo") + "）");
+        }
+        if (!card.equals(in.panel)) {
+            fail("剧本要的出口是 " + in.panel + "，原版切到的是 " + card);
+        }
+        tap.consume();
+        standInForTargetPanel();
+        return true;
+    }
+
+    /**
+     * 门后面那块面板没被建出来时，给 {@code GameLauncher.currentPanel} 一个替身。
+     *
+     * {@code switchTo} 做的是两件事：{@code switcher.show(...)}（观察点接住了）
+     * 与 {@code currentPanel = 那块面板}。第二件我们拦不住，而那三个 static 字段
+     * 里只有 {@code battlePanel} 是立起来了的（{@link #standUpBattlePanel}，
+     * 因为 {@code FightEvent.fight} 不判空地用它）。药店与装备超市那两块从没建过，
+     * 于是 {@code currentPanel} 被写成 null，**下一句** {@code ScenePanel.step()}
+     * 的 {@code currentPanel.equals(scenePanel)} 当场 NPE。
+     *
+     * <h3>为什么是替身而不是把那两块面板也立起来</h3>
+     *
+     * 那两个构造函数各起一条动画线程、各读一批图，而 xl-yg6.3 明写着不在导出器里
+     * 把游戏启动器立起来 —— 立起来就要把四支已有驱动器的确定性前提全部重验。
+     * 战斗面板是**被逼的**（那一句 NPE 挡在门前），这两块不是。
+     *
+     * <h3>替身够不够用：场景这边只读它一次，而且只问一个问题</h3>
+     *
+     * {@code ScenePanel.step()} 对 {@code currentPanel} 只有
+     * {@code .equals(GameLauncher.scenePanel)} 这一处读取，问的是「现在显示的还是
+     * 场景吗」。原版此刻的答案是「不是」，替身给出的也是「不是」（{@code JPanel}
+     * 没有覆写 equals，比的是同一性）。**这不是把场景当成还在前台** ——
+     * 恰恰相反，它保住的正是「已经不在前台了」这半个事实。
+     */
+    private void standInForTargetPanel() {
+        if (GameLauncher.currentPanel == null) {
+            GameLauncher.currentPanel = new javax.swing.JPanel();
+        }
+    }
+
+    /**
+     * 面板被切走了，而当前指令不是 {@code awaitExit} —— 硬失败。
+     *
+     * 没有这道检查时的失败形状：一份剧本按了回车就接着走路，而那一下其实进了
+     * 商店；真值照样导出、退出码 0，"进店了"与"选了否"在里面长得一模一样
+     * （{@code shopSelect} 两条路上都留着，{@code isSelect} 也一样）。
+     * 切面板是一件**必须被剧本显式接住**的事。
+     */
+    private void requireExitAnnounced() {
+        if (tap.card() == null) return;
+        String op = ip < script.steps.size() ? script.steps.get(ip).op : "（剧本已结束）";
+        if (!op.equals("awaitExit")) {
+            fail("原版把面板切到了 " + tap.card() + "，而当前指令是 " + op
+                    + " —— 切面板必须由 awaitExit 接住");
+        }
     }
 
     /** 当前句已经逐字打完（或打满了整屏），可以按空格推进了。 */

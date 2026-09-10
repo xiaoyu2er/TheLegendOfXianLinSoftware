@@ -31,6 +31,24 @@ import java.util.Map;
  *   waitIdle           等到主角的走/跑定时器都停下（即已对齐到格）。
  *   waitNarratage      等到旁白播完（narratageOver）。
  *
+ * 选择框 / 答题 / 宝箱那一套（xl-yg6.7），仍然是场景剧本的词汇 —— 它们在原版里
+ * 就是场景状态的一部分（ScenePanel.keyPressed 直接看 selectEvent.isSelect）：
+ *
+ *   select             按一次空格弹出选择框。没弹出来 —— 硬失败（"旁边没有带选择
+ *                      事件的 NPC" 与 "弹出来了" 在 trace 里长得一模一样）。
+ *                      同时拦"这一下把 NPC 口头语也说起来了"：那之后的按键全被
+ *                      对话吞掉，而吞掉与按下去长得一样。
+ *   cursor {key,times} 在选项之间移动光标，一 tick 一次。key 只认 down / up ——
+ *                      原版 SelectEvent.keyPressed 只处理这两个。
+ *   confirm            按一次回车（选中当前那一项）。
+ *   dismiss            按一次空格关掉回答框。关不掉 —— 硬失败。
+ *   awaitSelect        等到选择框/问题框滑完、这一屏字也吐完（三个定时器全停）。
+ *   openBox            按一次空格开宝箱。没有宝箱被打开 —— 硬失败。
+ *   awaitPresent       等到"得到物品"提示框滑进来、吐完字、又滑出去（两个定时器全停）。
+ *   awaitExit {panel}  断言原版这一下把面板切到了哪一块，并把那次跳转取走。
+ *                      形状与战斗那边同名指令一致，见下。**场景这边真的不切**：
+ *                      观察点是 PanelTap，切换动作被换成"记一个名字"。
+ *
  * 战斗剧本（`driver: "battle"`）用的是另一套词汇，因为战斗面板上没有格子、
  * 没有主角，只有鼠标：
  *
@@ -110,6 +128,8 @@ public final class TraceScript {
     public static final class Instruction {
         public final String op;
         public final int x, y, ticks, times, max, budget;
+        /** 场景：`cursor` 按的是哪个方向键（`down` / `up`）。 */
+        public final String key;
         /** 战斗：`command` 点哪个按钮 / `autoAttack` 跑到什么为止。 */
         public final String button, until;
         /** 战斗：`target` 点哪个怪物槽位（1/2/3）。 */
@@ -119,9 +139,10 @@ public final class TraceScript {
         /** 战斗：`autoUntilRound` 要停在谁的回合上（1 张 / 2 文 / 3 陆）。 */
         public final int round;
         Instruction(String op, int x, int y, int ticks, int times, int max, int budget,
-                    String button, String until, int enemy, String panel, int round) {
+                    String key, String button, String until, int enemy, String panel, int round) {
             this.op = op; this.x = x; this.y = y;
             this.ticks = ticks; this.times = times; this.max = max; this.budget = budget;
+            this.key = key;
             this.button = button; this.until = until; this.enemy = enemy; this.panel = panel;
             this.round = round;
         }
@@ -129,7 +150,17 @@ public final class TraceScript {
 
     private static final List<String> SCENE_OPS = Arrays.asList(
             "walkTo", "runTo", "exitTo", "talk", "advance", "advanceAll", "wait", "waitIdle",
-            "waitNarratage");
+            "waitNarratage",
+            "select", "cursor", "confirm", "dismiss", "awaitSelect", "awaitExit",
+            "openBox", "awaitPresent");
+
+    /**
+     * {@code cursor} 认的方向键。**只有这两个**：原版
+     * {@code SelectEvent.keyPressed} 的第一支就是 {@code VK_DOWN || VK_UP}，
+     * 左右键在选择框开着的时候一个分支都走不到。写第三个进来等于导出一份
+     * "按了却什么都没发生"的真值。
+     */
+    private static final List<String> CURSOR_KEYS = Arrays.asList("down", "up");
 
     private static final List<String> BATTLE_OPS = Arrays.asList(
             "command", "target", "autoAttack", "awaitExit", "wait",
@@ -283,11 +314,22 @@ public final class TraceScript {
                 throw new IllegalArgumentException("driver " + driver + " 不认识的指令 " + op + "，可用的是 " + ops);
             }
             int x = 0, y = 0, ticks = 0, times = 0, max = 0, enemy = 0, round = 0;
-            String button = null, until = null, panel = null;
+            String key = null, button = null, until = null, panel = null;
             if (!battle && isMove(op)) { x = JsonIn.i(s, "x"); y = JsonIn.i(s, "y"); }
             if (op.equals("wait"))       ticks = JsonIn.i(s, "ticks");
             if (op.equals("advance"))    times = JsonIn.i(s, "times");
             if (op.equals("advanceAll")) max   = JsonIn.iOr(s, "max", 64);
+            if (op.equals("cursor")) {
+                key = JsonIn.str(s, "key");
+                if (!CURSOR_KEYS.contains(key)) {
+                    throw new IllegalArgumentException("cursor 不认识的 key " + key + "，可用的是 " + CURSOR_KEYS);
+                }
+                times = JsonIn.i(s, "times");
+                // 0 次是硬失败，不是"什么都不按"：一条按 0 次的 cursor 在真值里
+                // 与"这一步整个漏写了"长得一模一样，而光标停在哪一项正是答对/
+                // 答错的分水岭。
+                if (times < 1) throw new IllegalArgumentException("cursor 的 times 至少是 1，实际 " + times);
+            }
             if (op.equals("command")) {
                 button = JsonIn.str(s, "button");
                 if (!BUTTONS.contains(button)) {
@@ -330,7 +372,7 @@ public final class TraceScript {
                 max = JsonIn.iOr(s, "max", 300);
             }
             steps.add(new Instruction(op, x, y, ticks, times, max,
-                    JsonIn.iOr(s, "budget", 2000), button, until, enemy, panel, round));
+                    JsonIn.iOr(s, "budget", 2000), key, button, until, enemy, panel, round));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
@@ -413,6 +455,13 @@ public final class TraceScript {
             if (s.op.equals("wait"))       b.append(",\"ticks\":").append(s.ticks);
             if (s.op.equals("advance"))    b.append(",\"times\":").append(s.times);
             if (s.op.equals("advanceAll")) b.append(",\"max\":").append(s.max);
+            if (s.op.equals("cursor")) {
+                b.append(",\"key\":").append(Json.str(s.key)).append(",\"times\":").append(s.times);
+            }
+            // 场景这边只回显 panel，不回显 max：awaitExit 在场景里是**当拍就判**的
+            // （切面板发生在 confirm 那一下的按键分发里，同步完成），那个上限
+            // 一次都走不到。回显一个走不到的数，读真值的人会以为它是判据。
+            if (s.op.equals("awaitExit")) b.append(",\"panel\":").append(Json.str(s.panel));
             b.append('}');
         }
         return b.append("]}").toString();

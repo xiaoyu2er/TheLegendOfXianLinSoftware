@@ -1056,34 +1056,9 @@ public final class BattleDriver implements TraceDriver {
 
     // ================= 面板跳转观察点 =================
 
-    /**
-     * 记下原版把面板切到了哪一块。
-     *
-     * {@code GameLauncher.switchTo} 走的是 {@code switcher.show(c, "xxxPanel")}，
-     * 而导出器里 {@code GameLauncher} 从没被构造过 —— {@code c} 是 null，
-     * {@code CardLayout.show} 会当场 NPE。那条 NPE 抛在 {@code run()} 线程上，
-     * 而它的 try/catch 只包住 sleep（xl-1dv.10），于是线程静静地死掉、闸门
-     * 永远等不到放行：**导出挂死，而挂死看起来只是"跑得慢"**。
-     *
-     * 所以把 {@code GameLauncher.switcher} 这个 public static 字段换成本类：
-     * {@code show} 只记名字、不碰容器。换掉的是**画面切换这个动作**，不是
-     * 决定切到哪一块的那段判断 —— 那一句仍然是 {@code GameOver.update()} 里
-     * 原版自己的 {@code em1.name.equals("罹年居士")}，一个字没动。
-     */
-    private static final class PanelTap extends java.awt.CardLayout {
-        private static final long serialVersionUID = 1L;
-        private volatile String card;
-        private volatile int count;
-
-        @Override
-        public void show(java.awt.Container parent, String name) {
-            card = name;
-            count++;
-        }
-
-        String card()  { return card; }
-        int count()    { return count; }
-    }
+    // 观察点本身是 devtools.PanelTap（场景驱动器也用同一个类）。这里原本有一份
+    // 内嵌的同名类，xl-yg6.7 把它整个提成一个文件 —— 两支驱动器各写一份的话，
+    // 「记的是卡片名还是入参」这种细节迟早在其中一份里走样。
 
     // ================= 闸门 =================
 

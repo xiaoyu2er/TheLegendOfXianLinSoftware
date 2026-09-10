@@ -1,0 +1,30 @@
+{
+  "driver": "scene",
+  "name": "battle-door",
+  "description": "战斗那扇门：大地图上走到商塔阿威哥 (37,38) 脚下，弹出选择框，先选「否」回到走路，再弹一次选「是」—— 原版这一下先 fightEvent.fight(...) 再 GameLauncher.switchTo(\"battle\")，观察点记下的卡片名是 battlePanel。这一支与另外两扇门不同：选完「是」原版紧接着 showAnswer(...)，所以选择框不但没关，还从头滑一遍、吐一句话；剧本把那一段也走完再按空格关掉。",
+  "warmup": "脚本1.txt",
+  "scene": "大地图.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "walkTo", "x": 16, "y": 10 },
+    { "op": "runTo",  "x": 17, "y": 28 },
+    { "op": "runTo",  "x": 26, "y": 32 },
+    { "op": "runTo",  "x": 47, "y": 42 },
+    { "op": "runTo",  "x": 37, "y": 40 },
+    { "op": "waitIdle" },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "cursor", "key": "down", "times": 1 },
+    { "op": "confirm" },
+    { "op": "wait", "ticks": 20 },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "confirm" },
+    { "op": "awaitExit", "panel": "battlePanel" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "dismiss" },
+    { "op": "wait", "ticks": 30 }
+  ]
+}

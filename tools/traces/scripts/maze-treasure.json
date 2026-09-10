@@ -1,0 +1,18 @@
+{
+  "driver": "scene",
+  "name": "maze-treasure",
+  "description": "大迷宫1 开宝箱：走到 (5,5)，站在 (5,4) 那个宝箱下面按空格开箱 —— 提示框从屏幕外滑进来、逐字吐完那句话、再滑出去。覆盖 treasure 那一列的 presenting / x / wordNo / moving / printing 与 boxes[].empty、boxes[].near。",
+  "warmup": "脚本1.txt",
+  "scene": "大迷宫1.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "walkTo", "x": 12, "y": 5 },
+    { "op": "walkTo", "x": 5,  "y": 5 },
+    { "op": "waitIdle" },
+    { "op": "openBox" },
+    { "op": "awaitPresent", "budget": 4000 },
+    { "op": "wait", "ticks": 30 }
+  ]
+}
