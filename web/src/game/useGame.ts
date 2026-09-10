@@ -462,7 +462,7 @@ export function useGame(
      * 另外三页的背景走按需加载，翻到哪一页才取哪一张。
      */
     function drawMenu(next: Session): void {
-      if (!menuRenderer || next.panel !== 'menu' || next.menu === null) return
+      if (!menuRenderer || next.panel !== 'menu') return
       const world = next.menu.world
       const wanted = menuTextureIds(world).join('\u0000')
       if (loadedMenuRef.current !== wanted) {

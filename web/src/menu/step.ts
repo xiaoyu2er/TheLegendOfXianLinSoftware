@@ -362,3 +362,27 @@ export function currentPanel(w: MenuWorld): MenuSubPanel {
 export function menuWantsScene(w: MenuWorld): boolean {
   return w.panels.funcPanel.funcButtons?.exitToScene === true
 }
+
+/**
+ * 把「返回」那条**一次性信号**收掉 —— 会话切回场景的那一拍调它（xl-6lo.18）。
+ *
+ * 原版没有这个字段：那一支直接就是 `switchTo("scene")`，一句话执行完就没了。
+ * `exitToScene` 是这一层为了让会话读得到而加的旗标，所以它必须由**读它的人**
+ * 清掉。菜单世界从开机活到关机（`game/session.ts`），不清的话下一次开菜单
+ * 第一拍就自己关上了 —— 而"按 ESC 开不了菜单"看起来像 ESC 那条路坏了。
+ *
+ * ⚠️ **`returnButton.isclicked` 不在这里清，也不需要**：那一下松手会把它清掉。
+ * 原版的松手真的到得了已经被 CardLayout 藏起来的 `menuPanel` —— Swing 的
+ * `LightweightDispatcher` 从按下到松开一直握着 grab，事件按**按下时**那个组件
+ * 重定向，不看它还显不显示（2026-09-10 用一个真 JFrame + CardLayout 量过：
+ * 藏起来那个 `pressed=true released=true`）。落点与按下同一处、必然命中，
+ * `GameButton.isRelesedButton` 里那句 `isclicked=false` 就跑了。
+ *
+ * 这里要清的只有 `exitToScene` 这一个**原版没有**的字段。多清一个
+ * `isclicked` 今天看不出差别（松手已经清过了），但那是把一件别人做过的事
+ * 又做一遍，而它掩盖的恰恰是"松手没送到"这种真的会出问题的情况。
+ */
+export function clearMenuExit(w: MenuWorld): void {
+  const fb = w.panels.funcPanel.funcButtons
+  if (fb) fb.exitToScene = false
+}

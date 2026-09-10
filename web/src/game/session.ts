@@ -1,9 +1,9 @@
 import { advanceBattle, createBattleTicker } from '../battle/loop'
 import { advanceMenu, createMenuTicker } from '../menu/loop'
 import type { MenuTicker } from '../menu/loop'
-import { menuWantsScene } from '../menu/step'
+import { clearMenuExit, menuWantsScene } from '../menu/step'
 import type { MenuInput } from '../menu/step'
-import { createMenuWorld } from '../menu/world'
+import { createMenuWorld, refreshMenuWorld } from '../menu/world'
 import type { BattleTicker } from '../battle/loop'
 import { createBattle } from '../battle/world'
 import type { BattleConfig } from '../battle/world'
@@ -108,15 +108,31 @@ export interface Session {
   /** 战斗那一侧。`null` = 这一局还没打过架，或者上一场已经收了。 */
   readonly battle: BattleTicker | null
   /**
-   * 菜单那一侧。`null` = 菜单没开着。
+   * 菜单那一侧。**从开机活到关机，永远不为 `null`**（xl-6lo.18）——
+   * 菜单开没开着看 `panel === 'menu'`，不看这个字段。
    *
-   * **每次开菜单都新建一份**，而不是像原版那样留一个从开机活到关机的
-   * `MenuPanel`。原版留着它是因为它顺手当了状态的家（三个人的引用、背包、
-   * 已装备的东西全挂在上面）；这一层的那些状态另有出处（`fakes/party.ts`），
-   * 而 `switchTo("menu")` 那三句 `refreshValue()` 说的正是「每次打开都按最新
-   * 的属性重算一遍」—— 新建一份就是它最直白的对应物。
+   * 原版的 `MenuPanel` 是 `GameLauncher` 构造函数里 `new` 的**一份**，
+   * `switchTo("menu")` 只调三句 `refreshValue()`、不重建任何东西，而
+   * `GameLauncher.init()`（唯一会重建它的地方）**没有人调** —— 它自己是活的
+   * 源码，被注释掉的是它唯一的调用点（`StartPanel.startLoadAction()` 的
+   * `//	Game.game.init();`）。也就是说那一份从开机活到关机。这里照抄，因为它顺手当了两样状态的家，而那两样
+   * **在这一层没有别的出处**：
+   *
+   * - `EquipPanelState.packs` —— 六个槽位穿着什么（`equipPack_hero1/2/4`）；
+   * - `EquipPanelState.owned` —— 六张装备表的持有量（那六个 list 是 `static`，
+   *   是**全局背包**）。
+   *
+   * 顺带活过来的还有当前在哪一页、四个 `Mouse` 的计数器、两条列表的滚动位置。
+   * （**活着**不等于**在走**：原版那四条 run 线程关着菜单也在跑，这一层没有，
+   * 见 `advanceSession` 里那一段与 xl-6lo.19。）
+   *
+   * ⚠️ 起先这里是**每次开菜单新建一份**，理由写的是「那三句 `refreshValue()`
+   * 说的就是每次打开都按最新属性重算一遍」。那句话对了一半：属性确实要刷
+   * （`refreshMenuWorld`），但**重建把不该刷的一起丢了** —— 穿一件 +5 体力的
+   * 盔甲、关菜单（xl-6lo.16 让属性 +5 记住了）、再开菜单，那件盔甲不在槽位里
+   * 了，于是再穿一次变成 +10。判据在 `menuSession.test.ts`（xl-6lo.18）。
    */
-  readonly menu: MenuTicker | null
+  readonly menu: MenuTicker
   readonly deps: SessionDeps
 }
 
@@ -169,7 +185,46 @@ const NO_KEYS: readonly InputEvent[] = []
  * 我们自己的一秒黑屏。
  */
 export function createSession(deps: SessionDeps): Session {
-  return { panel: 'start', scene: null, battle: null, menu: null, deps }
+  // 菜单**开机就建**，与原版同一句：`GameLauncher` 构造函数里那句
+  // `menuPanel=new MenuPanel(zhangXiaoFan,luXueQi,yuJie)` 排在
+  // `switchTo("start")` 之前。见 `Session.menu`。
+  return { panel: 'start', scene: null, battle: null, menu: createGameMenu(), deps }
+}
+
+/**
+ * 建游戏本体那一份菜单世界 —— `new MenuPanel(zhangXiaoFan,luXueQi,yuJie)`。
+ *
+ * 与回放真值那条路（`menu/replay.ts`）的区别只有两样：三个人从队伍现读、
+ * 音频那两个开关从 `game/audioSettings.ts` 现读。背包里一件装备、一瓶药都
+ * 没有 —— 那正是一个干净进程的样子，来源要等商店（M4 / xl-knp）。
+ */
+function createGameMenu(): MenuTicker {
+  return createMenuTicker(
+    createMenuWorld({
+      // 原版这三个标志位归存档（`SaveAndLoad.zhang/lu/wen`），今天没有存档，
+      // 所以照原版三个类的处境给：三个人都在。⚠️ 玉洁那一位的键是 `wen`。
+      party: ['zhang', 'lu', 'wen'],
+      fullHeal: false,
+      live: liveParty(getParty()),
+      // 原版那两个开关是 static，活得比菜单久（`game/audioSettings.ts`）。
+      audio: getAudioSettings(),
+    }),
+  )
+}
+
+/**
+ * 队伍那一份里**菜单看得见的那几样**（`LiveParty`）：等级、四项基础属性、
+ * 血与灵力。派生值不喂 —— 菜单那边自己 `derive` 一遍，喂过去等于同一个事实
+ * 有两个出处。
+ */
+function liveParty(carry: Readonly<Record<PartyKey, PartyMemberState>>) {
+  const live = (m: PartyMemberState): LiveParty => ({
+    level: m.level,
+    ...attributesOf(m),
+    hp: m.hp,
+    mp: m.mp,
+  })
+  return { zhang: live(carry.zhang), lu: live(carry.lu), yu: live(carry.yu) }
 }
 
 /**
@@ -193,7 +248,11 @@ export function isRunning(session: Session): session is RunningSession {
  * 战斗那一侧一并清掉：原版这一下 `new` 的是一整套面板。
  */
 export function enterScene(session: Session, world: World): RunningSession {
-  return { ...session, panel: 'scene', scene: createTicker(world), battle: null, menu: null }
+  // ⚠️ **菜单那一份不重建**：原版「起」那一下是三句
+  // （`switchTo("scene")` + `initiation` + 起线程），一句都没碰 `menuPanel`。
+  // 唯一重建它的 `GameLauncher.init()` 没有人调 —— 那个方法本身是活的源码，
+  // 被注释掉的是它唯一的调用点（`StartPanel` 里那句 `//	Game.game.init();`）。
+  return { ...session, panel: 'scene', scene: createTicker(world), battle: null }
 }
 
 /**
@@ -210,25 +269,10 @@ export function enterScene(session: Session, world: World): RunningSession {
  */
 export function openMenu(session: RunningSession, carry = getParty()): RunningSession {
   if (session.panel !== 'scene') return session
-  // 队伍那一份里**菜单看得见的那几样**（`LiveParty`）：等级、四项基础属性、
-  // 血与灵力。派生值不喂 —— `createMenuHeroes` 自己 `derive` 一遍，喂过去
-  // 等于同一个事实有两个出处。
-  const live = (m: PartyMemberState): LiveParty => ({
-    level: m.level,
-    ...attributesOf(m),
-    hp: m.hp,
-    mp: m.mp,
-  })
-  const world = createMenuWorld({
-    // 原版这三个标志位归存档（`SaveAndLoad.zhang/lu/wen`），今天没有存档，
-    // 所以照原版三个类的处境给：三个人都在。⚠️ 玉洁那一位的键是 `wen`。
-    party: ['zhang', 'lu', 'wen'],
-    fullHeal: false,
-    live: { zhang: live(carry.zhang), lu: live(carry.lu), yu: live(carry.yu) },
-    // 原版那两个开关是 static，活得比菜单久（`game/audioSettings.ts`）。
-    audio: getAudioSettings(),
-  })
-  return { ...session, panel: 'menu', menu: createMenuTicker(world) }
+  // **刷新，不重建**（xl-6lo.18）：`switchTo("menu")` 那个 case 里除了换面板
+  // 就只有三句 `refreshValue()`。装备槽位、全局背包、当前在哪一页原样留着。
+  refreshMenuWorld(session.menu.world, { live: liveParty(carry), audio: getAudioSettings() })
+  return { ...session, panel: 'menu' }
 }
 
 /**
@@ -376,7 +420,22 @@ export function advanceSession(
   }
 
   // ——— 菜单那四条线程 ———
-  if (panel === 'menu' && menu !== null) {
+  if (panel === 'menu') {
+    // ⚠️ **这一批输入整批投进去，「返回」之后的那几个也照投** —— 包括那一下
+    // **松手**。原版的松手真的到得了已经被 CardLayout 藏起来的菜单：Swing 的
+    // `LightweightDispatcher` 从按下到松开一直握着 grab，`isMouseGrab` 对
+    // RELEASED 也为真，于是事件被重定向回**按下时**那个组件，不看它还显不显示。
+    //
+    // 这不是读文档读来的，是量出来的（2026-09-10，openjdk 17，真 JFrame +
+    // CardLayout，A 面板在 `mousePressed` 里把自己 `cl.show` 掉，再往窗口派
+    // 一条 MOUSE_RELEASED）：`A pressed=true released=true`、B 两个都是 false。
+    // 于是原版走的是 `funcPanel.mouseReleased → isRelesedButton`，落点与按下
+    // 同一处、必然命中，`returnButton.isclicked` **被清掉**。
+    //
+    // ⚠️ 本票起先反着写（逐个投递、见到「返回」就 break，理由是"藏起来就收不到"）
+    // ——那条前提是假的，/code-review 的 Spec 轴起了一个真 JVM 把它证伪的。
+    // 剩下的那一半差别在 `game/useGame.ts`：松手落在**下一帧**时它整个丢掉，
+    // 而原版照样送得到。单开一张票：**xl-z4f**。
     menu = advanceMenu(menu, input.menu, elapsedMs)
     // 天书页那两颗「背景音乐 开 / 关」改的是菜单世界上的开关，而原版改的是
     // 两个 static。**每一拍都记回去**，不是等关菜单时记 —— 关菜单那条路只有
@@ -390,7 +449,9 @@ export function advanceSession(
     rememberMenuParty(menu.world.heroes)
     if (menuWantsScene(menu.world)) {
       panel = 'scene'
-      menu = null
+      // 一次性信号，读了就收 —— 菜单世界活着，不清的话下次开菜单第一拍
+      // 又关上了。`returnButton.isclicked` **不清**，见 `clearMenuExit`。
+      clearMenuExit(menu.world)
     }
   }
 
@@ -427,7 +488,7 @@ export function currentBgm(session: Session): string | null {
 
 /** 菜单世界，菜单没开着就是 `null`。渲染层要它。 */
 export function menuWorldOf(session: Session): MenuWorld | null {
-  return session.panel === 'menu' && session.menu !== null ? session.menu.world : null
+  return session.panel === 'menu' ? session.menu.world : null
 }
 
 /** 战斗世界，没在打架就是 `null`。渲染层要它。 */

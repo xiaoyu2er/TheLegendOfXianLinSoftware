@@ -3,7 +3,7 @@ import { createEquipPanel } from './equipPanel'
 import { createFuncButtons } from './funcButtons'
 import { createDrugPack, createDrugPanelState } from './drugPanel'
 import { createMagicState } from './magic'
-import { createMenuHeroes } from './heroes'
+import { createMenuHeroes, refreshMenuHeroes } from './heroes'
 import type { LiveParty } from './heroes'
 import type { PartyKey } from '../battle/units'
 import { HEAD_H, HEAD_POS, HEAD_W, TABS, TAB_H, TAB_W, TAB_Y, tabX } from './layout'
@@ -145,5 +145,33 @@ export function createMenuWorld(config: MenuConfig): MenuWorld {
     // 不喂就是原版那两个 static 的初值：两个都开着。
     audio: { bgm: config.audio?.bgm ?? true, sfx: config.audio?.sfx ?? true },
     tick: 0,
+  }
+}
+
+/**
+ * `GameLauncher.switchTo("menu")` 那个 case 的**全部可观测内容**：换面板，
+ * 外加三句 `refreshValue()`。菜单世界从开机活到关机（xl-6lo.18），所以
+ * "开菜单"这件事在这一层是**刷新**，不是重建。
+ *
+ * 两样要刷：三个人（队伍那一份），与音频那两个开关。后者原版是 `static`、
+ * 根本不用刷 —— 刷是因为这一层把它们放在世界上（`types.ts` 的
+ * `MenuAudioSettings`），而别处（今天没有，明天有存档）可能改得动它。
+ *
+ * ⚠️ **能刷的只有这两样，这是有意的**：装备槽位、全局背包、当前在哪一页、
+ * 四个 `Mouse` 的计数器、两条列表的滚动位置全都**原样留着**，因为原版那一份
+ * `MenuPanel` 就那么留着。刷多了的表现是"关一次菜单丢一样"。
+ */
+export function refreshMenuWorld(
+  w: MenuWorld,
+  config: Pick<MenuConfig, 'live' | 'audio'>,
+): void {
+  // ⚠️ **原地改，不还一份新的**（返回 `void` 是有意的）：还了 `MenuWorld` 的话
+  // 它读起来像 `create*` 那族的不可变写法，而唯一的调用点根本没接返回值 ——
+  // 下一个人照那个签名写 `const next = refreshMenuWorld(...)` 会以为原来那份
+  // 没被动过。菜单世界的规矩是就地改（`types.ts` 文件头注）。
+  refreshMenuHeroes(w.heroes, config.live)
+  if (config.audio) {
+    w.audio.bgm = config.audio.bgm
+    w.audio.sfx = config.audio.sfx
   }
 }
