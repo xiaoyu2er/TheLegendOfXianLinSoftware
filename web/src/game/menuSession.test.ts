@@ -636,6 +636,31 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     expect(s.panel, '这一下没把菜单弹出去 —— 那个粘住的 isclicked 没复刻上').toBe('scene')
   })
 
+  it('再开菜单看到的是队伍此刻的属性 —— 关着的这段时间队伍变了也跟得上', () => {
+    // 这一条守的是 `refreshMenuWorld` 那一半（另一半是"刷得太多"，上面第一条
+    // 守着）。**关菜单期间**改队伍，走的正是战斗升级与商店将来那条路。
+    let s = openMenu(inScene('宿舍'))
+    const menuHpMax = () => menuWorldOf(s)!.heroes[0]!.hpMax
+    const opened = menuHpMax()
+    s = leaveMenu(s)
+
+    // 菜单关着的时候队伍涨了体力（打完一场升了级就是这样）。
+    getParty().zhang.physicalPower += 10
+    const expected = derive(getParty().zhang)
+    // 反向控制：这十点**真的把上限顶上去了**，否则下面那条恒真。
+    expect(expected.hpMax).toBeGreaterThan(opened)
+
+    s = openMenu(s)
+    const zhang = menuWorldOf(s)!.heroes[0]!
+    expect(zhang.physicalPower, '再开菜单没把队伍的属性刷进来').toBe(
+      getParty().zhang.physicalPower,
+    )
+    // 派生值也要跟着重算 —— 只抄四项属性、不跑 `refreshValue()` 的话，
+    // 属性那一条是绿的而上限停在旧数上。
+    expect(zhang.hpMax, '属性刷进来了，派生值没重算').toBe(expected.hpMax)
+    resetParty()
+  })
+
   it('「起」不重建菜单 —— 原版那一句 init() 是注释掉的死代码', () => {
     const start = javaSource('src/start/StartPanel.java')
     // ⚠️ 先切出 `startLoadAction` 再找 `case 0:` —— 这个文件里有**好几个**
