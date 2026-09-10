@@ -1,0 +1,35 @@
+{
+  "driver": "scene",
+  "name": "question-answer",
+  "description": "答题走到底，答错一次、答对一次：大活里走到清洁工 (2,16) 旁边，第一道题光标不动就按回车（初值 size()-5 = 1，正确答案是 2）—— 答错，扣钱的提示框滑进来；第二道题按两下下键把光标从 3 移到 5（正确答案 5）—— 答对，加钱的提示框滑进来。覆盖 select 那一列的 question / asking / answering / abcd / questionNo / qx1..qy2 / maxLength（问题框是 44，选择框是 22）与 answered、recorder 这两张「答过没」的表。",
+  "warmup": "脚本1.txt",
+  "scene": "大活.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 40000,
+  "steps": [
+    { "op": "walkTo", "x": 4,  "y": 9 },
+    { "op": "walkTo", "x": 3,  "y": 17 },
+    { "op": "waitIdle" },
+
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "confirm" },
+    { "op": "awaitSelect", "budget": 8000 },
+    { "op": "confirm" },
+    { "op": "awaitSelect", "budget": 8000 },
+    { "op": "dismiss" },
+    { "op": "awaitPresent", "budget": 8000 },
+
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "confirm" },
+    { "op": "awaitSelect", "budget": 8000 },
+    { "op": "cursor", "key": "down", "times": 2 },
+    { "op": "confirm" },
+    { "op": "awaitSelect", "budget": 8000 },
+    { "op": "dismiss" },
+    { "op": "awaitPresent", "budget": 8000 },
+    { "op": "wait", "ticks": 30 }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "driver": "scene",
+  "name": "question-memory",
+  "description": "答过的题记得住（xl-yg6.7）：大活里答掉第一道题，从 (15,19) 出门进大地图、再原路走回来 —— 场景整个被 initiation 重建一遍，而 SelectEvent 的构造函数按 fileName 在 mapName 里认领回同一个 haveAnswered，所以 answered[0] 仍是真、走到同一个 NPC 面前弹出来的是**第二道**题（questionNo 1）。它同时给那条已登记的原版怪癖取到读数：出门之后那半段在大地图上，那个场景一道题都没有，count_scene 停在初值 0，而 recorder 里已经躺着大活的记录 —— 「0 指着别人」。",
+  "warmup": "脚本1.txt",
+  "scene": "大活.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 40000,
+  "steps": [
+    { "op": "walkTo", "x": 4,  "y": 9 },
+    { "op": "walkTo", "x": 3,  "y": 17 },
+    { "op": "waitIdle" },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "confirm" },
+    { "op": "awaitSelect", "budget": 8000 },
+    { "op": "confirm" },
+    { "op": "awaitSelect", "budget": 8000 },
+    { "op": "dismiss" },
+
+    { "op": "walkTo", "x": 15, "y": 17 },
+    { "op": "exitTo",  "x": 15, "y": 19, "budget": 4000 },
+    { "op": "waitIdle" },
+    { "op": "wait", "ticks": 60 },
+    { "op": "exitTo",  "x": 64, "y": 13, "budget": 4000 },
+    { "op": "waitIdle" },
+
+    { "op": "walkTo", "x": 15, "y": 17 },
+    { "op": "walkTo", "x": 3,  "y": 17 },
+    { "op": "waitIdle" },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "cursor", "key": "down", "times": 1 },
+    { "op": "confirm" },
+    { "op": "wait", "ticks": 60 }
+  ]
+}

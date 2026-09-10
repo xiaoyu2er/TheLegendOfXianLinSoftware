@@ -1,0 +1,19 @@
+{
+  "driver": "scene",
+  "name": "maze-treasure",
+  "description": "迷宫1 开宝箱：走到 (4,16)，站在 (4,17) 那个宝箱上面按空格开箱 —— 提示框从屏幕外滑进来、逐字吐完那句话、再滑出去。覆盖 treasure 那一列的 presenting / x / wordNo / moving / printing 与 boxes[].empty、boxes[].near。⚠️ 走的格子数受 battle0 限着：迷宫1 有 Fight 0 段，主角每换一格 count+1，数到 30（mapSet 只有 20 行）就随机开打，所以这条剧本挑的是 22 格能走到的那个宝箱，不是 33 格外的那个。",
+  "warmup": "脚本1.txt",
+  "scene": "迷宫1.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "walkTo", "x": 13, "y": 6 },
+    { "op": "walkTo", "x": 4,  "y": 6 },
+    { "op": "walkTo", "x": 4,  "y": 16 },
+    { "op": "waitIdle" },
+    { "op": "openBox" },
+    { "op": "awaitPresent", "budget": 8000 },
+    { "op": "wait", "ticks": 30 }
+  ]
+}

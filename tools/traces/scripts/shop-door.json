@@ -1,0 +1,24 @@
+{
+  "driver": "scene",
+  "name": "shop-door",
+  "description": "药店那扇门：金陵大学医院里走到药店大夫旁边，弹出选择框，先选「否」回到走路，再弹一次选「是」—— 原版这一下 GameLauncher.switchTo(\"shop\")，观察点记下的卡片名是 shopPanel。覆盖 select 那一列的 shop / yesNo / boxW / boxH / sentenceNo / wordNo / lineNo 与滑入、逐字两个定时器。",
+  "warmup": "脚本1.txt",
+  "scene": "金陵大学医院.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "walkTo", "x": 15, "y": 8 },
+    { "op": "waitIdle" },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "cursor", "key": "down", "times": 1 },
+    { "op": "confirm" },
+    { "op": "wait", "ticks": 20 },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "confirm" },
+    { "op": "awaitExit", "panel": "shopPanel" },
+    { "op": "wait", "ticks": 30 }
+  ]
+}

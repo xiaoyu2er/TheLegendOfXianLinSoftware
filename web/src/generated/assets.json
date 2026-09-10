@@ -1469,10 +1469,14 @@
   "shop:返回游戏 (1).png": "shop/返回游戏 (1).webp",
   "shop:返回游戏 (2).png": "shop/返回游戏 (2).webp",
   "shop:返回游戏 (3).png": "shop/返回游戏 (3).webp",
+  "bgm:B6": "bgm/B6.m4a",
   "bgm:主题曲": "bgm/主题曲.m4a",
+  "bgm:医院": "bgm/医院.m4a",
   "bgm:大地图": "bgm/大地图.m4a",
   "bgm:大地图夜": "bgm/大地图夜.m4a",
+  "bgm:大迷宫4": "bgm/大迷宫4.m4a",
   "bgm:欢乐": "bgm/欢乐.m4a",
   "bgm:欢乐的宿舍": "bgm/欢乐的宿舍.m4a",
-  "bgm:舒缓": "bgm/舒缓.m4a"
+  "bgm:舒缓": "bgm/舒缓.m4a",
+  "bgm:装备超市": "bgm/装备超市.m4a"
 }

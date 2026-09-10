@@ -1,0 +1,25 @@
+{
+  "driver": "scene",
+  "name": "equipshop-door",
+  "description": "装备超市那扇门：金陵大学装备超市里走到商店大爷旁边，弹出选择框，先选「否」回到走路，再弹一次选「是」—— 原版这一下 GameLauncher.switchTo(\"equipmentShop\")，观察点记下的卡片名是 equipmentShopPanel。与 shop-door 是同一条 keyPressed 分支的另一支（equipmentSelect）。",
+  "warmup": "脚本1.txt",
+  "scene": "金陵大学装备超市.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "walkTo", "x": 13, "y": 9 },
+    { "op": "walkTo", "x": 15, "y": 8 },
+    { "op": "waitIdle" },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "cursor", "key": "down", "times": 1 },
+    { "op": "confirm" },
+    { "op": "wait", "ticks": 20 },
+    { "op": "select" },
+    { "op": "awaitSelect", "budget": 4000 },
+    { "op": "confirm" },
+    { "op": "awaitExit", "panel": "equipmentShopPanel" },
+    { "op": "wait", "ticks": 30 }
+  ]
+}
