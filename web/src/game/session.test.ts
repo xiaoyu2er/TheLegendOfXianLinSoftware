@@ -9,7 +9,7 @@ import { getScene } from '../data/scenesEager'
 import { getParty, rememberParty, resetParty } from '../fakes/party'
 import { createMemorySaveStore } from '../save/memoryStore'
 import { getCoins, resetWallet } from '../fakes/wallet'
-import { drugCount, resetDrugPack } from '../fakes/drugPack'
+import { drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
 import { HEROES, derive } from '../battle/units'
 import type { PartyKey } from '../battle/units'
 import { readBattleTrace } from '../battle/trace'
@@ -706,27 +706,57 @@ describe('开箱 → 背包', () => {
 
   const scene = (keys: InputEvent[]) => ({ scene: keys, battle: [], menu: [] })
 
-  it('按空格：金疮药进背包 2 件；再按一下，同一个箱子不再给', () => {
+  /**
+   * ⚠️ 这个箱子写的是「金疮药」，原版药表里是「金创药」（脚本错字）。原版 `addDrug` 找不到
+   * 名字什么都不做 —— xl-03x.3 的账本对撞在 maze-treasure 上实测：原版开箱之后药包全 0。
+   * 所以这里钉的是**请求照亮、药包一件不进**；「真药名进背包」在 `sceneLedger.test.ts`。
+   */
+  const held = () => drugEntries().filter(([, n]) => n !== 0)
+
+  it('按空格：请求亮了，但错字名一件都不进背包；再按一下，同一个箱子不再给', () => {
     // 先走一拍，让第 6 步 checBoxes 把 near 置真。
     let s = advanceSession(maze(), scene([]), SCENE_PUMP_MS)
-    expect(drugCount('金疮药')).toBe(0)
     s = advanceSession(s, scene([press('space')]), SCENE_PUMP_MS)
     expect(s.scene.world.treasureRequest).toEqual([{ name: '金疮药', count: 2 }])
-    expect(drugCount('金疮药')).toBe(2)
+    expect(held(), '原版药表里没有这一味，addDrug 什么都不做').toEqual([])
+    for (let i = 0; i < 5; i++) s = advanceSession(s, scene([]), SCENE_PUMP_MS)
+    s = advanceSession(s, scene([press('space')]), SCENE_PUMP_MS)
+    expect(s.scene.world.treasureRequest, '同一个箱子给了第二次').toBeNull()
+  })
+
+  /**
+   * 同一个箱子换成**原版药表里真有的名字**：进得去，再按一下不重复给。少了这一条，上面
+   * 那条「错字名一件不进」在「addDrug 整个坏掉」的篡改下也是绿的。原版这一侧的读数见
+   * xl-03x.3 关票理由（探针直接驱动 `TreasureBox.keyPressed`）。
+   */
+  function mazeWithRealDrug(): RunningSession {
+    const s = maze()
+    const t = s.scene.world.treasure
+    const boxes = t.boxes!.map((b) => ({ ...b, name: '还魄丹' }))
+    return { ...s, scene: { ...s.scene, world: { ...s.scene.world, treasure: { ...t, boxes } } } }
+  }
+
+  it('真药名：进背包 2 件；再按一下，同一个箱子不再给', () => {
+    let s = advanceSession(mazeWithRealDrug(), scene([]), SCENE_PUMP_MS)
+    expect(drugCount('还魄丹')).toBe(0)
+    s = advanceSession(s, scene([press('space')]), SCENE_PUMP_MS)
+    expect(s.scene.world.treasureRequest).toEqual([{ name: '还魄丹', count: 2 }])
+    expect(drugCount('还魄丹')).toBe(2)
     for (let i = 0; i < 5; i++) s = advanceSession(s, scene([]), SCENE_PUMP_MS)
     s = advanceSession(s, scene([press('space')]), SCENE_PUMP_MS)
     expect(s.scene.world.treasureRequest).toBeNull()
-    expect(drugCount('金疮药'), '同一个箱子给了第二次').toBe(2)
+    expect(drugCount('还魄丹'), '同一个箱子给了第二次').toBe(2)
   })
 
   it('一次 pump 补跑很多拍，开箱那一拍的东西不会被吞掉', () => {
-    const s = advanceSession(maze(), scene([]), SCENE_PUMP_MS)
+    // 真药名的箱子：错字名一件不进，拿它当「这一拍结算过」的证据就恒为 0、分辨不出吞没吞。
+    const s = advanceSession(mazeWithRealDrug(), scene([]), SCENE_PUMP_MS)
     const burst = advanceSession(s, scene([press('space')]), 500)
     expect(burst.scene.world.treasureRequest, '开箱那一拍被同一批的下一拍吞掉了').not.toBeNull()
-    expect(drugCount('金疮药')).toBe(2)
+    expect(drugCount('还魄丹')).toBe(2)
     expect(burst.scene.carryMs).toBeGreaterThan(0)
     const next = advanceSession(burst, scene([]), SCENE_PUMP_MS)
     expect(next.scene.world.treasureRequest).toBeNull()
-    expect(drugCount('金疮药')).toBe(2)
+    expect(drugCount('还魄丹')).toBe(2)
   })
 })

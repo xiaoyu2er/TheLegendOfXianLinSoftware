@@ -177,6 +177,28 @@ public final class SceneDriver implements TraceDriver {
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
         installTimers();
+        // 播种（xl-03x.3）：场景里读 Math.random() 的（2026-09-11 照 Web 侧 state/step.ts
+        // 的替身读出来的，未在原版里逐处数）有三处 ——计步战斗挑场次、
+        // 宝箱、答题加扣金币（`500 + (int)(500 * Math.random())`）。不播的话原版
+        // 每导一次金币都不同（同一条 question-answer 两次读到 9117 与 9055），跨端
+        // 逐帧比对的账本（ExportTrace 的 frames.json `ledger`）就无从对起。
+        //
+        // 放在起手的**最后一句**：建面板、读档（loadFromSave 会建商店，存货逐件
+        // 掷 Math.random()）都在它之前，第一次被播过的随机数落在第一个 tick 上 ——
+        // 与取图页（web/src/replay/main.ts）拿同一个种子起一个 JavaRandom、第一次
+        // step() 才开始取数对齐。种子是 script.seed：场景剧本不解析也不回显这个字段
+        // （TraceScript 缺省 0），所以剧本回显一个字节都不变。
+        //
+        // 真值不看这些数（场景快照里没有金币、药包、宝箱给了几个），所以播种之后
+        // 重导 tools/traces/out 必须逐字节不变 —— 那是这一句能留下的前提。
+        //
+        // 药包也在这里立起来（读档那一支 standUpLoadTargets 已经立过就不再立）：原版
+        // GameLauncher 开机就有它，而 DrugPack.addDrug 按名字在 drugList 里找、找不到
+        // 什么都不做 —— 不立的话 maze-treasure 开出来的药在原版这一侧**凭空消失**，
+        // 账本对撞的是一个驱动器造出来的空药包。立起来之后各药 numberGOT 全是 0
+        // （ShopReader.readDrug 不写它），与 Web 那一侧的空药包同值。
+        if (shop.DrugPack.drugList.isEmpty()) new shop.DrugPack();
+        BattleDriver.plantMathRandom(script.seed);
     }
 
     /**

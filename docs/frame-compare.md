@@ -936,6 +936,59 @@ Java 侧的**绝对**倍率被 `Thread.sleep` 的固定超时开销压低（每�
   不同**（原版答题后 9117 / 9493，web 取图页仍是 10000）。取图页（`replay/main.ts`）
   只调 `step()`、不走 session —— **凡是只由 session 记的账，这条流水线一律看不见**，
   钱包只是今天撞到的那一样（xl-yg6.15 现数了一遍）。
+  ⚠️ **这一条已由 xl-03x.3 还清并删掉**，那两个数也作废（加扣额是无种子的
+  `Math.random()`，每导一次都不同），见下面「账本对撞」一节。
+
+## 账本对撞：取图页记上会话层的账（2026-09-11，xl-03x.3，M8）
+
+### 盲区是什么，为什么像素判据补不上
+
+答题加扣金币、开箱进背包这两笔账只由会话层（`game/session.ts`）记。取图页从前只推
+`step()`，于是答完题金币 HUD 仍画 10000。像素那一层补不上它：金币数字那一格是字形缺口区，
+**只查上界**，而答题**之前**两端都画 10000 时字形差就有 559 个像素，数值不同的帧并不比它多。
+改之前实测：把会话层的加钱改成扣钱，question-answer / question-memory **2/2 符合预期**。
+
+### 修法：三件
+
+1. **共用记账那一段**：`game/sceneLedger.ts` 的 `settleSceneRequests`，会话层与取图页都调；
+   切面板、存档不进取图页。场景请求按「记账 / 切面板」手签归队，给 `SceneRequests` 加一类而
+   没归队就红（`sceneLedger.test.ts`）。
+2. **播种**：加扣额是 `500 + (int)(500 * Math.random())`，原版每导一次都不同（同一条
+   question-answer 两轮读到 9117 与 9055）。`SceneDriver` 起手最后一句照 `BattleDriver` 的
+   手法播 `script.seed`（场景剧本缺省 0、不回显），取图页拿同一种子起 `JavaRandom`。播种之后
+   `tools/export-trace.sh --check` 42/42 确定性一致、`git diff tools/traces/out` 为空。
+3. **账本**（M8 第二道新缝，仅测试）：`ExportTrace` 在 `--frames` 时把每帧的
+   `Money.getCoins()` 与 `DrugPack.drugList` 写进不入库的 `frames.json`（**不进
+   trace.json**），取图页每帧交自己的钱包与药包，`compare/ledger.ts` 逐帧对撞；登记
+   哪几支驱动器交账本的是 `scripts/compare.ts` 的 `LEDGER_DRIVERS`（手签，今天只有 `scene`）。
+
+### 读数（2026-09-11，播种后）
+
+| 剧本 | 帧 | 账本 |
+|---|---|---|
+| question-answer | 91 | 逐帧相等，金币 10000 → 9755 |
+| question-memory | 98 | 逐帧相等，金币 10000 → 9135 |
+| load-slot1 | 11 | 逐帧相等 |
+| maze-treasure | 44 | **头一轮红**：第 750 帧「金疮药 原版药包里没有这一味 / Web 2」 |
+
+maze-treasure 那一条是账本第一次跑就逮到的真差别：宝箱写的是「金疮药」（脚本错字，5 本脚本
+都这么写），原版药表是「金创药」，原版 `addDrug` 找不到名字什么都不做。脚本数据按约定不修，
+假药包改成按原版药表认名字（`fakes/drugPack.ts`）。
+
+### 篡改验证（每条先确认改动写进去了，cp 备份还原后 cmp）
+
+| 改了什么 | 结果 |
+|---|---|
+| （改之前）`session.ts` 答对加钱改成扣钱，跑 question-answer / question-memory | **2/2 符合预期**，退出码 0 —— 盲区本身 |
+| `sceneLedger.ts` 答对加钱改成扣钱 | question-answer「账本对不上：第 1950 帧 金币 原版 9755 / Web 8515」，退出码 1 |
+| 取图页去掉 `settleSceneRequests(world)` | 「第 1025 帧 金币 原版 9135 / Web 10000」，退出码 1 |
+| 取图页种子 0 → 1 | 「第 1950 帧 金币 原版 9755 / Web 9840」，退出码 1 |
+| 假药包去掉认名字那一句 | maze-treasure「第 750 帧 金疮药 原版药包里没有这一味 / Web 2」，退出码 1 |
+| `session.ts` 去掉 `settleSceneRequests` 调用 | `session.test.ts` 4 条红 |
+| `addDrug` 整个失效 | 真药名那几条单测 5 条红（session / sceneLedger / victory） |
+
+前四条逐帧比对红的时候，`coin-digits` 那一格一直是 559/1118 —— **红的全是账本那一条**，
+像素判据在同样的篡改下仍然放行。
 
 ### 读数会漂的两个区
 

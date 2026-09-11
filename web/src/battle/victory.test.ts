@@ -408,4 +408,21 @@ describe('打赢之后：结算走完，回地图', () => {
     // 晚一拍起不再发 —— `thing_sx1` 之后一直是 0，那一支只走一次。
     expect([drugEntries(), equipmentEntries(), getCoins()]).toEqual(after)
   })
+
+  /**
+   * 掉的药名不在原版药表里：`DrugPack.addDrug` 一声不响丢掉（xl-03x.3）。
+   *
+   * 原版读数是**跑出来的**，不是照宝箱那条推的：探针绕过构造函数建一个
+   * `VictoryReminder`，`things = [金疮药/1, 还魄丹/1]`、`thing_sx1 = 8`，调一次
+   * `update()` 落到发奖那一拍 —— 原版药包 `还魄丹=1`，其余全 0，没有异常。今天
+   * 怪掉的药名全在药表里（2026-09-11 读 `units.ts` 的 `thing` 列），所以这一支只有造出来才走得到。
+   */
+  it('掉的药名不在原版药表里：一件都不进，真药名照进', () => {
+    const w = battleAt(20)
+    win(w)
+    w.victoryReminder.things = ['金疮药/1', '还魄丹/1']
+    const awardAt = (VICTORY.thingSx1Start - VICTORY.thingAwardAt) / VICTORY.thingStepX
+    for (let t = 1; t <= awardAt; t++) stepBattle(w)
+    expect(drugEntries()).toEqual([['还魄丹', 1]])
+  })
 })

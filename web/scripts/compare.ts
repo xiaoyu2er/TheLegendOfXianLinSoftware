@@ -28,6 +28,8 @@ import { exactRectsOf, judgeExact, rectDiffering } from '../src/compare/exactReg
 import type { ExactFrame, ExactTraceTick, ExactVerdict } from '../src/compare/exactRegions'
 import { repoPath } from '../src/test/repoPath'
 import { judgeWhole } from '../src/compare/verdict'
+import { judgeLedger } from '../src/compare/ledger'
+import type { LedgerEntry, LedgerVerdict } from '../src/compare/ledger'
 import { launch } from './cdp'
 import type { Browser } from './cdp'
 
@@ -57,7 +59,22 @@ interface Manifest {
   readonly every: number
   readonly tickCount: number
   readonly ticks: readonly number[]
+  /**
+   * 与 `ticks` 逐项对应的原版账本（xl-03x.3，`ExportTrace.ledgerEntry`）。旧导出器写的
+   * 清单里没有它 —— 要对账的驱动器碰到那种清单是硬失败，见 `judgeLedger`。
+   */
+  readonly ledger?: readonly LedgerEntry[]
 }
+
+/**
+ * **哪几支驱动器的取图页交账本**（xl-03x.3）—— 手签的登记，不现扫：由它决定对不对账，
+ * 让它自动推导等于让取图页自己说「我不用对账」。现在只有场景那一套接了
+ * `settleSceneRequests`；接了而没登记，那一套的账照旧没人对。
+ */
+const LEDGER_DRIVERS: readonly string[] = ['scene']
+
+/** 取图页每一帧交上来的账本，与帧图放在一起（`<剧本>/web/ledger.json`）。 */
+const LEDGER_FILE = 'ledger.json'
 
 interface ScriptReport {
   readonly name: string
@@ -69,6 +86,8 @@ interface ScriptReport {
   readonly regions?: RegionVerdict | undefined
   /** 只有声明了逐像素相等区的剧本有（xl-aq0），一块一条。 */
   readonly exact?: readonly ExactVerdict[] | undefined
+  /** 只有交账本的驱动器有（`LEDGER_DRIVERS`）。 */
+  readonly ledger?: LedgerVerdict | undefined
 }
 
 async function main(): Promise<void> {
@@ -168,11 +187,16 @@ async function capture(
           `${m.script}：清单说 ${m.tickCount} 个 tick，Web 侧装载到 ${loaded.tickCount} 个`,
         )
       }
+      const ledger: (LedgerEntry | null)[] = []
       for (const t of m.ticks) {
-        await browser.evaluate(`window.__xlReplay.seek(${t})`)
+        const at = await browser.evaluate<{ ledger?: LedgerEntry }>(`window.__xlReplay.seek(${t})`)
+        // 没交就记 null（JSON 里 undefined 会被整个吞掉，数组就错位了）；要不要对账、
+        // 没交算不算错，由比对那一步按 `LEDGER_DRIVERS` 判。
+        ledger.push(at.ledger ?? null)
         const png = await browser.screenshot(STAGE_WIDTH, STAGE_HEIGHT)
         writeFileSync(join(dir, frameName(t)), png)
       }
+      writeFileSync(join(dir, LEDGER_FILE), `${JSON.stringify(ledger)}\n`, 'utf8')
       process.stdout.write(
         `  取图 ${m.script}：${m.ticks.length} 帧${brk === null ? '' : `（第 ${brk.fromTick} tick 起故意改坏渲染）`}\n`,
       )
@@ -341,12 +365,34 @@ function compareOne(
   // 判据本身在 `src/compare/`：整屏表态走 `verdict.ts`，分区表态走 `regions.ts`。
   // 这里只负责挑一边、把结论抄进报告 —— 判据留在 src/ 下才跟得上 CI 里的
   // vitest（这条流水线要 Java 与 Chrome，进不了 CI）。
+  // 账本对撞（xl-03x.3）：像素那几套看不见数值，这一条逐帧对原版的金币与药包。
+  // 与像素判据互不相干，同样是叠上去的一条。
+  let ledger: LedgerVerdict | undefined
+  if (LEDGER_DRIVERS.includes(m.driver)) {
+    const file = join(webDir, LEDGER_FILE)
+    if (!existsSync(file)) throw new Error(`${m.script} 的取图页没留下 ${file} —— 重跑一遍取图`)
+    const web = (JSON.parse(readFileSync(file, 'utf8')) as (LedgerEntry | null)[]).map((e) => e ?? undefined)
+    ledger = judgeLedger(m.ticks, m.ledger, web)
+  } else {
+    // 反方向：取图页交了账本而这里没登记，那一套的账就没人对 —— 与「登记了却不交」
+    // （judgeLedger 里的硬失败）对撞，登记才有分辨力。
+    const file = join(webDir, LEDGER_FILE)
+    const handed = existsSync(file) && (JSON.parse(readFileSync(file, 'utf8')) as unknown[]).some((e) => e !== null)
+    if (handed) {
+      throw new Error(`${m.script}（driver=${m.driver}）的取图页交了账本，LEDGER_DRIVERS 却没登记这一支 —— 登记上，否则这笔账没人对`)
+    }
+  }
+
   const whole = regions ? null : judgeWhole(sequence, expectation)
   // 逐像素相等区是**加在上面那一层之上**的，不是替代：整屏（或分区）那一套
   // 照旧判，它再叠一条"这几块必须一个像素都不差"。任意一条不过，整条剧本不过。
-  const ok = (regions ? regions.ok : whole!.ok) && (exact ?? []).every((e) => e.ok)
-  const verdict = [regions ? regions.verdict : whole!.verdict, ...(exact ?? []).map((e) => e.verdict)]
-    .join(' ')
+  const ok =
+    (regions ? regions.ok : whole!.ok) && (exact ?? []).every((e) => e.ok) && (ledger?.ok ?? true)
+  const verdict = [
+    regions ? regions.verdict : whole!.verdict,
+    ...(exact ?? []).map((e) => e.verdict),
+    ...(ledger ? [ledger.verdict] : []),
+  ].join(' ')
 
   // 差异图只出两张：第一个偏离帧（"从哪儿开始不对"）和最差帧（"最坏长什么样"）。
   // 每帧都出会得到几百张没人看的图。
@@ -360,7 +406,7 @@ function compareOne(
     writeFileSync(join(diffDir, frameName(t)), encodePng(diffImage(a, b, tolerance)))
   }
 
-  return { name: m.script, expectation, sequence, ok, verdict, regions, exact }
+  return { name: m.script, expectation, sequence, ok, verdict, regions, exact, ledger }
 }
 
 /** 逐帧比原版与某一侧产物的差异。`side` 是 `<剧本>/` 下的子目录名。 */

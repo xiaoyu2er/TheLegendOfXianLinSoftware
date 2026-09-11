@@ -158,8 +158,8 @@ function addValue(v: VictoryReminderState, start: number, hero: Hero): void {
  *
  * 三个收件人今天全是假货（`web/src/fakes/`，登记在 ADR-0005 的册子里）：
  * 背包与装备包归 xl-6lo.1，钱包归 xl-knp.1。原版的 `addDrug` / `addEqupment`
- * 在出厂表里按名字找，**找不到什么都不做**；假货没有出厂表，来者不拒 ——
- * 差别写在 `fakes/registry.ts` 那一行里。
+ * 在出厂表里按名字找，**找不到什么都不做**。药包那一份已经照做（xl-03x.3）；装备包
+ * 仍然来者不拒 —— 差别写在 `fakes/registry.ts` 那一行里。
  *
  * 那个 `switch` 原版**没有 default**：`名字/3` 这种会被悄悄丢掉。照抄。
  */

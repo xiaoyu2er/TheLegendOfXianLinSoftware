@@ -33,8 +33,8 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
     owner: 'xl-6lo.1',
     original: 'shop.DrugPack',
     fakeBecause:
-      '不读 sources/Drug/，没有出厂表，于是来者不拒 —— 原版 addDrug 找不到名字时什么都不做；' +
-      '也没有 Drug 的价格 / 说明 / 图标。',
+      '只有「名字 → 件数」，没有 Drug 的价格 / 说明 / 图标。' +
+      '（从前还「来者不拒」，xl-03x.3 的账本对撞撞出之后改成按 DRUGS 认名字、对不上什么都不做，与原版同。）',
     exports: ['addDrug', 'setDrugCount', 'drugCount', 'drugEntries', 'resetDrugPack'],
   },
   equipmentPack: {

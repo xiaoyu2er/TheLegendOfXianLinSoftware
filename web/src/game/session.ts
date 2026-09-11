@@ -30,6 +30,7 @@ import type { ShopKind } from '../shop/layout'
 import type { ShopWorld } from '../shop/types'
 import type { LiveParty } from '../menu/heroes'
 import { getAudioSettings, rememberAudioSettings } from './audioSettings'
+import { settleSceneRequests } from './sceneLedger'
 import { TITLE_BGM } from '../start/assets'
 import { advance, createTicker } from '../state/loop'
 import type { Ticker } from '../state/loop'
@@ -613,20 +614,11 @@ export function advanceSession(
   )
   const request = scene.world.battleRequest
 
-  // 答对答错那一下的加扣（xl-yg6.9）。原版 `SelectEvent.keyPressed` 里
-  // `Money.addCoins(i)` / `Money.reduceCoins(i)` 与 `drawString` 同一拍；这一层
-  // 把它做成只亮一拍的 `presentRequest`，`advance` 在它亮的那一拍停批（见
-  // `state/loop.ts`），所以读的就是这一拍的。**只在这里记一次**：下一次 pump
-  // 的世界里它已经落回 `null`。
-  const present = scene.world.presentRequest
-  if (present !== null) {
-    if (present.correct) addCoins(present.coins)
-    else reduceCoins(present.coins)
-  }
-  // 开箱开出来的东西进背包（xl-yg6.10）：`TreasureBox.keyPressed` 里那句
-  // `DrugPack.addDrug(treasureName, i)`，与 `drawString` 同一拍。停批的理由
-  // 与上面那条一样（`state/loop.ts`）。
-  for (const got of scene.world.treasureRequest ?? []) addDrug(got.name, got.count)
+  // 答对答错的加扣（xl-yg6.9）与开箱进背包（xl-yg6.10）。两者都只亮一拍，
+  // `advance` 在亮的那一拍停批（`state/loop.ts`），所以读的就是这一拍的；**只在
+  // 这里记一次**：下一次 pump 的世界里它们已经落回 `null`。这一段与取图页共用
+  // （`sceneLedger.ts`，xl-03x.3）。
+  settleSceneRequests(scene.world)
 
   if (request !== null && panel === 'scene') {
     battle = createBattleTicker(createBattle(configFor(request, deps)))
