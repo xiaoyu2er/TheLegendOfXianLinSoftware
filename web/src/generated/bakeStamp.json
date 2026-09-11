@@ -36,7 +36,7 @@
     "web/src/menu/funcButtons.ts": "37d7b3e45bb8e715a45beee5321df7f9d294cfb9a3785b70eb27f103323a0413",
     "web/src/menu/heroes.ts": "f055783884856ada3c2c8562d7ad3cc8dc4ce45a665b76274cac3093535cae00",
     "web/src/menu/magic.ts": "c686a1c2e4c00e3bab3f4fee52d6a034bed13d73c48383c83cd80e3bb5e2723a",
-    "web/src/menu/scroll.ts": "2bbf9f50852967198606bec03d9033943b11a8b2501cbadae54c4cc88f5fc579",
+    "web/src/menu/scroll.ts": "637b41d4d4f7235b39af85b3ff9fe9680535e969c79764d8c85d88f6074d76a3",
     "web/src/menu/types.ts": "44cc4f03f04804cc379b921e28c52d1107a239aeb3304e5ca4bf8063457df3ec",
     "web/src/saveload/assets.ts": "68d8ac210b5fd07c31e5aeed1def22e9733a09aac001ccccfcb8c077c03f8dcf",
     "web/src/scene/mapOverlays.ts": "91d48fdb1d17f03b05fd83ab3835f3aa6a9f567424636812f86bc026713ef240",
