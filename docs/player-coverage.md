@@ -3,7 +3,7 @@
 这是这个项目唯一一份**玩家视角的全貌**：原版里玩家能做的每一件事，Web 端今天做不做得到。
 每个里程碑收口时**现查着重写**，完工判据拿它当分母。
 
-**现查：2026-09-11，xl-03x.2（closed）。共 61 行（能 42 · 不能 9 · 能但不对 10）。**（xl-03x.15（open）把「场景 看旁白」一行从「能，但不对」改成「能」。）
+**现查：2026-09-11，xl-03x.2（closed）。共 61 行（能 42 · 不能 9 · 能但不对 10）。**（xl-03x.15（closed）把「场景 看旁白」一行从「能，但不对」改成「能」。）
 （这句读数由 `web/src/mainline/test/playerCoverage.test.ts` 对着下面那张表现数核对，改了表不改这句会红。）
 
 ## 这张表怎么读、怎么守
@@ -52,7 +52,7 @@
 | **结局** 字幕滚动、过场画轮放、播完定格 | 能 | 链上（链尾 脚本41） | — | 剧本 `end-credits` 表态 match；实跑 `endTrace.test.ts` 21/21 |
 | 结局 按 Esc：被场景当成开菜单，结局被切走 | 能（照复刻，M7 主干裁定） | 链上 | — | `GameLauncher.java:161-164,186-191`；剧本 `end-credits` 末 3 步 |
 | **场景** 方向键走、Ctrl 跑、碰撞 | 能 | 链上 | — | `ScenePanel.java:187-196`；剧本 `dorm-walk` / `bigmap-walk`；实跑 `traceReplay.test.ts` 208/208 |
-| 场景 看旁白（逐字、换背景） | 能（背景第 599 行的取整账已还清，旁白背景逐像素相等） | 链上（7 本） | xl-03x.15（open）、xl-t0h（open） | `Narratage.java:48`；剧本 `dorm-intro` / `milestone` 硬比区含旁白背景（缺口区只剩字形）；`narratageLayout.test.ts` 对黄金数据 |
+| 场景 看旁白（逐字、换背景） | 能（背景第 599 行的取整账已还清，旁白背景逐像素相等） | 链上（7 本） | xl-03x.15（closed）、xl-t0h（open） | `Narratage.java:48`；剧本 `dorm-intro` / `milestone` 硬比区含旁白背景（缺口区只剩字形）；`narratageLayout.test.ts` 对黄金数据 |
 | 场景 看对话（自动 / 位置 / 找 NPC 推主线）、空格翻页 | 能（另多了回车跳过吐字，验收要求加的） | 链上（43 本） | — | `DialogueEvent.java:30-146`；剧本 `dorm-intro` / `milestone`；实跑 `dialogue.test.ts` |
 | 场景 NPC 闲聊；NPC 走动、靠近就停 | 能 | 链上 | — | `NPCEvent.java:17-133`；剧本 `bigmap-walk`；实跑 `npc.test.ts` 7/7 |
 | 场景 走出口换图（三条分支） | 能（按 win32 解析文件名，ADR-0001 第六行） | 链上 | 原版在 posix 上断链这件事本身：xl-1dv.11（open） | `ExitEvent.java:30-74`；实跑 `handoff.test.ts` 46/46、`doors.test.ts` 17/17 |
@@ -140,7 +140,7 @@ SPEC 的线：**写一条剧本就能让跨端逐帧比对看见的进这一轮�
 3. **xl-19z（open）是这一轮现查出来最重的一条**：玩家进大多数战斗都会撞上。按线它不进这一轮，要不要破例由主干定。
 4. **「结」口径冲突**：xl-u23（closed）的裁定（禁用 + title）已落地，xl-03x.12（open）要的是「画出来、点了什么都不发生」。
 5. **重复票**（没动，列出来）：xl-2d5（open）≈ xl-03x.14（open）· xl-as2（open）≈ xl-03x.16（open）·
-   xl-t0h（open）≈ xl-03x.15（open）· xl-lna（open）≈ xl-03x.10（open）· xl-4ev（open）≈ xl-03x.9（open）·
+   xl-t0h（open）≈ xl-03x.15（closed）· xl-lna（open）≈ xl-03x.10（open）· xl-4ev（open）≈ xl-03x.9（open）·
    xl-8l2（open）≈ xl-03x.5（open）、xl-03x.6（open）、xl-03x.7（open） · xl-fbs（open）≈ xl-03x.11（open）+ xl-03x.12（open） · xl-8ym（open）≈ xl-i06.13（open）≈ xl-03x.17（open）。
 
 ## ⚠️ 这张表弱在哪
