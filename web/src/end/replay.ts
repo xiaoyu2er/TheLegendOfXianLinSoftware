@@ -17,7 +17,7 @@ import { createMemorySaveStore } from '../save/memoryStore'
 import { createWorld } from '../state/step'
 import type { InputEvent } from '../state/types'
 import { END_CARD_OF } from './snapshot'
-import { END_TICK_MS, loopOnce } from './world'
+import { END_TICK_MS, advanceEnd, loopOnce } from './world'
 import type { EndWorld } from './world'
 
 /**
@@ -38,8 +38,9 @@ import type { EndWorld } from './world'
  * 一步四种（`EndScript` 的四条指令，真值 `input` 那一列）：
  *
  * - `enter` —— `switchTo("end")`，会话的 `enterEnd`；
- * - `tick` —— 那条线程睡满一圈：会话推 {@link END_TICK_MS}。场景那一侧也跟着推（原版
- *   场景的线程在结局期间照样在跑），它推的东西不进这份真值；
+ * - `tick` —— 那条线程睡满一圈：结局线程推 {@link END_TICK_MS}。**场景那一侧不推**
+ *   —— 真实游戏里场景线程在结局期间照样在跑，但导出器没起那条线程，场景停在
+ *   `initiation` 之后那一刻；照导出器，否则退出键那两道门（xl-03x.16）读到的标志不同；
  * - `key` —— 一次按键，经会话的按键分发（`keyReceiver`）。退出键走 `openMenu`，
  *   与 `game/useGame.ts` 同一条路；
  * - `wake` —— 把线程叫醒一次：不经 sleep 多走一圈循环体（`loopOnce`）。
@@ -121,7 +122,11 @@ export function startEndReplay(name: string, setup: EndSetup, getScene: (name: s
           endWorld = session.end!.world
           break
         case 'tick':
-          session = advanceSession(session, NO_INPUT, END_TICK_MS)
+          if (session.end === null) throw new Error(`${where}：还没 enter 就 tick`)
+          // 只推结局那条线程，不推场景 —— 照导出器（`EndDriver.tick` 只调 `ep.update()`，
+          // 场景面板那条线程它根本没起）。推场景的话脚本41 那段 `-1` 自动对话会开口，
+          // `speaking` 变真，退出键被门挡住（xl-03x.16），与真值的「开菜单」分家。
+          advanceEnd(session.end, END_TICK_MS)
           break
         case 'key': {
           to = keyReceiver(session.panel) === 'scene' ? 'scene' : null

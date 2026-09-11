@@ -476,6 +476,13 @@ export function openMenu(session: RunningSession, carry = getParty()): RunningSe
   // 那句 ESC 在 `ScenePanel.keyPressed` 里：键落到场景手里才开得了。**结局期间也落到
   // 场景手里**（`keyReceiver`），于是结局被切走 —— 照复刻（xl-czb.6）。
   if (keyReceiver(session.panel) !== 'scene') return session
+  // 那一句还套在两层门里（xl-03x.16）：`if (!narratage.isNarratage)` 包着整个
+  // `keyPressed`，`if (!dialogueEvent.isSpeaking)` 包着 ESC 那一支 —— 旁白播着、
+  // 主线对话在说，都开不了。**口头语不挡**：ESC 在 `if (!npcEvent.isOral)` 那组
+  // if/else 之后，所以这里读 `speaking`，不是 `dialogueActive()`。结局那条路不受
+  // 影响：`DialogueEvent` 切到结局之前刚把 `isSpeaking` 置假。判据：`escGate.test.ts`。
+  const { narratage, dialogue } = session.scene.world
+  if (narratage.active || dialogue.speaking) return session
   // **刷新，不重建**（xl-6lo.18）：`switchTo("menu")` 那个 case 里除了换面板
   // 就只有三句 `refreshValue()`。装备槽位、全局背包、当前在哪一页原样留着。
   refreshMenuWorld(session.menu.world, { live: liveParty(carry), audio: getAudioSettings() })
