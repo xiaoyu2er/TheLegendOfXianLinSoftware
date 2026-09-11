@@ -271,6 +271,8 @@ export interface Session {
    * ⚠️ 未复刻：原版「起」不重建 `endPanel`（`GameLauncher.init()` 的调用点被注释掉），
    * 所以那条线程与字幕停下的位置活过新局 —— 新局再走到 `$`，原版一进来就定格；这一层
    * 「起」整个重建会话（`NewGameCarry` 不带它），会从头再滚一遍。未量过。
+ *
+ * @exception ADR-0001#end-not-kept-across-new-game
    */
   readonly end: EndLoop | null
   readonly deps: SessionDeps
@@ -330,6 +332,8 @@ const NO_KEYS: readonly InputEvent[] = []
  * 浏览器这边没有那对标志位：`audio/bgmPlayer.ts` 收到的是"该放哪首"，
  * 换曲子由它自己收尾。照抄成一秒延迟，等于把一个别人家的竞态修补，变成
  * 我们自己的一秒黑屏。
+ *
+ * @exception ADR-0001#title-bgm-sleep
  */
 export function createSession(deps: SessionDeps, carry: NewGameCarry = NOTHING_CARRIED): Session {
   // 菜单**开机就建**，与原版同一句：`GameLauncher` 构造函数里那句
@@ -686,6 +690,7 @@ export function advanceSession(
   }
 
   // ——— 菜单那四条线程 ———
+  // @exception ADR-0001#panel-threads-run-while-hidden —— 只在菜单显示着时推（xl-6lo.19）。
   if (panel === 'menu') {
     // ⚠️ **这一批输入整批投进去，「返回」之后的那几个也照投** —— 包括那一下
     // **松手**。原版的松手真的到得了已经被 CardLayout 藏起来的菜单：Swing 的
@@ -767,6 +772,8 @@ export function advanceSession(
  * 现扫断言「对话里的 `$` 只落在一个场景」），那段对话按完 `dialogueEventOver` 就翻真、不会再开。⚠️ 未验证的推理：读一个
  * 停在那段对话之前的档再按一遍，可能是一条路 —— 那时字幕已经停在底，多一条线程只让
  * 过场画在停下之前多翻一张，而两条线程谁先跑是竞态。未复刻，未量过。
+ *
+ * @exception ADR-0001#end-thread-not-duplicated
  */
 export function enterEnd<S extends Session>(session: S): S & { readonly end: EndLoop } {
   const end = session.end ?? createEndLoop(createEndWorld())
@@ -904,6 +911,8 @@ export function loadTargetOf(session: Session): string | null {
  * 读一半（`save/format.ts` 的 `readBack`）：原版写了但从不读回的三组 —— 装备库存与
  * 两张答题表 —— 取**读档前的值**，一个字都不取自存档。开机读档时读档前的值就是初值。
  * 真正回填的交给 {@link applyReadBack}。
+ *
+ * @exception ADR-0001#load-extra-scene-loop
  *
  * 中间那句多起一条场景循环（中途读档之后双倍速）**不复刻**：ADR-0001 例外表的
  * 「读档多起一条场景循环」那一行，判据在 `game/loadResidue.test.ts`。读档之后留下来的

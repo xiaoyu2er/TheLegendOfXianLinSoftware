@@ -25,15 +25,48 @@
 "全部照搬"有例外，而例外**不写下来就等于没有**：一处照搬与一处故意不照搬，
 在画面上分不开，下一个照着原版重读那一段的人只会以为 web 端抄错了。
 
-| 原版行为 | web 端做的 | 为什么 | 判据 |
-|---|---|---|---|
-| 点「起」**不重置队伍**（`GameLauncher.init()` 是死代码，唯一调用点被注释掉；而且即便调用了，`level` / `exp` / `angryValue` 是 `static`、三个构造函数一个都不赋，最多只到"满血复活、等级经验照旧"） | 回出厂状态：1 / 3 / 1 级、满血、经验 0 | xl-kaa 的验收标准第二条点名要它。全灭回标题再开一局，带着上一局的残血进脚本1 是玩不下去的 —— 而这一层今天还没有存档（M6，xl-i06.1），"接着上一局"没有别的出口 | `web/src/fakes/originalNewGame.test.ts`（原版那一半）+ `web/src/fakes/party.test.ts`（出厂状态那一半）+ `web/src/game/useGame.test.tsx` 的「重开一局」 |
+### 标记约定（xl-03x.4）
 
-| **列表不裁剪、也没有滚动条**：`EquipPanel.drawEquipment()` 的 y 一路加下去，画到列表框外照样画；`isMoveIn()` 的命中带同样无界（`originalY += 22`） | **画的那一半裁**：只画滚动窗口里的那几行，框的右内沿上加一条滚动条，滚轮与槽内点击翻页（`MenuInput` 因此多一支 `wheel`，真值里没有它） | 装不下一屏的背包**看不见**后面那几行（20 件武器撑过框 4 行，`menu-scroll` 量的就是它）。xl-6lo.13 的票面要的是「看得见」 | `web/src/menu/scroll.test.ts` 与 `menu/render/scrollbar.test.ts` |
-| 同上的**另一半**：框外那几行**仍然点得中**（落点 y 518 / 540 / 562 / 584，都还在 640 高的面板里） | **不改**：命中带一路往下排、没有下界，`offset == 0` 时算式与原版逐字相同 | 「看得见」与「够得着」是两件事，`menu-scroll` 的剧本描述把它们分开写着。合成一条的话第 9 / 10 步当场对不上真值 —— 篡改矩阵实测：给命中加上下界，`menu-scroll · equip` 立刻红 | `scroll.test.ts` 的「够得着那一半没被改掉」一组 + `menuTrace.test.ts` 的 `menu-scroll · equip` |
-| **`offset > 0` 时卷到框上面去的那几行点不中**（原版没有 `offset`，所以原版没有对应行为可抄） | 命中只从第 `offset` 行起算 | 卷上去的那片区域住着六颗槽位按钮（命中框 y 129..149）。不设这条下界，翻过页之后点槽位按钮会**同时**选中一件装备 | `scroll.test.ts`「翻上去的那几行点不中」（装备页 / 物品页各一条） |
-| **中途读档多起一条场景循环**（`LoadAndSavePanel` 构造时就建好 `Thread t=new Thread(scenePanel)`，读档分支 `if(!t.isAlive()) t.start()`；它与「起」那条不是同一个对象，而 `ScenePanel.run()` 是没有出口的 `while(true)`）。**玩家观测到的**：「起」之后中途读档，场景里走路、对话吐字、NPC 动画**全部快一倍**（JVM 读数：`step()` 85.5 → 169.5 次/秒，场景线程 1 → 2 条）；之后再读几次档**仍是两倍，不抛、不崩**（`isAlive` 恒真，第二次读档根本不调 `start()`）。同一机制还有一个不经过读档的入口：回标题再「起」每次多一条（读数 3 条、254.5 次/秒） | 不复刻：场景一拍一个 `advance`，读档不叠、重开也不叠 | 复刻它要求状态层先有「场景循环线程」这个概念，而状态层是同步纯函数、**没有线程模型** —— 搬过来的是原版的一个实现细节，不是行为（xl-i06.2 裁定，xl-i06.11 落地；「第二次读档会崩」是 grilling 时读源码的推断，JVM 上跑出来不成立，不写） | `web/src/game/loadResidue.test.ts`「读档之后场景不是双倍速」一组（读档一次、读档两次、读档 → 回标题 → 起，各推一秒只走 1000 ms）；原版那一半：`web/src/save/test/loadResidueOriginal.test.ts`「那条不复刻的例外」 |
-| **出口名带行尾空格的那三本打不开**（`xl-1dv.11`；`new Reader(name)` 把名字原样拼进 `"script//" + name`）。**这一条只在 posix 上成立**：macOS + openjdk 17 **实测** `new tools.Reader("仙二教学楼二楼夜.txt ")` 抛 `FileNotFoundException`，去掉行尾空格就打得开；Win32 的路径规范化会去掉末尾的空格与点，打得开（⚠️ Win32 文档行为，这台机器上没法跑）。其中 `脚本32` 那一本**在主线链上**（第 36 跳），断在它后面的是三分之一条链与整个结局 | **按 win32 语义解析脚本文件名**：`data/scenes.ts` 的 `sceneNameOfFile` 去掉末尾的空格与点 | 这批数据是在 Windows 上写、在 Windows 上玩的（`剧情1` / `迷宫1` 里那三条反斜杠路径为证，`assets/path.ts` 的 `normalizePath` 已经为同一个原因站在 Windows 那一边）。posix 下的断链是「把一个 Windows 游戏搬到别的文件系统上」的产物，不是游戏逻辑。**登在这里而不是当成 portability，是因为真值是在 macOS 上导的**：原版侧 `mainline/test/chain.ts` 把两种语义都算出来、posix 那一条明写着主线断在第 36 跳，Web 与它分道扬镳的地方只有这张表记得住（xl-czb.7 裁定，主干 7eaf2f4 签）。**数据不改**，`assets/knownMissing.ts` 那两条也不动 —— 那张表登记的是「字面路径在磁盘上不存在」，这件事仍然成立 | `web/src/mainline/test/handoff.test.ts`（主线第 36 跳；去掉那一步 trim，主干实测**恰好 10 条红**，第 36 跳起一路到第 44 跳）+ `web/src/data/loadedScenes.test.ts`「行尾带空格的出口名」 |
+**代码里每一处「故意不复刻」或「故意加了原版没有的东西」，都必须在那段注释里带一个
+标记** `@exception ADR-0001#<键>`，键就是下表第一列。扫描器
+`web/src/test/adrExceptions.test.ts` 认的是这个标记，**不认措辞**，并与这张表双向对撞：
+
+- 代码里有一处标记、表里没有那一行 → 红；
+- 表里有一行、代码里零处标记指向它 → 红；
+- `@exception` 后面没跟一个完整的 `ADR-0001#<键>` → 红（笔误不许安静地漏过去）；
+- 标记写进测试文件 → 红（取舍住在实现旁边；测试里的标记会替实现那边丢了的标记充数）。
+
+**为什么不用关键词 grep 守**：「不复刻」「不抄」「原版没有」「有意」「已知偏离」……
+这些措辞写法不封闭，grep 找不到就等于通过 —— 而漏写一个措辞正是这张表漏掉一整族
+两个里程碑没人发现的原因。
+
+⚠️ **扫描器只管以后。** 标记立起来之前就存在的那些，是 xl-03x.4 人工找了一遍补上的
+（找法与读数见表下面那一段）。**那一遍找漏了没人知道**，扫描器变绿不说明历史上没有
+漏登的例外。
+
+标注「待签」的那十一行是 xl-03x.4 补登的草稿：**事实与理由都抄自代码里本来就有的注释**，
+签字（认不认这个取舍）要人来，交主干核。⚠️ 这十一行的「判据」一格是**按已有测试的文件名 / 用例名指过去的**，
+本票没有逐条篡改验证它们真的会红；本票自己验过的只有扫描器那两个方向。
+
+| 标记 | 原版行为 | web 端做的 | 为什么 | 判据 |
+|---|---|---|---|---|
+| `new-game-resets-party` | 点「起」**不重置队伍**（`GameLauncher.init()` 是死代码，唯一调用点被注释掉；而且即便调用了，`level` / `exp` / `angryValue` 是 `static`、三个构造函数一个都不赋，最多只到"满血复活、等级经验照旧"） | 回出厂状态：1 / 3 / 1 级、满血、经验 0 | xl-kaa 的验收标准第二条点名要它。全灭回标题再开一局，带着上一局的残血进脚本1 是玩不下去的 —— 而这一层今天还没有存档（M6，xl-i06.1），"接着上一局"没有别的出口 | `web/src/fakes/originalNewGame.test.ts`（原版那一半）+ `web/src/fakes/party.test.ts`（出厂状态那一半）+ `web/src/game/useGame.test.tsx` 的「重开一局」 |
+| `list-clipped-with-scrollbar` | **列表不裁剪、也没有滚动条**：`EquipPanel.drawEquipment()` 的 y 一路加下去，画到列表框外照样画；`isMoveIn()` 的命中带同样无界（`originalY += 22`） | **画的那一半裁**：只画滚动窗口里的那几行，框的右内沿上加一条滚动条，滚轮与槽内点击翻页（`MenuInput` 因此多一支 `wheel`，真值里没有它） | 装不下一屏的背包**看不见**后面那几行（20 件武器撑过框 4 行，`menu-scroll` 量的就是它）。xl-6lo.13 的票面要的是「看得见」 | `web/src/menu/scroll.test.ts` 与 `menu/render/scrollbar.test.ts` |
+| `list-offscreen-rows-still-hit` | 同上的**另一半**：框外那几行**仍然点得中**（落点 y 518 / 540 / 562 / 584，都还在 640 高的面板里） | **不改**：命中带一路往下排、没有下界，`offset == 0` 时算式与原版逐字相同 | 「看得见」与「够得着」是两件事，`menu-scroll` 的剧本描述把它们分开写着。合成一条的话第 9 / 10 步当场对不上真值 —— 篡改矩阵实测：给命中加上下界，`menu-scroll · equip` 立刻红 | `scroll.test.ts` 的「够得着那一半没被改掉」一组 + `menuTrace.test.ts` 的 `menu-scroll · equip` |
+| `scrolled-up-rows-unhittable` | **`offset > 0` 时卷到框上面去的那几行点不中**（原版没有 `offset`，所以原版没有对应行为可抄） | 命中只从第 `offset` 行起算 | 卷上去的那片区域住着六颗槽位按钮（命中框 y 129..149）。不设这条下界，翻过页之后点槽位按钮会**同时**选中一件装备 | `scroll.test.ts`「翻上去的那几行点不中」（装备页 / 物品页各一条） |
+| `load-extra-scene-loop` | **中途读档多起一条场景循环**（`LoadAndSavePanel` 构造时就建好 `Thread t=new Thread(scenePanel)`，读档分支 `if(!t.isAlive()) t.start()`；它与「起」那条不是同一个对象，而 `ScenePanel.run()` 是没有出口的 `while(true)`）。**玩家观测到的**：「起」之后中途读档，场景里走路、对话吐字、NPC 动画**全部快一倍**（JVM 读数：`step()` 85.5 → 169.5 次/秒，场景线程 1 → 2 条）；之后再读几次档**仍是两倍，不抛、不崩**（`isAlive` 恒真，第二次读档根本不调 `start()`）。同一机制还有一个不经过读档的入口：回标题再「起」每次多一条（读数 3 条、254.5 次/秒） | 不复刻：场景一拍一个 `advance`，读档不叠、重开也不叠 | 复刻它要求状态层先有「场景循环线程」这个概念，而状态层是同步纯函数、**没有线程模型** —— 搬过来的是原版的一个实现细节，不是行为（xl-i06.2 裁定，xl-i06.11 落地；「第二次读档会崩」是 grilling 时读源码的推断，JVM 上跑出来不成立，不写） | `web/src/game/loadResidue.test.ts`「读档之后场景不是双倍速」一组（读档一次、读档两次、读档 → 回标题 → 起，各推一秒只走 1000 ms）；原版那一半：`web/src/save/test/loadResidueOriginal.test.ts`「那条不复刻的例外」 |
+| `win32-script-filename` | **出口名带行尾空格的那三本打不开**（`xl-1dv.11`；`new Reader(name)` 把名字原样拼进 `"script//" + name`）。**这一条只在 posix 上成立**：macOS + openjdk 17 **实测** `new tools.Reader("仙二教学楼二楼夜.txt ")` 抛 `FileNotFoundException`，去掉行尾空格就打得开；Win32 的路径规范化会去掉末尾的空格与点，打得开（⚠️ Win32 文档行为，这台机器上没法跑）。其中 `脚本32` 那一本**在主线链上**（第 36 跳），断在它后面的是三分之一条链与整个结局 | **按 win32 语义解析脚本文件名**：`data/scenes.ts` 的 `sceneNameOfFile` 去掉末尾的空格与点 | 这批数据是在 Windows 上写、在 Windows 上玩的（`剧情1` / `迷宫1` 里那三条反斜杠路径为证，`assets/path.ts` 的 `normalizePath` 已经为同一个原因站在 Windows 那一边）。posix 下的断链是「把一个 Windows 游戏搬到别的文件系统上」的产物，不是游戏逻辑。**登在这里而不是当成 portability，是因为真值是在 macOS 上导的**：原版侧 `mainline/test/chain.ts` 把两种语义都算出来、posix 那一条明写着主线断在第 36 跳，Web 与它分道扬镳的地方只有这张表记得住（xl-czb.7 裁定，主干 7eaf2f4 签）。**数据不改**，`assets/knownMissing.ts` 那两条也不动 —— 那张表登记的是「字面路径在磁盘上不存在」，这件事仍然成立 | `web/src/mainline/test/handoff.test.ts`（主线第 36 跳；去掉那一步 trim，主干实测**恰好 10 条红**，第 36 跳起一路到第 44 跳）+ `web/src/data/loadedScenes.test.ts`「行尾带空格的出口名」 |
+| `panel-threads-run-while-hidden` | **（待签 · xl-03x.4 补登）****面板动画线程关着也在跑**：`GameLauncher` 构造函数里一口气 `new` 好菜单、两家店、存读档面板，各自构造时就起一条没有出口的 `while(true)`（菜单 `FatherPanel` 四条 100 ms；`ShopPanel` / `EquipmentShopPanel` 各一条 120 ms；`LoadAndSavePanel.startAnimationThread()` 一条 100 ms），从开机跑到关机，**不管面板显不显示**。它们推的是鼠标图、人物动画、奇术页技能动画的帧 —— 一个状态字段都不碰（菜单那几个 `Mouse` 计数器与奇术页动画进快照，但不进队伍、不进战斗） | **不推**：菜单只在显示着时推（`advanceSession` 的 `panel === 'menu'`）；店与存读档面板的帧号由渲染层从进面板那一刻现数 | 推它要求这一层有「面板级线程在背后跑」的模型，而状态层是同步纯函数、没有线程模型（与「读档多起一条场景循环」同一个理由）。菜单那几条要推还得先把 `update()` 与 `paint` 拆开（原版关着菜单一次 paint 都没有），见 `xl-6lo.19`。**只影响帧相位，不影响任何玩法状态**。M8 规格（xl-03x.1）裁定：**补签，不实现**；`xl-6lo.19` 留作登记 | **暂无会红的判据** —— 行为真值两条菜单剧本全程菜单开着，盖不到「关着」那一段；`xl-6lo.19` 的验收写着要自己造一条 |
+| `title-bgm-sleep` | **（待签 · xl-03x.4 补登）**`switchTo("start")` 里 `readBGM("主题曲.mp3")` → **`Clock.sleep(1000)`** → `openBGM()`：夹在中间那一秒是 `MusicPlayer` 两个标志位之间的线程同步补丁 | 不睡：标题一进来就把主题曲交给 `audio/bgmPlayer.ts` | 浏览器那边没有那对标志位，换曲子由播放器自己收尾；照抄成一秒延迟，是把别人家的竞态补丁变成我们自己的一秒黑屏（理由全文在 `game/session.ts` 的 `createSession`） | `game/session.test.ts`「起手就停在标题上」（`currentBgm` 当拍就是主题曲） |
+| `narratage-sleeps` | **（待签 · xl-03x.4 补登）**旁白 `WordRun` 一句打完 `Clock.sleep(500)`、整段播完 `Clock.sleep(1000)` —— **在 EDT 上直接睡**，睡的是真实时间 | 不模拟：句与句之间没有那半秒停顿 | 真值跑在虚拟时钟上，那两段睡眠一个 tick 都不占（第 0 句从 vt=50 打到 vt=950，vt=1000 就换行）；模拟了反而与真值差 150 个 tick。要复刻它得先有一份能看见它的真值（`state/narratage.ts` 头注） | 场景真值的逐步回放（`state/traceReplay.test.ts`）—— ⚠️ 「模拟那半秒就会错拍」是从头注那条读数推的，本票没有篡改验证 |
+| `dialogue-skip-printing` | **（待签 · xl-03x.4 补登）****原版没有**「跳过逐字打印」：句子没打完时 `DialogueEvent.keyPressed` / `NPCEvent.keyPress` 什么也不做，只能等 | **加了**：回车把当前这一屏一次打满（`state/dialogue.ts` 的 `skipPrinting`），空格那一路与原版逐字同构 | xl-9bd.10 的验收标准要它。挂回车不挂空格，是为了让这条增量一次都踩不到真值（真值里的空格全在句子打完之后） | `state/dialogue.test.ts`「跳过逐字打印（原版没有的加法）」 |
+| `start-focus-hover` | **（待签 · xl-03x.4 补登）****原版没有键盘焦点**：标题四颗按钮只认鼠标坐标 | **加了**：Tab 到一颗按钮上等于鼠标移进来（换图 + 那圈高亮转起来），离开等于移出 | 无障碍。只补 CSS 的话 Tab 过来的人看到一颗半死的按钮 | `start/StartPanel.test.tsx`「键盘 Tab 过来也换图、也转高亮」 |
+| `saveload-notices` | **（待签 · xl-03x.4 补登）****原版没有**存读档面板上那几行状态字（原版的档是同步读写本地文件，没有「正在读」「读不上来」「没写进去」这几种状态） | **加了**：`app/App.tsx` 的 `SaveLoadNotices`，画在 DOM overlay 上、不进画布 | 浏览器存储是异步的、会失败。不说一声的话，「还没读上来」画成三个空槽是一句谎话。放在 overlay 上是为了不被当成原版画面去逐帧比 | `game/saveloadSession.test.ts` 与 `save/store.test.ts`（就绪 / 失败 / 写失败几种状态） |
+| `start-exit-disabled` | **（待签 · xl-03x.4 补登）**标题「结」是 `System.exit(0)`（`src/start/StartPanel.java:234`） | 按钮画出来、**禁用**，带一句 `disabledReason` | 浏览器里没有对应物（`window.close()` 对地址栏进来的页面一声不吭）；xl-u23 量过三条路之后的定案（用户 2026-09-08 裁定）。⚠️ **这一行会被 `xl-03x.12` 改写**：M8 规格定的是「画出来、点了什么都不发生」，与菜单「确认离开」合成一行重签 | `start/buttons.test.ts` |
+| `end-not-kept-across-new-game` | **（待签 · xl-03x.4 补登）**点「起」**不重建 `endPanel`**（`GameLauncher.init()` 的调用点被注释掉），所以结局那条线程与字幕停下的位置活过新局 —— 新局再走到 `$`，原版一进来就定格 | 「起」整个重建会话（`NewGameCarry` 不带结局），新局走到 `$` 从头再滚一遍 | 这是 `new-game-resets-party` 那个取舍连带出来的：「起」回出厂状态靠的是整个重建会话。⚠️ **未量过**（`game/session.ts` 的 `Session.end` 自己写着）；M8 规格把「重开一局把结局那条线程一起丢掉」划进跨面板那一族、这一轮不收（xl-03x.1 Out of Scope），所以它今天是一条**没有归属票**的偏离 —— 登在这里，免得它只活在一句注释里 | **暂无会红的判据**（要跨面板才看得见） |
+| `end-thread-not-duplicated` | **（待签 · xl-03x.4 补登）**每 `switchTo("end")` 一次，`EndPanel.start()` 就 `new Thread(this).start()` **多起一条**结局线程 | 第二次进结局只把旗标重置，不多起一条 | 与「读档多起一条场景循环」同一个理由：这一层没有线程模型。⚠️ **走不走得到第二次未验证**：`$` 只出现在脚本41 那一段对话里、按完就不再开（`end/trigger.test.ts`）；读一个停在那段对话之前的档再按一遍可能是一条路 —— 未量过 | **暂无会红的判据**（上面那条路走不走得到都还没量） |
+| `map-source-overflow-throws` | **（待签 · xl-03x.4 补登）**地图图片**比碰撞网格要的源矩形还小**时，`drawMap` 的源矩形越出图片，Java2D 画出来的是一种说不清的残缺（xl-czb.3 的探针：1022×640 那张少画两整列，1023×639 那张缺的像素最左一个在 x=0） | **硬失败**：`scene/mapSize.ts` 的 `checkMapSize` 抛 | 拉伸、补边、夹取都会画出「看起来对」的画面。今天**没有场景走得到**这条路（比源矩形小一两像素的那 6 张走的是另一支、已复刻） | `scene/mapSize.test.ts` |
+| `select-under-dialogue-overlay` | **（待签 · xl-03x.4 补登）**`ScenePanel.paint()` 先画对话框、再画选择框与「得到物品」提示框 —— 后两者压在对话框上面 | 次序**反了**：对话框在这一侧是 DOM overlay（`ui/DialogueBox.tsx`），永远压在画布上面 | 对话框做成 DOM 是整层的取舍（字形与排版归浏览器）。两者同时开着的那一帧**今天走不到**（选择框开着时 `checkSelectEvent` 会把口头语截胡） | **暂无会红的判据** —— 没有真值分辨得出来 |
 
 还有一条：**原版自己就不一致。**「承」（读档）走的是三个人的
 `intialFromInfo()`，它把 `level` / `hp` / `mp` / `angryValue` / `exp` 逐个从
@@ -42,6 +75,33 @@
 所以这里不存在一个"原版对队伍的统一处置"可供照搬，只有两条互不相同的路；
 web 端选了其中说得通的那条。这一句也有判据，与上面同一份文件里的
 「承」那三条用例（同一个赋值选择器在读档那条路上一抓一个准，才说明它抓得到）。
+
+### 历史遗漏的那一遍人工找（xl-03x.4，2026-09-11）
+
+**找法**：在 `web/src` 与 `web/scripts` 的 `.ts` / `.tsx` 里 grep 两批措辞，再逐条读上下文：
+`不复刻|不照抄|不照搬|不抄|登记而不|故意不|有意偏离|不跟原版|没有复刻|未复刻|不复制`（48 行命中）
+与 `有意|原版没有|偏离|宁可|分家|与原版不同|跟原版不|和原版不|不跟着|这一层不做|这里不做|没有线程模型|没线程`
+（去掉 `src/generated` 与「有意重复 / 有意义」之后 164 行，绝大多数是「两份实现分家」「合计偏离」
+那类说法，与复刻无关）；另外把原版 `src/` 里全部 9 处
+`new Thread` 逐个对了一遍 web 侧有没有推它。
+
+**读数**：票面预期「至少两处」（菜单那四条线程、存读档自称「同族」的那一条）。现数是
+**11 行新登记**，落在 **13 处**代码位置（表里「待签」那十一行；其中「面板动画线程」一行
+合了菜单 / 两家店 / 存读档三处，理由相同）。**明显多于预期**，按票面另立了一张票追。
+
+**找到了但没登的**，以及为什么（写下来，免得下一个人以为漏了）：
+
+- **没有行为差别的「没抄」**：`showDrug()` 死代码（`menu/drugPanel.ts`，有判据守零调用者）、
+  `CURRENTLIST` 整数表（`menu/equipment.ts`）、`drawValueBar()` 里那三句 `refreshValue()`
+  （`menu/render/drawList.ts`，刷新已经在 `drinkDrug` 里）、开机那一帧 `startView` 不推进
+  （`start/panelState.ts`，开机时两支都不会触发，`panelState.test.ts` 钉住）。原版做的事 web 端一件没少，只是换了地方做。
+- **欠账，不是取舍**（有票、将来要做成与原版一致）：菜单松手落在下一帧时被丢
+  （`xl-z4f`）、菜单「确认离开」的后半段（`menu/funcButtons.ts`，归 `xl-03x.12`）。
+- **已知缺口，登在逐帧比对的分区表态里**：字形（`textFont.ts`、`compare/expected.ts`）。
+  它们不是「决定不做」，是「做不到逐像素」，那份账有上界守着。
+
+⚠️ **这一遍可能找漏了。** 它是措辞 grep + 人读，也就是这张表原先漏掉一族的同一种办法；
+没带上面任何一个措辞的偏离、以及只写在票面或提交信息里而代码里没注释的偏离，都找不到。
 
 缺陷本身登记在 `xl-lly`。**这张表是登记不是分母**（见 `docs/agents/dispatch.md`
 纪律 3）：它必须由人来加，自动扫出来的"例外清单"等于让被守的东西自己签字。

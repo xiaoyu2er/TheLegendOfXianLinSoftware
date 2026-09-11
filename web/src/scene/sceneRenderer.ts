@@ -187,6 +187,7 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   // 再画选择框，而对话框在这一侧是 DOM overlay（`ui/DialogueBox.tsx`），
   // 永远压在画布上面。两者同时开着的那一帧今天走不到（选择框开着时
   // `checkSelectEvent` 会把口头语截胡），所以没有真值分辨得出来。
+  // @exception ADR-0001#select-under-dialogue-overlay
   const selectLayer = new Container()
   selectLayer.visible = false
   app.stage.addChild(selectLayer)

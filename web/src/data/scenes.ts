@@ -100,6 +100,8 @@ export function sceneNameFromPath(path: string): string {
  * —— 那张表登记的是「字面路径在磁盘上不存在」，这件事仍然成立。原版侧同样不动：
  * `mainline/test/chain.ts` 继续把两种语义都算出来。
  *
+ * @exception ADR-0001#win32-script-filename
+ *
  * 判据：`mainline/test/handoff.test.ts`（主线第 36 跳）与
  * `data/loadedScenes.test.ts`「行尾带空格的出口名」。
  */

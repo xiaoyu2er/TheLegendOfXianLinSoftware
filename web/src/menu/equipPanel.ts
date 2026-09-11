@@ -459,6 +459,8 @@ export function equipCheckMoveIn(e: EquipPanelState, x: number, y: number): void
  * 上谁都不选中。⚠️ 命中了**不会 break**，也不会在没命中时清掉选中项：
  * 鼠标移开列表时上一次选的那件还留着。照抄。
  *
+ * @exception ADR-0001#scrolled-up-rows-unhittable
+ *
  * 唯一加进来的东西是滚动位置（xl-6lo.13）：整排带子往上挪 `offset` 行，
  * 卷上去的那几行不再参与。`offset == 0` 时这个循环与原版逐字相同 ——
  * **包括框外那几行照样点得中**，`menu-scroll` 第 9 / 10 步就点在那里。

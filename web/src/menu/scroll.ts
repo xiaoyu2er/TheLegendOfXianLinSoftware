@@ -13,6 +13,7 @@
  * 所以这一层的规矩是两句话：
  *
  * - **看得见那一半改**：只画滚动窗口里的那几行，右边加一条滚动条。
+ *   @exception ADR-0001#list-clipped-with-scrollbar
  * - **够得着那一半不改**：命中带仍然按 `originalY += rowHeight` 一路往下排，
  *   没有下界。翻页只是把整排带子**整体上移** `offset` 行；`offset` 为 0 时
  *   算式与原版逐字相同，`menu-scroll` 第 9 / 10 步（选中第 16 行与第 19 行，
@@ -24,6 +25,8 @@
  * **唯一的例外是往上翻**：`offset > 0` 时前 `offset` 行被推到框上面去了，
  * 而那片区域住着六颗槽位按钮（y 135..155）。所以命中只从第 `offset` 行起算，
  * 卷上去的行点不中。原版永远 `offset == 0`，这条例外在那边观测不到。
+ *
+ * @exception ADR-0001#scrolled-up-rows-unhittable
  *
  * ## 滚动位置**不进真值**
  *
@@ -146,6 +149,8 @@ export function rowBaseline(v: ListViewport, index: number, offset: number): num
  *
  * `offset == 0` 时就是原版那句 `int originalY = y_start_point - 22;` 加上
  * `originalY += 22` 的第 index 次 —— 一个字都没变。
+ *
+ * @exception ADR-0001#list-offscreen-rows-still-hit
  */
 export function rowBandTop(v: ListViewport, index: number, offset: number): number {
   return rowBaseline(v, index, offset) - v.rowHeight

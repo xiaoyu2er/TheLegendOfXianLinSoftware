@@ -24,6 +24,8 @@
  *
  * 代价说清楚：浏览器里跑起来，句与句之间会少那半秒的停顿。这是**已知的偏离**，
  * 不是遗漏；要复刻它得先有一份能看见它的真值。
+ *
+ * @exception ADR-0001#narratage-sleeps
  */
 import type { SceneScript } from '../data/types'
 import { fireDue, startTimer, stopTimer } from './timer'
