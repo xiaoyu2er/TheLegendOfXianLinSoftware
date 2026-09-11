@@ -47,6 +47,8 @@ import { worldAfterLoad } from '../state/load'
 import { setParty } from '../fakes/party'
 import { setCoins } from '../fakes/wallet'
 import { setDrugCount } from '../fakes/drugPack'
+import { advanceEnd, createEndLoop, createEndWorld, startEnd } from '../end/world'
+import type { EndLoop, EndWorld } from '../end/world'
 
 /**
  * **面板机**：场景 ↔ 战斗 ↔ 标题（xl-rh9.17）↔ 菜单 ↔ 商店（xl-yg6.11）。
@@ -94,7 +96,37 @@ import { setDrugCount } from '../fakes/drugPack'
  *    状态）建一场战斗塞进会话里，跑到结算结束，看会话回没回场景、经验有没有
  *    记进队伍。
  */
-export type Panel = 'scene' | 'battle' | 'start' | 'menu' | 'shop' | 'ls'
+export type Panel = 'scene' | 'battle' | 'start' | 'menu' | 'shop' | 'ls' | 'end'
+
+/**
+ * 原版 `GameLauncher.currentPanel` 此刻是哪一块（xl-czb.6）。
+ *
+ * 与 {@link Panel}（`CardLayout` 此刻**显示**的是哪一块）只差一处：`switchTo("end")`
+ * 是八支里**唯一不更新 `currentPanel`** 的一支（`switcher.show(c,"endPanel")` +
+ * `endPanel.start()`，没有第三句）。而它唯一的调用点在 `DialogueEvent.keyPressed`
+ * —— 场景的按键分发里，所以进了结局 `currentPanel` **仍是场景面板**。
+ */
+export type CurrentPanel = Exclude<Panel, 'end'>
+
+export function currentPanelOf(panel: Panel): CurrentPanel {
+  return panel === 'end' ? 'scene' : panel
+}
+
+/**
+ * 一次按键落到谁手里 —— 原版 `GameLauncher.keyPressed` 的三个 `if`：
+ * `currentPanel == scenePanel / lsPanel / battlePanel` 才转，别的面板一个键都收不到。
+ *
+ * **结局在这里没有自己的一支**，而这不等于「键盘全哑」：`currentPanel` 仍是场景
+ * （{@link currentPanelOf}），于是结局期间的每一个键都照旧交给看不见的场景面板 ——
+ * 退出键在那里是开菜单（`ScenePanel.keyPressed` 的 `VK_ESCAPE → switchTo("menu")`），
+ * **结局会被一个退出键切走**。真值 `end-credits` 末步 `key=escape / to=scene /
+ * card=menuPanel / current=menu`；xl-czb.6 的主干裁定照复刻（ADR-0001：它是原版量出来
+ * 的行为，不是缺陷）。判据在 `end/endTrace.test.ts`。
+ */
+export function keyReceiver(panel: Panel): 'scene' | 'ls' | 'battle' | null {
+  const current = currentPanelOf(panel)
+  return current === 'scene' || current === 'ls' || current === 'battle' ? current : null
+}
 
 /**
  * 选择框那两扇商店门 → 进哪一家（xl-yg6.11）。
@@ -228,6 +260,15 @@ export interface Session {
    * 原版此刻已经在场景里了。
    */
   readonly loadRequest: number | null
+  /**
+   * 结局面板那条线程（xl-czb.6）。`null` = **还没进过结局**。
+   *
+   * 原版 `endPanel` 在 `GameLauncher` 构造函数里就 `new` 好了，线程却是 `start()` 才起
+   * （`switchTo("end")` 那一句）。所以这里推迟到头一次进结局才建 —— 在那之前它一拍
+   * 都不走，两者观察不到差别。建好之后**再也不摘**：那条 `while(true)` 没有出口，
+   * 被退出键切走（进了菜单）之后它照样每 100 ms 走一圈（`end/world.ts`）。
+   */
+  readonly end: EndLoop | null
   readonly deps: SessionDeps
 }
 
@@ -304,6 +345,7 @@ export function createSession(deps: SessionDeps, carry: NewGameCarry = NOTHING_C
     saveload: null,
     lsEntry: null,
     loadRequest: null,
+    end: null,
     deps,
   }
 }
@@ -422,7 +464,9 @@ export function enterScene(session: Session, world: World): RunningSession {
  * 就是「打开的那一刻看到的是最新的」。
  */
 export function openMenu(session: RunningSession, carry = getParty()): RunningSession {
-  if (session.panel !== 'scene') return session
+  // 那句 ESC 在 `ScenePanel.keyPressed` 里：键落到场景手里才开得了。**结局期间也落到
+  // 场景手里**（`keyReceiver`），于是结局被切走 —— 照复刻（xl-czb.6）。
+  if (keyReceiver(session.panel) !== 'scene') return session
   // **刷新，不重建**（xl-6lo.18）：`switchTo("menu")` 那个 case 里除了换面板
   // 就只有三句 `refreshValue()`。装备槽位、全局背包、当前在哪一页原样留着。
   refreshMenuWorld(session.menu.world, { live: liveParty(carry), audio: getAudioSettings() })
@@ -506,6 +550,12 @@ export function advanceSession(
   // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，没有世界
   // 可推。**原样交回去**，而不是推一个空世界 —— 见 `Session.scene`。
   if (session.scene === null) return session
+  // ——— 结局那条线程（xl-czb.6）———
+  //
+  // 进过结局就一直在走，**不看当前显示的是谁**：`EndPanel.run()` 是 `while(true)`，
+  // 被退出键切进菜单之后它照样每 100 ms 走一圈（`isStop` 之后那一圈什么都不改）。
+  // 排在场景前面：这一拍刚进结局的话，线程是这一拍才起的，不该吃这一拍的时间。
+  if (session.end !== null) advanceEnd(session.end, elapsedMs)
   let panel = session.panel
   let battle = session.battle
   let menu = session.menu
@@ -529,7 +579,9 @@ export function advanceSession(
   // 现读 `switchTo` 的 case "menu" 里没有任何停线程的动作）。
   const before: Ticker = {
     ...session.scene,
-    world: { ...session.scene.world, showing: panel === 'scene' },
+    // 原版旁白那道门比的是 `currentPanel` 而不是显示的是谁 —— 结局期间它仍是场景
+    // （`currentPanelOf`）。
+    world: { ...session.scene.world, showing: currentPanelOf(panel) === 'scene' },
   }
   // ⚠️ **不显示的时候一个键都收不到** —— `GameLauncher` 那个 KeyListener 的
   // `keyPressed` / `keyReleased` 两个方法都从 `if(currentPanel==scenePanel)`
@@ -545,7 +597,8 @@ export function advanceSession(
   // 那个键才停。原版就是这样，ADR-0001 说照抄。
   let scene = advance(
     before,
-    panel === 'scene' ? input.scene : NO_KEYS,
+    // 结局期间键照样落到场景手里（`keyReceiver`，xl-czb.6）。
+    keyReceiver(panel) === 'scene' ? input.scene : NO_KEYS,
     elapsedMs,
     deps.scenes,
     deps.random,
@@ -597,6 +650,19 @@ export function advanceSession(
     // 今天到不了：选择框只收场景面板的键，而场景不显示时一个键都收不到。
     // 真到了是**抛**，理由同上面那一场架。
     throw new Error(`${scene.world.scene} 在 ${panel} 面板上又要进店（${door}）`)
+  }
+
+  // 结局（xl-czb.6）：`DialogueEvent.keyPressed` 里那句 `switchTo("end")`。只亮一拍，
+  // `advance` 在它亮的那一拍停批（`state/loop.ts`）。它只能从场景的按键分发里来，
+  // 所以键不落在场景手里的时候亮起来就是接线错了 —— 抛，理由同上面那一场架。
+  let end = session.end
+  if (scene.world.endRequest !== null) {
+    if (keyReceiver(panel) !== 'scene') {
+      throw new Error(`${scene.world.scene} 在 ${panel} 面板上要切结局 —— 那一句只在场景的按键分发里`)
+    }
+    const entered = enterEnd({ ...session, end })
+    panel = entered.panel
+    end = entered.end
   }
 
   // ——— 战斗那条线程 ———
@@ -683,7 +749,30 @@ export function advanceSession(
     }
   }
 
-  return { ...session, panel, scene, battle, menu, shop }
+  return { ...session, panel, scene, battle, menu, shop, end }
+}
+
+/**
+ * 进结局（xl-czb.6）—— `switchTo("end")` 那两句：`switcher.show(c, "endPanel")`（换成
+ * `end` 面板）+ `endPanel.start()`（起线程、`isDraw = true`、`isStop = false`）。**不更新
+ * 当前面板**，见 {@link currentPanelOf}。
+ *
+ * 头一次进来才建那份面板世界与那条线程。⚠️ 原版每 `switchTo("end")` 一次就**多起一条**
+ * 线程（`start()` 里 `new Thread(this).start()`），这里第二次进来只把旗标重置、不多起一条。
+ * 走不走得到第二次：`$` 在全部脚本里只出现在 脚本41 那一段对话里（`end/trigger.test.ts`
+ * 现扫），那段对话按完 `dialogueEventOver` 就翻真、不会再开。⚠️ 未验证的推理：读一个
+ * 停在那段对话之前的档再按一遍，可能是一条路 —— 那时字幕已经停在底，多一条线程只让
+ * 过场画在停下之前多翻一张，而两条线程谁先跑是竞态。未复刻，未量过。
+ */
+export function enterEnd<S extends Session>(session: S): S & { readonly end: EndLoop } {
+  const end = session.end ?? createEndLoop(createEndWorld())
+  startEnd(end.world)
+  return { ...session, panel: 'end', end }
+}
+
+/** 结局面板世界，结局没显示着就是 `null`。渲染层要它。 */
+export function endWorldOf(session: Session): EndWorld | null {
+  return session.panel === 'end' && session.end !== null ? session.end.world : null
 }
 
 const NO_SHOP_INPUT: readonly ShopInput[] = []

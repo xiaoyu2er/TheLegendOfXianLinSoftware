@@ -665,7 +665,8 @@ function storyKeyPressed(d: DialogueDraft, script: DialogueScript, now: number):
     if (d.groupOrder >= groups.length) d.eventOver = true
     d.speaking = false
     // `dialogueFight` / `gameOver` 在原版这里分别去起剧情战和切到结束面板。
-    // 那两件事各自是别的票；标志留着不清，等它们接进来。
+    // 两件事都在 `state/step.ts` 的 `applyInput` 里接（判据是这一按让 speaking
+    // 由真转假），标志也在那里清。
     return
   }
   if (d.pageOver) {

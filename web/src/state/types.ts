@@ -342,6 +342,15 @@ export interface SceneRequests {
    * 同时挨着两个没开过的箱子时，一下空格两个都开。
    */
   readonly treasureRequest: readonly TreasureGain[] | null
+  /**
+   * **这一拍要切到结局**（xl-czb.6）—— `DialogueEvent.keyPressed` 里那句
+   * `if (gameOver) { GameLauncher.switchTo("end"); gameOver = false; }`。
+   *
+   * 全仓只有这一条路走到结局：对话正文里出现 `$`（`Dialogue.java` 逐字打印时
+   * `bufferedText[i][j] == '$'` 置 `dialogueEvent.gameOver`），玩家把那段对话按完
+   * 的那一下空格才切。消费者是 `game/session.ts`（翻到 `end` 面板、起那条循环）。
+   */
+  readonly endRequest: true | null
 }
 
 /**
@@ -354,6 +363,7 @@ export const NO_REQUESTS: { readonly [K in keyof SceneRequests]: null } = {
   selectPanelRequest: null,
   presentRequest: null,
   treasureRequest: null,
+  endRequest: null,
 }
 
 const REQUEST_KEYS = Object.keys(NO_REQUESTS) as readonly (keyof SceneRequests)[]
