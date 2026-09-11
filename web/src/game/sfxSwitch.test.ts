@@ -124,8 +124,17 @@ describe('天书页「特殊音效 开 / 关」真的开关音效', () => {
     expect(reader).toContain('static MusicPlayer music= new MusicPlayer("sources/music")')
     const player = javaSource('src/media/MusicPlayer.java')
     // 入口一道（关着时 `playmusic` 整个不进）、线程里一道（正在响的那声下一块就停）。
-    expect(player).toContain('if (CAN_PLAY_MUSIC == YES) {')
-    expect(player).toContain('if (CAN_PLAY_MUSIC == NO) ')
+    expect(player).toMatch(/if \(CAN_PLAY_MUSIC == YES\)\s*\{/)
+    // 两个开关是 static、两个实例共用 —— 「各管各的」靠的是**哪条线程读哪个**：
+    // 背景音乐那条（`PlayThread`）只读 `CAN_PLAY_BGM`，音效那条（`PlayThread2`）只读
+    // `CAN_PLAY_MUSIC`。按类体切开再核，只核「字符串在不在」的话，给背景音乐那条
+    // 线程加一道 `CAN_PLAY_MUSIC` 判断照样绿。
+    const bgmThread = player.slice(player.indexOf('class PlayThread extends'), player.indexOf('class PlayThread2'))
+    const sfxThread = player.slice(player.indexOf('class PlayThread2'))
+    expect(bgmThread).toMatch(/if \(CAN_PLAY_BGM == NO\)/)
+    expect(bgmThread).not.toContain('CAN_PLAY_MUSIC')
+    expect(sfxThread).toMatch(/if \(CAN_PLAY_MUSIC == NO\)/)
+    expect(sfxThread).not.toContain('CAN_PLAY_BGM')
   })
 
   it('关掉之后音效不响：正在响的那声停下，之后请求的一声都交不到播放对象上；拨回开又响', () => {
