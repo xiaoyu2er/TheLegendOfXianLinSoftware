@@ -25,6 +25,7 @@ import {
 } from '../menu/equipPanel'
 import { rowBandTop } from '../menu/scroll'
 import { buttonCenter, clickButton, selectEquipRow } from '../test/menuClicks'
+import { TITLE_BGM } from '../start/assets'
 import { rememberAudioSettings, resetAudioSettings } from './audioSettings'
 import {
   NO_INPUT,
@@ -101,6 +102,54 @@ describe('场景 ↔ 菜单这条环路', () => {
       y: roleTileY(s.scene.world.role),
       scene: s.scene.world.scene,
     }).toEqual(before)
+  })
+
+  /**
+   * 天书页「退出」→「重新开始」回标题（xl-03x.11）。
+   *
+   * 形状照打输回标题那条（`game/session.test.ts` 的「打输的两条分支各走各的」
+   * 与「打输回标题：曲子换成主题曲」）：面板由**会话**翻成 `'start'`，曲子跟着
+   * 换成主题曲。标题上点「起」之后做什么，App 不分是从哪条路来的（`app/App.tsx`
+   * 的 `atTitle` 只读 `view.panel`），所以「队伍回出厂」那条例外由既有判据守，
+   * 这里不另写一份。
+   */
+  /** 宿舍里开菜单 → 天书页 → 点「退出」，停在「重新开始」刚展开、还没点的那一刻。 */
+  function upToRestart() {
+    let s = openMenu(inScene('宿舍'))
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
+    const fb = menuWorldOf(s)!.panels.funcPanel.funcButtons!
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.main.exitButton)) }, 0)
+    return { s, fb }
+  }
+
+  it('天书页「退出」→「重新开始」：会话把面板翻回标题，曲子换成主题曲', () => {
+    const { fb, s: before } = upToRestart()
+    let s = before
+    // 反向控制：「重新开始」这一下之前**还在菜单里**，而且那颗按钮真的画出来了
+    // —— 否则下面那条「到了标题」分不清是点着了还是别的什么把面板翻走了。
+    expect(s.panel).toBe('menu')
+    expect(fb.sub.restart.isDraw, '「退出」没把「重新开始」展开').toBe(true)
+    expect(currentBgm(s)).not.toBe(TITLE_BGM)
+
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.sub.restart)) }, 0)
+    expect(s.panel).toBe('start')
+    expect(menuWorldOf(s)).toBeNull()
+    expect(currentBgm(s)).toBe(TITLE_BGM)
+  })
+
+  it('「重新开始」那条一次性信号读了就收 —— 「承」读档回场景再开菜单，不会当场又回标题', () => {
+    const { fb, s: before } = upToRestart()
+    let s = advanceSession(before, { ...NO_INPUT, menu: click(...buttonCenter(fb.sub.restart)) }, 0)
+    expect(s.panel).toBe('start')
+    // 菜单世界活过了标题（原版 `menuPanel` 从开机活到关机；web 端的「起」重建会话，
+    // 但「承」读档不重建 —— `loadInto` 与 `enterScene` 都是 `...session`）。
+    expect(s.menu.world.panels.funcPanel.funcButtons, '菜单世界没活过标题，下面那条恒真').toBe(fb)
+    expect(fb.restartToTitle, '回标题的信号没收掉').toBe(false)
+
+    // 用 `enterScene` 代「承」读档的那一步：两者对菜单世界做的是同一件事（都不碰）。
+    s = openMenu(enterScene(s, createWorld(getScene('宿舍'))))
+    s = advanceSession(s, NO_INPUT, 5 * MENU_TICK_MS)
+    expect(s.panel, '再开菜单当场又被翻回标题').toBe('menu')
   })
 
   it('⚠️ 菜单开着的时候主角站住 —— 「场景停步」对的是这一半', () => {

@@ -3,12 +3,14 @@ import type { MenuAudioSettings, MenuButtonState } from './types'
 
 /**
  * 天书页那一排按钮（`menu.FuncButtons`）—— **整页**：五颗主按钮、设定与退出
- * 两组子菜单的展开收起、BGM 开关，以及三颗背后接空实现的按钮（xl-6lo.12）。
+ * 两组子菜单的展开收起、BGM 开关（xl-6lo.12）。
  *
- * 存档 / 提取的后半段（进 ls 面板、真的存与读）归 **M6**，退出与重开的后半段
- * 归 **M7**（xl-6lo.2 §边界跟真值走）。那三颗**照画、照响应三态、点得响**，
- * 背后是空实现 —— 不画或者禁用都会引入一个原版没有的差异：真值第 0 帧的
- * `func.drawn` 就写着六个按钮名，而禁用会让三态贴图少画一态。
+ * 切面板的那几支这一层只立一次性信号，由会话读了去切：存档 / 提取 → ls 面板
+ * （`saveLoadRequest`，xl-i06.9）、返回 → 场景（`exitToScene`）、重新开始 →
+ * 标题（`restartToTitle`，xl-03x.11）。**只剩「确认离开」背后还是空实现**
+ * （原版 `System.exit(0)`，归另一张票）—— 它照画、照响应三态、点得响；不画
+ * 或者禁用都会引入一个原版没有的差异：真值第 0 帧的 `func.drawn` 就写着六个
+ * 按钮名，而禁用会让三态贴图少画一态。
  *
  * ⚠️ `setKey`（键盘设定）是这一页最反直觉的一颗，**三件事同时成立**：
  *
@@ -104,6 +106,12 @@ export interface FuncButtonsState {
    * 就得有一个一次性信号，由读它的人清（`menu/step.ts` 的 `clearMenuSaveLoad`）。
    */
   saveLoadRequest: 'save' | 'load' | null
+  /**
+   * 「重新开始」这一步被按下了（xl-03x.11）—— 会话读它，把面板翻回标题。
+   * 同一类：原版那一支末尾直接 `switchTo("start")`，由读它的人清
+   * （`menu/step.ts` 的 `clearMenuTitle`）。
+   */
+  restartToTitle: boolean
 }
 
 export function createFuncButtons(): FuncButtonsState {
@@ -124,7 +132,7 @@ export function createFuncButtons(): FuncButtonsState {
     exitForSure: menuButton(X + 4 * W, SUB_Y, SUB_W, SUB_H, false),
     restart: menuButton(X + 4 * W, SUB_Y + (Y_MOVE + SUB_H), SUB_W, SUB_H, false),
   }
-  return { main, sub, exitToScene: false, saveLoadRequest: null }
+  return { main, sub, exitToScene: false, saveLoadRequest: null, restartToTitle: false }
 }
 
 /** 第 `n` 组（1..4）那两颗。下标换算只在这一处，见 `FUNC_SUB_GROUPS`。 */
@@ -302,13 +310,15 @@ export function funcCheckPressed(
     setGroup(fb, 4, false)
     audio.sfx = false
   }
-  // 10 —— 重新开始。原版 `switchTo("start")`；后半段 → **M7**（xl-czb）。
+  // 10 —— 重新开始。原版末尾 `GameLauncher.switchTo("start")`，那一句由会话做
+  // （`game/session.ts` 读 `restartToTitle`，xl-03x.11）。
   if (fb.sub.restart.isclicked) {
     music.push('换list.wav')
     setGroup(fb, 1, false)
     setGroup(fb, 2, false)
     setGroup(fb, 3, false)
     setGroup(fb, 4, true)
+    fb.restartToTitle = true
   }
   // 11 —— 确认离开。原版 `System.exit(0)`；后半段 → **M7**（xl-czb）。
   if (fb.sub.exitForSure.isclicked) {

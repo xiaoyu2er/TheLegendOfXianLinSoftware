@@ -1,7 +1,14 @@
 import { advanceBattle, createBattleTicker } from '../battle/loop'
 import { advanceMenu, createMenuTicker } from '../menu/loop'
 import type { MenuTicker } from '../menu/loop'
-import { clearMenuExit, clearMenuSaveLoad, menuSaveLoadRequest, menuWantsScene } from '../menu/step'
+import {
+  clearMenuExit,
+  clearMenuSaveLoad,
+  clearMenuTitle,
+  menuSaveLoadRequest,
+  menuWantsScene,
+  menuWantsTitle,
+} from '../menu/step'
 import { applySaveLoadInput } from '../saveload/step'
 import type { SaveLoadInput } from '../saveload/step'
 import { createSaveLoadWorld } from '../saveload/world'
@@ -717,6 +724,14 @@ export function advanceSession(
       // 一次性信号，读了就收 —— 菜单世界活着，不清的话下次开菜单第一拍
       // 又关上了。`returnButton.isclicked` **不清**，见 `clearMenuExit`。
       clearMenuExit(menu.world)
+    }
+    // 「退出」→「重新开始」（xl-03x.11）：`switchTo("start")`。落点与打输回标题
+    // 那一支（上面战斗那一段的 `exitPanel`）同一个 —— 面板翻成 `'start'`，
+    // 曲子由 `currentBgm` 跟着换成主题曲，标题上点「起」之后 App 不分来路。
+    // 场景那一侧**不给信号**：原版 `switchTo("start")` 那一支没有 `SCENE_SIGNAL=1`。
+    if (menuWantsTitle(menu.world)) {
+      clearMenuTitle(menu.world)
+      panel = 'start'
     }
     // 「存档」/「提取」（xl-i06.9）：`setLastPanel("menu")` + `changeStateTo` +
     // `switchTo("ls")`。同一个理由的一次性信号。
