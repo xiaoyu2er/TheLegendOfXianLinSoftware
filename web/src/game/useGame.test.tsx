@@ -15,6 +15,9 @@ import { roleTileX, roleTileY } from '../state/role'
 import { TICK_MS, createWorld } from '../state/step'
 import type { RoleState, World } from '../state/types'
 import { useGame } from './useGame'
+import { resetEnemySprites } from './enemySprites'
+import { decodePng } from '../compare/png'
+import { repoPath } from '../test/repoPath'
 
 // 这个文件只验接线（键盘 → 推进 → 面板），不验出声 —— 那归 `useGameBgm.test.tsx`。
 // 播放器换成哑的，是因为「战斗里按 J」那条要进 `脚本22`，而它的场景曲
@@ -27,9 +30,6 @@ vi.mock('../audio/bgmPlayer', () => ({
     destroy: () => {},
   }),
 }))
-import { resetEnemySprites } from './enemySprites'
-import { decodePng } from '../compare/png'
-import { repoPath } from '../test/repoPath'
 
 /**
  * 接线的测试：键盘 → 定步长推进 → 渲染器。**渲染器是个假的**——这里要验的是
@@ -446,6 +446,15 @@ describe('useGame 接线', () => {
         }
       },
     )
+    try {
+      await walkIntoBattleAndPressJ()
+    } finally {
+      vi.unstubAllGlobals()
+      resetEnemySprites()
+    }
+  })
+
+  async function walkIntoBattleAndPressJ() {
     const { result } = await mount('脚本22')
     for (let i = 0; i < 400 && result.current.panel === 'scene'; i++) {
       press(' ')
@@ -466,9 +475,7 @@ describe('useGame 接线', () => {
     expect(result.current.panel).toBe('scene')
     const after = { level: getParty().zhang.level, exp: getParty().zhang.exp }
     expect(after, '打赢了罹年居士（exp 9999），张小凡的等级或经验总得动一样').not.toEqual(before)
-    vi.unstubAllGlobals()
-    resetEnemySprites()
-  })
+  }
 
   it('卸载之后不再推进，也不再收键', async () => {
     const { unmount } = await mount()

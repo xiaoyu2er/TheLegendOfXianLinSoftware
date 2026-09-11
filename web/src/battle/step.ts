@@ -100,6 +100,8 @@ export function applyBattleInput(w: BattleWorld, input: BattleInput): void {
     debugKill(w)
     return
   }
+  // 类型上到这里只剩 click，但真值是 `as unknown as` 断言进来的 JSON（`trace.ts`），
+  // 导出器哪天多记一种输入，要在这里响，不能当成点击往下走。
   if (input.e !== 'click') throw new Error(`战斗只认 click / key 输入，实际 ${String((input as { e: unknown }).e)}`)
   mouseMoved(w, input.x, input.y)
   mousePressed(w, input.x, input.y)
