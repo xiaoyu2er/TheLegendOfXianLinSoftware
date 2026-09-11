@@ -113,11 +113,18 @@ describe('场景 ↔ 菜单这条环路', () => {
    * 的 `atTitle` 只读 `view.panel`），所以「队伍回出厂」那条例外由既有判据守，
    * 这里不另写一份。
    */
-  it('天书页「退出」→「重新开始」：会话把面板翻回标题，曲子换成主题曲', () => {
+  /** 宿舍里开菜单 → 天书页 → 点「退出」，停在「重新开始」刚展开、还没点的那一刻。 */
+  function upToRestart() {
     let s = openMenu(inScene('宿舍'))
     s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
     const fb = menuWorldOf(s)!.panels.funcPanel.funcButtons!
     s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.main.exitButton)) }, 0)
+    return { s, fb }
+  }
+
+  it('天书页「退出」→「重新开始」：会话把面板翻回标题，曲子换成主题曲', () => {
+    const { fb, s: before } = upToRestart()
+    let s = before
     // 反向控制：「重新开始」这一下之前**还在菜单里**，而且那颗按钮真的画出来了
     // —— 否则下面那条「到了标题」分不清是点着了还是别的什么把面板翻走了。
     expect(s.panel).toBe('menu')
@@ -131,11 +138,8 @@ describe('场景 ↔ 菜单这条环路', () => {
   })
 
   it('「重新开始」那条一次性信号读了就收 —— 「承」读档回场景再开菜单，不会当场又回标题', () => {
-    let s = openMenu(inScene('宿舍'))
-    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
-    const fb = menuWorldOf(s)!.panels.funcPanel.funcButtons!
-    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.main.exitButton)) }, 0)
-    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.sub.restart)) }, 0)
+    const { fb, s: before } = upToRestart()
+    let s = advanceSession(before, { ...NO_INPUT, menu: click(...buttonCenter(fb.sub.restart)) }, 0)
     expect(s.panel).toBe('start')
     // 菜单世界活过了标题（原版 `menuPanel` 从开机活到关机；web 端的「起」重建会话，
     // 但「承」读档不重建 —— `loadInto` 与 `enterScene` 都是 `...session`）。
