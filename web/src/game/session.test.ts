@@ -106,6 +106,8 @@ function levelParty(level: number): void {
         isDead: false,
         angryValue: 0,
         isAngry: false,
+        // 格数不是这个函数要验的东西，照原样留着。
+        skillNumber: getParty()[key].skillNumber,
       },
     ])
   }

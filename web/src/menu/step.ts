@@ -23,6 +23,7 @@ import {
   magicCheckPressed,
   magicCheckReleased,
   magicDrawThisPanel,
+  magicSkillNumber,
   magicUpdate,
 } from './magic'
 import { MENU_PANEL_ORDER, PANEL_OF_TAB, TAB_PRIORITY } from './world'
@@ -106,7 +107,7 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
 function paintCurrentPanel(w: MenuWorld): void {
   const p = currentPanel(w)
   if (p.equip) paintEquip(p.equip, w.music)
-  if (p.magic && p.scoll) magicDrawThisPanel(p.magic, p.scoll.whichHero)
+  if (p.magic && p.scoll) magicDrawThisPanel(p.magic, p.scoll.whichHero, magicSkillNumber(w.heroes, p.scoll.whichHero))
 }
 
 export function applyMenuInput(w: MenuWorld, input: MenuInput): void {

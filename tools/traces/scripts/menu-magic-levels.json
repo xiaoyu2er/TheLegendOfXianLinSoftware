@@ -1,0 +1,24 @@
+{
+  "driver": "menu",
+  "name": "menu-magic-levels",
+  "description": "技能格数随等级涨（xl-03x.17）：开局调原版 levelUp() 让张小凡升 1 级（→2 级）、陆雪琪升 4 级（→5 级）、文敏升 7 级（→10 级），恰好各跨过一道门槛（levelUp 里 level==2/5/10 时 skillNumber++），格数变成 3 / 4 / 5。进奇术页后三人各点一颗**只有涨过才画得出来**的技能（drawThisPanel 两个循环重叠一格，画得出来的是 skillNumber-1 颗）：张小凡第 2、陆雪琪第 3、文敏第 4。每点一颗推 3 拍让动画走起来。",
+  "setup": {
+    "party": ["zhang", "lu", "wen"],
+    "fullHeal": true,
+    "levelUps": { "zhang": 1, "lu": 4, "wen": 7 }
+  },
+  "maxSteps": 200,
+  "every": 1,
+  "steps": [
+    { "op": "tab", "name": "magic" },
+    { "op": "tick", "n": 1 },
+    { "op": "skill", "n": 2 },
+    { "op": "tick", "n": 3 },
+    { "op": "hero", "n": 2 },
+    { "op": "skill", "n": 3 },
+    { "op": "tick", "n": 3 },
+    { "op": "hero", "n": 4 },
+    { "op": "skill", "n": 4 },
+    { "op": "tick", "n": 3 }
+  ]
+}

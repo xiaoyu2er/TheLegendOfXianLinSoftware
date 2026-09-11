@@ -2,7 +2,7 @@ import { expToLevelUp, refreshValue } from './units'
 import { updateVictoryReminder } from './victory'
 import type { PartyKey, SkillSpec } from './units'
 import { DRUGS, drugIntroText } from './drugs'
-import { MISHU_ANIM, PET_ATTACK, SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse } from './skills'
+import { MISHU_ANIM, PET_ATTACK, SKILLS, SKILL_INTRO_DIR, SKILL_MENU, skillMpUse, skillNumberAfterLevelUp } from './skills'
 import type { SkillEntry } from './skills'
 import {
   MENU_BUTTON_H,
@@ -1871,6 +1871,9 @@ function levelUp(h: Hero): void {
   h.sprit += d.sprit
   h.agile += d.agile
   h.strength += d.strength
+  // `if(level==2||level==5||level==10){ skillNumber++; isGetSkill=true; }` —— 判的是新等级。
+  // `isGetSkill` 没人读（全仓现查只有这一处写），不记。
+  h.skillNumber = skillNumberAfterLevelUp(h.level, h.skillNumber)
   h.exp -= h.expToLevelUp
   refreshValue(h)
   h.hp = h.hpMax

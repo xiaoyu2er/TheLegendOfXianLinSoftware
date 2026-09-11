@@ -126,16 +126,18 @@ describe('十五条技能动画的帧数，对回原版', () => {
 })
 
 /**
- * 「按钮颗数由那三个 static 字段决定、不由等级决定」——**拿一个等级远高于
- * 初值的角色核一次**（票面那条验收）。
+ * 「按钮颗数由 `skillNumber` 决定、不由等级决定」—— 两个方向各核一次。
  *
- * 这条会红的样子长这样：把 `magicDrawThisPanel` 里的 `SKILL_NUMBER[...]`
- * 换成 `w.heroes[i].level`，等级 1 的两个人碰巧不变，而下面这个 20 级的
- * 张小凡会画出五颗（`visible` 全 true）——实测就是这么红的。
+ * `drawThisPanel()` 读的是那个 static，而那个 static **不是等级的函数**（升级在 2/5/10 级
+ * 各 +1、读档只抬不压，`battle/skills.ts`）。所以这里拆成两半：等级动、格数不动 →
+ * 画的不变；格数动、等级不动 → 画的跟着变。
+ *
+ * 会红的样子：把 `magicDrawThisPanel` 的入参换回 `SKILL_NUMBER[...]`（xl-03x.17 之前的
+ * 写法），第二条红；换成按 `level` 推，第一条红。
  */
 describe('画几颗按钮由 skillNumber 说了算，不由等级', () => {
-  function magicVisible(level: number): Record<string, boolean[]> {
-    const live = { zhang: { level, ...HEROES.zhang.attributes(level), hp: 99999, mp: 99999 } }
+  function magicVisible(level: number, skillNumber: number): Record<string, boolean[]> {
+    const live = { zhang: { level, ...HEROES.zhang.attributes(level), hp: 99999, mp: 99999, skillNumber } }
     const w = createMenuWorld({ party: ['zhang', 'lu', 'wen'], fullHeal: true, live })
     // 切到奇术页：那一次按下之后紧跟着的 paint 才会现设 isDraw。
     stepMenu(w, [{ e: 'press', x: 619, y: 62 }])
@@ -143,24 +145,37 @@ describe('画几颗按钮由 skillNumber 说了算，不由等级', () => {
     return (snapshotMenu(w).magic as { visible: Record<string, boolean[]> }).visible
   }
 
-  it('20 级的张小凡与 1 级的张小凡，按钮画得出来的是同样几颗', () => {
+  it('20 级的张小凡与 1 级的张小凡，格数一样时按钮画得出来的是同样几颗', () => {
     const low = createMenuWorld({ party: ['zhang'], fullHeal: true })
     expect(low.heroes[0]!.level, '前提：出厂等级不是 20').not.toBe(20)
     const high = createMenuWorld({
       party: ['zhang'],
       fullHeal: true,
-      live: { zhang: { level: 20, ...HEROES.zhang.attributes(20), hp: 99999, mp: 99999 } },
+      live: {
+        zhang: { level: 20, ...HEROES.zhang.attributes(20), hp: 99999, mp: 99999, skillNumber: SKILL_NUMBER.zhang },
+      },
     })
     // 前提要自己站得住：等级真的高了、属性真的跟着变了。这两条不断言的话，
     // 下面那条"两者相等"可能只是因为 live 根本没生效。
     expect(high.heroes[0]!.level).toBe(20)
     expect(high.heroes[0]!.hpMax).toBeGreaterThan(low.heroes[0]!.hpMax)
 
-    expect(magicVisible(20)).toEqual(magicVisible(low.heroes[0]!.level))
+    expect(magicVisible(20, SKILL_NUMBER.zhang)).toEqual(magicVisible(low.heroes[0]!.level, SKILL_NUMBER.zhang))
+  })
+
+  it('等级不动、格数从出厂值涨到 5：画得出来的颗数跟着涨（xl-03x.17）', () => {
+    const level = low()
+    const before = magicVisible(level, SKILL_NUMBER.zhang)[MAGIC_HEROES[0]!.name]!.filter(Boolean).length
+    const after = magicVisible(level, 5)[MAGIC_HEROES[0]!.name]!.filter(Boolean).length
+    expect(before).toBe(SKILL_NUMBER.zhang - 1)
+    expect(after).toBe(5 - 1)
+    function low(): number {
+      return createMenuWorld({ party: ['zhang'], fullHeal: true }).heroes[0]!.level
+    }
   })
 
   it('画得出来的颗数是 skillNumber-1（原版那两个循环重叠了一格）', () => {
-    const visible = magicVisible(20)
+    const visible = magicVisible(20, SKILL_NUMBER.zhang)
     const zhang = visible[MAGIC_HEROES[0]!.name]!
     expect(zhang.filter(Boolean)).toHaveLength(SKILL_NUMBER.zhang - 1)
     // 另外两个人**一颗都不画** —— 只有当前卷轴角色那一组画得出来。

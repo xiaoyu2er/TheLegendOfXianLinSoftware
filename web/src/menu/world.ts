@@ -3,7 +3,7 @@ import { createEquipPanel } from './equipPanel'
 import { createFuncButtons } from './funcButtons'
 import { createDrugPack, createDrugPanelState } from './drugPanel'
 import { createMagicState } from './magic'
-import { createMenuHeroes, refreshMenuHeroes } from './heroes'
+import { applyMenuLevelUps, createMenuHeroes, refreshMenuHeroes } from './heroes'
 import type { LiveParty } from './heroes'
 import type { PartyKey } from '../battle/units'
 import { HEAD_H, HEAD_POS, HEAD_W, TABS, TAB_H, TAB_W, TAB_Y, tabX } from './layout'
@@ -51,6 +51,12 @@ export interface MenuConfig {
    * **面板建好之后**，见 `createEquipPanel`。
    */
   readonly equipment?: readonly { readonly name: string; readonly count: number }[] | undefined
+  /**
+   * 剧本 `setup.levelUps`（xl-03x.17）—— 开局让谁升几级，键与 `party` 同一套
+   * （`zhang` / `lu` / `wen`）。**开局状态，不是期望值**：导出器调的是原版自己的
+   * `levelUp()`，这边调 `levelUpMenuHero`，技能格数怎么涨由两边各自的实现说了算。
+   */
+  readonly levelUps?: Readonly<Record<string, number>> | undefined
 }
 
 /**
@@ -128,13 +134,18 @@ export function createMenuWorld(config: MenuConfig): MenuWorld {
     tabs[tab.key] = menuButton(tabX(tab.multiple), TAB_Y, TAB_W, TAB_H, true)
   }
 
+  const heroes = createMenuHeroes(config.fullHeal, config.live)
+  // `MenuDriver.start()` 里升级在 `new MenuPanel()`（穿开局武器）之后、`fullHeal` 之前；
+  // 升级自己就把血拉满，所以与 `createMenuHeroes` 里那句 `fullHeal` 谁先谁后结果相同。
+  applyMenuLevelUps(heroes, config.levelUps)
+
   return {
     panel: MENU_FIRST_PANEL,
     currentX: 0,
     currentY: 0,
     panels,
     tabs,
-    heroes: createMenuHeroes(config.fullHeal, config.live),
+    heroes,
     drugPack: createDrugPack(config.drugs),
     party: {
       zhang: config.party.includes('zhang'),

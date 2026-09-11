@@ -161,7 +161,7 @@ function menuButton(index: number): MenuButton {
  */
 function makeSkillMenu(
   present: Readonly<Record<'zhang' | 'yu' | 'lu', boolean>>,
-  counts: Readonly<Partial<Record<PartyKey, number>>>,
+  counts: Readonly<Partial<Record<PartyKey, number | undefined>>>,
 ): SkillMenu {
   const group = (key: 'zhang' | 'yu' | 'lu'): MenuButton[] =>
     present[key]
@@ -205,7 +205,7 @@ function button(x: number, y: number): GameButton {
   return { x, y, width: 58, height: 62, isclicked: false }
 }
 
-function makeHero(key: PartyKey, level: number, override?: Attributes): Hero {
+function makeHero(key: PartyKey, level: number, skillNumber: number, override?: Attributes): Hero {
   const spec = HEROES[key]
   // 喂了就用喂的那一份（`BattleConfig.attributes`）—— 队伍此刻的属性带着装备
   // 加成与历次 `levelUp()`，按等级重算会把它们抹掉。
@@ -232,6 +232,7 @@ function makeHero(key: PartyKey, level: number, override?: Attributes): Hero {
     exp: 0,
     expToLevelUp: expToLevelUp(level),
     isLevelUp: false,
+    skillNumber,
     battleState: state(),
     beAttackedAnimation: beAttacked(spec.beAttackedFrames),
     victoryAnimation: anim(spec.victoryFrames),
@@ -325,7 +326,7 @@ export function createBattle(config: BattleConfig): BattleWorld {
       // 出来的。默认一个值等于悄悄换一场仗打。
       throw new Error(`剧本没给 ${key} 的等级 —— 等级没有默认值（见 docs/trace-format.md）`)
     }
-    const hero = makeHero(key, level, config.attributes?.[key])
+    const hero = makeHero(key, level, config.skillNumbers?.[key] ?? SKILL_NUMBER[key], config.attributes?.[key])
     const carry = config.carry?.[key]
     if (carry !== undefined) applyCarry(hero, carry)
     return hero
@@ -460,9 +461,11 @@ export function createBattle(config: BattleConfig): BattleWorld {
     launchCode: 0,
     // `bp.pet=null;`（`BattlePanel.initial`）—— 陆雪琪的秘术才 new 得出来。
     pet: null,
+    // 按钮数从建好的人身上取，不再从 config 另算一遍 —— 同一个数两处各算各的缺省，
+    // 哪天两边的缺省分了家，菜单与人就对不上（xl-03x.17）。
     skillMenu: makeSkillMenu(
       { zhang: zxf !== null, yu: yj !== null, lu: lxq !== null },
-      config.skillNumbers ?? {},
+      { zhang: zxf?.skillNumber, yu: yj?.skillNumber, lu: lxq?.skillNumber },
     ),
     drugMenu: makeDrugMenu(),
     // `ShopReader.readDrug()` 不给 `numberGOT` 赋值，数据文件里也没有那一列。
