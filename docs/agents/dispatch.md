@@ -721,19 +721,34 @@ GBK 源码被 grep 当成二进制**整个跳过**，不加 `-a` 一律「无匹
 另一半是**模式串本身的编码**：你在终端里敲的中文是 UTF-8 字节，拿去搜 GBK 文件，
 `-a` 加了也是逐字节比，**永远零命中、退出码 1** —— 而那与「文件里没有这个词」
 长得一模一样。M7（xl-czb）头一轮就栽在这上面：两个独立读数在「主线上有没有答题」
-上给出相反结论，现数之后是**十一本脚本带答题段**，早先那条「只有一本」是用 UTF-8
-模式串 grep GBK 的 `script/*.txt` 得出来的。
+上给出相反结论，现数（数据层真值里 `selectQuestion` 非空的）是**十一本**。
 
-    # 错：模式是 UTF-8，GBK 文件里永远匹配不上（exit 1，与「没有」同形）
-    grep -la 'SelectQuestion' script/*.txt        # ASCII 关键词碰巧没事
-    grep -la '答题' script/*.txt                   # 中文关键词 → 假阴性
-    # 对：模式先转成 GBK
-    grep -la "$(printf '答题' | iconv -f UTF-8 -t GBK)" script/*.txt
-    # 或者干脆把文件转过来再搜（数据文件还要记得 CRLF，见 CLAUDE.md）
-    for f in script/*.txt; do iconv -f GBK -t UTF-8 "$f" | grep -q '答题' && echo "$f"; done
+**而且把模式转成 GBK 也还不够。** 这台机器的 `grep` 其实是 **ugrep 7.8.4**，它的
+正则模式吃 GBK 高位字节会漏：同一个 GBK 模式，正则模式下「金陵」「太极老师」都是 0，
+只有「医院」碰巧对得上；加 `-F`（按定长字节串比）才全对。读数（xl-czb.7 实跑，
+2026-09-11，`script/*.txt` 96 本，右列是先 iconv 转文件再搜的对照）：
 
-判据：**搜中文之前先拿一个肯定在的词试一次**（比如那个文件自己的场景名），试不出
-来就是编码没对上，而不是「没有」。
+| 词 | UTF-8 模式 | GBK 模式·正则 | GBK 模式·`-F` | iconv 转文件 |
+|---|---|---|---|---|
+| 金陵 | 0 | 0 | 37 | 37 |
+| 太极老师 | 0 | 0 | 2 | 2 |
+| 医院 | 0 | 16 | 16 | 16 |
+
+    # 错：模式是 UTF-8，GBK 文件里永远匹配不上（与「没有」同形）
+    grep -la '金陵' script/*.txt                                   # 0
+    # 错：转成 GBK 了，但走正则 —— 看词碰运气
+    grep -la "$(printf '金陵' | iconv -f UTF-8 -t GBK)" script/*.txt   # 0
+    # 对：GBK 模式 + -F
+    grep -laF "$(printf '金陵' | iconv -f UTF-8 -t GBK)" script/*.txt  # 37
+    # 对：把文件转过来再搜（数据文件还要记得 CRLF，见 CLAUDE.md）
+    for f in script/*.txt; do iconv -f GBK -t UTF-8 "$f" | grep -q '金陵' && echo "$f"; done  # 37 行
+
+⚠️ 别拿「答题」当试词：脚本里答题段是用 ASCII 关键词 `SelectQuestion` 标的，「答题」
+两个字**根本不在文件里**，上面两种「对」的写法搜它也是 0（这一段的初稿就这么错过，
+/code-review 实跑逮到的）。
+
+判据：**搜中文之前先拿一个肯定在的词试一次**（比如那个文件自己的场景名），而且
+**两种「对」的写法对一下数** —— 对不上就是编码或正则模式没弄对，而不是「没有」。
 
 ## 两条 herdr / git 的判据坑（2026-09-07 主 session 验收时现踩）
 
