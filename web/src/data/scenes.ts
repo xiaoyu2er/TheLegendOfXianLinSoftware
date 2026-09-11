@@ -75,3 +75,34 @@ export function missingSceneMessage(name: string): string {
 export function sceneNameFromPath(path: string): string {
   return path.replace(/^.*\//, '').replace(/\.json$/, '')
 }
+
+/**
+ * 出口表 / 剧情三元组里写的**脚本文件名** → 场景注册名（`大地图.txt` → `大地图`）。
+ * 换场景时按名字找场景的**唯一一处**（产品侧预取 `data/loadedScenes.ts` 与测试侧
+ * `state/trace.ts` 的 `sceneSourceOf` 都走它）。
+ *
+ * ## 按 win32 语义解析：去掉末尾的空格与点（xl-1dv.11，xl-czb.7 裁定）
+ *
+ * 数据里有三个出口名带行尾空格（`"仙二教学楼二楼夜.txt "` 那一族），其中一个在主线上
+ * （`脚本32` 唯一的出口）。原版 `new Reader(name)` 把名字原样拼进路径：
+ *
+ * - macOS + openjdk 17 **实测**打不开（`FileNotFoundException`），主线在第 36 跳断掉、
+ *   结局在断点之后；
+ * - Windows 的路径规范化会去掉末尾的空格与点，打得开（⚠️ Win32 文档行为，这台机器上
+ *   没法跑）。
+ *
+ * 选 win32 的理由：这批数据是在 Windows 上写、在 Windows 上玩的 —— `剧情1` / `迷宫1`
+ * 里那三条反斜杠路径就是证据，而 `assets/path.ts` 的 `normalizePath` 已经为同一个
+ * 原因站在了 Windows 那一边。posix 下的断链是「把一个 Windows 游戏搬到别的文件系统上」
+ * 的产物，不是游戏逻辑；照它复刻，Web 的主线就走不到结局。
+ *
+ * **数据不改**（那条约定明写着不修脚本数据）；`assets/knownMissing.ts` 里那两条也不动
+ * —— 那张表登记的是「字面路径在磁盘上不存在」，这件事仍然成立。原版侧同样不动：
+ * `mainline/test/chain.ts` 继续把两种语义都算出来。
+ *
+ * 判据：`mainline/test/handoff.test.ts`（主线第 36 跳）与
+ * `data/loadedScenes.test.ts`「行尾带空格的出口名」。
+ */
+export function sceneNameOfFile(file: string): string {
+  return sceneNameFromPath(file).replace(/[ .]+$/, '').replace(/\.txt$/, '')
+}

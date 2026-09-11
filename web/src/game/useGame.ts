@@ -637,7 +637,7 @@ export function useGame(
       }
       if (shopSinceRef.current === null) shopSinceRef.current = now
       if (!shopRenderer) return
-      const wanted = shopTextureIds(world).join(' ')
+      const wanted = shopTextureIds(world).join('\u0000')
       if (loadedShopRef.current !== wanted) {
         loadedShopRef.current = wanted
         shopLoadingRef.current = true

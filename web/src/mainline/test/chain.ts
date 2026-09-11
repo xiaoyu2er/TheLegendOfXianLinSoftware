@@ -34,8 +34,11 @@ import type { SceneScript } from '../../data/types'
  *
  * - `posix`：逐字相等才打得开。**实测**（2026-09-11，macOS + openjdk 17）：
  *   `new tools.Reader("仙二教学楼二楼夜.txt ")` 抛 `FileNotFoundException`，
- *   去掉行尾空格的同名文件打得开。Web 版的 `data/loadedScenes.ts` 也是逐字取
- *   （读代码读出来的，没跑过）。
+ *   去掉行尾空格的同名文件打得开。
+ *   Web 版在 xl-czb.7 之前也是这一种（**实跑过**，2026-09-11：`脚本32` 的出口
+ *   `"仙二教学楼二楼夜.txt "` 预取不到，`mainline/test/handoff.test.ts` 在第 36 跳抛
+ *   「没有烘焙过的场景」）。**xl-czb.7 裁定 Web 改走 win32 语义**（`data/scenes.ts`
+ *   的 `sceneNameOfFile`），理由见那里。原版侧不动，所以这里仍然两种都算。
  * - `win32`：Windows 的路径规范化会去掉末尾的空格与点。⚠️ **未验证**：这是 Win32
  *   文件 API 的文档行为，这台机器上跑不了；原版作者用的是 Windows 这件事也只是从
  *   数据里的反斜杠路径推的。
