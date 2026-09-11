@@ -16,7 +16,8 @@ import {
   drugPanelReleased,
   visibleDrugs,
 } from './drugPanel'
-import { pressScrollTrack, wheelScroll } from './scroll'
+import { dragScroll, pressScrollTrack, releaseScrollDrag, wheelScroll } from './scroll'
+import type { ListViewport, Scrollable } from './scroll'
 import {
   magicCheckMoveIn,
   magicCheckPressed,
@@ -149,8 +150,23 @@ export function applyMenuInput(w: MenuWorld, input: MenuInput): void {
  */
 function menuWheel(w: MenuWorld, x: number, y: number, rows: number): void {
   const p = currentPanel(w)
-  if (p.equip) wheelScroll(EQUIP_LIST_VIEW, p.equip, equipList(p.equip).length, x, y, rows)
-  if (p.drug) wheelScroll(DRUG_LIST_VIEW, p.drug, visibleDrugs(w.drugPack).length, x, y, rows)
+  for (const l of scrollLists(w, p)) wheelScroll(l.view, l.state, l.length, x, y, rows)
+}
+
+/**
+ * 这一页上**能滚的那几份列表**：装备页的背包、物品页的药品清单（其余两页没有）。
+ * 滚轮、按下、拖动、松手四处都要「这一页的视口 + 存滚动位置的那份状态 + 列表
+ * 现在多长」这三样，收在一处，免得四处各抄一对 `if (p.equip)` / `if (p.drug)`。
+ * 长度**每次现算**：列表会在滚动层不知情时变短（`scroll.ts` 的 `clampScroll`）。
+ */
+function scrollLists(
+  w: MenuWorld,
+  p: MenuSubPanel,
+): { readonly view: ListViewport; readonly state: Scrollable; readonly length: number }[] {
+  const lists = []
+  if (p.equip) lists.push({ view: EQUIP_LIST_VIEW, state: p.equip, length: equipList(p.equip).length })
+  if (p.drug) lists.push({ view: DRUG_LIST_VIEW, state: p.drug, length: visibleDrugs(w.drugPack).length })
+  return lists
 }
 
 /**
@@ -166,6 +182,16 @@ function menuWheel(w: MenuWorld, x: number, y: number, rows: number): void {
  * 一直是 (0,0)。两行对调的话四个 Mouse 的坐标会整体串到上一页去。
  */
 function menuMousePressed(w: MenuWorld, x: number, y: number): void {
+  // 任何一次按下都先结束**四页**的拖拽（xl-03x.9），不只当前页：能再按一次，
+  // 说明上一次的松手丢了（`scroll.ts` 的 `ScrollDrag`）；而这一下若是页签，
+  // 下一行就换页了，旧那一页的锚点会一直留着 —— 哪天有一条不经过按下就回到
+  // 那一页的路，头一次移动就会把列表拖走。按在滑块上的话，下面
+  // `pressScrollTrack` 会在当前页重新开始一次。
+  for (const name of MENU_PANEL_ORDER) {
+    const panel = w.panels[name]
+    if (panel.equip) releaseScrollDrag(panel.equip)
+    if (panel.drug) releaseScrollDrag(panel.drug)
+  }
   w.currentX = x
   w.currentY = y
   commandCheckPressed(w)
@@ -190,6 +216,9 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
   drugPanelReleased(p)
   // 奇术页的松开**扫全部三组**，不只当前角色那一组（原版就是这么写的）。
   if (p.magic) magicCheckReleased(p.magic, p.currentX, p.currentY)
+  // 拖滑块结束（xl-03x.9）。只结束当前页的 —— 松手与按下一样只送给当前页，
+  // 而拖拽只能在当前页上开始。
+  for (const l of scrollLists(w, p)) releaseScrollDrag(l.state)
 }
 
 function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
@@ -199,6 +228,16 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
   const p = currentPanel(w)
   p.currentX = x
   p.currentY = y
+  // 拖滑块（xl-03x.9）。浏览器按住左键的移动也送成 `move`，这是忠实的：原版
+  // `MenuPanel` 的 `mouseDragged` 与 `mouseMoved` 两支逐字相同（都是
+  // `checkMoveIn` + `checkAllButtonMoveIn`），所以拖拽不另开一种输入。
+  //
+  // **排在悬停判定前面**：先把列表翻到拖到的那一行，下面 `equipCheckMoveIn`
+  // 那条命中带按翻好的位置算 —— 指针若在拖的途中漂进了列表，选中的是屏幕上
+  // 那一行，而不是上一拍的那一行。两页的命中带与槽那一列不相交（`scroll.test.ts`
+  // 「命中带碰不到槽那一列」守着），所以真值走到的每一步都不受这个次序影响
+  // （真值里根本没有拖拽，`drag` 恒为 null、这一句什么都不做）。
+  for (const l of scrollLists(w, p)) dragScroll(l.view, l.state, l.length, p.currentY)
   scollCheckMoveIn(w, p)
   // `FuncPanel.checkAllButtonMoveIn` 只有 `fb.checkMoveIn()` 一句 —— 三态贴图
   // 的「待点」那一态靠它。真值不记 `image`，所以这一条由逐帧比对守（xl-6lo.14）。
@@ -265,12 +304,7 @@ function checkAllButtonPressed(w: MenuWorld, p: MenuSubPanel): void {
   // 列表框的右内沿，那片矩形上原版一颗按钮都没有（六颗槽位按钮在框上面
   // y 129..149，「使用」「弃用」在框下面），所以它既接不到别人的点击，也不会
   // 把自己的让出去。判据在 `scroll.test.ts`。
-  if (p.equip) {
-    pressScrollTrack(EQUIP_LIST_VIEW, p.equip, equipList(p.equip).length, p.currentX, p.currentY)
-  }
-  if (p.drug) {
-    pressScrollTrack(DRUG_LIST_VIEW, p.drug, visibleDrugs(w.drugPack).length, p.currentX, p.currentY)
-  }
+  for (const l of scrollLists(w, p)) pressScrollTrack(l.view, l.state, l.length, p.currentX, p.currentY)
 }
 
 /** `Scoll.checkPressed`。切人、换卷轴图、出声。 */

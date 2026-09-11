@@ -221,7 +221,7 @@ export function inRect(r: Rect, x: number, y: number): boolean {
 
 /**
  * 在滚动条的槽里按一下 —— 滑块上方翻一屏，下方翻一屏，按在滑块上不动
- * （没有拖拽，拖拽是另一件事）。
+ * （按在滑块上是拖拽的起点，见 `pressScrollTrack`；这个函数只管位置）。
  *
  * 返回新的滚动位置；这一下**不在槽里**时返回 `null`，调用方据此知道"这一下
  * 与滚动条无关"，而不是"滚动条决定不动"。两者分开，是因为后者会把"槽的几何
@@ -251,11 +251,40 @@ export function trackPress(
  */
 export interface Scrollable {
   scroll: number
+  /** 正在拖滑块时的锚点，没在拖是 `null`。见 `ScrollDrag`。 */
+  drag: ScrollDrag | null
+}
+
+/**
+ * 拖滑块（xl-03x.9）：**按下那一刻的指针 y 与那一刻的滚动位置**。之后每次
+ * 移动，位置 = 锚点位置 + 指针相对锚点挪了几像素（按滑块的行程折成行数）。
+ *
+ * 记锚点而不是记「指针在滑块里的哪一点」，是为了让另外两条路插进来时有地方
+ * 落脚：拖到一半滚一格滚轮，就把锚点重设到滚轮之后（`wheelScroll`），下一次
+ * 移动从那里起算，而不是把滚轮的结果拽回去。
+ *
+ * ⚠️ 它**不进真值**，与 `scroll` 同一个理由而且更彻底：原版连滚动条都没有，
+ * 这是那条 web 侧例外（ADR-0001 `list-clipped-with-scrollbar`）的一部分，
+ * 真值里不存在任何一列能与它对应。`snapshotEquip` / 物品页快照一个字都不记它，
+ * 判据在 `scroll.test.ts`「拖一趟滑块，快照里……」。
+ *
+ * ⚠️ 松手丢了（在舞台外松开）时它会一直留着，直到下一次按下或松开：浏览器
+ * 只把 `mouseup` 送给指针底下的那个元素，而原版 Swing 的 grab 会把松手送回
+ * 按下的组件。这是菜单整层的「跨帧松手」问题（M8 规格划在跨面板那一族、
+ * 这一轮不收），不是拖拽自己的。
+ *
+ * @exception ADR-0001#list-clipped-with-scrollbar
+ */
+export interface ScrollDrag {
+  readonly anchorY: number
+  readonly anchorScroll: number
 }
 
 /**
  * 滚轮转了一格。**只认落在列表框里的那一下** —— 框外滚不动列表，否则在属性栏
  * 上滚也会翻背包，而那看起来像"列表自己跳了一下"。
+ *
+ * 拖到一半滚的话，锚点跟着挪到滚完的位置（理由见 `ScrollDrag`）。
  */
 export function wheelScroll(
   v: ListViewport,
@@ -267,9 +296,14 @@ export function wheelScroll(
 ): void {
   if (!inListBox(v, x, y)) return
   s.scroll = clampScroll(v, length, clampScroll(v, length, s.scroll) + rows)
+  if (s.drag) s.drag = { anchorY: y, anchorScroll: s.scroll }
 }
 
-/** 在滚动条的槽里按了一下。**这一下不在槽里时什么都不做**。 */
+/**
+ * 按了一下。在槽里滑块以外：翻一屏；按在滑块上：**开始拖**；按在别处：什么
+ * 都不翻。**三种情况都先结束上一次拖拽** —— 能再按一次，说明上一次的松手丢了
+ * （见 `ScrollDrag`），留着它的话下一次移动会把列表拖走。
+ */
 export function pressScrollTrack(
   v: ListViewport,
   s: Scrollable,
@@ -277,8 +311,41 @@ export function pressScrollTrack(
   x: number,
   y: number,
 ): void {
+  s.drag = null
+  const bar = scrollbar(v, length, s.scroll)
+  if (bar && inRect(bar.thumb, x, y)) {
+    s.drag = { anchorY: y, anchorScroll: clampScroll(v, length, s.scroll) }
+    return
+  }
   const next = trackPress(v, length, s.scroll, x, y)
   if (next !== null) s.scroll = next
+}
+
+/**
+ * 拖着滑块移动了一下。没在拖时什么都不做。
+ *
+ * 指针挪一个「滑块在相邻两行之间的距离」就翻一行 —— 与 `scrollbar()` 画滑块
+ * 用的是同一把尺子（行程 = 槽高 − 滑块高，`max` 行摊在上面），取整也取成同一侧，
+ * 所以把指针挪到「滑块在第 n 行时画在哪」，列表就在第 n 行。两端夹住。
+ */
+export function dragScroll(v: ListViewport, s: Scrollable, length: number, y: number): void {
+  const drag = s.drag
+  if (!drag) return
+  const bar = scrollbar(v, length, s.scroll)
+  if (!bar) {
+    // 拖着拖着列表变得装得下了（今天走不到：拖着的时候按不了别的）。没得拖。
+    s.drag = null
+    return
+  }
+  const travel = bar.track.height - bar.thumb.height
+  if (travel <= 0) throw new Error(`滑块把槽占满了（槽 ${bar.track.height}、滑块 ${bar.thumb.height}），拖不出行数`)
+  const rows = Math.round(((y - drag.anchorY) * maxScroll(v, length)) / travel)
+  s.scroll = clampScroll(v, length, drag.anchorScroll + rows)
+}
+
+/** 松手：拖拽结束，位置留在拖到的那一行。 */
+export function releaseScrollDrag(s: Scrollable): void {
+  s.drag = null
 }
 
 /** 一格滚轮翻几行。 */

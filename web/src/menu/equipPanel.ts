@@ -3,7 +3,7 @@ import { EQUIPMENT_LISTS, EQUIP_SLOTS } from './equipment'
 import type { EquipSlot, EquipmentSpec } from './equipment'
 import { DEFAULT_WEAPONS } from './defaultWeapons'
 import { EQUIP_LIST_BOX, clampScroll, rowBandTop } from './scroll'
-import type { ListViewport } from './scroll'
+import type { ListViewport, ScrollDrag } from './scroll'
 import { refreshMenuHero } from './heroes'
 import type { MenuHero } from './heroes'
 import { SCOLL_HEROES } from './types'
@@ -83,6 +83,8 @@ export interface EquipPanelState {
    * 滚动条，所以真值里没有任何一列会因为它变 —— 判据在 `scroll.test.ts`。
    */
   scroll: number
+  /** 正在拖滑块时的锚点（xl-03x.9，原版没有）。同样**不进真值**，见 `scroll.ts` 的 `ScrollDrag`。 */
+  drag: ScrollDrag | null
   /** 六个槽位按钮（`buttonlist`）。 */
   slots: Record<EquipSlot, MenuButtonState>
   /** `use_button` / `abandon_button`。 */
@@ -270,6 +272,7 @@ export function createEquipPanel(
     warnCannotUse: false,
     diff: null,
     scroll: 0,
+    drag: null,
     slots,
     use: menuButton(USE_BUTTON_X, USE_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
     abandon: menuButton(ABANDON_BUTTON_X, ABANDON_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
