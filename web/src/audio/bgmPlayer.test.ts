@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { bgmAssetId } from '../assets/ids'
 import { resolveBgmOrNull } from '../assets/resolve'
+import { BGM_BY_BACKGROUND } from '../battle/units'
 import { getScene } from '../data/scenesEager'
 import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
 import { TITLE_BGM } from '../start/assets'
+import { javaSource } from '../test/javaSource'
 import { createBgmPlayer } from './bgmPlayer'
 import type { Sound } from './bgmPlayer'
 
@@ -191,5 +193,61 @@ describe('M1 用到的背景音乐', () => {
         bgm: getScene(first.scene.replace(/\.txt$/, '')).sceneMusic,
       })
     }
+  })
+})
+
+/**
+ * 战斗那几首背景音乐**真的放得出来**（xl-19z）。
+ *
+ * 上面那一组的分母是场景真值里的 `audio.bgm`，而战斗真值不在那份分母里 ——
+ * 于是「状态层声明了该放哪首」一路是绿的，产品侧的映射表里却一首都没有：
+ * 进战斗那一拍 `resolveBgmOrNull` 抛（映射表里没有、也不在故意没烘的名单上）。
+ *
+ * **分母从原版源码现读**，不从 `BGM_BY_BACKGROUND` 抄：那张表是被守的一方
+ * （它自己对回源码是 `battle/units.test.ts` 的事）。这里扫 `BattlePanel.java`
+ * 里**每一处** `MusicReader.readBGM(...)`，不限于那个 switch —— 源码哪天在
+ * 别处多放一首，这里也跟着多一条。两份名单再取并集：表里有而源码里扫不到
+ * 的，同样得放得出来。
+ *
+ * ⚠️ 这条证的是「映射表里有、URL 指向真产物」，**不是**「玩家真的听到了」——
+ * 自动播放策略、解码失败它都看不见（与 SPEC 里音效判据写下的弱点同一句）。
+ */
+describe('战斗背景音乐', () => {
+  const fromSource = [
+    ...javaSource('src/battle/BattlePanel.java').matchAll(/MusicReader\.readBGM\("([^"]+)"\)/g),
+  ].map((m) => m[1]!)
+  const battleBgm = [...new Set([...fromSource, ...Object.values(BGM_BY_BACKGROUND)])].sort()
+
+  it('源码里扫到了不止一首（否则下面几条是空转）', () => {
+    // GBK 没解对、正则写错，都会让这里是零 —— 而零条的逐首检查恒真。
+    expect(new Set(fromSource).size).toBeGreaterThan(1)
+  })
+
+  it.each(battleBgm)('%s 解析得到一个产物 URL，不是抛、也不是故意静音', (bgm) => {
+    const url = resolveBgmOrNull(bgmAssetId(bgm))
+    expect(url).not.toBeNull()
+    expect(decodeURIComponent(url!)).toContain(`bgm/${bgm.replace(/\.[^.]+$/, '')}.m4a`)
+  })
+
+  /**
+   * 走**真映射表**的播放器，逐首 `sync`：不抛，而且每一首都真的换了 `src`。
+   *
+   * 修之前的读数（2026-09-11，`脚本22` 进战斗，jsdom + 假定时器）：抛只发生
+   * **一次** —— `sync` 先记下声明值再去解析，于是后面每一拍都是「同一个值」
+   * 的空操作。代价是**那一拍的绘制被跳过**，以及**上一首场景曲接着放**
+   * （`start` 在换 `src` 之前就抛了），而 `playing()` 报的已经是战斗曲。
+   */
+  it('真播放器逐首切过去：一首都不抛，每一首都送进了播放对象', () => {
+    const log: string[] = []
+    const player = createBgmPlayer({
+      create: () => fakeSound(log),
+      resolve: (bgm) => resolveBgmOrNull(bgmAssetId(bgm)),
+      gestures: null,
+    })
+    for (const bgm of battleBgm) {
+      expect(() => player.sync(bgm), bgm).not.toThrow()
+      expect(player.playing()).toBe(bgm)
+    }
+    expect(log.filter((l) => l === 'play')).toHaveLength(battleBgm.length)
   })
 })
