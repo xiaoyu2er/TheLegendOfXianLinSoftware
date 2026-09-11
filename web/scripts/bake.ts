@@ -239,8 +239,8 @@ function tracedFromTruth(): { scenes: string[]; bgm: string[] } {
     }
     // 只有场景真值才有"走到过哪些场景"这回事。战斗真值（xl-1vu.4）的每一步
     // 里没有 `scene` 字段，硬扫会往集合里塞一个 `undefined` —— 那之后烘出来
-    // 的产物少一首曲子还是多一首，谁都看不出来。战斗自己那首 BGM 要等 web
-    // 侧真有战斗面板了再烘（xl-1vu.7）。
+    // 的产物少一首曲子还是多一首，谁都看不出来。战斗那几首 BGM 不从真值取，
+    // 从原版源码现读（`battleBgmFromSource`，xl-19z）。
     if (trace.driver !== 'scene') continue
     for (const tick of trace.ticks) {
       scenes.add(stem(tick.scene))
@@ -1125,6 +1125,33 @@ function writeStamp(): void {
 }
 
 /**
+ * 战斗那几首背景音乐（xl-19z）：从 `BattlePanel.java` **现读**，读到几首烘几首。
+ *
+ * 它们不在任何一个场景的 `Music` 段里，也不在场景真值里（`tracedFromTruth`
+ * 只扫场景真值）—— 那两份现扫的名单谁都罩不住它们，与 `TITLE_BGM` 同一个形状。
+ * 从前能响的只有 `B6.mp3`，是因为 `battle-door` 那条**场景**剧本恰好走进了
+ * 一场用它的战斗；其余十首进战斗那一拍 `resolveBgmOrNull` 抛。
+ *
+ * 不从 `battle/units.ts` 的 `BGM_BY_BACKGROUND` 取：那样烘焙器闭包会带上整个
+ * 战斗单位表，改一只怪的数值指纹就红。原版源码是冻结的，而且它本来就是那张
+ * 表对回去的真值（`battle/units.test.ts`）。扫的是文件里**每一处**
+ * `MusicReader.readBGM(...)`，不只是那个 switch。
+ *
+ * GBK 解码、记进指纹、扫不到就退出 —— 「一首都没扫到」与「战斗没有音乐」
+ * 在产物上长得一样。
+ */
+function battleBgmFromSource(): string[] {
+  const file = resolve(REPO, 'src/battle/BattlePanel.java')
+  const text = new TextDecoder('gbk').decode(readFileSync(useInput(file)))
+  const names = [...new Set([...text.matchAll(/MusicReader\.readBGM\("([^"]+)"\)/g)].map((m) => m[1]!))]
+  if (names.length === 0) {
+    console.error(`${file} 里一处 MusicReader.readBGM 都没扫到 —— 战斗曲名是从这里现读的`)
+    process.exit(1)
+  }
+  return names.sort()
+}
+
+/**
  * 背景音乐（xl-9bd.12）：把剧本走到过的那几首转成 AAC，其余的落成一份
  * **故意没烘**的名单。
  *
@@ -1157,7 +1184,7 @@ function bakeBgm(scenes: readonly SceneScript[], manifest: Record<string, string
   // `GameLauncher.switchTo("start")` 那句 `MusicReader.readBGM("主题曲.mp3")`
   // 上，所以现扫的这两份名单谁都罩不住它。不加不是静音而是**抛** ——
   // 理由见 `src/start/assets.ts` 的 `TITLE_BGM`。
-  const wanted = [...new Set([...musicOf(traced), ...tracedBgm(), TITLE_BGM])].sort()
+  const wanted = [...new Set([...musicOf(traced), ...tracedBgm(), TITLE_BGM, ...battleBgmFromSource()])].sort()
   const all = musicOf(scenes.map((s) => stem(s.script)))
   const deferred = [...all].filter((m) => !wanted.includes(m)).sort()
 

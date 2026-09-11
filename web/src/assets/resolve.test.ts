@@ -7,6 +7,7 @@ import { START_IMAGES, START_SEQUENCES, TITLE_BGM } from '../start/assets'
 import DEFERRED_BGM_IDS from '../generated/deferredBgm.json'
 import MISSING_IDS from '../generated/missingAssets.json'
 import { BG_COUNT } from '../state/narratage'
+import { javaSource } from '../test/javaSource'
 import {
   bgmAssetId,
   equipPictureAssetId,
@@ -306,9 +307,19 @@ describe('资产逻辑 ID', () => {
         if (tick.audio.bgm !== null) fromTraces.add(bgmAssetId(tick.audio.bgm))
       }
     }
+    // **第三类是战斗曲**（xl-19z）：`BattlePanel.initial` 按背景图挑的那几首，
+    // 从原版源码现读（烘焙器 `battleBgmFromSource()` 读的是同一个文件，这里另扫
+    // 一遍，不借它的结果）。它们与真值那一类有交集（`B6.mp3` 两边都有），所以
+    // 下面认的是并集。
+    const fromBattle = new Set(
+      [...javaSource('src/battle/BattlePanel.java').matchAll(/MusicReader\.readBGM\("([^"]+)"\)/g)].map((m) =>
+        bgmAssetId(m[1]!),
+      ),
+    )
+    expect(fromBattle.size).toBeGreaterThan(1)
     const fromScenes = new Set([...declared].map(bgmAssetId))
     const outside = [...baked].filter((id) => id !== title && !fromScenes.has(id)).sort()
-    expect(outside).toEqual(outside.filter((id) => fromTraces.has(id)))
+    expect(outside).toEqual(outside.filter((id) => fromTraces.has(id) || fromBattle.has(id)))
     // 空转要响：这一类今天非空，而它一旦空了，上面那条 `toEqual` 是恒真的。
     expect(outside.length).toBeGreaterThan(0)
     expect(
