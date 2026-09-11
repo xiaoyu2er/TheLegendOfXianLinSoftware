@@ -12,6 +12,7 @@
   "steps": [
     { "op": "command", "button": "attack", "budget": 400 },
     { "op": "target", "enemy": 1, "budget": 50 },
+    { "op": "debugKill", "budget": 400 },
     { "op": "autoAttack", "until": "victory", "max": 4000 },
     { "op": "awaitExit", "panel": "scenePanel", "max": 300 }
   ]

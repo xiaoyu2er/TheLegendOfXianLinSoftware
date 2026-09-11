@@ -2,6 +2,7 @@ package devtools;
 
 import java.awt.Graphics;
 import java.awt.Image;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
@@ -401,6 +402,10 @@ public final class BattleDriver implements TraceDriver {
                 return autoUntilRound(in, true);
             case "awaitExit":
                 return awaitExit(in);
+            case "debugKill":
+                if (!commandDrawn()) return false;
+                pressDebugKey();
+                return true;
             default:
                 fail("不认识的指令 " + in.op);
                 return true;
@@ -639,6 +644,18 @@ public final class BattleDriver implements TraceDriver {
             fail("点了怪物 " + slot + " 的图片中心 (" + x + "," + y + ")，currentBeAttacked 却是 " + be);
         }
         pending.add(input("click", x, y, "enemy:" + slot));
+    }
+
+    /**
+     * 原版的调试外挂键 J（xl-03x.14）。
+     *
+     * 与点击同一条规矩：不抄 {@code BattlePanel.keyPressed} 里那几句，而是照
+     * {@code GameLauncher.keyPressed} 的样子把键码交给原版自己 —— 当前面板是战斗时
+     * 它只做这一件事，{@code battlePanel.keyPressed(e.getKeyCode())}。
+     */
+    private void pressDebugKey() {
+        bp.keyPressed(KeyEvent.VK_J);
+        pending.add("{\"e\":\"key\",\"key\":\"j\"}");
     }
 
     private void moved(int x, int y) {

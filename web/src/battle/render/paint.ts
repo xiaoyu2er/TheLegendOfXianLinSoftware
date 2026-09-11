@@ -119,6 +119,8 @@ export function createPaintState(w: BattleWorld): PaintState {
  * `isDraw` 已经被 `checkReleased` 置假了，三个 check 一个都不会跑。
  */
 export function applyPaintInput(w: BattleWorld, p: PaintState, input: BattleInput): void {
+  // 那三个是**鼠标**监听器；J 键走的是 `keyPressed`，一张贴图都不碰。
+  if (input.e !== 'click') return
   // 三个监听器都先判 `command.isDraw`，不画就整段跳过。
   if (!w.command.isDraw) return
   const buttons: [CommandButtonKey, GameButton][] = [

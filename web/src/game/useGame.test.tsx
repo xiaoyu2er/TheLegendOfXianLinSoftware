@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { renderHook } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +15,21 @@ import { roleTileX, roleTileY } from '../state/role'
 import { TICK_MS, createWorld } from '../state/step'
 import type { RoleState, World } from '../state/types'
 import { useGame } from './useGame'
+import { resetEnemySprites } from './enemySprites'
+import { decodePng } from '../compare/png'
+import { repoPath } from '../test/repoPath'
+
+// 这个文件只验接线（键盘 → 推进 → 面板），不验出声 —— 那归 `useGameBgm.test.tsx`。
+// 播放器换成哑的，是因为「战斗里按 J」那条要进 `脚本22`，而它的场景曲
+// `紧急` 还没进烘焙映射表，真播放器一 `sync` 就抛（与 J 键无关的另一笔账）。
+vi.mock('../audio/bgmPlayer', () => ({
+  createBgmPlayer: () => ({
+    sync: () => {},
+    playing: () => null,
+    blocked: () => false,
+    destroy: () => {},
+  }),
+}))
 
 /**
  * 接线的测试：键盘 → 定步长推进 → 渲染器。**渲染器是个假的**——这里要验的是
@@ -402,6 +418,64 @@ describe('useGame 接线', () => {
 
     expect(afterLate).toEqual(afterPrompt)
   })
+
+  /**
+   * 战斗里的调试外挂键 J（xl-03x.14）。状态层那一半由 `battle-victory` 的行为
+   * 真值逐字段守着（剧本里有一步 `debugKill`）；**这里守的是页面上那一下 J 真的
+   * 送进了战斗** —— 接线断了的表现是「按 J 没反应」，而状态层与会话层的测试都
+   * 还是绿的。
+   *
+   * 用 `脚本22`：进场自动播对话、按完就开打，而那一场是**剧情必败战**
+   * （罹年居士 hp/hurt 全是 9999）。所以「经验涨了」只可能来自秒杀判胜 ——
+   * 不按 J 的话它打输、也回场景（罹年居士那条出口），经验与等级一个都不动。
+   */
+  it('战斗里按 J：当场判胜，结算走完回场景、经验记进队伍', async () => {
+    resetParty()
+    // jsdom 里 `Image.decode()` 永远等不到，怪物出场图量不出来，会话就停在
+    // `spritesReady` 那道门前一拍都进不了战斗。这一条只按 J、一下都不点，
+    // 出场图尺寸只影响点击范围 —— 所以给它真图的尺寸就够，不必真的解码。
+    const sprite = decodePng(readFileSync(repoPath('image/怪物', '罹年居士', '1.png')))
+    vi.stubGlobal(
+      'Image',
+      class {
+        src = ''
+        naturalWidth = sprite.width
+        naturalHeight = sprite.height
+        decode() {
+          return Promise.resolve()
+        }
+      },
+    )
+    try {
+      await walkIntoBattleAndPressJ()
+    } finally {
+      vi.unstubAllGlobals()
+      resetEnemySprites()
+    }
+  })
+
+  async function walkIntoBattleAndPressJ() {
+    const { result } = await mount('脚本22')
+    for (let i = 0; i < 400 && result.current.panel === 'scene'; i++) {
+      press(' ')
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }))
+        vi.advanceTimersByTime(200)
+      })
+    }
+    expect(result.current.panel).toBe('battle')
+    const before = { level: getParty().zhang.level, exp: getParty().zhang.exp }
+
+    press('j')
+    for (let i = 0; i < 400 && result.current.panel === 'battle'; i++) {
+      await act(async () => {
+        vi.advanceTimersByTime(100)
+      })
+    }
+    expect(result.current.panel).toBe('scene')
+    const after = { level: getParty().zhang.level, exp: getParty().zhang.exp }
+    expect(after, '打赢了罹年居士（exp 9999），张小凡的等级或经验总得动一样').not.toEqual(before)
+  }
 
   it('卸载之后不再推进，也不再收键', async () => {
     const { unmount } = await mount()

@@ -208,7 +208,8 @@ export function useGame(
   const glowSinceRef = useRef<(number | null)[]>(Array.from({ length: SAVE_SLOT_COUNT }, () => null))
   const sessionRef = useRef<Session | null>(null)
   const queueRef = useRef<InputEvent[]>([])
-  const clicksRef = useRef<BattleInput[]>([])
+  /** 战斗那一侧这一拍收到的输入：鼠标点击，外加调试外挂键 J。 */
+  const battleInputsRef = useRef<BattleInput[]>([])
   /** 菜单里的鼠标事件，攒到下一拍。**没有键盘那一种。** */
   const menuInputRef = useRef<MenuInput[]>([])
   /** 店里的鼠标事件，攒到下一拍（xl-yg6.11）。 */
@@ -260,7 +261,7 @@ export function useGame(
     const carry = carryIntoNewGame(sessionRef.current)
     sessionRef.current = createSession(SESSION_DEPS, carry)
     queueRef.current = []
-    clicksRef.current = []
+    battleInputsRef.current = []
     menuInputRef.current = []
     openMenuRef.current = false
     signatureRef.current = null
@@ -351,6 +352,16 @@ export function useGame(
         if (to === 'ls') lsInputRef.current.push({ e: 'key', key: 'escape' })
         else if (to === 'scene') openMenuRef.current = true
         return
+      }
+      // 战斗里的调试外挂键 J（xl-03x.14）：`GameLauncher.keyPressed` 在当前面板是
+      // 战斗时把键码转给 `BattlePanel.keyPressed`，那里只认 `VK_J`。认物理键位
+      // （`code`）而不只认字符：中文输入法开着时 `key` 是 `Process`。
+      if (event.type === 'keydown' && (event.code === 'KeyJ' || event.key.toLowerCase() === 'j')) {
+        if (keyReceiver(panelRef.current) === 'battle') {
+          event.preventDefault()
+          battleInputsRef.current.push({ e: 'key', key: 'j' })
+          return
+        }
       }
       const input = toInputEvent({
         type: event.type === 'keydown' ? 'keydown' : 'keyup',
@@ -537,13 +548,13 @@ export function useGame(
       last = now
       const input = {
         scene: queueRef.current,
-        battle: clicksRef.current,
+        battle: battleInputsRef.current,
         menu: menuInputRef.current,
         shop: shopInputRef.current,
         saveload: lsInputRef.current,
       }
       queueRef.current = []
-      clicksRef.current = []
+      battleInputsRef.current = []
       menuInputRef.current = []
       shopInputRef.current = []
       lsInputRef.current = []
@@ -768,7 +779,7 @@ export function useGame(
   const click = (x: number, y: number): void => {
     const world = sessionRef.current?.battle?.world
     if (!world || sessionRef.current?.panel !== 'battle') return
-    clicksRef.current.push(battleClick(world, x, y))
+    battleInputsRef.current.push(battleClick(world, x, y))
   }
 
   /**

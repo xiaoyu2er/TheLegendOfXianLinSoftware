@@ -442,6 +442,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `autoUntilAngry` | `round`, `max` | 同 `autoUntilRound`，外加一个条件：那个人的**怒气已经攒满**（`isAngry`）。秘术（`command` 点 `defend`）只有攒满才点得下去 —— `Command.checkReleased` 里 `if(bp.zxf.isAngry){…}else{bp.reminder.show(21)}`，没攒满就只弹一张 22.png 的提示图、控制台还开着，而「点了防、什么都没发生」与「放了秘术」在剧本里长得一模一样。要挨几下才攒满由伤害掷出来多少决定（`angryValue` 攒到 `hpMax*0.8`），写不成固定的回合数。 |
 | `awaitExit` | `panel`, `max` | 等原版自己把面板切走，并断言切到了哪一块（`panel` 是 `GameLauncher` 那八张 `CardLayout` 卡片名之一，打输能走到的是 `scenePanel` / `startPanel`）。切到别的一块、或者跑满 `max`（默认 300）还没切 —— 都是硬失败。 |
 | `wait` | `ticks` | 空等（与场景共用）。 |
+| `debugKill` | — | 按一下原版留的调试外挂键 J（xl-03x.14）：交给原版自己的 `BattlePanel.keyPressed(VK_J)`，即 `enemies.clear()`、三个槽位置 `null`、`checkEnemyDead()` 当场判胜。**等控制台出来才按**（等到超预算是硬失败）—— 那一刻场上没有一招在飞；一招打到一半按下去，那一招落地时要去读已经被置 `null` 的槽位。`input` 记成 `{"e":"key","key":"j"}`。 |
 
 `autoUntilRound` 存在的理由与 `autoAttack` 是同一条：**谁先跑满行动条由速度
 与种子决定，写剧本的人事先不知道。** 而"点技能菜单上的第二颗"是**认人**的
