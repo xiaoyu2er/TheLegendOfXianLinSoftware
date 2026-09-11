@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createBgmPlayer } from '../audio/bgmPlayer'
+import { createSfxPlayer } from '../audio/sfxPlayer'
 import { battleTextureIds } from '../battle/render/assets'
 import type { BattleRenderer } from '../battle/render/battleRenderer'
 import { battleDrawList } from '../battle/render/drawList'
@@ -26,6 +27,7 @@ import {
   loadTargetOf,
   menuWorldOf,
   openMenu,
+  playSfx,
 } from './session'
 import { menuDrawList } from '../menu/render/drawList'
 import { menuTaskOf } from './menuTask'
@@ -395,6 +397,20 @@ export function useGame(
     }
   }, [])
 
+  // 音效（xl-03x.7）：与背景音乐是**两个播放器**（原版 `background` 与 `music` 两个
+  // 实例），但喂法不同 —— 不是「同步当前值」，是每一拍把这一拍推出来的那几声交过去
+  // （`session.ts` 的 `Session.sfx` / `playSfx`，判据的边界写在那里）。设定页的开关
+  // 接到它是 xl-03x.8 的事。
+  const sfxRef = useRef<ReturnType<typeof createSfxPlayer> | null>(null)
+  useEffect(() => {
+    const player = createSfxPlayer()
+    sfxRef.current = player
+    return () => {
+      sfxRef.current = null
+      player.destroy()
+    }
+  }, [])
+
   /**
    * 这条 pump **不等渲染器**（xl-w16）。
    *
@@ -505,6 +521,7 @@ export function useGame(
           lsInputRef.current = []
           const next = advanceSession(session, { ...NO_INPUT, saveload }, 0)
           sessionRef.current = next
+          if (sfxRef.current) playSfx(sfxRef.current, next)
           syncPanel(next)
           drawSaveLoad(next, now)
           session = next
@@ -566,6 +583,7 @@ export function useGame(
       const next = advanceSession(opening ? openMenu(session) : session, input, elapsed)
       sessionRef.current = next
       bgmRef.current?.sync(currentBgm(next))
+      if (sfxRef.current) playSfx(sfxRef.current, next)
       syncPanel(next)
       drawBattle(next)
       drawMenu(next)

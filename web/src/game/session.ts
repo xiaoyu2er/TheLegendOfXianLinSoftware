@@ -15,6 +15,7 @@ import { createSaveLoadWorld } from '../saveload/world'
 import type { SaveLoadFrom, SaveLoadMode, SaveLoadWorld } from '../saveload/world'
 import type { MenuInput } from '../menu/step'
 import { createMenuWorld, refreshMenuWorld } from '../menu/world'
+import type { SfxPlayer } from '../audio/sfxPlayer'
 import type { BattleTicker } from '../battle/loop'
 import { createBattle } from '../battle/world'
 import type { BattleConfig } from '../battle/world'
@@ -283,6 +284,15 @@ export interface Session {
  * @exception ADR-0001#end-not-kept-across-new-game
    */
   readonly end: EndLoop | null
+  /**
+   * **这一次** `advanceSession` 里请求的音效文件名，按先后（xl-03x.7）。每次推进都
+   * 重算，不是「当前该响什么」：菜单与商店真值的 `music` 是每步清空的瞬时量，所以
+   * 这里是那几步各自的依次相接，交给 `audio/sfxPlayer.ts` 的 `play` 一拍一次
+   * （{@link playSfx}）。空数组 = 这一拍没出声，**不是**「该静音了」。
+   *
+   * 只有菜单与商店两处往里收：战斗与场景没有音效真值、状态层也还不产出，归 xl-b36。
+   */
+  readonly sfx: readonly string[]
   readonly deps: SessionDeps
 }
 
@@ -362,9 +372,13 @@ export function createSession(deps: SessionDeps, carry: NewGameCarry = NOTHING_C
     lsEntry: null,
     loadRequest: null,
     end: null,
+    sfx: NO_SFX,
     deps,
   }
 }
+
+/** 这一拍没出声。常量，省得每拍新建一个数组。 */
+const NO_SFX: readonly string[] = []
 
 /**
  * 「起」带进新局的东西（xl-i06.11）：原版点「起」只做 `switchTo("scene")` +
@@ -575,6 +589,8 @@ export function advanceSession(
   const { deps } = session
   // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，没有世界
   // 可推。**原样交回去**，而不是推一个空世界 —— 见 `Session.scene`。
+  //
+  // 原样交回也不必清 `sfx`：没开局的会话从没推过菜单与商店，它恒为空（xl-03x.7）。
   if (session.scene === null) return session
   // ——— 结局那条线程（xl-czb.6）———
   //
@@ -585,6 +601,8 @@ export function advanceSession(
   let panel = session.panel
   let battle = session.battle
   let menu = session.menu
+  /** 这一拍各步请求的音效，逐步收（见 `Session.sfx`）。 */
+  const heard: string[] = []
 
   // ——— 场景那条线程 ———
   //
@@ -716,7 +734,7 @@ export function advanceSession(
     // ——那条前提是假的，/code-review 的 Spec 轴起了一个真 JVM 把它证伪的。
     // 剩下的那一半差别在 `game/useGame.ts`：松手落在**下一帧**时它整个丢掉，
     // 而原版照样送得到。单开一张票：**xl-z4f**。
-    menu = advanceMenu(menu, input.menu, elapsedMs)
+    menu = advanceMenu(menu, input.menu, elapsedMs, heard)
     // 天书页那两颗「背景音乐 开 / 关」改的是菜单世界上的开关，而原版改的是
     // 两个 static。**每一拍都记回去**，不是等关菜单时记 —— 关菜单那条路只有
     // 「返回」一条，而 BGM 该在按下那一拍就停（原版 `closeBGM()` 是同步的）。
@@ -761,7 +779,12 @@ export function advanceSession(
   // 输入事件，与商店真值同一个口径。帧号归绘制层（`game/useGame.ts`）。
   if (panel === 'shop' && shop !== null) {
     const clicks = input.shop ?? NO_SHOP_INPUT
-    if (clicks.length > 0) stepShop(shop, clicks)
+    // 音效只在推了的那一步收：没输入的拍 `stepShop` 不跑、`music` 也不清，那时读它
+    // 读到的是上一次点击的，每个空拍都会再交一遍（xl-03x.7）。
+    if (clicks.length > 0) {
+      stepShop(shop, clicks)
+      heard.push(...shop.music)
+    }
     // **每一步都写回去**，理由与菜单那三个人同一条：原版买下的那一刻
     // `Money` / `DrugPack` / `EquipmentPack` 就变了，别处当场看得见。
     writeShopBack(shop, menu)
@@ -775,7 +798,18 @@ export function advanceSession(
     }
   }
 
-  return { ...session, panel, scene, battle, menu, shop, end }
+  return { ...session, panel, scene, battle, menu, shop, end, sfx: heard.length === 0 ? NO_SFX : heard }
+}
+
+/**
+ * 接线层交给音效播放器的那一下（xl-03x.7）：**推完一拍调一次**，交的是这一拍推出来
+ * 的 {@link Session.sfx}。`useGame` 的 pump 与 `sfxWiring.test.ts` 的对撞走的都是它。
+ *
+ * ⚠️ 判据证的是「该响的时候调了播放器、参数对」，**证不了玩家真的听到了** ——
+ * 自动播放策略、解码失败、音量为零都在它外面。
+ */
+export function playSfx(player: Pick<SfxPlayer, 'play'>, session: Session): void {
+  player.play(session.sfx)
 }
 
 /**

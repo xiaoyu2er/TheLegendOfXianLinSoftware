@@ -230,7 +230,9 @@ export function fromTreasureDraft(d: TreasureDraft): TreasureState {
  * 五句照抄。**不停 `wordsRun`**：打字机正吐着的时候再弹一次，它接着按新的
  * `text` 从第 0 个字吐起（`count_word` 清零了），而滑动定时器同时从 -320
  * 重来 —— 两个一起跑，原版就是这样。`MusicReader.readmusic("Clip750.wav")`
- * 那句音效这一层不管（web 端今天没有音效通道）。
+ * 那句音效**还没做，不是故意不复刻**（所以不带 ADR-0001 的例外标记）：`SceneDriver`
+ * 没接音效观察点，场景真值里没有音效列可对。连同真值归 xl-b36（xl-03x.7 只接了
+ * 菜单与商店）。
  */
 export function drawString(d: TreasureDraft, s: string, now: number): void {
   d.x = PRESENT_START_X
