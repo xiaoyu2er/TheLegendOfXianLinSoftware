@@ -92,7 +92,7 @@
 | 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | **能，但不对**：Web 战斗里的存货恒为 0，永远只弹「没药」 | 链上 | xl-byy（open） | `DrugMenu.java:52,110-130` 读的是与商店 / 菜单共用的 `DrugPack`；Web `battle/world.ts` 写死 `drugStock` 为 0 |
 | 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **不能** | 链上 | xl-qqw（open） | `BattlePanel.java:349-367`；读代码：战斗画布只挂 `onMouseDown` |
 | 战斗 按住按钮拖开再松手照样触发 | **不能** | 链上 | xl-qqw（open） | `GameButton.java:54-72`；读代码：Web 一次点击 = 同一点上的移入 + 按下 + 松开 |
-| 战斗 按 J 秒杀全部敌人（原版留的调试键） | **不能** | 链上 | xl-03x.14（open）、xl-2d5（open） | `BattlePanel.java:289-296`；实跑 `keyboard.test.ts` 6/6（`KEYS` 里没有 j） |
+| 战斗 按 J 秒杀全部敌人（原版留的调试键） | **不能** | 链上 | xl-03x.14（closed）、xl-2d5（open） | `BattlePanel.java:289-296`；实跑 `keyboard.test.ts` 6/6（`KEYS` 里没有 j） |
 | 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能 | 链上 | — | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`；实跑 `victory.test.ts` 10/10 |
 | 战斗 战利品：药和钱进背包 | 能（战斗里用不上、菜单里看不见是另两行的事） | 链上 | — | `VictoryReminder.java:348-361`；实跑 `victory.test.ts`「物品与钱在 thing_sx1==4 那一拍发出去」 |
 | 战斗 全灭：第一槽是罹年居士回地图，其余回标题 | 能 | 链上 | — | `GameOver.java:93-125`；剧本 `battle-defeat-scene` / `-start` / `-slot2`；实跑 `session.test.ts`「打输的两条分支」 |
@@ -139,7 +139,7 @@ SPEC 的线：**写一条剧本就能让跨端逐帧比对看见的进这一轮�
    已评论在票上。
 3. **xl-19z（open）是这一轮现查出来最重的一条**：玩家进大多数战斗都会撞上。按线它不进这一轮，要不要破例由主干定。
 4. **「结」口径冲突**：xl-u23（closed）的裁定（禁用 + title）已落地，xl-03x.12（open）要的是「画出来、点了什么都不发生」。
-5. **重复票**（没动，列出来）：xl-2d5（open）≈ xl-03x.14（open）· xl-as2（open）≈ xl-03x.16（open）·
+5. **重复票**（没动，列出来）：xl-2d5（open）≈ xl-03x.14（closed）· xl-as2（open）≈ xl-03x.16（open）·
    xl-t0h（open）≈ xl-03x.15（open）· xl-lna（open）≈ xl-03x.10（open）· xl-4ev（open）≈ xl-03x.9（closed）·
    xl-8l2（open）≈ xl-03x.5（open）、xl-03x.6（open）、xl-03x.7（open） · xl-fbs（open）≈ xl-03x.11（open）+ xl-03x.12（open） · xl-8ym（open）≈ xl-i06.13（open）≈ xl-03x.17（open）。
 
