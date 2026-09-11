@@ -162,7 +162,6 @@ export function createMagicState(): MagicState {
  * 这里原先直接读 `SKILL_NUMBER`（三个 static 的初值），等级怎么涨按钮都一颗不多。
  */
 export function magicDrawThisPanel(magic: MagicState, whichHero: ScollHero, skillNumber: number): void {
-  const n = skillNumber
   for (const { hero } of MAGIC_HEROES) {
     const list = magic.buttons[hero]
     if (hero !== whichHero) {
@@ -170,8 +169,8 @@ export function magicDrawThisPanel(magic: MagicState, whichHero: ScollHero, skil
       for (const b of list) b.isDraw = false
       continue
     }
-    for (let i = 0; i < n; i++) list[i]!.isDraw = true
-    for (let i = n - 1; i < MAGIC_BUTTON_COUNT; i++) list[i]!.isDraw = false
+    for (let i = 0; i < skillNumber; i++) list[i]!.isDraw = true
+    for (let i = skillNumber - 1; i < MAGIC_BUTTON_COUNT; i++) list[i]!.isDraw = false
   }
 }
 

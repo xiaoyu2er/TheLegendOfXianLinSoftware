@@ -184,6 +184,10 @@ export function refreshMenuHero(h: MenuHero): void {
  * 格数那一句与战斗胜利结算的 `levelUp`（`battle/step.ts`）调的是**同一个**
  * `skillNumberAfterLevelUp` —— 两处各写一份的话，改错一处只红一半。
  * 经验那两句（`exp -= expToLevelUp`、重算 `expToLevelUp`）不在这里：菜单真值不记经验。
+ *
+ * ⚠️ 四项 `+=` 与战斗那份 `levelUp` 是**同一段的两份抄本**，没合成一个，因为两边字段名
+ * 对不齐（这边 `spirit`、那边 `sprit`，见 `menuAttributes`）。改一处要改另一处；改漏了
+ * 由 `menu-magic-levels` 的 `heroes` 那一列逐步对真值（导出器那边跑的是原版 `levelUp()`）。
  */
 export function levelUpMenuHero(h: MenuHero, key: PartyKey): void {
   h.level++

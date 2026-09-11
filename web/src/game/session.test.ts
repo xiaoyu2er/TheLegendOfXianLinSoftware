@@ -11,6 +11,7 @@ import { createMemorySaveStore } from '../save/memoryStore'
 import { getCoins, resetWallet } from '../fakes/wallet'
 import { drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
 import { HEROES, derive, expToLevelUp } from '../battle/units'
+import { MENU_HERO_ORDER } from '../menu/heroes'
 import type { PartyKey } from '../battle/units'
 import { readBattleTrace } from '../battle/trace'
 import { replayBattle } from '../battle/replay'
@@ -523,10 +524,11 @@ describe('场景 → 战斗 → 场景', () => {
     for (const key of leveled) expect(menu.groups[key], `${key} 的技能菜单`).toHaveLength(5)
     // 开菜单：奇术页读的那三个人也是 5。
     const opened = openMenu({ ...first })
-    for (const h of menuWorldOf(opened)!.heroes) {
-      const key = h.name === 'zhangxiaofan' ? 'zhang' : h.name === 'luxueqi' ? 'lu' : 'yu'
-      expect(h.skillNumber, h.name).toBe(party[key].skillNumber)
-    }
+    MENU_HERO_ORDER.forEach(({ key, name }, i) => {
+      const h = menuWorldOf(opened)!.heroes[i]!
+      expect(h.name).toBe(name)
+      expect(h.skillNumber, name).toBe(party[key].skillNumber)
+    })
   })
 
   it('第二场接着第一场：血、经验、等级都带过去了', () => {

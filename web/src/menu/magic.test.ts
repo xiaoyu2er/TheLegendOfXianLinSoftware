@@ -164,14 +164,11 @@ describe('画几颗按钮由 skillNumber 说了算，不由等级', () => {
   })
 
   it('等级不动、格数从出厂值涨到 5：画得出来的颗数跟着涨（xl-03x.17）', () => {
-    const level = low()
+    const level = createMenuWorld({ party: ['zhang'], fullHeal: true }).heroes[0]!.level
     const before = magicVisible(level, SKILL_NUMBER.zhang)[MAGIC_HEROES[0]!.name]!.filter(Boolean).length
     const after = magicVisible(level, 5)[MAGIC_HEROES[0]!.name]!.filter(Boolean).length
     expect(before).toBe(SKILL_NUMBER.zhang - 1)
     expect(after).toBe(5 - 1)
-    function low(): number {
-      return createMenuWorld({ party: ['zhang'], fullHeal: true }).heroes[0]!.level
-    }
   })
 
   it('画得出来的颗数是 skillNumber-1（原版那两个循环重叠了一格）', () => {

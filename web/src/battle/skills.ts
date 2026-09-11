@@ -138,7 +138,7 @@ function entry(
  *
  * ⚠️ 原版对第 3/4/5 颗都套着 `if(<主角>.skillNumber>=n)` —— 也就是说
  * **按钮存在与否由 skillNumber 定，而这张表写的是满级五颗**。菜单实际画几颗、
- * 点得到哪几颗，由 `SKILL_NUMBER` 说了算。
+ * 点得到哪几颗，由那个人此刻的格数说了算（`Hero.skillNumber`，出自队伍；xl-03x.17）。
  */
 export const SKILL_MENU: Readonly<Record<PartyKey, readonly SkillMenuEntry[]>> = {
   zhang: [

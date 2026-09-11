@@ -67,12 +67,13 @@ export interface BattleConfig {
   sprite: (name: string) => { width: number; height: number }
   /**
    * 技能菜单上有几颗按钮（`ZhangXiaoFan.skillNumber` 等三个 static 字段）。
+   * 游戏本体从队伍现读（`session.ts` 的 `configFor`，xl-03x.17）；回放真值时
    * **剧本没写就用原版那三个字段的初值**（`SKILL_NUMBER`，2 / 3 / 2）——
    * 导出器也是这么做的：它只写 `level = n`，构造函数一个字都不碰 skillNumber。
    *
-   * 按等级推是错的：`intialFromInfo()` 那套「>=2 三颗、>=5 四颗、>=10 五颗」
-   * 只有读档才走，战斗面板到不了。推一个出来会让 `battle-menus` 的菜单从
-   * 2 颗变成 4 颗 —— 而多出来的那两颗一颗都点不到，看上去完全正常。
+   * **别按剧本里的等级现推**：格数不是等级的函数（升级时 +1、读档只抬不压，
+   * `skills.ts`），而导出器那个干净 JVM 里它就是初值。推一个出来会让 `battle-menus`
+   * 的菜单从 2 颗变成 4 颗 —— 而多出来的那两颗一颗都点不到，看上去完全正常。
    */
   skillNumbers?: Readonly<Partial<Record<PartyKey, number>>> | undefined
   /**
@@ -163,10 +164,14 @@ function makeSkillMenu(
   present: Readonly<Record<'zhang' | 'yu' | 'lu', boolean>>,
   counts: Readonly<Partial<Record<PartyKey, number | undefined>>>,
 ): SkillMenu {
-  const group = (key: 'zhang' | 'yu' | 'lu'): MenuButton[] =>
-    present[key]
-      ? Array.from({ length: counts[key] ?? SKILL_NUMBER[key] }, (_, i) => menuButton(i))
-      : []
+  const group = (key: 'zhang' | 'yu' | 'lu'): MenuButton[] => {
+    if (!present[key]) return []
+    // 出战的人身上一定带着格数（`makeHero`）。缺了是接线错，抛 —— 在这里补一个缺省值，
+    // 等于让格数又多一个落点（xl-03x.17 那条「不要留着两个落点」）。
+    const n = counts[key]
+    if (n === undefined) throw new Error(`${key} 出战了却没有技能格数`)
+    return Array.from({ length: n }, (_, i) => menuButton(i))
+  }
   return {
     isDraw: false,
     group: 'zhang',
