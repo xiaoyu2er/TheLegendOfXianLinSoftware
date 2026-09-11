@@ -44,6 +44,7 @@ vi.mock('../game/useGame', () => ({
     restart: () => {},
     saveLoad: null,
     saveLoadLoading: false,
+    endLoading: false,
     lsInput: () => {},
     openLoad: () => {},
   }),

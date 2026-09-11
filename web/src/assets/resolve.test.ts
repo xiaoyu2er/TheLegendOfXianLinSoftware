@@ -28,6 +28,7 @@ import {
 import { repoPath } from '../test/repoPath'
 import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
 import { OVERLAY_FILES } from '../scene/mapOverlays'
+import { endTextureIds } from '../end/assets'
 
 /** 仓库里有几张 `heads/heads (n).png`。头像那一类的分母，从素材源头数。 */
 function headFilesInRepo(): number {
@@ -217,6 +218,10 @@ describe('资产逻辑 ID', () => {
     // `saveload/render/drawList.test.ts` 对着 GBK 源码守着。
     const lsFrames = Object.values(LS_SEQUENCES).reduce((sum, s) => sum + s.count, 0)
     expect(ids.filter((id) => id.startsWith('ls:'))).toHaveLength(Object.keys(LS_IMAGES).length + lsFrames)
+    // 结局面板（xl-czb.6）。名单由 `end/assets.ts` 的三张固定图 + 过场画张数算出来，
+    // 那几条路径与张数由 `end/world.test.ts`、`end/render/drawList.test.ts` 对着 GBK 源码守着；
+    // 目录里多一张少一张由烘焙器那一段双向对账。
+    expect(ids.filter((id) => id.startsWith('end:')).sort()).toEqual(endTextureIds().sort())
     const known = [
       'map:',
       'role:walk:',
@@ -247,6 +252,8 @@ describe('资产逻辑 ID', () => {
       'overlay:',
       // 存读档面板（xl-i06.9），在 `sources/载入/` 与 `sources/StartPanel/` 下。
       'ls:',
+      // 结局面板（xl-czb.6），在 `sources/End/` 下。
+      'end:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })

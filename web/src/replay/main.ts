@@ -67,6 +67,13 @@ import type { SaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
 import { startSaveLoadReplay } from '../saveload/replay'
 import type { SaveLoadReplay, SaveLoadSetup } from '../saveload/replay'
 import type { SaveLoadInput } from '../saveload/step'
+import { endTextureIds } from '../end/assets'
+import { endDrawList } from '../end/render/drawList'
+import type { EndDrawOp } from '../end/render/drawList'
+import { createEndRenderer } from '../end/render/endRenderer'
+import type { EndRenderer } from '../end/render/endRenderer'
+import { startEndReplay } from '../end/replay'
+import type { EndInput, EndReplay, EndSetup } from '../end/replay'
 
 /**
  * 取图页：**只在跨端逐帧比对里用**，不进游戏产物（`vite build` 只打
@@ -388,6 +395,84 @@ const saveloadAssembly: Assembly = {
   },
 }
 
+/* ===================== 结局（xl-czb.6） ===================== */
+
+interface EndReplayTrace {
+  readonly driver: string
+  readonly script: { readonly name: string; readonly setup: EndSetup }
+  readonly tickCount: number
+  readonly ticks: readonly { readonly t: number; readonly input: readonly EndInput[] }[]
+}
+
+let endRenderer: EndRenderer | null = null
+let endTrace: EndReplayTrace | null = null
+let endReplay: EndReplay | null = null
+let endNext = 0
+/** 这个面板的素材一次载齐（二十几张），载过就不再载。 */
+let endLoaded = false
+/**
+ * 原版位图此刻停在的那一帧的绘制清单。导出器只在结局还在屏幕上时 `paint`
+ * （`EndDriver.step`），被退出键切走的那一步位图停在切走之前最后一帧 —— 这里照做，
+ * 同存读档那一条（`lsOps`）。
+ */
+let endOps: EndDrawOp[] | null = null
+
+/** **故意改坏一处渲染**（`--self-check` 的注入点），结局版。整帧一起挪，理由同商店。 */
+function breakEndOps(ops: EndDrawOp[], t: number): EndDrawOp[] {
+  const b = window.__xlBreak
+  if (!b || t < b.fromTick) return ops
+  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
+}
+
+const endAssembly: Assembly = {
+  async load(traceJson: string) {
+    const parsed = JSON.parse(traceJson) as EndReplayTrace
+    endRenderer ??= await createEndRenderer(hostFor('end'))
+    activate('end')
+    if (!endLoaded) {
+      await endRenderer.load(endTextureIds())
+      endLoaded = true
+    }
+    // 起手那一块场景面板（`EndDriver.start()` 的 `initiation(setup.scene)`）。
+    const want = stem(parsed.script.setup.scene)
+    const scene = await take(want)
+    // 起手与逐步推进与状态层判据是同一份（`end/replay.ts`）。
+    endReplay = startEndReplay(parsed.script.name, parsed.script.setup, (name) => {
+      if (name !== want) throw new Error(`结局起手只取了场景 ${want}，又要 ${name}`)
+      return scene
+    })
+    endTrace = parsed
+    endNext = 0
+    endOps = null
+    // `scene` 这一栏对这个面板来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
+    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+  },
+
+  async seek(t: number) {
+    const trace = endTrace
+    const replay = endReplay
+    const renderer = endRenderer
+    if (!trace || !replay || !renderer) throw new Error('还没 load 就 seek')
+    if (t < endNext - 1) {
+      throw new Error(`取图只能往前：当前在第 ${endNext - 1} 步，要去第 ${t} 步`)
+    }
+    if (t >= trace.ticks.length) {
+      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
+    }
+    for (; endNext <= t; endNext++) {
+      const input = trace.ticks[endNext]!.input
+      if (input.length !== 1) throw new Error(`第 ${endNext} 步有 ${input.length} 个输入事件，一步应当恰好一个`)
+      replay.step(input[0]!)
+      if (replay.session.panel === 'end' && replay.world !== null) endOps = endDrawList(replay.world)
+    }
+    if (endOps === null) throw new Error(`到第 ${t} 步为止结局一次都没显示过 —— 原版一帧都还没画`)
+    renderer.draw(breakEndOps(endOps, t))
+    await twoFrames()
+    // 一步不全是一拍（还有进来 / 按键 / 叫醒三种），报步号乘 100 ms 会假装它是时间。
+    return { t, timeMs: 0, x: 0, y: 0 }
+  },
+}
+
 /* ===================== 战斗（xl-rh9.9） ===================== */
 
 let battleRenderer: BattleRenderer | null = null
@@ -701,6 +786,7 @@ const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = {
   menu: menuAssembly,
   shop: shopAssembly,
   saveload: saveloadAssembly,
+  end: endAssembly,
 }
 
 /** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */

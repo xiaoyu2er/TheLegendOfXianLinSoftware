@@ -348,7 +348,9 @@ export function step(
   }
 
   for (const event of input) {
-    const info = applyInput(base, d, dlg, fight, sel, tre, event, now, host, gain)
+    const info = applyInput(base, d, dlg, fight, sel, tre, event, now, host, gain, () => {
+      req.endRequest = true
+    })
     if (info !== null) requestBattle(info)
   }
 
@@ -667,6 +669,7 @@ function applyInput(
   now: number,
   host: SelectHost,
   gain: (gains: readonly TreasureGain[]) => void,
+  end: () => void,
 ): BattleInfo | null {
   if (event.e === 'release') {
     // `ScenePanel.keyReleased` 的 switch 只有四个方向键的分支。
@@ -698,6 +701,16 @@ function applyInput(
     // 判据是"speaking 由真转假"，不是"groupOver 为真" —— `groupOver` 在
     // 最后一句打完的那一按之前就已经是真的了，拿它当条件会**早一按**起战斗，
     // 而早的那一按画面上什么都看不出来（对话框还开着）。
+    //
+    // 结局（xl-czb.6）是紧挨着的另一句：`if (gameOver) { switchTo("end"); gameOver = false; }`，
+    // 同一个判据、同一个「清标志」。它排在剧情战**之前**写，是因为下面那一支会 return；
+    // 原版两句都执行，先起战斗后切结局 —— 同一段对话里既有 `@` 又有 `$` 的，今天的数据里一段都没有
+    // （`end/trigger.test.ts` 现扫断言；2026-09-10 的读数：`$` 只出现在 脚本41 的对话里），
+    // 所以两句的先后这里观测不到。
+    if (dlg.gameOver && !dlg.speaking) {
+      dlg.gameOver = false
+      end()
+    }
     if (dlg.fight && !dlg.speaking) {
       dlg.fight = false
       return startBattle1(fight)

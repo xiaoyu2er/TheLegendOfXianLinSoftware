@@ -98,6 +98,9 @@ import { OVERLAY_FILES } from '../src/scene/mapOverlays'
 import { bakeScript, readerStaticsOf } from '../src/data/bakeScript'
 import { LS_IMAGES, LS_SEQUENCES, lsFrameId, lsImageId } from '../src/saveload/assets'
 import type { LsImageName, LsSequenceName } from '../src/saveload/assets'
+import { END_IMAGES, END_PICTURE_DIR, endImageId, endPictureId, endPictureSource } from '../src/end/assets'
+import type { EndImageName } from '../src/end/assets'
+import { END_PICTURE_COUNT } from '../src/end/world'
 import type { SceneScript } from '../src/data/types'
 import { BG_COUNT, BG_FIRST_FILE } from '../src/state/narratage'
 import {
@@ -584,6 +587,39 @@ function main(): void {
     }
   }
   console.log(`存读档面板素材 ${lsFiles} 张 → ls/*.webp`)
+
+  // 结局面板（xl-czb.6）。路径写死在原版 `start.EndPanel` 里，与开始界面同一类。
+  // **几张是现数的**：扫 `sources/End/` 整个目录，每一个文件都得落在三张固定图或
+  // 1..END_PICTURE_COUNT 张过场画里、每一张要的都得在盘上 —— 两个方向各缺一个都攒进
+  // missing 一次报全。「目录里多一张原版不读的」也算：它说明素材换过而这里没跟上。
+  const endWanted = new Map<string, { id: string; relative: string }>()
+  for (const [name, source] of Object.entries(END_IMAGES) as [EndImageName, string][]) {
+    endWanted.set(source, { id: endImageId(name), relative: `end/${name}.webp` })
+  }
+  for (let n = 1; n <= END_PICTURE_COUNT; n++) {
+    endWanted.set(endPictureSource(n), { id: endPictureId(n), relative: `end/picture/${n}.webp` })
+  }
+  const endOnDisk = readdirSync(resolve(REPO, END_PICTURE_DIR))
+    .filter((f) => !f.startsWith('.'))
+    .sort()
+    .map((f) => `${END_PICTURE_DIR}/${f}`)
+  for (const source of endOnDisk) {
+    if (!endWanted.has(source)) missing.push(`结局素材目录里有一个原版不读的文件 ${source}`)
+  }
+  let endFiles = 0
+  for (const [source, { id, relative }] of endWanted) {
+    const absolute = resolve(REPO, source)
+    if (!existsSync(absolute)) {
+      missing.push(`结局面板素材 ${source}`)
+      continue
+    }
+    manifest[id] = relative
+    bytes += source.endsWith('.png')
+      ? toWebp(absolute, resolve(ASSETS_OUT, relative))
+      : toLosslessWebp(absolute, resolve(ASSETS_OUT, relative))
+    endFiles++
+  }
+  console.log(`结局面板素材 ${endFiles} 张（${END_PICTURE_DIR}/ 下现数 ${endOnDisk.length} 个文件）→ end/*.webp`)
 
   if (missing.length > 0) {
     console.error(`资源缺失 ${missing.length} 条：`)
@@ -1631,6 +1667,20 @@ function toNearLosslessWebp(source: string, destination: string): number {
     '-o',
     destination,
   ])
+  return statSync(destination).size
+}
+
+/**
+ * 结局那 25 张过场画（xl-czb.6）走**无损**。它们是 JPG，照 `toWebp` 的规矩会落到有损档，
+ * 而有损档的差是满屏的（与大地图那两张同一件事，见 `MAP_NEAR_LOSSLESS` 的表）—— 切不成
+ * 矩形。这批图画面简单，无损并不大：2026-09-10 试 1.jpg / 12.jpg（源 31429 / 48062 B），
+ * 无损 81448 / 164142 B、near_lossless 40 81256 / 167332 B、q90 11462 / 20492 B。无损与
+ * near_lossless 同一个量级，就不留 near_lossless 那 4 的误差。
+ */
+function toLosslessWebp(source: string, destination: string): number {
+  useInput(source)
+  mkdirSync(dirname(destination), { recursive: true })
+  execFileSync('cwebp', ['-quiet', '-lossless', source, '-o', destination])
   return statSync(destination).size
 }
 

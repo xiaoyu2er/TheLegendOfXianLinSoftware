@@ -11,6 +11,7 @@ import { useMenuRenderer } from '../menu/render/useMenuRenderer'
 import { useShopRenderer } from '../shop/render/useShopRenderer'
 import { useShopPreview } from '../shop/render/useShopPreview'
 import { useSaveLoadRenderer } from '../saveload/render/useSaveLoadRenderer'
+import { useEndRenderer } from '../end/render/useEndRenderer'
 import { SHOP_PREVIEW_CHOICES } from '../shop/preview'
 import type { ShopPreviewChoice } from '../shop/preview'
 import { wheelRows } from '../menu/scroll'
@@ -87,6 +88,7 @@ export function App() {
   const menuHostRef = useRef<HTMLDivElement>(null)
   const shopHostRef = useRef<HTMLDivElement>(null)
   const lsHostRef = useRef<HTMLDivElement>(null)
+  const endHostRef = useRef<HTMLDivElement>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
   /**
    * **现在该在哪个场景**，`null` = 还没开局、停在标题上（xl-q7f）。
@@ -150,6 +152,7 @@ export function App() {
   const shop = useShopPreview(shopRenderer, shopPreview)
   const inShopPreview = shopPreview !== 'none'
   const saveLoadRenderer = useSaveLoadRenderer(lsHostRef)
+  const endRenderer = useEndRenderer(endHostRef)
   // 方向键走动、按住 Ctrl（或 Shift）跑动、空格搭话。世界的推进与画面无关，
   // 见 useGame；对话框是它交出来的那份状态的投影。
   //
@@ -164,6 +167,7 @@ export function App() {
     // 预览开着时那张画布归预览：两边往同一个渲染器上画，谁后画谁赢，一帧一换。
     inShopPreview ? null : shopRenderer,
     saveLoadRenderer,
+    endRenderer,
   )
   const dialogue = view.dialogue
   if (view.scene !== game.scene) setGame({ scene: view.scene })
@@ -183,6 +187,12 @@ export function App() {
   const atTitle = view.panel === 'start'
   /** 存读档面板（xl-i06.9）：菜单的「存档 / 提取」或标题的「承」进来。 */
   const inLs = view.panel === 'ls'
+  /**
+   * 结局（xl-czb.6）：主线最后一段对话里的 `$` 按完进来。**键盘不归它**：原版当前面板
+   * 仍是场景，键照旧交给看不见的场景 —— ESC 开菜单、结局被切走，照复刻（`game/session.ts`
+   * 的 `keyReceiver`）。
+   */
+  const inEnd = view.panel === 'end'
 
   /**
    * 「起」：重开一局。
@@ -319,7 +329,7 @@ export function App() {
             <div
               className="stage-panel"
               ref={sceneHostRef}
-              hidden={inBattle || inMenu || inShop || atTitle || inLs || inShopPreview}
+              hidden={inBattle || inMenu || inShop || atTitle || inLs || inEnd || inShopPreview}
               data-testid="scene-host"
             />
             <div
@@ -357,11 +367,18 @@ export function App() {
               onMouseMove={onLsMouse('move')}
               data-testid="ls-host"
             />
+            {/* 结局一个鼠标监听都没有（原版 `EndPanel` 就是这样），键盘走 `useGame`。 */}
+            <div
+              className="stage-panel"
+              ref={endHostRef}
+              hidden={!inEnd || inShopPreview}
+              data-testid="end-host"
+            />
           </>
         }
         overlay={
           <>
-            {status.kind === 'ready' || inBattle || inMenu || inShop || atTitle || inLs || inShopPreview ? null : (
+            {status.kind === 'ready' || inBattle || inMenu || inShop || atTitle || inLs || inEnd || inShopPreview ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
@@ -383,7 +400,12 @@ export function App() {
                 正在载入战斗…
               </p>
             ) : null}
-            {dialogue && !inBattle && !inMenu && !inShop && !inLs && !inShopPreview ? (
+            {inEnd && view.endLoading ? (
+              <p className="stage-notice stage-notice--loading" role="status">
+                正在载入结局…
+              </p>
+            ) : null}
+            {dialogue && !inBattle && !inMenu && !inShop && !inLs && !inEnd && !inShopPreview ? (
               <DialogueBox dialogue={dialogue} />
             ) : null}
           </>
@@ -436,6 +458,8 @@ export function App() {
               ? '商店：点商品、加减、买卖；「返回游戏」回到场景'
               : inLs
                 ? '存读档：点右边的圆钮存进 / 读出那一格；Esc 回到进来时那一屏'
+              : inEnd
+                ? '结局：字幕滚完即定格。按键照旧交给背后的场景 —— Esc 会开菜单、把结局切走，原版就是这样'
               : atTitle
             ? '开始界面：点「起」重开一局，点「承」读取存档'
             : inBattle

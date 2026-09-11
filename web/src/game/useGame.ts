@@ -35,12 +35,15 @@ import { shopTextureIds } from '../shop/render/assets'
 import { shopDrawList } from '../shop/render/drawList'
 import type { ShopRenderer } from '../shop/render/shopRenderer'
 import type { ShopInput } from '../shop/step'
-import { NO_INPUT, carryIntoNewGame, enterSaveLoad, saveLoadViewOf, shopWorldOf } from './session'
+import { NO_INPUT, carryIntoNewGame, endWorldOf, enterSaveLoad, keyReceiver, saveLoadViewOf, shopWorldOf } from './session'
 import type { Panel, Session, SessionDeps } from './session'
 import { saveLoadDrawList, saveLoadTextureIds } from '../saveload/render/drawList'
 import type { SaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
 import type { SaveLoadInput } from '../saveload/step'
 import { SAVE_SLOT_COUNT } from '../save/store'
+import { endTextureIds } from '../end/assets'
+import { endDrawList } from '../end/render/drawList'
+import type { EndRenderer } from '../end/render/endRenderer'
 
 /**
  * 存读档面板上那几行提示要的东西（xl-i06.9）—— `saveLoadViewOf` 的一个只含文字的
@@ -151,6 +154,8 @@ export interface GameView {
   readonly saveLoad: SaveLoadNotice | null
   /** 存读档面板贴图还在载入。 */
   readonly saveLoadLoading: boolean
+  /** 结局面板贴图还在载入（进结局那一下，二十几张一次载齐）。 */
+  readonly endLoading: boolean
   /** 存读档面板上的一次鼠标事件（舞台逻辑坐标）。面板没开着就丢掉。 */
   readonly lsInput: (input: SaveLoadInput) => void
   /** 标题上的「承」：下一拍进存读档面板（读模式，从标题进来）。 */
@@ -179,7 +184,9 @@ export function useGame(
   menuRenderer: MenuRenderer | null = null,
   shopRenderer: ShopRenderer | null = null,
   saveLoadRenderer: SaveLoadRenderer | null = null,
+  endRenderer: EndRenderer | null = null,
 ): GameView {
+  const [endLoading, setEndLoading] = useState(false)
   /** 存读档面板上的输入，攒到下一拍（xl-i06.9）。 */
   const lsInputRef = useRef<SaveLoadInput[]>([])
   /** 标题上点了「承」：下一拍进面板。 */
@@ -330,9 +337,11 @@ export function useGame(
       if (event.type === 'keydown' && event.key === 'Escape') {
         event.preventDefault()
         // 存读档面板开着时 ESC 归它（`GameLauncher.keyPressed` 只转给当前面板：
-        // `if(currentPanel==lsPanel) lsPanel.keyPressed(keyCode)`）。
-        if (panelRef.current === 'ls') lsInputRef.current.push({ e: 'key', key: 'escape' })
-        else openMenuRef.current = true
+        // `if(currentPanel==lsPanel) lsPanel.keyPressed(keyCode)`）。结局期间当前面板
+        // 仍是场景（`keyReceiver`），于是 ESC 照样开菜单、把结局切走（xl-czb.6）。
+        const to = keyReceiver(panelRef.current)
+        if (to === 'ls') lsInputRef.current.push({ e: 'key', key: 'escape' })
+        else if (to === 'scene') openMenuRef.current = true
         return
       }
       const input = toInputEvent({
@@ -413,6 +422,9 @@ export function useGame(
    */
   useEffect(() => {
     let last = performance.now()
+    /** 结局那二十几张载齐没有 / 正在载。跟着渲染器走：渲染器一换，effect 重建，这两个也重置。 */
+    let endLoaded = false
+    let endLoadingNow = false
     /** 一个场景要量哪几只怪 —— 按场景名记一份，不必每拍重扫脚本。 */
     const nameCache = new Map<string, readonly string[]>()
     const enemyNamesFor = (file: string): readonly string[] => {
@@ -539,6 +551,7 @@ export function useGame(
       drawMenu(next)
       drawShop(next, now)
       drawSaveLoad(next, now)
+      drawEnd(next)
       // 战斗面板显示的时候场景那张画布看不见，画它是白费；而**世界照样在推**
       // （原版那条线程没停），所以这里跳的只有绘制。
       if (next.panel !== 'scene') return
@@ -640,6 +653,28 @@ export function useGame(
       shopRenderer.draw(shopDrawList(world, previewFrame(now - shopSinceRef.current)))
     }
 
+    /**
+     * 结局那张画布（xl-czb.6）。素材一共二十几张，**进结局那一下一次载齐**；空窗里不画。
+     * 每拍都照世界画一次：定格之后世界不再变，画出来的也就是同一张（原版不再 repaint，
+     * 缓冲图停在最后一帧 —— 两者画面上一样）。
+     */
+    function drawEnd(next: Session): void {
+      const world = endWorldOf(next)
+      if (!endRenderer || world === null) return
+      if (!endLoaded) {
+        if (endLoadingNow) return
+        endLoadingNow = true
+        setEndLoading(true)
+        void endRenderer.load(endTextureIds()).then(() => {
+          endLoaded = true
+          endLoadingNow = false
+          setEndLoading(false)
+        })
+        return
+      }
+      endRenderer.draw(endDrawList(world))
+    }
+
     function syncPanel(next: Session): void {
       if (next.panel !== panelRef.current) {
         panelRef.current = next.panel
@@ -710,7 +745,7 @@ export function useGame(
 
     const id = window.setInterval(pump, TICK_MS)
     return () => window.clearInterval(id)
-  }, [renderer, battleRenderer, menuRenderer, shopRenderer, saveLoadRenderer])
+  }, [renderer, battleRenderer, menuRenderer, shopRenderer, saveLoadRenderer, endRenderer])
 
   /** 存读档面板上的一次鼠标事件。面板没开着就丢掉。 */
   const lsInput = (input: SaveLoadInput): void => {
@@ -763,6 +798,7 @@ export function useGame(
     restart,
     saveLoad,
     saveLoadLoading,
+    endLoading,
     lsInput,
     openLoad,
   }
