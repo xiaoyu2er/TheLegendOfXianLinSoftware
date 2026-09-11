@@ -72,6 +72,8 @@ public final class ExportTrace {
     /** 真正生效的密度，{@link #resolveEvery} 定夺。 */
     private int every = DEFAULT_EVERY;
     private final List<Integer> sampled = new ArrayList<>();
+    /** 与 {@link #sampled} 逐项对应的账本（一个 JSON 对象一项），见 {@link #ledgerEntry()}。 */
+    private final List<String> ledger = new ArrayList<>();
     private int frameW;
     private int frameH;
 
@@ -366,6 +368,7 @@ public final class ExportTrace {
             die("写不出 " + f.getPath() + "：" + e);
         }
         sampled.add(tick);
+        ledger.add(ledgerEntry());
         // 帧清单只写得下一个宽高。驱动器要是某一步换了张尺寸不同的图，不拦的话
         // 清单会拿最后一张的尺寸去描述前面所有帧 —— 比对器照着读，读到的是一份
         // 尺寸自称正确的错图，失败起来和成功一模一样。
@@ -376,6 +379,34 @@ public final class ExportTrace {
             die(scriptName + "：第 " + tick + " 帧是 " + b.getWidth() + "×" + b.getHeight()
                     + "，而第一帧是 " + frameW + "×" + frameH);
         }
+    }
+
+    /**
+     * 这一帧此刻的**账本**（xl-03x.3）：{@code Money.getCoins()} 与
+     * {@code DrugPack.drugList} 各药的件数。两样都是原版的 static，不归哪个面板，
+     * 所以在导出器这一处取、四支驱动器都记；比对器目前只对撞场景那一支。
+     *
+     * <p>为什么要它。答题加扣金币、开箱进背包这两笔账**只由 Web 的会话层记**，
+     * 行为真值（trace.json）一个字都不记 —— 场景快照里没有金币与药包；而逐帧比对
+     * 的金币数字那一格是字形缺口区，只查上界：答题之前两端都是 10000 时字形差就有
+     * 559 个像素，数值不同的帧并不比它多（2026-09-11 实测）。于是「数错了」在
+     * 两条现有判据下都是绿的。这份账本让比对器逐帧拿原版的数去撞取图页的数。
+     *
+     * <p>⚠️ 它是 M8 的**第二道**新缝（SPEC 只预算了一道），仅测试用：只在
+     * {@code --frames} 时写，落在不入库的帧清单里，**不进 trace.json**。进 trace.json
+     * 等于改真值格式、全部场景真值重导，而这两个数在真值层没有别的读者。
+     */
+    private static String ledgerEntry() {
+        StringBuilder b = new StringBuilder();
+        b.append("{\"coins\":").append(shop.Money.getCoins()).append(",\"drugs\":[");
+        List<shop.Drug> drugs = shop.DrugPack.drugList;
+        for (int i = 0; i < drugs.size(); i++) {
+            if (i > 0) b.append(',');
+            b.append("{\"name\":").append(Json.str(drugs.get(i).getName()))
+             .append(",\"count\":").append(drugs.get(i).getNumberGOT()).append('}');
+        }
+        b.append("]}");
+        return b.toString();
     }
 
     /**
@@ -414,6 +445,12 @@ public final class ExportTrace {
         for (int i = 0; i < sampled.size(); i++) {
             if (i > 0) b.append(", ");
             b.append(sampled.get(i));
+        }
+        b.append("],\n");
+        b.append("  \"ledger\": [");
+        for (int i = 0; i < ledger.size(); i++) {
+            if (i > 0) b.append(", ");
+            b.append(ledger.get(i));
         }
         b.append("]\n}\n");
         File dst = new File(framesDir, "frames.json");

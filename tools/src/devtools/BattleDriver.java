@@ -287,11 +287,19 @@ public final class BattleDriver implements TraceDriver {
      * 算法一个字节没改，改的只是起点。
      */
     private void seedRandom() {
+        plantMathRandom(script.seed);
+    }
+
+    /**
+     * 播种那一句本身。包内可见，场景驱动器（xl-03x.3）走的就是这一条 ——
+     * 同一个生成器、同一个手法，不另起一套。
+     */
+    static void plantMathRandom(long seed) {
         try {
             Class<?> holder = Class.forName("java.lang.Math$RandomNumberGeneratorHolder");
             Field f = holder.getDeclaredField("randomNumberGenerator");
             f.setAccessible(true);
-            ((Random) f.get(null)).setSeed(script.seed);
+            ((Random) f.get(null)).setSeed(seed);
         } catch (ReflectiveOperationException | RuntimeException e) {
             ExportTrace.die("播不了随机种子（要 --add-opens java.base/java.lang=ALL-UNNAMED）：" + e);
         }

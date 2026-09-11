@@ -54,9 +54,13 @@ import type { InputEvent, World } from '../state/types'
 // （它在比对器那一半解原版存档），而 `import type` 会被整个擦掉。
 import type { SaveFixture } from '../compare/saveFixtures'
 import type { SceneScript } from '../data/types'
-import { resetDrugPack } from '../fakes/drugPack'
+import { drugEntries, resetDrugPack } from '../fakes/drugPack'
 import { resetParty } from '../fakes/party'
-import { resetWallet } from '../fakes/wallet'
+import { getCoins, resetWallet } from '../fakes/wallet'
+import { JavaRandom } from '../game/javaRandom'
+import { settleSceneRequests } from '../game/sceneLedger'
+// 类型而已：`compare/ledger.ts` 是比对器那一半的判据。
+import type { LedgerEntry } from '../compare/ledger'
 import { applyReadBack, createSession, enterScene } from '../game/session'
 import type { Session } from '../game/session'
 import { createMemorySaveStore } from '../save/memoryStore'
@@ -136,13 +140,26 @@ export interface ReplayApi {
    * 把世界推进到第 `t` 个 tick 并画出来。**只能往前**：状态是逐 tick 累积的，
    * 往回跳意味着重放，那是另一件事，不在这里悄悄发生。
    */
-  seek(t: number): Promise<{ t: number; timeMs: number; x: number; y: number }>
+  seek(t: number): Promise<{ t: number; timeMs: number; x: number; y: number; ledger?: LedgerEntry }>
 }
+
+/**
+ * 场景剧本的随机种子（xl-03x.3）。原版那一侧由 `SceneDriver.start()` 最后一句拿
+ * `script.seed` 播 `Math.random()`；场景剧本不解析这个字段，`TraceScript` 缺省 0。
+ * 两边要是不同一个数，答题加扣的金币就不同，账本对撞（`compare/ledger.ts`）当场红 ——
+ * 所以这里写死一个数不会安静地跑偏。
+ */
+const SCENE_RANDOM_SEED = 0
 
 let renderer: SceneRenderer | null = null
 let overlay: Root | null = null
 let trace: ReplayTrace | null = null
 let world: World | null = null
+/**
+ * 场景那一侧的 `Math.random()` 替身：一条剧本一个实例，从第一次 `step()` 起取数 ——
+ * 原版播种在起手的最后一句，之后第一个被取的随机数就落在第一个 tick 上。
+ */
+let sceneRandom: JavaRandom | null = null
 let next = 0
 /** 渲染器手上是哪个场景。世界换了场景，这里要跟着换图。 */
 let shown: string | null = null
@@ -226,6 +243,7 @@ const sceneAssembly: Assembly = {
       parsed.script.load === undefined
         ? { ...initiate(warm, scene), isScript: parsed.script.isScript }
         : worldFromSave(parsed, warm)
+    sceneRandom = new JavaRandom(SCENE_RANDOM_SEED)
     next = 0
     renderer.showWorld(world)
     drawOverlay(world)
@@ -246,7 +264,12 @@ const sceneAssembly: Assembly = {
       // 这里按世界当前场景的出口预取，不看 trace 说它接下来去哪 —— 从真值里
       // 读"接下来该在哪个场景"，就等于把要比的那件事先喂了进来。
       if (!exitsReady(world)) await prepareExits(world)
-      world = step(world, tick.input, trace.script.tickMs, loadedSceneSource)
+      const random = sceneRandom!
+      world = step(world, tick.input, trace.script.tickMs, loadedSceneSource, () => random.nextDouble())
+      // 会话层记的那两笔账（答题加扣金币、开箱进背包），与真实会话共用同一段
+      // （xl-03x.3）。从前这里只推 `step()`，金币 HUD 答完题仍画 10000。一拍一次：
+      // 请求只亮一拍，这里逐拍 step，所以每一拍的请求恰好结算一遍。
+      settleSceneRequests(world)
     }
     // 世界自己换了场景，画面跟上（原版的 initiation 同步换掉整张地图与全部精灵）。
     const entered = stem(world.scene)
@@ -257,7 +280,14 @@ const sceneAssembly: Assembly = {
     renderer.showWorld(breakRender(world, t))
     drawOverlay(world)
     await twoFrames()
-    return { t, timeMs: world.timeMs, x: world.role.px >> 5, y: world.role.py >> 5 }
+    return {
+      t,
+      timeMs: world.timeMs,
+      x: world.role.px >> 5,
+      y: world.role.py >> 5,
+      // 这一帧的账本，比对器拿原版帧清单里同一帧的那一份去撞（`compare/ledger.ts`）。
+      ledger: { coins: getCoins(), drugs: drugEntries().map(([name, count]) => ({ name, count })) },
+    }
   },
 }
 
@@ -267,8 +297,8 @@ const sceneAssembly: Assembly = {
  *
  * 走的是产品读档那一路的 `applyReadBack`（`game/session.ts`）—— 不只重建场景，还把
  * 钱、药、三个人落到各自的模块单例上：金币 HUD 画的是 `getCoins()`，只建场景世界的话
- * 那一格会画出厂的钱，与原版画的存档里的钱是两个数（M5 收口时 `WALLET_NOT_REPLAYED`
- * 就是那个形状）。它与状态层判据用的 `replayWorld` 是同一个世界，由
+ * 那一格会画出厂的钱，与原版画的存档里的钱是两个数（M5 收口时答题剧本那条金币例外
+ * 就是那个形状，xl-03x.3 删掉了）。它与状态层判据用的 `replayWorld` 是同一个世界，由
  * `game/loadSession.test.ts` 的等价用例接着。
  *
  * 那一份档读成什么样由比对器在 Node 那一半解好送来（`compare/saveFixtures.ts`）：
