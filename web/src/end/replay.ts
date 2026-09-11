@@ -94,6 +94,7 @@ export function startEndReplay(name: string, setup: EndSetup, getScene: (name: s
   )
   let steps = 0
   let wakes = 0
+  let endWorld: EndWorld | null = null
   return {
     get session() {
       return session
@@ -101,8 +102,11 @@ export function startEndReplay(name: string, setup: EndSetup, getScene: (name: s
     get current() {
       return currentPanelOf(session.panel)
     },
+    // 进结局那一刻就握住面板世界，不每次从 `session.end` 现取：线程被摘掉（原版不会，
+    // 但判据要能看见「会被摘掉」这件事）不等于面板没了 —— 现取的话回放在这里就崩，
+    // 「线程死了」读出来是整个测试文件收集失败，而不是 `loop.alive` 那一格红。
     get world() {
-      return session.end?.world ?? null
+      return endWorld
     },
     step(input) {
       const where = `${name} 第 ${steps} 步（${JSON.stringify(input)}）`
@@ -114,6 +118,7 @@ export function startEndReplay(name: string, setup: EndSetup, getScene: (name: s
         case 'enter':
           if (steps !== 0) throw new Error(`${where}：enter 只许是第一步`)
           session = enterEnd(session)
+          endWorld = session.end!.world
           break
         case 'tick':
           session = advanceSession(session, NO_INPUT, END_TICK_MS)
