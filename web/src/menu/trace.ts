@@ -25,6 +25,8 @@ export interface MenuTraceScript {
   readonly name: string
   readonly description: string
   readonly setup: MenuConfig & {
+    /** 开菜单之前进的那本脚本（`脚本1.txt`），可缺省。见 `replay.ts` 的 `replayMenuTask`。 */
+    readonly scene?: string
     readonly equipment?: readonly { readonly name: string; readonly count: number }[]
     readonly drugs?: readonly { readonly name: string; readonly count: number }[]
   }

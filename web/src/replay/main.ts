@@ -23,7 +23,7 @@ import { menuDrawList } from '../menu/render/drawList'
 import type { MenuDrawOp } from '../menu/render/drawList'
 import { createMenuRenderer } from '../menu/render/menuRenderer'
 import type { MenuRenderer } from '../menu/render/menuRenderer'
-import { replayMenuSetup } from '../menu/replay'
+import { replayMenuSetup, replayMenuTask } from '../menu/replay'
 import { stepMenu } from '../menu/step'
 // **类型从 `menu/trace.ts` 取，不在这里手抄一份。** 那个模块转手 `node:fs`，
 // 但 `import type` 会被 TypeScript 整个擦掉、一行运行时代码都不产生（战斗那
@@ -638,7 +638,7 @@ const menuAssembly: Assembly = {
     menuNext = 0
     menuLoaded = null
     await loadMenuFrame(world)
-    menuRenderer.draw(menuDrawList(world))
+    menuRenderer.draw(menuDrawList(world, replayMenuTask(parsed.script.setup)))
     // `scene` 这一栏对菜单来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
     return { scene: parsed.script.name, tickCount: parsed.tickCount }
   },
@@ -658,9 +658,9 @@ const menuAssembly: Assembly = {
       stepMenu(world, trace.ticks[menuNext]!.input)
     }
     await loadMenuFrame(world)
-    // `task` 不喂：`MenuDriver` 从来不给 `tools.Reader.task` 赋值，原版画的
-    // 就是「当前任务:无」。喂一个别的值进来，顶栏那行字两端立刻对不上。
-    renderer.draw(breakMenuOps(menuDrawList(world), t))
+    // `task` 照剧本回显的 `setup.scene` 推（xl-03x.10）：给了它，`MenuDriver` 就先
+    // `new Reader(scene)`，原版顶栏画的是那一本的 `Task` 段；没给就是「当前任务:无」。
+    renderer.draw(breakMenuOps(menuDrawList(world, replayMenuTask(trace.script.setup)), t))
     await twoFrames()
     // 菜单的一步是一次输入事件，没有虚拟时间可言（`MenuDriver` 不推时钟）。
     // `timeMs` 这一栏只进日志，报步号乘 `MENU_TICK_MS` 会假装它是时间。
