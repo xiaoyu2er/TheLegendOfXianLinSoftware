@@ -685,8 +685,9 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
         await Assets.load<Texture>(resolveAsset(mapAssetId(scene.mapName))),
       )
 
-      // 地图图片至少要有 瓦片数 × 32 那么大（`Map.drawMap` 的源矩形直接用世界
-      // 像素）。三种处境与各自的理由在 `mapSize.ts`；比网格小的那一种拒绝渲染。
+      // 地图图片至少要盖得住原版源矩形最远的那一格（网格 − 8，`Map.drawMap` 的
+      // 源矩形直接用世界像素）。几种处境与各自的实测在 `mapSize.ts`；比源矩形
+      // 还小的那一种拒绝渲染。
       checkMapSize(scene.script, scene.mapName, texture, scene.col, scene.row)
 
       // 换地图只换碎片指向的源，精灵与 `Texture` 对象留着 —— Assets 的缓存
