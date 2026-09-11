@@ -51,7 +51,8 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
     fakeBecause:
       '初值是三个类的静态字段初值（1 / 3 / 1 级 + 开局那三把武器的加成），' +
       '刷新页面就回到开局；跨战斗与跨菜单只记等级 / 经验 / 血 / 灵力 / 死没死 / 怒气 / ' +
-      '四项基础属性十样，isGetSkill、skillNumber 今天在 web 端还没有来源（M3）；' +
+      '四项基础属性十样，外加技能格数 skillNumber（xl-03x.17：升级与读档按原版规则涨）；' +
+      'isGetSkill 不记（全仓只有 levelUp 那一处写、没人读）；' +
       '装备只记它加出来的属性，"穿的是哪一件"记不住（xl-6lo.18）。',
     exports: [
       'getParty',
