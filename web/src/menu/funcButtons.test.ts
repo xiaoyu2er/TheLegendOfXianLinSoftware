@@ -14,7 +14,7 @@ import {
 import type { FuncMainKey, FuncSubKey } from './funcButtons'
 import { menuHitCenter } from '../test/menuHit'
 import { hits } from './buttons'
-import { menuWantsScene, stepMenu } from './step'
+import { menuWantsScene, menuWantsTitle, stepMenu } from './step'
 import { createMenuWorld } from './world'
 
 /**
@@ -406,6 +406,36 @@ describe('天书页 · 设定与退出子菜单', () => {
   it('点「退出」展开确认离开 / 重新开始；两颗都点得响', () => {
     walk(['exitButton', 'exitForSure'])
     walk(['exitButton', 'restart'])
+  })
+
+  /**
+   * 「重新开始」那一支末尾是 `GameLauncher.switchTo("start")`（xl-03x.11）。
+   * 同一组里的「确认离开」是 `System.exit(0)`，归另一张票 —— 它**不许**回标题，
+   * 否则就是这一层替原版发明了一条路。「返回」回的是场景，也不许顺带回标题。
+   */
+  it('只有「重新开始」要回标题；「确认离开」与「返回」都不回', () => {
+    const src = javaSource('src/menu/FuncButtons.java')
+    const restartBranch = src.slice(src.indexOf('if(restart.isIsclicked())'), src.indexOf('if(exitForSure.isIsclicked())'))
+    expect(restartBranch, '「重新开始」那一支里没有 switchTo("start")').toContain('GameLauncher.switchTo("start");')
+
+    const outcome: Record<string, { title: boolean; scene: boolean }> = {}
+    for (const path of [['exitButton', 'restart'], ['exitButton', 'exitForSure'], ['returnButton']] as const) {
+      const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+      w.panel = 'funcPanel'
+      const fb = w.panels.funcPanel.funcButtons!
+      for (const key of path) {
+        const b = key === 'exitButton' || key === 'returnButton' ? fb.main[key] : fb.sub[key]
+        const { x, y } = menuHitCenter(b)
+        expect(b.isDraw, `${key} 还没画出来就去点它`).toBe(true)
+        stepMenu(w, [{ e: 'press', x, y }, { e: 'release', x, y }])
+      }
+      outcome[path.at(-1)!] = { title: menuWantsTitle(w), scene: menuWantsScene(w) }
+    }
+    expect(outcome).toEqual({
+      restart: { title: true, scene: false },
+      exitForSure: { title: false, scene: false },
+      returnButton: { title: false, scene: true },
+    })
   })
 
   it('存档 / 提取 / 返回：三颗都出一声换页音，且把子菜单全收起来', () => {

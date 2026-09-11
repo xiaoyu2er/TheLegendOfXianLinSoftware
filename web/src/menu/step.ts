@@ -434,3 +434,17 @@ export function clearMenuSaveLoad(w: MenuWorld): void {
   const fb = w.panels.funcPanel.funcButtons
   if (fb) fb.saveLoadRequest = null
 }
+
+/** 玩家点了天书页「退出」→「重新开始」吗（xl-03x.11）。原版那一支末尾是 `switchTo("start")`。 */
+export function menuWantsTitle(w: MenuWorld): boolean {
+  return w.panels.funcPanel.funcButtons?.restartToTitle === true
+}
+
+/**
+ * 收掉那条一次性信号 —— 理由同 `clearMenuExit`。回了标题菜单世界也还活着：
+ * 「承」读档不重建会话，不清的话读档回场景、一开菜单又被翻回标题。
+ */
+export function clearMenuTitle(w: MenuWorld): void {
+  const fb = w.panels.funcPanel.funcButtons
+  if (fb) fb.restartToTitle = false
+}
