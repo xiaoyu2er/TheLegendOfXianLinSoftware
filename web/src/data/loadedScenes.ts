@@ -1,6 +1,6 @@
 import type { SceneSource } from '../state/step'
 import type { World } from '../state/types'
-import { loadScene, sceneNameFromPath } from './scenes'
+import { loadScene, sceneNameOfFile } from './scenes'
 import type { SceneScript } from './types'
 
 /**
@@ -83,7 +83,5 @@ export function rememberScene(name: string, scene: SceneScript): void {
   LOADED.set(name, scene)
 }
 
-/** `大地图.txt` → `大地图`。注册表用的是场景名，出口写的是文件名。 */
-function stem(file: string): string {
-  return sceneNameFromPath(file).replace(/\.txt$/, '')
-}
+/** `大地图.txt` → `大地图`。注册表用的是场景名，出口写的是文件名（行尾空格按 win32 去掉）。 */
+const stem = sceneNameOfFile

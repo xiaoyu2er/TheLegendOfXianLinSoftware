@@ -3,7 +3,7 @@ import { step } from '../state/step'
 import { SCENE_TRACE_NAMES, readTrace, replayWorld, sceneSourceOf } from '../state/trace'
 import type { World } from '../state/types'
 import { exitTargets } from './loadedScenes'
-import { sceneNameFromPath } from './scenes'
+import { SCENE_NAMES, sceneNameFromPath } from './scenes'
 import { getScene } from './scenesEager'
 
 /**
@@ -90,6 +90,34 @@ describe('出口预取的目标', () => {
     // 分母是换场景的次数本身（真值现数出来的），不是手写的数字。
     expect(SWITCHES.length).toBeGreaterThan(0)
     expect(SWITCHES.filter((s) => !s.prefetched.includes(s.to))).toEqual([])
+  })
+})
+
+/**
+ * 行尾带空格的出口名（xl-1dv.11）按 **win32 语义**解析 —— xl-czb.7 的裁定，理由见
+ * `data/scenes.ts` 的 `sceneNameOfFile`。裁定之前的读数（2026-09-11）：`脚本32` 的
+ * 出口 `"仙二教学楼二楼夜.txt "` 预取不到、落进「试过、取不到」，`exitsReady` 照样为真，
+ * 真踩上去 `step()` 抛「没有烘焙过的场景 仙二教学楼二楼夜.txt 」—— 主线在第 36 跳断掉。
+ *
+ * 名字从数据现取（出口表里去掉末尾空格/点之后才对得上一个场景的那几条），不手写。
+ */
+describe('行尾带空格的出口名（xl-1dv.11）', () => {
+  const trailing = SCENE_NAMES.flatMap((n) =>
+    (getScene(n).nextScene ?? []).filter((f) => f !== f.replace(/[ .]+$/, '')).map((f) => ({ scene: n, exit: f })),
+  )
+
+  it('数据里确有这种出口（否则下面那条零轮、全绿）', () => {
+    expect(trailing.length).toBeGreaterThan(0)
+  })
+
+  it('预取取得到，同步查也查得到 —— 查到的是去掉行尾空格的那一本', async () => {
+    vi.resetModules()
+    const { loadedSceneSource, prepareExits } = await import('./loadedScenes')
+    for (const { scene, exit } of trailing) {
+      // 仙二205 进不去（xl-d8u），它的出口表直接从数据取，不建世界。
+      await prepareExits({ exit: { nextScene: [exit] }, currentScript: [], nextScript: null } as unknown as World)
+      expect(loadedSceneSource(exit)?.script, `${scene} 的出口 ${JSON.stringify(exit)}`).toBe(exit.replace(/[ .]+$/, ''))
+    }
   })
 })
 

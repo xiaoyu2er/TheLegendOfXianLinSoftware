@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { repoPath } from '../test/repoPath'
+import { sceneNameOfFile } from '../data/scenes'
 import type { SceneScript } from '../data/types'
 import { loaderReadBack, readSample } from '../save/test/originalSave'
 import { worldAfterLoad } from './load'
@@ -330,7 +331,5 @@ export function tickSceneName(tick: TraceTick): string {
   return stemOf(tick.scene)
 }
 
-/** `宿舍.txt` → `宿舍`。 */
-function stemOf(file: string): string {
-  return file.replace(/\.txt$/, '')
-}
+/** `宿舍.txt` → `宿舍`。与产品侧预取同一条解析（行尾空格按 win32 去掉，见 `sceneNameOfFile`）。 */
+const stemOf = sceneNameOfFile
