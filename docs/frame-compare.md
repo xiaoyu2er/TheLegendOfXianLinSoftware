@@ -1066,7 +1066,58 @@ xl-i06.12 给「地图图片 < 瓦片数 × 32」加了一道有意的硬失败�
   `vite-node scripts/compare.ts` 退出 2 —— **与它不篡改时一模一样**。也就是说旧版分不出
   「拉伸了」与「照原版画了」，两者都是抛；新版不篡改全过、篡改全红。
 
+### 收 /code-review 之后补的（同一天）
+
+**探针入库**：`tools/src/devtools/MapEdgeProbe.java`，头注里是那条命令（从仓库根目录跑，
+`tools/build.sh` 之后）。按它重跑，上表每一行逐字相同；缺图时退出 1 并点名 —— ImageIcon 缺图
+给的是 -1×-1 的空壳，不拦的话会读成一行正常的「哨兵 0」。
+
+**SPEC 的前提被量出来不成立，照实写下。** SPEC 说拉伸 / 补边 / 夹取「与原版的差别正好藏在那
+一两列里」。实测是**那一两列原版根本不取**，所以「把图补边到 1024」或「采样坐标夹进图内」在这里
+**画出来与原版逐像素相同** —— 不是判据看不见，是它们本来就不改行为（dispatch「篡改本身没改
+行为」那一族）。票面 AC「改成拉伸（或补边）确认红」因此只有**拉伸**那一半成立；补边那一半
+换成了下面这条真正会改画面的「边缘少贴两像素」。
+
+**只动边缘的篡改**（「边上有一两列怪怪的」那种画面）：图比网格小时，贴到最右 / 最下的那几块
+碎片各少贴 2 px，把画布右 / 下边缘的两列 / 两行留成底色。
+
+- **改动后那版 + 篡改**：3/3 红，全在硬比区 —— width 4 帧合计 7992 个（最坏帧落在
+  (0,638)-(998,639)）、both 120 个（最坏帧 30 个 @ (1022,591)-(1023,615)）、height 13296 个。
+- **改动前那版 + 同一条篡改**：取图页在 `checkMapSize` 抛、退出 2，与不篡改时一样。
+
+⚠️ **观测极限，照实登记**：`mapshort-both` 只红了 30 个像素。教室2.png 右 / 下边缘那两列两行
+**大部分是近黑的**，与底色的差在容差 8 之内 —— 那一段上「没画」与「照原版画了」逐像素分不开，
+判据只在边缘恰好有颜色的地方咬得住。`mapshort-width` 的最坏帧也只落在下边缘两行、没落在右边缘
+两列上，同一个原因。三条剧本合起来每种缺法都红了，但**单看一条剧本，不能读成「边缘每一个
+像素都有判据守着」**。
+
+**门槛只在 32×20 上有读数。** 短图名单里 20 个场景全是 32×20 网格；`网格 − 8` 对别的网格尺寸
+是按 `computeViewport` 的夹取推出来的，没有真值剧本走进过别的尺寸的短图（今天也没有这样的
+场景）。
+
+**主线上几本、排第几**：没有代码现算它（那归「主线链与可达闭包」那张票的分析器）。今天的读数
+由下面这段现算，从仓库根目录跑：
+
+```bash
+python3 - <<'EOF'
+import json, glob, subprocess
+D = {json.load(open(f))['script']: json.load(open(f)) for f in glob.glob('tools/ground-truth/*.json')}
+def size(m):
+    o = subprocess.run(['sips', '-g', 'pixelWidth', '-g', 'pixelHeight', 'maps/' + m], capture_output=True, text=True).stdout.split()
+    return int(o[o.index('pixelWidth:') + 1]), int(o[o.index('pixelHeight:') + 1])
+cur, i, hits = '脚本1.txt', 0, []
+while cur in D:
+    i += 1; d = D[cur]; w, h = size(d['mapName'])
+    if w < d['col'] * 32 or h < d['row'] * 32: hits.append((i, cur))
+    cur = d['nextScript'][2] if d['nextScript'] else None
+print('链长', i, '落在短图名单里', len(hits), hits)
+EOF
+```
+
+（macOS 的 `sips`；链从 `ScenePanel` 构造函数写死的 `currentScript[2] = "脚本1.txt"` 起。）
+
 ### 没做的
 
 - `大迷宫1`（图比网格大的另一个场景）仍然没有真值剧本走进去过，放行是按同一条推理。
 - 比源矩形还小的那条画法（反事实那几行）没复刻，走不到。
+- `仙二205` 在 web 侧仍然当场抛（与地图无关），见 xl-d8u。
