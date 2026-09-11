@@ -65,18 +65,38 @@ describe('NPC 摆放与四种运动状态', () => {
     expect(checked).toBe(SCENE_NAMES.length - brokenScenes.size)
   })
 
-  it('字段少了就抛，而且抛的正好是已知坏数据那几处 —— 原版在那里是崩', () => {
-    const threw = SCENE_NAMES.filter((name) => {
-      try {
-        createNpcs(getScene(name))
-        return false
-      } catch {
-        return true
-      }
-    })
-    // 两头都会红：多抛一个说明这一层比原版更挑剔，少抛一个说明它把
-    // "走进去就崩"悄悄咽了下去。
-    expect(threw.sort()).toEqual([...brokenScenes].sort())
+  it('坏数据那几个场景照建 —— 建到坏记录前一条为止，与原版吞掉异常之后一样', () => {
+    // 原版读到坏记录抛异常、被 `Reader.switchReader` 吞掉，场景照进（xl-03x.13
+    // 实跑：仙二205 的 npcList 4 条、npcs 3 个）。这里的期望条数由 `KNOWN_DEFECTS`
+    // 那一格的下标推出来，不写死。逐 tick 的对齐在 `npc-defect` 那份真值上。
+    let checked = 0
+    for (const d of KNOWN_DEFECTS) {
+      const m = /^(.+)\.txt npcList\[(\d+)\]$/.exec(d.where)
+      if (!m) continue
+      const [, name, index] = m
+      expect({ name, n: createNpcs(getScene(name!)).length }).toEqual({ name, n: Number(index) })
+      checked++
+    }
+    expect(checked).toBe(brokenScenes.size)
+  })
+
+  it('坏记录夹在中间时，它后面的 NPC 一条都不建（不是只跳过它）', () => {
+    // 仙二205 的坏记录恰好是最后一条，「停下」与「跳过」在真值上长得一样。
+    // 这个分支是在原版上实跑出来的（xl-03x.13，2026-09-11）：把仙二205 的
+    // 那条坏记录挪到第 2 条、存成 GBK 喂给 `tools.Reader`，npcList 4 条、
+    // npcs 只有 1 个（清洁工）。
+    const scene = getScene('仙二205')
+    const rows = scene.npcList!
+    const bad = rows[3]!
+    const moved = { ...scene, npcList: [rows[0]!, bad, rows[1]!, rows[2]!] }
+    expect(createNpcs(moved).map((npc) => npc.name)).toEqual(['清洁工'])
+  })
+
+  it('建不出来的只接住数据错，不接住别的', () => {
+    // 接住一切异常的话，将来这一层自己的 bug 会被当成「原版吞掉的坏数据」静静咽下去。
+    const scene = getScene('仙二205夜')
+    const poisoned = { ...scene, npcList: [null as unknown as string[]] }
+    expect(() => createNpcs(poisoned)).toThrow(TypeError)
   })
 
   it('NPC 的图片文件名与资源扫描器拼出来的路径逐条一致', () => {

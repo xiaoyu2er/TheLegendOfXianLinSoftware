@@ -37,8 +37,8 @@ export interface SceneAssetRef {
  * 数据本身不成形，连路径都拼不出来的地方。
  *
  * 与"路径拼出来了但文件不在"是两回事，所以单列：前者在原版是
- * `ArrayIndexOutOfBoundsException`（走到那个场景直接崩），后者只是画面上
- * 少了点东西。
+ * `ArrayIndexOutOfBoundsException`（被 `Reader.switchReader` 吞掉，场景照进、
+ * 从那一条起的 NPC 都不建 —— xl-03x.13 实跑），后者只是画面上少了点东西。
  */
 export interface SceneDefect {
   where: string
@@ -76,7 +76,9 @@ export function scanSceneAssets(scene: SceneScript): SceneAssetScan {
       return
     }
     if (npc.length < arity) {
-      // 原版在这里是 ArrayIndexOutOfBoundsException——走到这个场景就崩。
+      // 原版在这里是 ArrayIndexOutOfBoundsException，被 switchReader 吞掉：场景照进，
+      // 从这一条起的 NPC 都不建（state/npc.ts 的 createNpcs，xl-03x.13 实跑）。
+      // 拼不出路径，照样记成 defect。
       defects.push({
         where,
         detail: `状态码 ${type} 需要 ${arity} 个字段，只有 ${npc.length} 个: ${npc.join(' ')}`,

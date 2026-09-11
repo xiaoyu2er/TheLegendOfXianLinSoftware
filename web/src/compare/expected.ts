@@ -2193,6 +2193,11 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '只剩右下角金币数的字形；1023×639 的底图连右、下边缘在内逐像素相等',
     issue: 'xl-9bd.17',
   },
+  // xl-03x.13：NPC 数据有毛病的 仙二205。临时表态，量完差异图再改。
+  'npc-defect': {
+    status: 'match',
+    why: '待量',
+  },
   'mapshort-height': {
     status: 'gap',
     // 基础实验楼乙五层.png 1024×639（下边缘缺一行；主线 脚本7 / 7+ / 26 同一张图）。单帧最多 493。

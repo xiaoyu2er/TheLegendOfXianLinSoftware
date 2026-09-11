@@ -73,12 +73,11 @@ export interface NpcState extends TilePos {
   readonly span: number
   readonly images: readonly string[]
   /**
-   * 口头语与显示名。这一票不用它们（搭话是 xl-9bd.10），**存下来是因为
-   * 不存就读不到那个字段** —— 而"读得到吗"正是原版在这里唯一会崩的地方：
+   * 口头语与显示名（搭话用，`NPCEvent.sayOral`）。**必须真的去读这两个字段**：
    * `script/仙二205.txt` 的第 4 条 NPC 少一个字段（名字与口头语之间的空格写成
-   * 了全角逗号），原版 `Reader` 取 `sg[7]` 时 ArrayIndexOutOfBoundsException，
-   * 走进那个教室就是崩。不读这个字段，这一层就会比原版更宽容，而宽容的表现是
-   * "那个场景在 Web 版能进、只是少个 NPC"，谁也发现不了。
+   * 了全角逗号），原版 `Reader` 取 `sg[7]` 时 ArrayIndexOutOfBoundsException ——
+   * 这一条就是在读口头语那一下出的事，不读它就认不出那条坏记录。出事之后原版
+   * **不崩**，见 {@link createNpcs}。
    */
   readonly name: string
   readonly oral: readonly string[]
@@ -97,75 +96,94 @@ export interface NpcState extends TilePos {
  * | 1 单向走动 | `1 x y 方向 长度 帧数 目录名 口头语` |
  * | 2 原地运动 | `2 x y 帧数 目录名 口头语` |
  *
- * **字段少了就抛**，不跳过：原版在这里是 `ArrayIndexOutOfBoundsException`，
- * 走进那个场景直接崩。悄悄跳过会把"这个场景进不去"变成"这个 NPC 不见了"，
- * 而后者没人看得出来。已知的那处坏数据挂在 `assets/knownMissing.ts` 的
- * `KNOWN_DEFECTS` 上，`npc.test.ts` 用它当分母。
+ * ## 坏记录：前面的留着，从它起一条都不建 —— 场景照进
+ *
+ * 原版在坏记录上抛 `ArrayIndexOutOfBoundsException` / `NumberFormatException`，
+ * 但**不崩**：接住它的是 `switchReader` 自己的 `try/catch`（`Reader.java:100`、
+ * `:270-273`），它只包着 `case "NPC"` 这一段。于是（2026-09-11 实跑原版，
+ * xl-03x.13）：
+ *
+ * - `npcList` 早在建 NPC 的循环之前就整条塞满了，坏记录也在里面；
+ * - 建 NPC 的循环停在坏记录上 —— 它**之前**的照建，它**之后**的一条都不建
+ *   （合成脚本把坏记录挪到第 2 条，原版只建出 1 个）；
+ * - 外层的 `while` 照读下一行，`Exit` / `Music` 段都在；场景照进、照画。
+ *
+ * 所以这里抛出来的 {@link NpcRowError} 就地接住、停下，不往上抛。状态码 3 那种
+ * 是**跳过**（原版的 if/else 链没有那一支，不抛），与此不同。已知的那处坏数据
+ * 挂在 `assets/knownMissing.ts` 的 `KNOWN_DEFECTS` 上，`npc.test.ts` 用它当分母。
  */
 export function createNpcs(scene: SceneScript, nowMs = 0): NpcState[] {
   const npcs: NpcState[] = []
-  scene.npcList?.forEach((row, i) => {
-    const where = `${scene.script} npcList[${i}]`
-    const type = row[0]
-    // 原版的 if/else 链没有第四个分支：状态码 3（四向运动）只写在注释里，
-    // 那样的 NPC 不会被创建。这里的"跳过"就是它的忠实实现。
-    if (type !== '0' && type !== '1' && type !== '2') return
-    const at = (k: number) => field(row, k, where)
-    const x = int(at(1), where)
-    const y = int(at(2), where)
-    if (type === '0') {
-      const file = at(3)
-      npcs.push(
-        make({
-          type: 0,
-          px: x * TILE,
-          py: y * TILE,
-          images: [file],
-          // `fileName.split("\\.")[0]`：按字面的点切，取第一段。
-          name: file.split('.')[0] ?? file,
-          oral: at(4),
-        }),
-      )
-      return
+  for (const [i, row] of (scene.npcList ?? []).entries()) {
+    try {
+      const npc = npcFromRow(row, `${scene.script} npcList[${i}]`, nowMs)
+      if (npc !== null) npcs.push(npc)
+    } catch (e) {
+      if (!(e instanceof NpcRowError)) throw e
+      break
     }
-    if (type === '2') {
-      const frames = int(at(3), where)
-      const folder = at(4)
-      npcs.push(
-        make({
-          type: 2,
-          px: x * TILE,
-          py: y * TILE,
-          images: range(1, frames).map((n) => `${folder}/${n}.png`),
-          name: folder,
-          oral: at(5),
-          action: { running: true, dueMs: nowMs + NPC_TIMER_MS },
-        }),
-      )
-      return
-    }
-    const dir = int(at(3), where)
-    const length = int(at(4), where)
-    const frames = int(at(5), where)
-    const folder = at(6)
-    npcs.push(
-      make({
-        type: 1,
-        px: x * TILE,
-        py: y * TILE,
-        dir,
-        length,
-        span: length,
-        // 首帧号就是方向码：图书馆管理员缺的是 9..16 而不是 1..8。
-        images: range(0, frames - 1).map((n) => `${folder}/${n + dir}.png`),
-        name: folder,
-        oral: at(7),
-        walk: { running: true, dueMs: nowMs + NPC_TIMER_MS },
-      }),
-    )
-  })
+  }
   return npcs
 }
+
+/**
+ * 原版 `case "NPC"` 里一条记录的那一段 if/else。字段不够或不是整数就抛
+ * {@link NpcRowError}；状态码不是 0/1/2 就返回 `null`。
+ */
+function npcFromRow(row: readonly string[], where: string, nowMs: number): NpcState | null {
+  const type = row[0]
+  // 原版的 if/else 链没有第四个分支：状态码 3（四向运动）只写在注释里，
+  // 那样的 NPC 不会被创建。这里的"跳过"就是它的忠实实现。
+  if (type !== '0' && type !== '1' && type !== '2') return null
+  const at = (k: number) => field(row, k, where)
+  const x = int(at(1), where)
+  const y = int(at(2), where)
+  if (type === '0') {
+    const file = at(3)
+    return make({
+      type: 0,
+      px: x * TILE,
+      py: y * TILE,
+      images: [file],
+      // `fileName.split("\\.")[0]`：按字面的点切，取第一段。
+      name: file.split('.')[0] ?? file,
+      oral: at(4),
+    })
+  }
+  if (type === '2') {
+    const frames = int(at(3), where)
+    const folder = at(4)
+    return make({
+      type: 2,
+      px: x * TILE,
+      py: y * TILE,
+      images: range(1, frames).map((n) => `${folder}/${n}.png`),
+      name: folder,
+      oral: at(5),
+      action: { running: true, dueMs: nowMs + NPC_TIMER_MS },
+    })
+  }
+  const dir = int(at(3), where)
+  const length = int(at(4), where)
+  const frames = int(at(5), where)
+  const folder = at(6)
+  return make({
+    type: 1,
+    px: x * TILE,
+    py: y * TILE,
+    dir,
+    length,
+    span: length,
+    // 首帧号就是方向码：图书馆管理员缺的是 9..16 而不是 1..8。
+    images: range(0, frames - 1).map((n) => `${folder}/${n + dir}.png`),
+    name: folder,
+    oral: at(7),
+    walk: { running: true, dueMs: nowMs + NPC_TIMER_MS },
+  })
+}
+
+/** 一条 NPC 记录建不出来（原版在那里抛、被 `switchReader` 吞掉）。 */
+export class NpcRowError extends Error {}
 
 /**
  * 场景初始化时两个定时器的到期时刻都是 `nowMs + 200`：原版在**构造函数里**
@@ -452,8 +470,8 @@ function range(from: number, to: number): number[] {
 function field(row: readonly string[], k: number, where: string): string {
   const value = row[k]
   if (value === undefined) {
-    // 原版：ArrayIndexOutOfBoundsException，走进这个场景直接崩。
-    throw new Error(
+    // 原版：ArrayIndexOutOfBoundsException（被 switchReader 吞掉，见 createNpcs）。
+    throw new NpcRowError(
       `${where} 只有 ${row.length} 个字段，取不到第 ${k} 个：${row.join(' ')}。` +
         `原版在这里是 ArrayIndexOutOfBoundsException。`,
     )
@@ -463,7 +481,7 @@ function field(row: readonly string[], k: number, where: string): string {
 
 function int(text: string, where: string): number {
   if (!/^[+-]?\d+$/.test(text)) {
-    throw new Error(`${where} 的 ${JSON.stringify(text)} 不是整数（原版：NumberFormatException）。`)
+    throw new NpcRowError(`${where} 的 ${JSON.stringify(text)} 不是整数（原版：NumberFormatException）。`)
   }
   return Number.parseInt(text, 10)
 }
