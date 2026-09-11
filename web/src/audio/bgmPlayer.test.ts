@@ -213,14 +213,23 @@ describe('M1 用到的背景音乐', () => {
  * 自动播放策略、解码失败它都看不见（与 SPEC 里音效判据写下的弱点同一句）。
  */
 describe('战斗背景音乐', () => {
-  const fromSource = [
-    ...javaSource('src/battle/BattlePanel.java').matchAll(/MusicReader\.readBGM\("([^"]+)"\)/g),
-  ].map((m) => m[1]!)
+  const source = javaSource('src/battle/BattlePanel.java')
+  const fromSource = [...source.matchAll(/MusicReader\.readBGM\("([^"]+)"\)/g)].map((m) => m[1]!)
   const battleBgm = [...new Set([...fromSource, ...Object.values(BGM_BY_BACKGROUND)])].sort()
 
   it('源码里扫到了不止一首（否则下面几条是空转）', () => {
     // GBK 没解对、正则写错，都会让这里是零 —— 而零条的逐首检查恒真。
     expect(new Set(fromSource).size).toBeGreaterThan(1)
+  })
+
+  /**
+   * 这里、烘焙器 `battleBgmFromSource()`、`assets/resolve.test.ts` 三处都只认
+   * **字面量**实参。原版哪天写成 `readBGM(name)`，三处会一起漏掉那一首，而
+   * 漏掉与「源码里没有」长得一样（/code-review Spec 轴提的）。所以把全部调用
+   * 点数一遍，与字面量那几处对上。
+   */
+  it('BattlePanel.java 里每一处 readBGM 都是字面量实参 —— 否则上面的扫描会漏', () => {
+    expect(fromSource.length).toBe([...source.matchAll(/\breadBGM\s*\(/g)].length)
   })
 
   it.each(battleBgm)('%s 解析得到一个产物 URL，不是抛、也不是故意静音', (bgm) => {
