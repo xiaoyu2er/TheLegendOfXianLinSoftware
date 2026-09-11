@@ -1,0 +1,13 @@
+{
+  "name": "mapshort-both",
+  "description": "图比碰撞网格窄且矮（xl-czb.3 / xl-i06.14）：仙二205 的 教室2.png 是 1023×639，网格 32×20（1024×640）。源矩形 (0,0)-(1016,632) 取不到缺的那一列一行 —— 这份剧本给跨端逐帧比对的右、下边缘当判据。只站着等：判据是地图边缘，不是走路。",
+  "driver": "scene",
+  "warmup": "脚本1.txt",
+  "scene": "仙二205.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "wait", "ticks": 100 }
+  ]
+}
