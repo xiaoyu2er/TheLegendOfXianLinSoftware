@@ -611,6 +611,30 @@ describe('滚动条：拖拽滑块（xl-03x.9）', () => {
     }
   })
 
+  /**
+   * ⚠️ 上面那条只把指针落在「滑块恰好在第 n 行」的那几个点上，而在那几个点上
+   * 四舍五入与向下取整给出同一个数 —— 篡改矩阵实测：把折算改成 `Math.floor`，
+   * 全套是绿的。这一条落在**两行正中的两侧**：过了正中才换行，没过就不换，
+   * 也就是列表停在离指针最近的那一行。正中按滑块的行程现算，不写像素。
+   */
+  it('指针过了两行正中才换行 —— 列表停在离指针最近的那一行', () => {
+    const max = maxScroll(V, WEAPON_ROWS)
+    const bar = scrollbar(V, WEAPON_ROWS, 0)!
+    const travel = bar.track.height - bar.thumb.height
+    for (let at = 1; at <= max; at++) {
+      const mid = (travel * (at - 0.5)) / max
+      for (const [dy, want] of [
+        [Math.ceil(mid + 1), at],
+        [Math.floor(mid - 1), at - 1],
+      ] as const) {
+        const w = equipWorld()
+        const grab = grabThumb(w)
+        stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + dy }])
+        expect(equipOf(w).scroll, `往下拖 ${dy} 像素（第 ${at - 1}/${at} 行正中在 ${mid}）`).toBe(want)
+      }
+    }
+  })
+
   it('拖过两端夹住；从端点外往回拖，从端点起算', () => {
     const w = equipWorld()
     const e = equipOf(w)
