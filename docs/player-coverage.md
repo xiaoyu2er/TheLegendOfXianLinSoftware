@@ -74,7 +74,7 @@
 | 菜单 药品页：悬停选药、点「使用」回血回蓝 | **能，但不对**：药品页永远看不到玩家持有的药，只会说「没药了」 | 随时 | xl-bsv（open） | `DrugPanel.java:92-300`；实跑 scratch：药包 3、菜单药品页 0；读代码：`refreshMenuWorld` 不同步药包 |
 | 菜单 装备页：六个槽位切换、悬停看升降箭头、「使用」/「弃用」/ 不能用时「禁止」 | 能 | 随时 | — | `EquipPanel.java:297-320,520-950`；剧本 `menu-equip`；实跑 `equipPanel.test.ts` 9/9、`equipDraw.test.ts` 22/22 |
 | 菜单 装备页里看见战斗掉的装备 | **能，但不对**：战利品装备写进另一个背包，菜单与商店都读不到 | 随时 | xl-5jx（open） | `VictoryReminder.java:348-361`；读代码：`battle/victory.ts` 写 `fakes/equipmentPack`，菜单读 `owned` |
-| 菜单 长列表：够到框外的那几行 | 能（原版不裁剪、没有滚动条，框外照画照点；Web 画的那一半裁、加滚动条，ADR-0001 已登记。滑块拖不动是 Web 自己加的滚动条欠的账，不是复刻欠账） | 随时 | 拖滑块：xl-03x.9（open）、xl-4ev（open） | `EquipPanel.java:474-486,548-571`；剧本 `menu-scroll`；实跑 `scroll.test.ts` 25/25 |
+| 菜单 长列表：够到框外的那几行 | 能（原版不裁剪、没有滚动条，框外照画照点；Web 画的那一半裁、加滚动条，ADR-0001 已登记。滑块拖不动是 Web 自己加的滚动条欠的账，不是复刻欠账） | 随时 | 拖滑块：xl-03x.9（closed）、xl-4ev（open） | `EquipPanel.java:474-486,548-571`；剧本 `menu-scroll`；实跑 `scroll.test.ts` 25/25 |
 | 菜单 奇术页：点技能看动画、说明、听音效 | 能（音效那一半见最后一行） | 随时 | — | `MagicPanel.java:343-456`；剧本 `menu-magic`（47 帧动画逐像素相等）；实跑 `magic.test.ts` 20/20 |
 | 菜单 奇术页的技能格数随等级涨 | **能，但不对**：冻结在 2 / 3 / 2，升级、读档之后都不变 | 随时 | xl-03x.17（open）、xl-i06.13（open）、xl-8ym（open） | `ZhangXiaoFan.java:223-224,720-727`、`MagicPanel.java:285-335`；读代码：`menu/magic.ts` 读常量 `SKILL_NUMBER` |
 | 菜单 天书「存档」/「提取」进存读档面板 | 能 | 随时 | — | `FuncButtons.java:192-213`；剧本 `saveload-menu`；实跑 `saveloadSession.test.ts` 8/8 |
@@ -140,7 +140,7 @@ SPEC 的线：**写一条剧本就能让跨端逐帧比对看见的进这一轮�
 3. **xl-19z（open）是这一轮现查出来最重的一条**：玩家进大多数战斗都会撞上。按线它不进这一轮，要不要破例由主干定。
 4. **「结」口径冲突**：xl-u23（closed）的裁定（禁用 + title）已落地，xl-03x.12（open）要的是「画出来、点了什么都不发生」。
 5. **重复票**（没动，列出来）：xl-2d5（open）≈ xl-03x.14（open）· xl-as2（open）≈ xl-03x.16（open）·
-   xl-t0h（open）≈ xl-03x.15（open）· xl-lna（open）≈ xl-03x.10（open）· xl-4ev（open）≈ xl-03x.9（open）·
+   xl-t0h（open）≈ xl-03x.15（open）· xl-lna（open）≈ xl-03x.10（open）· xl-4ev（open）≈ xl-03x.9（closed）·
    xl-8l2（open）≈ xl-03x.5（open）、xl-03x.6（open）、xl-03x.7（open） · xl-fbs（open）≈ xl-03x.11（open）+ xl-03x.12（open） · xl-8ym（open）≈ xl-i06.13（open）≈ xl-03x.17（open）。
 
 ## ⚠️ 这张表弱在哪
