@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../../test/repoPath'
+import { softBlit } from '../../test/softBlit'
 import { nearestBlitRuns, nearestSourceIndexes, opaqueSourceIndexes, scaledBlitPasses } from './scaledBlit'
+import type { BlitRect } from './scaledBlit'
 
 /**
  * 黄金测试：这里算出来的采样表与**真的 Java2D** 扫出来的逐个相同。
@@ -245,17 +247,7 @@ describe('scaledBlitPasses 搬出来的像素', () => {
     height,
     px: new Int32Array(width * height).fill(-1),
   })
-  /** `ctx.drawImage(src, sx,sy,sw,sh, dx,dy,dw,dh)` 在关掉插值时该做的事。 */
-  const blit = (src: Buf, dst: Buf, r: ReturnType<typeof scaledBlitPasses>['horizontal'][number]) => {
-    for (let y = 0; y < r.dh; y++) {
-      for (let x = 0; x < r.dw; x++) {
-        // 段内是整段拷贝（sw===dw）或整段复制（sw===1），两者都用同一句表达。
-        const sx = r.sx + (r.sw === r.dw ? x : Math.floor((x * r.sw) / r.dw))
-        const sy = r.sy + (r.sh === r.dh ? y : Math.floor((y * r.sh) / r.dh))
-        dst.px[(r.dy + y) * dst.width + (r.dx + x)] = src.px[sy * src.width + sx]!
-      }
-    }
-  }
+  const blit = (src: Buf, dst: Buf, r: BlitRect) => softBlit(src.px, src.width, dst.px, dst.width, r)
 
   const SRC_W = golden.transparent.x.srcLen
   const SRC_H = golden.transparent.y.srcLen

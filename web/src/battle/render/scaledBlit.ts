@@ -46,7 +46,13 @@
  *
  * ⚠️ **16 这个位数不是被数据钉死的**：实测 16..31 里**任何一个**配上「半步截尾」
  * 都给出同一张表（表在 16 位上就已经稳定了，再多的位数改不动它）。所以把它改成
- * 23 是**看不出来的**，别把 16 读成一个量出来的常数。真正被钉死的是**半步截尾**
+ * 23 是**看不出来的**，别把 16 读成一个量出来的常数。
+ *
+ * ## 不透明那一支（xl-03x.15）
+ *
+ * 旁白背景（639×395，全不透明）拉满画布也改成 CPU 按表拼，走的是不透明那条循环：
+ * {@link opaqueSourceIndexes}，经 `BlitLoop` 选。上面「用的是带透明那一份」说的是
+ * 提示图；默认值仍是 `'transparent'`，战斗那边行为不变。真正被钉死的是**半步截尾**
  * 这件事 —— 改成向上取整（也就是不透明那条循环的做法），24 条测试里 4 条当场红。
  *
  * 判对错的是那两张表，不是这段公式 —— 见 `scaledBlit.test.ts`。
@@ -120,11 +126,6 @@ export function opaqueSourceIndexes(srcLen: number, destLen: number): number[] {
   return out
 }
 
-/** 按循环分派。 */
-export function sourceIndexes(srcLen: number, destLen: number, loop: BlitLoop): number[] {
-  return loop === 'opaque' ? opaqueSourceIndexes(srcLen, destLen) : nearestSourceIndexes(srcLen, destLen)
-}
-
 /**
  * 目标第 i 个像素取的源下标，i = 0..destLen-1。**源图必须带透明**，理由见文件头。
  *
@@ -162,7 +163,7 @@ export function nearestBlitRuns(
   destLen: number,
   loop: BlitLoop = 'transparent',
 ): BlitRun[] {
-  const idx = sourceIndexes(srcLen, destLen, loop)
+  const idx = loop === 'opaque' ? opaqueSourceIndexes(srcLen, destLen) : nearestSourceIndexes(srcLen, destLen)
   const runs: BlitRun[] = []
   let start = 0
   for (let i = 1; i <= destLen; i++) {

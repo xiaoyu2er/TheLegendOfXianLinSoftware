@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import { opaqueSourceIndexes } from '../battle/render/scaledBlit'
+import { softBlit } from '../test/softBlit'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import {
   BG_SRC_HEIGHT,
@@ -139,7 +140,11 @@ describe('旁白背景：CPU 按原版的采样表拼', () => {
     expect(opaqueSourceIndexes(GY.srcLen, GY.destLen)).toEqual(GY.map)
   })
 
-  it('第 599 行（旧写法唯一偏掉的那一行）取源第 370 行', () => {
+  // ⚠️ 这一条只钉**黄金数据**里的一个数，改渲染代码它不会红（守渲染器的是逐帧
+  // 比对）。它防的是重导之后第 599 行悄悄换了源行而没人看见。另外：把
+  // `opaqueSourceIndexes` 的半步向上改成截尾，两轴扫描会红，但这一 describe 全绿
+  // —— 在 639/395 这两对长度上两种取整给出同一张表（xl-03x.15 实测）。
+  it('黄金数据：第 599 行（旧写法唯一偏掉的那一行）取源第 370 行', () => {
     expect(GY.map[599]).toBe(370)
   })
 
@@ -150,25 +155,9 @@ describe('旁白背景：CPU 按原版的采样表拼', () => {
     for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) src[y * SW + x] = y * 1000 + x
     const mid = new Int32Array(STAGE_WIDTH * SH).fill(-1)
     const out = new Int32Array(STAGE_WIDTH * STAGE_HEIGHT).fill(-1)
-    /** 关掉插值的 `drawImage`：段内是整段拷贝（sw===dw）或整段复制（sw===1）。 */
-    const blit = (
-      from: Int32Array,
-      fromW: number,
-      to: Int32Array,
-      toW: number,
-      r: { sx: number; sy: number; sw: number; sh: number; dx: number; dy: number; dw: number; dh: number },
-    ) => {
-      for (let y = 0; y < r.dh; y++) {
-        for (let x = 0; x < r.dw; x++) {
-          const sx = r.sx + (r.sw === r.dw ? x : Math.floor((x * r.sw) / r.dw))
-          const sy = r.sy + (r.sh === r.dh ? y : Math.floor((y * r.sh) / r.dh))
-          to[(r.dy + y) * toW + (r.dx + x)] = from[sy * fromW + sx]!
-        }
-      }
-    }
     const passes = narratageBgPasses()
-    for (const r of passes.horizontal) blit(src, SW, mid, STAGE_WIDTH, r)
-    for (const r of passes.vertical) blit(mid, STAGE_WIDTH, out, STAGE_WIDTH, r)
+    for (const r of passes.horizontal) softBlit(src, SW, mid, STAGE_WIDTH, r)
+    for (const r of passes.vertical) softBlit(mid, STAGE_WIDTH, out, STAGE_WIDTH, r)
 
     let bad = 0
     let first = ''

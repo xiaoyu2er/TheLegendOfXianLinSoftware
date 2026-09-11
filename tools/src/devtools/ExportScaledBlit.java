@@ -374,7 +374,7 @@ public class ExportScaledBlit {
      */
     private static int[][] sweepNarratage(File dir) throws Exception {
         for (int k = NARR_FIRST; k <= NARR_LAST; k++) {
-            File f = new File(NARR_DIR + "all_magic_21-" + k + ".png");
+            File f = narratageFile(k);
             BufferedImage raw = ImageIO.read(f);
             if (raw == null) fail("读不出旁白背景图：" + f.getPath());
             if (raw.getWidth() != NARR_SRC_W || raw.getHeight() != NARR_SRC_H) {
@@ -419,7 +419,7 @@ public class ExportScaledBlit {
         }
 
         for (int k = NARR_FIRST; k <= NARR_LAST; k++) {
-            File f = new File(NARR_DIR + "all_magic_21-" + k + ".png");
+            File f = narratageFile(k);
             BufferedImage raw = ImageIO.read(f);
             BufferedImage drawn = drawLikeNarratage(tools.Reader.readImage(f.getPath()));
             for (int j = 0; j < NARR_DEST_H; j++) {
@@ -435,6 +435,11 @@ public class ExportScaledBlit {
             }
         }
         return new int[][] {mx, my};
+    }
+
+    /** 第 k 张旁白背景（{@code Narratage} 构造函数里的拼法）。 */
+    private static File narratageFile(int k) {
+        return new File(NARR_DIR + "all_magic_21-" + k + ".png");
     }
 
     /** 原版那一句，逐字照抄，画到与 {@code ScenePanel.backImage} 同型的位图上。 */
