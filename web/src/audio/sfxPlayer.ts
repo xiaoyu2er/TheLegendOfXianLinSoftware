@@ -25,7 +25,9 @@ import type { Sound } from './bgmPlayer'
  * 音效**之间**不重叠：放着一声时再来一声，旧的那声的流在新声起来之后一个
  * 字节都没再被读（成因是 `playmusic` 覆写同一组实例字段）。这一层照做的方式
  * 与背景音乐那边一样是**结构性**的：整个播放器只有一个 `Sound`，新的一声是给
- * 它换 `src`，旧的那段随之丢掉。
+ * 它换 `src`，旧的那段随之丢掉。单元测试守的是「只有一个对象、新声换它的
+ * `src`」；「换 `src` 就不再喂旧的那段」是 `HTMLAudioElement` 的行为（HTML
+ * 规范的媒体载入算法），⚠️ **未在真浏览器里验证过**。
  *
  * ## 开关
  *
@@ -92,8 +94,9 @@ export function createSfxPlayer(options: SfxPlayerOptions = {}): SfxPlayer {
     if (!sound) {
       const s = create()
       s.loop = false
-      // 只认此刻还是它自己的那一声放完：换过 src 之后旧的那段不会再来 ended，
-      // 但 current 指的永远是最后交出去的那一声。
+      // 不核是哪一声放完：只有一个对象，换过 src 之后被顶掉的那段不会再来
+      // ended（HTML 规范的媒体载入算法；⚠️ 未在真浏览器里验证过），所以来的
+      // ended 只可能属于最后交出去的那一声。
       s.onended = () => {
         current = null
       }
@@ -110,8 +113,10 @@ export function createSfxPlayer(options: SfxPlayerOptions = {}): SfxPlayer {
           () => {
             blocked = false
           },
-          () => {
-            blocked = true
+          (err: unknown) => {
+            // 换 src 或 pause() 会让上一次还没兑现的 play() 以 AbortError 拒掉
+            // —— 那是「被后一声顶掉 / 被关掉」，不是浏览器挡了自动播放。
+            if ((err as { name?: unknown } | null)?.name !== 'AbortError') blocked = true
           },
         )
       }

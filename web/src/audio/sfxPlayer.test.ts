@@ -1,10 +1,7 @@
-import { readdirSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bgmAssetId, sfxAssetId } from '../assets/ids'
-import { resolveAsset, resolveBgmOrNull } from '../assets/resolve'
-import { SFX_ROOT, sfxProductPath } from '../assets/sfxAssets'
+import { bgmAssetId } from '../assets/ids'
+import { resolveBgmOrNull } from '../assets/resolve'
 import { getScene } from '../data/scenesEager'
-import { repoPath } from '../test/repoPath'
 import { createBgmPlayer } from './bgmPlayer'
 import { createSfxPlayer } from './sfxPlayer'
 import type { SfxSound } from './sfxPlayer'
@@ -16,7 +13,8 @@ import type { SfxSound } from './sfxPlayer'
 function fakeSound(log: string[], tag: string): SfxSound {
   let src = ''
   return {
-    loop: false,
+    // 故意是 true：播放器得自己把它设成 false，否则「不循环」那条断言恒真。
+    loop: true,
     onended: null,
     get src(): string {
       return src
@@ -255,6 +253,60 @@ describe('音效播放器', () => {
     expect(player.blocked()).toBe(true)
   })
 
+  it('play() 当场抛（jsdom 那种）也不抛出去，记成 blocked()', () => {
+    const player = createSfxPlayer({
+      create: () => ({
+        ...fakeSound([], 'sfx'),
+        play: () => {
+          throw new Error('not implemented')
+        },
+      }),
+      resolve: (n) => `/${n}.m4a`,
+    })
+    expect(() => player.play(['click.wav'])).not.toThrow()
+    expect(player.blocked()).toBe(true)
+  })
+
+  /**
+   * 换 `src` / `pause()` 会让上一次还没兑现的 `play()` 以 AbortError 拒掉
+   * （同一步请求两声、或刚起步就被关掉时都会碰到）。那是被顶掉，不是被挡。
+   */
+  it('被后一声顶掉的那次 play() 以 AbortError 拒掉：不算被挡；后一声放成功就复位', async () => {
+    const outcomes = [
+      () => Promise.reject(Object.assign(new Error('NotAllowed'), { name: 'NotAllowedError' })),
+      () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+      () => Promise.resolve(),
+    ]
+    let i = 0
+    const player = createSfxPlayer({
+      create: () => ({ ...fakeSound([], 'sfx'), play: () => outcomes[i++]!() }),
+      resolve: (n) => `/${n}.m4a`,
+    })
+    player.play(['click.wav'])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(player.blocked()).toBe(true)
+    player.play(['换头像.wav', 'click.wav'])
+    await Promise.resolve()
+    await Promise.resolve()
+    // 第二次是 AbortError：不该把 blocked 重新置 true；第三次成功把它复位。
+    expect(player.blocked()).toBe(false)
+  })
+
+  it('只有 AbortError 的那一次：blocked() 保持 false', async () => {
+    const player = createSfxPlayer({
+      create: () => ({
+        ...fakeSound([], 'sfx'),
+        play: () => Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+      }),
+      resolve: (n) => `/${n}.m4a`,
+    })
+    player.play(['click.wav'])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(player.blocked()).toBe(false)
+  })
+
   it('destroy 停下正在响的那声', () => {
     const log: string[] = []
     const player = make(log)
@@ -266,23 +318,19 @@ describe('音效播放器', () => {
 })
 
 /**
- * 默认的 `resolve` 走**真的映射表**：`sources/music/` 里每一个文件都解得到一个
- * 指向它自己产物的 URL。分母现扫目录（与 `bakeSfx` 同口径，跳过点文件）。
+ * 默认的 `resolve` 走的是**音效那张映射**，不是背景音乐那张。每个文件都进了
+ * 映射表、都指向自己的产物，是 `assets/sfxAssets.test.ts` 的事，这里不再逐个抄。
  */
 describe('音效播放器的默认 URL', () => {
-  const files = readdirSync(repoPath(SFX_ROOT))
-    .filter((f) => !f.startsWith('.'))
-    .sort()
-
-  it('源目录不是空的（否则下面这条是空转）', () => {
-    expect(files.length).toBeGreaterThan(0)
-  })
-
-  it.each(files)('%s 交给播放器的是它自己的产物 URL', (file) => {
+  it('交给播放器的是 sfx/ 下它自己的产物', () => {
     const log: string[] = []
     const player = createSfxPlayer({ create: () => fakeSound(log, 'sfx') })
-    player.play([file])
-    expect(log[0]).toBe(`sfx src=${resolveAsset(sfxAssetId(file))}`)
-    expect(decodeURIComponent(log[0]!)).toContain(sfxProductPath(file))
+    player.play(['换list.wav'])
+    expect(decodeURIComponent(log[0]!)).toMatch(/^sfx src=.*\/sfx\/换list\.m4a$/)
+  })
+
+  it('映射表里没有的一声：默认 resolve 当场抛，不静音藏起烘焙漏项', () => {
+    const player = createSfxPlayer({ create: () => fakeSound([], 'sfx') })
+    expect(() => player.play(['不存在的文件.wav'])).toThrow(/sfx:不存在的文件/)
   })
 })
