@@ -185,8 +185,11 @@ describe('可达闭包', () => {
   it('篡改：给宿舍加一个通向 迷宫1 的出口，够不着的就少一本', () => {
     const dorm = truths.get('宿舍.txt')!
     const t = tampered('宿舍.txt', { nextScene: [...exitsOf(dorm), '迷宫1.txt'] })
+    // 与未篡改的现算结果比，不与登记比：这条验的是闭包算法对出口有反应，登记那条另有人管。
+    const before = unreachable(truths, reachable(truths, chainOf('win32')))
+    expect(before).toContain('迷宫1.txt')
     const got = unreachable(t, reachable(t, chainOf('win32', t)))
-    expect(got).toEqual(Object.keys(UNREACHABLE_WIN32).filter((f) => f !== '迷宫1.txt').sort())
+    expect(got).toEqual(before.filter((f) => f !== '迷宫1.txt'))
   })
 })
 
