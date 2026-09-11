@@ -182,6 +182,16 @@ function scrollLists(
  * 一直是 (0,0)。两行对调的话四个 Mouse 的坐标会整体串到上一页去。
  */
 function menuMousePressed(w: MenuWorld, x: number, y: number): void {
+  // 任何一次按下都先结束**四页**的拖拽（xl-03x.9），不只当前页：能再按一次，
+  // 说明上一次的松手丢了（`scroll.ts` 的 `ScrollDrag`）；而这一下若是页签，
+  // 下一行就换页了，旧那一页的锚点会一直留着 —— 哪天有一条不经过按下就回到
+  // 那一页的路，头一次移动就会把列表拖走。按在滑块上的话，下面
+  // `pressScrollTrack` 会在当前页重新开始一次。
+  for (const name of MENU_PANEL_ORDER) {
+    const panel = w.panels[name]
+    if (panel.equip) releaseScrollDrag(panel.equip)
+    if (panel.drug) releaseScrollDrag(panel.drug)
+  }
   w.currentX = x
   w.currentY = y
   commandCheckPressed(w)

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
+import { pressButtonOnly } from '../test/menuClicks'
 import { decodePng, scanDarkBox } from '../test/png'
 import { readMenuTrace, replayMenu } from './trace'
 import type { MenuTrace, MenuTraceTick } from './trace'
@@ -633,6 +634,39 @@ describe('滚动条：拖拽滑块（xl-03x.9）', () => {
         expect(equipOf(w).scroll, `往下拖 ${dy} 像素（第 ${at - 1}/${at} 行正中在 ${mid}）`).toBe(want)
       }
     }
+  })
+
+  it('从底往上拖也一样：过了两行正中才换行', () => {
+    const max = maxScroll(V, WEAPON_ROWS)
+    const bar = scrollbar(V, WEAPON_ROWS, 0)!
+    const travel = bar.track.height - bar.thumb.height
+    for (let at = max - 1; at >= 0; at--) {
+      const mid = (travel * (max - at - 0.5)) / max
+      for (const [dy, want] of [
+        [Math.ceil(mid + 1), at],
+        [Math.floor(mid - 1), at + 1],
+      ] as const) {
+        const w = equipWorld()
+        equipOf(w).scroll = max
+        const grab = grabThumb(w)
+        stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y - dy }])
+        expect(equipOf(w).scroll, `从底往上拖 ${dy} 像素（第 ${at}/${at + 1} 行正中）`).toBe(want)
+      }
+    }
+  })
+
+  it('松手丢了、再按页签换走：回到这一页时拖拽已经结束了', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const grab = grabThumb(w)
+    expect(e.drag).toBeTruthy()
+    // 松手丢在舞台外，下一次按下落在「物品」页签上 —— 换页。
+    pressButtonOnly(w, w.tabs.thing)
+    expect(w.panel).toBe('thingPanel')
+    // 不经过按下就回到装备页（今天没有这条路，这里直接拨回去当作「将来有」）。
+    w.panel = 'equipPanel'
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
+    expect(e.scroll, '换页回来之后，头一次移动就把列表拖走了').toBe(0)
   })
 
   it('拖过两端夹住；从端点外往回拖，从端点起算', () => {
