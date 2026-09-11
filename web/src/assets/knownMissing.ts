@@ -65,6 +65,7 @@ export const KNOWN_MISSING: readonly KnownMissing[] = [
 
 export const KNOWN_DEFECTS: readonly KnownDefect[] = [
   // xl-1dv.14 —— NPC 名与口头禅之间的空格写成了全角逗号，字段少一个，
-  // 原版进这个场景就是 ArrayIndexOutOfBoundsException。
+  // 原版读到这一条 ArrayIndexOutOfBoundsException，被 Reader.switchReader 吞掉：
+  // 场景照进，只建出它前面那 3 个 NPC（xl-03x.13 实跑，见 state/npc.ts 的 createNpcs）。
   { where: '仙二205.txt npcList[3]', issue: 'xl-1dv.14' },
 ]

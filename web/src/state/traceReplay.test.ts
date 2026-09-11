@@ -334,6 +334,8 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
+    'npc-defect',
   ],
   // NPC 七个字段，xl-9bd.9。⚠️ `dorm-walk` / `dorm-exit` 那几条里 NPC 动得少，
   // 守的是"别凭空动起来"；真的走动与被 checkNPCStop 停住在下面那条覆盖用例里
@@ -358,6 +360,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   // 对话框十二个字段，xl-9bd.10。⚠️ 十一条里只有几条真的开过口；一份从头到尾
   // 没有对话的真值上这一格是"全 false 等于全 false"，覆盖靠下面那条数出来的
@@ -385,6 +388,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   // 旁白六个字段，xl-9bd.11。⚠️ 只有 `dorm-intro` 与 `milestone` 真的播过旁白
   // （实测 810 / 1070 个 tick），另三条守的是"没有旁白的剧本里它不许自己起来"。
@@ -408,6 +412,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   // 场景文件名与 isScript，xl-9bd.12（出口切换）。
   scene: [
@@ -430,6 +435,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   isScript: [
     'battle-door',
@@ -451,6 +457,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   // 选择框那 28 个字段，xl-yg6.8。整列来自 `src/scene/SelectEvent.java` 一个
   // 对象（外加那两张 static 表配成的 `recorder`）。十一条全绿是跑出来的：
@@ -475,6 +482,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   // 宝箱与「得到物品」提示框，xl-yg6.10（`EquipmentEvent` + `TreasureBox`）。
   // **跑出来的**：观察函数加上、登记还挂在 PENDING 时跑了一遍，反方向那 11 条
@@ -502,6 +510,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   // `MusicPlayer.currentPlayingBGM`，xl-9bd.12。
   // `battle-door` 那一格 xl-yg6.11 翻过来：选「是」那一下原版先跑
@@ -528,6 +537,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
+    'npc-defect',
   ],
   // ——— 读档专属那几组（xl-i06.10）。读数见 LOAD_ONLY_GROUPS 的注释。———
   // 剧情进度：对话结束旗标与编号、剧情三元组、两个战斗计数。

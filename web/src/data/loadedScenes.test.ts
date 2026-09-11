@@ -117,7 +117,7 @@ describe('行尾带空格的出口名（xl-1dv.11）', () => {
     vi.resetModules()
     const { loadedSceneSource, prepareExits } = await import('./loadedScenes')
     for (const { scene, exit } of trailing) {
-      // 仙二205 进不去（xl-d8u），它的出口表直接从数据取，不建世界。
+      // 出口表直接从数据取，不建世界（这里只验出口名的查法）。
       await prepareExits({ exit: { nextScene: [exit] }, currentScript: [], nextScript: null } as unknown as World)
       expect(loadedSceneSource(exit)?.script, `${scene} 的出口 ${JSON.stringify(exit)}`).toBe(bare(exit))
     }

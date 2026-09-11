@@ -1,0 +1,20 @@
+{
+  "driver": "scene",
+  "name": "npc-defect",
+  "description": "NPC 数据有毛病的那个场景（xl-03x.13）：script/仙二205.txt 的第 4 条 NPC（太极老师）名字与口头语之间的空格写成了全角逗号，只有 7 个字段，原版 Reader 取 sg[7] 时 ArrayIndexOutOfBounds，被 switchReader 自己的 try/catch 吞掉 —— npcList 照样 4 条、npcs 只建出前 3 个，后面的 Exit / Music 段照读，场景照进。先走到 (26,4)，也就是太极老师本该站的那一格（原版那里没人，走得进去），再走到清洁工 (5,15) 左下的 (4,16) 让它停下、搭一次话。不走出口：出口目标 仙二教学楼二楼.txt 行尾带空格，是另一处已知坏数据（xl-1dv.11）。",
+  "warmup": "脚本1.txt",
+  "scene": "仙二205.txt",
+  "isScript": false,
+  "tickMs": 10,
+  "maxTicks": 20000,
+  "steps": [
+    { "op": "walkTo", "x": 26, "y": 4 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "walkTo", "x": 26, "y": 8 },
+    { "op": "walkTo", "x": 4, "y": 16 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "talk" },
+    { "op": "advanceAll", "max": 4 },
+    { "op": "wait", "ticks": 30 }
+  ]
+}
