@@ -1,7 +1,19 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
-import { CELL_WIDTH, FONT_SIZE, TEXT_LEFT, baselineY, isFullWidth, layoutLine } from './narratageLayout'
+import { opaqueSourceIndexes } from '../battle/render/scaledBlit'
+import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
+import {
+  BG_SRC_HEIGHT,
+  BG_SRC_WIDTH,
+  CELL_WIDTH,
+  FONT_SIZE,
+  TEXT_LEFT,
+  baselineY,
+  isFullWidth,
+  layoutLine,
+  narratageBgPasses,
+} from './narratageLayout'
 
 /**
  * 磁盘上真值里的全部旁白行。**分母从源头数**：96 份真值里哪几份有 `Narratage`
@@ -92,5 +104,83 @@ describe('逐字按格摆', () => {
 
   it('left 可以挪，格子整体跟着走', () => {
     expect(layoutLine('风雨', never, 0).map((c) => c.x)).toEqual([0, 20])
+  })
+})
+
+/**
+ * 背景拉满画布（xl-03x.15）。期望值不是这里写的：`tools/export-scaled-blit.sh`
+ * 照原版那一句 `drawImage(img, 0,0,1024,640, 0,0,639,395)` 画一遍梯度图读回来，
+ * 并拿 52 张真图核过「画出来 = 两张表的外积」。
+ */
+describe('旁白背景：CPU 按原版的采样表拼', () => {
+  interface NarrAxis {
+    readonly srcLen: number
+    readonly destLen: number
+    readonly map: readonly number[]
+  }
+  const golden = JSON.parse(
+    readFileSync(repoPath('tools/scaled-blit-golden/java-scaled-blit.json'), 'utf8'),
+  ) as { narratage: { x: NarrAxis; y: NarrAxis } }
+  const { x: GX, y: GY } = golden.narratage
+
+  it('黄金数据量的就是原版那一句的几何', () => {
+    expect([GX.srcLen, GX.destLen, GY.srcLen, GY.destLen]).toEqual([
+      BG_SRC_WIDTH,
+      STAGE_WIDTH,
+      BG_SRC_HEIGHT,
+      STAGE_HEIGHT,
+    ])
+    expect(GX.map).toHaveLength(GX.destLen)
+    expect(GY.map).toHaveLength(GY.destLen)
+  })
+
+  it('两条轴的采样表与 Java2D 量出来的逐个相同', () => {
+    expect(opaqueSourceIndexes(GX.srcLen, GX.destLen)).toEqual(GX.map)
+    expect(opaqueSourceIndexes(GY.srcLen, GY.destLen)).toEqual(GY.map)
+  })
+
+  it('第 599 行（旧写法唯一偏掉的那一行）取源第 370 行', () => {
+    expect(GY.map[599]).toBe(370)
+  })
+
+  it('narratageBgPasses 两趟搬出来的每个像素都是两张表的外积', () => {
+    const SW = BG_SRC_WIDTH
+    const SH = BG_SRC_HEIGHT
+    const src = new Int32Array(SW * SH)
+    for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) src[y * SW + x] = y * 1000 + x
+    const mid = new Int32Array(STAGE_WIDTH * SH).fill(-1)
+    const out = new Int32Array(STAGE_WIDTH * STAGE_HEIGHT).fill(-1)
+    /** 关掉插值的 `drawImage`：段内是整段拷贝（sw===dw）或整段复制（sw===1）。 */
+    const blit = (
+      from: Int32Array,
+      fromW: number,
+      to: Int32Array,
+      toW: number,
+      r: { sx: number; sy: number; sw: number; sh: number; dx: number; dy: number; dw: number; dh: number },
+    ) => {
+      for (let y = 0; y < r.dh; y++) {
+        for (let x = 0; x < r.dw; x++) {
+          const sx = r.sx + (r.sw === r.dw ? x : Math.floor((x * r.sw) / r.dw))
+          const sy = r.sy + (r.sh === r.dh ? y : Math.floor((y * r.sh) / r.dh))
+          to[(r.dy + y) * toW + (r.dx + x)] = from[sy * fromW + sx]!
+        }
+      }
+    }
+    const passes = narratageBgPasses()
+    for (const r of passes.horizontal) blit(src, SW, mid, STAGE_WIDTH, r)
+    for (const r of passes.vertical) blit(mid, STAGE_WIDTH, out, STAGE_WIDTH, r)
+
+    let bad = 0
+    let first = ''
+    for (let j = 0; j < STAGE_HEIGHT; j++) {
+      for (let i = 0; i < STAGE_WIDTH; i++) {
+        const want = GY.map[j]! * 1000 + GX.map[i]!
+        if (out[j * STAGE_WIDTH + i] !== want) {
+          if (bad === 0) first = `(${i},${j}) 取到 ${out[j * STAGE_WIDTH + i]}，应为 ${want}`
+          bad++
+        }
+      }
+    }
+    expect({ bad, first }).toEqual({ bad: 0, first: '' })
   })
 })
