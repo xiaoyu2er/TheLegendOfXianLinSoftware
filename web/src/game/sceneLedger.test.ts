@@ -31,12 +31,19 @@ describe('settleSceneRequests', () => {
     settleSceneRequests(
       requests({
         treasureRequest: [
-          { name: '金疮药', count: 2 },
-          { name: '金疮药', count: 1 },
+          { name: '金创药', count: 2 },
+          { name: '金创药', count: 1 },
         ],
       }),
     )
-    expect(drugCount('金疮药')).toBe(3)
+    expect(drugCount('金创药')).toBe(3)
+  })
+
+  it('原版药表里没有的名字一件都不进 —— maze-treasure 那个「金疮药」（脚本错字）', () => {
+    // 账本对撞的实测（2026-09-11）：原版这一侧 drugList 里没有「金疮药」，开箱之后
+    // 药包全是 0；Web 的假药包从前收下了 2 件。
+    settleSceneRequests(requests({ treasureRequest: [{ name: '金疮药', count: 2 }] }))
+    expect(drugEntries().filter(([, n]) => n !== 0)).toEqual([])
   })
 
   it('什么请求都没亮的一拍，账一个字都不动', () => {
