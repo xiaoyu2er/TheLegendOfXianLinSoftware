@@ -71,6 +71,10 @@ import java.util.Map;
  *                             切到别的一块、或者到 max 还没切 —— 硬失败。
  *                             形状照抄场景那边的 exitTo：「到了而没换」与「到了」
  *                             在 trace 里长得一模一样，所以由导出器当场判。
+ *   debugKill                 按一下原版留的调试外挂键 J（{@code BattlePanel.keyPressed}：
+ *                             清空敌人、直接 {@code checkEnemyDead}）。**等控制台出来才按** ——
+ *                             那一刻场上没有一招在飞；一招打到一半按下去，那一招落地时
+ *                             要去读已经被置 null 的 em1/em2/em3（xl-03x.14）。
  *   wait    {ticks}           空等若干 tick（两套词汇共用）。
  *
  * 每条指令有 tick 预算（budget，默认 2000）。超预算是硬失败，不是静默跳过 ——
@@ -172,7 +176,7 @@ public final class TraceScript {
 
     private static final List<String> BATTLE_OPS = Arrays.asList(
             "command", "target", "autoAttack", "awaitExit", "wait",
-            "skillMenu", "drugMenu", "autoUntilRound", "autoUntilAngry");
+            "skillMenu", "drugMenu", "autoUntilRound", "autoUntilAngry", "debugKill");
 
     /**
      * {@code awaitExit} 认的面板名：{@code GameLauncher.setLayout()} 往

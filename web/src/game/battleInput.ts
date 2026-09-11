@@ -1,5 +1,5 @@
 import { commandButtons, skillMenuButtons } from '../battle/step'
-import type { BattleInput } from '../battle/step'
+import type { BattleClick } from '../battle/step'
 import { hitsButton, hitsEnemy } from '../battle/render/hitBox'
 import type { BattleWorld } from '../battle/types'
 
@@ -55,6 +55,6 @@ export function classifyClick(w: BattleWorld, x: number, y: number): string {
   return 'none'
 }
 
-export function battleClick(w: BattleWorld, x: number, y: number): BattleInput {
+export function battleClick(w: BattleWorld, x: number, y: number): BattleClick {
   return { e: 'click', x, y, target: classifyClick(w, x, y) }
 }

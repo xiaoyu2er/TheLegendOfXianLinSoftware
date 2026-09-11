@@ -345,6 +345,16 @@ export function useGame(
         else if (to === 'scene') openMenuRef.current = true
         return
       }
+      // 战斗里的调试外挂键 J（xl-03x.14）：`GameLauncher.keyPressed` 在当前面板是
+      // 战斗时把键码转给 `BattlePanel.keyPressed`，那里只认 `VK_J`。认物理键位
+      // （`code`）而不只认字符：中文输入法开着时 `key` 是 `Process`。
+      if (event.type === 'keydown' && (event.code === 'KeyJ' || event.key.toLowerCase() === 'j')) {
+        if (keyReceiver(panelRef.current) === 'battle') {
+          event.preventDefault()
+          clicksRef.current.push({ e: 'key', key: 'j' })
+          return
+        }
+      }
       const input = toInputEvent({
         type: event.type === 'keydown' ? 'keydown' : 'keyup',
         key: event.key,

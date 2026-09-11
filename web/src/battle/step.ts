@@ -34,13 +34,25 @@ import type {
  * 状态是**就地改**的（返回的就是传进来的那个 world），理由见 `types.ts`。
  */
 
-/** 真值里 `input` 那一项。战斗的输入只有鼠标。 */
-export interface BattleInput {
-  readonly e: string
+/**
+ * 真值里 `input` 那一项：鼠标，外加原版留的那个调试外挂键 J（xl-03x.14）。
+ *
+ * 键盘只有 J 这一个：原版 `BattlePanel.keyPressed` 里就只有 `VK_J` 一支，
+ * 别的键 `GameLauncher` 转过来也什么都不做。
+ */
+export type BattleInput = BattleClick | BattleDebugKey
+
+export interface BattleClick {
+  readonly e: 'click'
   readonly x: number
   readonly y: number
   /** `command:<按钮>` 或 `enemy:<槽位>`，由导出器写入。 */
   readonly target: string
+}
+
+export interface BattleDebugKey {
+  readonly e: 'key'
+  readonly key: 'j'
 }
 
 export function stepBattle(w: BattleWorld, inputs: readonly BattleInput[] = []): BattleWorld {
@@ -83,7 +95,12 @@ export function stepBattle(w: BattleWorld, inputs: readonly BattleInput[] = []):
  * `clickEnemy`）。`target` 是真值里记着的那一列，不是状态。
  */
 export function applyBattleInput(w: BattleWorld, input: BattleInput): void {
-  if (input.e !== 'click') throw new Error(`战斗只认 click 输入，实际 ${input.e}`)
+  if (input.e === 'key') {
+    if (input.key !== 'j') throw new Error(`战斗只认 J 这一个键，实际 ${String(input.key)}`)
+    debugKill(w)
+    return
+  }
+  if (input.e !== 'click') throw new Error(`战斗只认 click / key 输入，实际 ${String((input as { e: unknown }).e)}`)
   mouseMoved(w, input.x, input.y)
   mousePressed(w, input.x, input.y)
   // 点按钮（控制台与两个菜单）是移入 + 按下 + 松开，点怪物只有移入 + 按下。
@@ -1837,6 +1854,32 @@ export function checkEnemyDead(w: BattleWorld): void {
   w.progressBar.isDraw = false
   w.victoryReminder.isDraw = true
   w.victoryReminder.isStop = false
+}
+
+/**
+ * 原版留的调试外挂：`BattlePanel.keyPressed` 的 `VK_J` 那一支（xl-03x.14）。
+ *
+ *     enemies.clear(); em1=null; em2=null; em3=null; check.checkEnemyDead();
+ *
+ * 判胜走的就是正常打赢那一个 `checkEnemyDead` —— 三个 `drop` 因为槽位已经空了
+ * 一个都不进，直接落到「全部怪物被杀死」那一段。与正常打赢**不同**的只有它
+ * 跳过的那几句，行为真值 `battle-victory` 里逐拍看得见（2026-09-11 实跑）：
+ *
+ * - **行动条上三只怪的位置不清零**：清零（`Enemy1X=0`）写在 `drop` 里，这里没走；
+ * - 怪物的血原样留着（没打死就判胜了）；
+ * - 控制台与指令提示**一直开着**，盖着结算画面走完 —— 秒杀是在等玩家点按钮的
+ *   那一刻按的，`checkEnemyDead` 不关它们，而正常打赢时它们本来就是关的。
+ *
+ * 也**不判「当前能不能按」**：原版没有门，照抄，不加门。⚠️ 由此推出「结算期间
+ * 再按一次，胜利那一段会再跑一遍、经验再发一次」—— 这一句是**读源码推的，
+ * 没有真值跑过**（`battle-victory` 只按了一次）。
+ */
+function debugKill(w: BattleWorld): void {
+  w.enemies.splice(0)
+  w.em1 = null
+  w.em2 = null
+  w.em3 = null
+  checkEnemyDead(w)
 }
 
 /** `Check.checkHeroDead()`：怪物的技能播完之后检查我方。 */
