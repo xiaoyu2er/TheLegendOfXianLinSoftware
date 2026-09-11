@@ -1,4 +1,4 @@
-import { menuButton, moveInButton, pressButton, releaseButton } from './buttons'
+import { hits, menuButton, moveInButton, pressButton, releaseButton } from './buttons'
 import type { MenuAudioSettings, MenuButtonState } from './types'
 
 /**
@@ -7,10 +7,12 @@ import type { MenuAudioSettings, MenuButtonState } from './types'
  *
  * 切面板的那几支这一层只立一次性信号，由会话读了去切：存档 / 提取 → ls 面板
  * （`saveLoadRequest`，xl-i06.9）、返回 → 场景（`exitToScene`）、重新开始 →
- * 标题（`restartToTitle`，xl-03x.11）。**只剩「确认离开」背后还是空实现**
- * （原版 `System.exit(0)`，归另一张票）—— 它照画、照响应三态、点得响；不画
- * 或者禁用都会引入一个原版没有的差异：真值第 0 帧的 `func.drawn` 就写着六个
- * 按钮名，而禁用会让三态贴图少画一态。
+ * 标题（`restartToTitle`，xl-03x.11）。
+ *
+ * 「确认离开」是 `System.exit(0)`，浏览器里没有对应物，**画出来、禁用**
+ * （`FUNC_DISABLED`，xl-03x.12，登记在 ADR-0001 的 start-exit-disabled 那一行）。
+ * 禁用不碰 `isDraw` —— 真值 `func.drawn` 记的正是它，所以那一列照旧；少掉的只是
+ * 三态贴图里的「待点」与「按下」两态。
  *
  * ⚠️ `setKey`（键盘设定）是这一页最反直觉的一颗，**三件事同时成立**：
  *
@@ -154,6 +156,52 @@ function allSubButtons(fb: FuncButtonsState): MenuButtonState[] {
   return FUNC_SUB_GROUPS.flatMap((group) => group.map((key) => fb.sub[key]))
 }
 
+/**
+ * 天书页上**禁用**的按钮与理由 —— 一份**手写的登记**（`docs/agents/dispatch.md`
+ * 纪律 3），口径与标题页 `START_BUTTON_WIRING`（`start/buttons.ts`）一致（xl-03x.12）。
+ *
+ * 「禁用」逐条对齐标题页那颗 `<button disabled>` 在浏览器里的样子（2026-09-11 在
+ * jsdom 里实测：React 对禁用的按钮连 `mouseenter` / `mousemove` 都不派发，「结」
+ * 悬停不换图；⚠️ 真浏览器里没量过）：
+ *
+ * - **照画**，照原版展开收起 —— `isDraw` 一处不改；
+ * - **不响应**悬停、按下、松开：贴图恒为常态，`isclicked` 永不置真，于是
+ *   `checkPressed` 第 11 段（出声 + 收按钮组 + `System.exit(0)`）整段不存在；
+ * - **理由**挂在悬停上：画布没有 `title` 可挂，由 `funcDisabledReasonAt` 按坐标答，
+ *   App 挂到菜单画布的宿主上。
+ *
+ * @exception ADR-0001#start-exit-disabled
+ * 原版这一颗点下去进程就没了。回标题、弹提示是在复刻品里加一个原版没有的行为；
+ * 「照画、点了什么都不发生」又让「浏览器做不到」与「没接线」在画面上长得一样。
+ * 禁用 + 理由让前者看得见（主干裁定，xl-03x.12 的评论）。
+ */
+export const FUNC_DISABLED: Readonly<Partial<Record<FuncSubKey, string>>> = {
+  exitForSure: '浏览器里没有 System.exit(0) 的对应物，定案不做（xl-03x.12）',
+}
+
+/**
+ * 响应鼠标的子按钮：`subButtonList[1..4]` 去掉 `FUNC_DISABLED` 里那几颗。
+ * 只给按下 / 松开 / 移动三处用 —— 展开收起走 `allSubButtons`，禁用的照样跟着收放。
+ */
+function liveSubButtons(fb: FuncButtonsState): MenuButtonState[] {
+  return FUNC_SUB_ORDER.filter((key) => FUNC_DISABLED[key] === undefined).map((key) => fb.sub[key])
+}
+
+/**
+ * `(x, y)` 落在一颗**画着的、禁用的**子按钮上，就答它的理由；否则 `null`。
+ *
+ * 用的是与三态判定同一个 `hits()`（含原版那个 −15 / −6），所以理由冒出来的
+ * 地方就是原版那颗按钮点得着的地方。收着的时候不答 —— 那片地方可能住着别的
+ * 按钮（「确认离开」与背景音乐「开」的命中框重叠）。
+ */
+export function funcDisabledReasonAt(fb: FuncButtonsState, x: number, y: number): string | null {
+  for (const key of FUNC_SUB_ORDER) {
+    const reason = FUNC_DISABLED[key]
+    if (reason !== undefined && fb.sub[key].isDraw && hits(fb.sub[key], x, y)) return reason
+  }
+  return null
+}
+
 /** `for(int i=1;i<5;i++) for(MenuButton b:subButtonList[i]) b.isDraw=Yes/No;` */
 function setAllGroups(fb: FuncButtonsState, isDraw: boolean): void {
   for (const b of allSubButtons(fb)) b.isDraw = isDraw
@@ -244,8 +292,9 @@ export function funcCheckPressed(
     setGroup(fb, 4, true)
   }
 
-  // ——— 子按钮的命中判据。**只有 subButtonList[1..4]**，`setKey` 不在其中 ———
-  for (const b of allSubButtons(fb)) pressButton(b, x, y)
+  // ——— 子按钮的命中判据。**只有 subButtonList[1..4]**，`setKey` 不在其中；
+  //     禁用的那颗也不在（`FUNC_DISABLED`）———
+  for (const b of liveSubButtons(fb)) pressButton(b, x, y)
 
   // ——— 第 3..11 段：并列的 `if`，不是 if-else。多颗同时命中时全都跑 ———
 
@@ -320,12 +369,10 @@ export function funcCheckPressed(
     setGroup(fb, 4, true)
     fb.restartToTitle = true
   }
-  // 11 —— 确认离开。原版 `System.exit(0)`；后半段 → **M7**（xl-czb）。
-  if (fb.sub.exitForSure.isclicked) {
-    music.push('换list.wav')
-    setAllGroups(fb, false)
-    setGroup(fb, 4, true)
-  }
+  // 11 —— 确认离开。原版出一声 `换list.wav`、收起按钮组，然后 `System.exit(0)`。
+  //      **这一段不存在**：那颗按钮是禁用的（`FUNC_DISABLED`），`isclicked`
+  //      永远置不真。只照抄前半段就成了「点了有声、按钮组动了、然后什么都没
+  //      发生」—— 那才是一颗看起来坏了的按钮。
 }
 
 /**
@@ -334,14 +381,16 @@ export function funcCheckPressed(
  * ⚠️ `isRelesedButton` **不看 `isDraw`**（`MenuButton` 没覆写它），所以收起来
  * 的子按钮照样会被松开事件清掉 `isclicked` —— 没有这一条，收起来时正
  * `isclicked` 的那一颗会一直挂着真，下一次展开时凭空自己触发一遍。
+ *
+ * 禁用的那颗不送（`FUNC_DISABLED`）：它的 `isclicked` 从来没真过，贴图也要停在常态。
  */
 export function funcCheckReleased(fb: FuncButtonsState, x: number, y: number): void {
   for (const key of FUNC_MAIN_ORDER) releaseButton(fb.main[key], x, y)
-  for (const b of allSubButtons(fb)) releaseButton(b, x, y)
+  for (const b of liveSubButtons(fb)) releaseButton(b, x, y)
 }
 
 /** `FuncButtons.checkMoveIn`：同上的名单。三态贴图的「待点」那一态靠它。 */
 export function funcCheckMoveIn(fb: FuncButtonsState, x: number, y: number): void {
   for (const key of FUNC_MAIN_ORDER) moveInButton(fb.main[key], x, y)
-  for (const b of allSubButtons(fb)) moveInButton(b, x, y)
+  for (const b of liveSubButtons(fb)) moveInButton(b, x, y)
 }

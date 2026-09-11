@@ -8,7 +8,7 @@ import {
   equipList,
   paintEquip,
 } from './equipPanel'
-import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased } from './funcButtons'
+import { funcCheckMoveIn, funcCheckPressed, funcCheckReleased, funcDisabledReasonAt } from './funcButtons'
 import {
   DRUG_LIST_VIEW,
   drugPanelMoveIn,
@@ -427,6 +427,15 @@ export function clearMenuExit(w: MenuWorld): void {
  */
 export function menuSaveLoadRequest(w: MenuWorld): 'save' | 'load' | null {
   return w.panels.funcPanel.funcButtons?.saveLoadRequest ?? null
+}
+
+/**
+ * 菜单画布上 `(x, y)` 该挂的 `title`，`null` = 不挂（xl-03x.12）。今天只有天书页那颗
+ * 禁用的「确认离开」有；只看**当前这一页**，别的页上没有天书页的按钮。
+ */
+export function menuDisabledReasonAt(w: MenuWorld, x: number, y: number): string | null {
+  const fb = currentPanel(w).funcButtons
+  return fb ? funcDisabledReasonAt(fb, x, y) : null
 }
 
 /** 收掉那条一次性信号 —— 理由同 `clearMenuExit`：菜单世界活到关机，不清就下次一开菜单又跳走。 */

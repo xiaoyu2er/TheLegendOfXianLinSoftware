@@ -23,6 +23,7 @@ import type { MenuInput } from '../menu/step'
  * - 菜单那张画布藏着 → 一片黑，而世界照样在推。
  */
 const menuInput = vi.fn<(input: MenuInput) => void>()
+const menuTitleAt = vi.fn<(x: number, y: number) => string | null>(() => null)
 const panel = { current: 'menu' as Panel }
 
 vi.mock('../game/useGame', () => ({
@@ -32,6 +33,7 @@ vi.mock('../game/useGame', () => ({
     battleLoading: false,
     menuLoading: false,
     menuInput,
+    menuTitleAt,
     shopLoading: false,
     shopInput: () => {},
     click: () => {},
@@ -49,6 +51,8 @@ const { App } = await import('./App')
 
 beforeEach(() => {
   menuInput.mockClear()
+  menuTitleAt.mockReset()
+  menuTitleAt.mockImplementation(() => null)
   panel.current = 'menu'
 })
 afterEach(cleanup)
@@ -104,5 +108,26 @@ describe('App 与菜单', () => {
     stubBox(host, { left: 0, top: 0, width: 1024, height: 640 })
     fireEvent.mouseDown(host, { clientX: 10, clientY: 10 })
     expect(menuInput).not.toHaveBeenCalled()
+  })
+
+  /**
+   * 天书页「确认离开」是禁用的（xl-03x.12），画布上没有 `<button disabled title>`
+   * 可挂，理由就挂在画布宿主的 `title` 上 —— 与标题页「结」同一口径。
+   * 哪个坐标上有理由归 `menuTitleAt`（真的那个在 `menu/step.ts`，有自己的判据），
+   * 这里只验 App 把它问了、挂上了、移开摘掉了。
+   */
+  it('悬停在禁用的按钮上，画布挂上理由的 title；移开就摘掉', () => {
+    menuTitleAt.mockImplementation((x, y) => (x === 512 && y === 320 ? '理由' : null))
+    render(<App />)
+    const host = screen.getByTestId('menu-host')
+    stubBox(host, { left: 100, top: 50, width: 512, height: 320 })
+    expect(host, '还没悬停就有 title').not.toHaveAttribute('title')
+
+    fireEvent.mouseMove(host, { clientX: 100 + 256, clientY: 50 + 160 })
+    expect(menuTitleAt).toHaveBeenLastCalledWith(512, 320)
+    expect(host).toHaveAttribute('title', '理由')
+
+    fireEvent.mouseMove(host, { clientX: 100 + 128, clientY: 50 + 80 })
+    expect(host, '移开了 title 还挂着').not.toHaveAttribute('title')
   })
 })

@@ -157,7 +157,7 @@ export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWir
   load: { enabled: true, disabledReason: null },
   end: {
     enabled: false,
-    // 原版是 `System.exit(0)`（`src/start/StartPanel.java:233`）。浏览器里没有
+    // 原版是 `System.exit(0)`（`src/start/StartPanel.java:234`）。浏览器里没有
     // 对应物：`window.close()` 只对脚本自己开的窗口有效，玩家从地址栏进来的
     // 页面调它一声不吭。
     //
@@ -172,6 +172,9 @@ export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWir
     // @exception ADR-0001#start-exit-disabled
     // 所以留成禁用。**画出来而不是不画**也是有意的：不画的话「这一版还没做」
     // 与「原版本来就只有三颗按钮」在画面上分不开。
+    //
+    // 天书页「退出」→「确认离开」是同一句 `System.exit(0)`，同一行登记、同一口径
+    // （`menu/funcButtons.ts` 的 `FUNC_DISABLED`，xl-03x.12）。
     disabledReason: '浏览器里没有 System.exit(0) 的对应物，定案不做（xl-u23）',
   },
 }
