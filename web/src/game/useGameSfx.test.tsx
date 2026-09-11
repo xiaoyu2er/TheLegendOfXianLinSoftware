@@ -8,6 +8,7 @@ import { resetParty } from '../fakes/party'
 import { readMenuTrace } from '../menu/trace'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { TICK_MS, createWorld } from '../state/step'
+import { rememberAudioSettings, resetAudioSettings } from './audioSettings'
 import { useGame } from './useGame'
 
 /**
@@ -23,11 +24,12 @@ import { useGame } from './useGame'
  * ⚠️ 与那边同一句：证的是「交给了播放器、参数对」，证不了玩家真的听到了。
  */
 const play = vi.fn<(names: readonly string[]) => void>()
+const setEnabled = vi.fn<(on: boolean) => void>()
 vi.mock('../audio/sfxPlayer', () => ({
   createSfxPlayer: (): SfxPlayer => ({
     play,
     playing: () => null,
-    setEnabled: () => {},
+    setEnabled,
     enabled: () => true,
     blocked: () => false,
     destroy: () => {},
@@ -42,11 +44,14 @@ const renderer = {
 
 beforeEach(() => {
   play.mockClear()
+  setEnabled.mockClear()
+  resetAudioSettings()
   resetParty()
   vi.useFakeTimers()
 })
 afterEach(() => {
   vi.useRealTimers()
+  resetAudioSettings()
 })
 
 async function mount(scene = '宿舍') {
@@ -110,5 +115,30 @@ describe('useGame 的音效接线', () => {
     // pump 还活着（这半秒里又调过 play）—— 否则下面那句在 pump 停掉时也成立。
     expect(play.mock.calls.length).toBeGreaterThan(callsBefore)
     expect(handed(), '松开那一下原版不出声（菜单在按下时出声）').toEqual(tab.music)
+  })
+
+  /**
+   * 「特殊音效 开 / 关」那一下也是 pump 交的（xl-03x.8）：`playSfx` 每拍先拨开关再交。
+   * 从菜单一路点到播放器那一条在 `sfxSwitch.test.ts`；这里只补它看不见的那一截 ——
+   * pump 走没走 `playSfx`（绕过它直接 `play` 的话，那边全绿、菜单关了音效照响）。
+   */
+  it('开关每拍拨到音效播放器上：关着就拨成关，拨回开就拨成开', async () => {
+    await mount()
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS * 3)
+    })
+    expect(setEnabled, '开着的时候 pump 没拨开关').toHaveBeenLastCalledWith(true)
+
+    rememberAudioSettings({ bgm: true, sfx: false })
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS * 3)
+    })
+    expect(setEnabled, '关掉之后 pump 没把「关」拨上去').toHaveBeenLastCalledWith(false)
+
+    rememberAudioSettings({ bgm: true, sfx: true })
+    act(() => {
+      vi.advanceTimersByTime(TICK_MS * 3)
+    })
+    expect(setEnabled).toHaveBeenLastCalledWith(true)
   })
 })

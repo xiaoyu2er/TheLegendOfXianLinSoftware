@@ -133,13 +133,17 @@ const SOUNDING: readonly string[] = TRACE_NAMES.filter((name) =>
 )
 
 /** 只记账的播放器：每一次 `play` 交进来的名单，按先后。 */
-function recorder(): { player: Pick<SfxPlayer, 'play'>; take: () => string[] } {
+function recorder(): { player: Pick<SfxPlayer, 'play' | 'setEnabled'>; take: () => string[] } {
   let calls: string[] = []
   return {
     player: {
       play(names) {
         calls.push(...names)
       },
+      // 开关不在这里核，归 `sfxSwitch.test.ts`（xl-03x.8）。这里要的是**请求**：
+      // 真值的 `music` 列记在 `readmusic` 入口、`CAN_PLAY_MUSIC` 那道判断之外，
+      // 所以 menu-func t12 关掉音效之后 t14 那一声照样在列里 —— 这一列与开关无关。
+      setEnabled() {},
     },
     take() {
       const got = calls
@@ -150,7 +154,7 @@ function recorder(): { player: Pick<SfxPlayer, 'play'>; take: () => string[] } {
 }
 
 /** 一拍：推一次会话，把这一次推出来的交给播放器。与 `useGame` 的 pump 同一个次序。 */
-function pump(s: RunningSession, step: Step, player: Pick<SfxPlayer, 'play'>): RunningSession {
+function pump(s: RunningSession, step: Step, player: Pick<SfxPlayer, 'play' | 'setEnabled'>): RunningSession {
   const next = advanceSession(s, step.input, step.elapsed)
   playSfx(player, next)
   return next

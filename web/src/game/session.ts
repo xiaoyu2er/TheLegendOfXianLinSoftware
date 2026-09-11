@@ -805,10 +805,17 @@ export function advanceSession(
  * 接线层交给音效播放器的那一下（xl-03x.7）：**推完一拍调一次**，交的是这一拍推出来
  * 的 {@link Session.sfx}。`useGame` 的 pump 与 `sfxWiring.test.ts` 的对撞走的都是它。
  *
+ * 交之前先把天书页「特殊音效 开 / 关」拨到播放器上（xl-03x.8）—— `CAN_PLAY_MUSIC`
+ * 的落点。**先拨后交**，因为这一拍里开关已经是推完之后的值：原版第 8 段是
+ * `openMusic()` 在前、`readmusic` 在后，那一声要响；第 9 段关掉之后这一拍再没有
+ * 请求。只拨音效这一个播放器：原版两个开关各自只被自己那条播放线程读
+ * （读数与判据见 `sfxSwitch.test.ts`），背景音乐那个由 {@link currentBgm} 管。
+ *
  * ⚠️ 判据证的是「该响的时候调了播放器、参数对」，**证不了玩家真的听到了** ——
  * 自动播放策略、解码失败、音量为零都在它外面。
  */
-export function playSfx(player: Pick<SfxPlayer, 'play'>, session: Session): void {
+export function playSfx(player: Pick<SfxPlayer, 'play' | 'setEnabled'>, session: Session): void {
+  player.setEnabled(getAudioSettings().sfx)
   player.play(session.sfx)
 }
 
