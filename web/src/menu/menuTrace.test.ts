@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
+import { replayMenuTask } from './replay'
 import { snapshotMenu } from './snapshot'
 import { stepMenu } from './step'
 import { MENU_TRACE_NAMES, readMenuTrace, replayMenu } from './trace'
@@ -67,26 +68,29 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   //   1. 新真值进来时先红一次（xl-6lo.7 落三条新剧本那次就红了 27 格）；
   //   2. 谁把某一组改回去时那一格立刻红。
   // 下面 PENDING 与 BLOCKED_AT 都空着，那是**当前的读数**，不是这张表的形状。
-  music: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
-  panel: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
-  hero: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
+  music: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
+  panel: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
+  hero: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
   // `heroes` 是 xl-6lo.9 与 .10 合起来才齐的：装备页的弃用/换装归 .9，
   // 物品页第 22 步喝药那一下 700→1000 归 .10 —— 两张票各自都对不齐这一组。
-  heroes: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
+  heroes: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
   // 装备页那 13 个字段（六个槽位 / 选中 / 属性差值 / 两条拒绝提示 /
   // 可用可弃两个绘制旗标 / 背包列表），xl-6lo.9。
-  equip: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
+  equip: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
   // xl-6lo.10。⚠️ 五条里只有 `menu-equip` 那一格真的会动（第 21 步选中、
   // 第 22 步 2→1）；其余四条 `setup.drugs` 是空的，守的是"别凭空冒出清单来"。
-  drug: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
+  drug: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
   // xl-6lo.11。`menu-equip` 也签得下 —— 它第 24 步切进奇术页那一次按下同样会
   // 把动画清空、把按钮按 skillNumber 关掉。
-  magic: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
+  magic: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
   // xl-6lo.12。⚠️ `menu-equip` / `menu-magic` 两条里 `func.drawn` 从头到尾没变过
   // （没点过天书页），它们守的是"开局那六颗对得上、没被别处偷偷改掉"。
   // **子菜单展开收起的逐次相等靠 `menu-func`** —— 那条剧本是 xl-6lo.7 补的。
-  mouse: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
-  func: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels'],
+  mouse: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
+  func: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
+  // xl-03x.10。菜单顶栏的「当前任务」。五条老剧本 + menu-magic-levels 的 setup 没写 scene，
+  // 那一列恒 null（原版 MenuDriver 不 new Reader 的构造）；menu-task 是唯一一条有非空值的。
+  task: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-magic-levels', 'menu-task'],
 }
 
 /**
@@ -157,9 +161,11 @@ function groupsOf(trace: MenuTrace): readonly string[] {
 function runAll(name: string): Record<string, unknown>[] {
   const trace = traceOf(name)
   const world = replayMenu(trace)
+  // `task` 不在菜单世界里（原版画的时候现读 `Reader.task`），照剧本回显推，与取图页同一条路。
+  const task = replayMenuTask(trace.script.setup)
   return trace.ticks.map((tick) => {
     stepMenu(world, tick.input)
-    return snapshotMenu(world)
+    return { ...snapshotMenu(world), task }
   })
 }
 

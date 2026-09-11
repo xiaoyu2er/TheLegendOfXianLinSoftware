@@ -808,11 +808,20 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 话真值记下的只是剧本自己写的数，涨的规则原版一个字都没执行过。**空表不回显**，老剧本的
 回显逐字节不变。
 
+`setup.scene`（可缺省，xl-03x.10）是**开菜单之前最近一次进的那本脚本**，如
+`"脚本1.txt"`。给了它，驱动器在建 `MenuPanel` 之前先走原版进场景的那一句
+`new Reader(scene)`，于是 `Reader.task` 等于那本脚本的 `Task` 段 —— 顶栏
+「当前任务:」画的就是它。不给就是一个场景都没进过，`Reader.task` 是 `null`，顶栏
+画「无」。驱动器核两件 `Reader` 自己不报的事：文件在（它的构造函数吞异常，文件名
+打错照样返回、任务还是 `null`），以及 `Role` 段与 `setup.party` 一致（`Role` 段也写
+`SaveAndLoad.zhang/lu/wen`，不一致时谁赢只取决于先后）。缺省时剧本回显里**没有**
+这个键，所以不给它的老剧本回显逐字节不变。
+
 ### 真值
 
 每一步记：`panel`（当前子面板）、`hero`（卷轴选中谁，天书页没有卷轴故为 `null`）、
 `heroes[]`（三个人的等级 / 体力 / 敏捷 / 武力 / 精气 / hp / hpMax / mp / mpMax /
-防御 / 技能防御 / 技能数）、`equip`、`drug`、`magic`、`func`、`mouse`、`music`。
+防御 / 技能防御 / 技能数）、`equip`、`drug`、`magic`、`func`、`mouse`、`music`、`task`。
 
 | 字段 | 来源 / 陷阱 |
 |---|---|
@@ -824,6 +833,7 @@ repaint(); }` 线程，它推的只有鼠标图标的循环帧与奇术页那段
 | `func.drawn` | 天书页 `isDraw == Yes` 的按钮，按字段名排序。**它记的是 `isDraw`，不是「这一帧真画了」** —— `setKey` 在这个数组里恒有，而 `drawFuncButtons()` 只画 `buttonList` 与四格 `subButtonList`，`setKey` 一格都不在，屏幕上永远看不到它（xl-1dv.16）。「展开 / 收起」在原版里干的事正是改 `isDraw`，所以这一页的状态全在这个字段里（`menu-func`，xl-6lo.7）。 |
 | `input` | 与场景同形，但菜单多一种条目：`tick` 步记的是 `[{"e":"tick"}]`。**它不是一次输入事件**，是"推一次 `run()` 的循环体"这个时钟脉冲 —— 回放端遇到它要推自己那条循环，而不是往面板喂事件。 |
 | `music` | 这一步触发的音效文件名，按调用先后排列（`["换list.wav"]`）。空数组 = 这一步原版不出声。见下面「音效」一节。 |
+| `task` | `Reader.task` —— 顶栏 `Command.drawCommand()` 画「当前任务:」时现读的那个 static（xl-03x.10）。**`null` 照记 `null`**，画成「无」是绘制那一层的事。没给 `setup.scene` 的剧本它每步都是 `null`：那是驱动器从不 `new Reader` 的结果，**不是**原版菜单恒画「无」。它不是菜单世界的状态，回放端照剧本回显的 `setup.scene` 推（`menu/replay.ts` 的 `replayMenuTask`）。 |
 | `mouse` | 四个子面板**各自**那个 `Mouse`（四条 run 线程各推各的，只有当前页画得出来）。每个记 `code`/`frame`/`x`/`y`。**`code` 与 `frame` 是两回事**：`code` 是"下一格拿哪张图"的计数器，`frame` 是这一帧真的画出来的那张的下标。`Mouse.update()` 先取图再自增，且 `code==8` 那一次只把 code 拨回 1、**不换图** —— 于是第 0 张只在开局出现一次、第 7 张连画两帧。只记 `code` 的话这两件事在真值里都看不见。|
 
 ### 音效：`music` 字段（xl-1vu.8 立的，xl-1vu.11 收的）
@@ -1198,6 +1208,7 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `menu-scroll` | 菜单（`driver` = `menu`） | 列表撑过列表框与撑不满两侧（xl-6lo.7，给 xl-6lo.13 的滚动条当真值）：装备页武器分类塞满 20 件（`武器.txt` 的全部），行号取 0/15/16/19；盔甲分类 1 件、物品页 6 种药（`drug.txt` 的全部）。量出来的边界写在剧本自己的 `description` 里 —— 装备页首行基线 177、行距 22，`装备4.png` 的列表框内区 y 142..521 ⇒ 放得下 16 行，20 件**撑过 4 行**；物品页放得下 11 行而只有 6 种药，在原版里撑不满。**原版既没有滚动条也不裁剪**：掉到框外的行照画、照命中，仍然点得中 |
 | `menu-hero` | 菜单（`driver` = `menu`） | 三个人之间换人看属性（xl-6lo.7）：`hero` 取到 1 / 2 / 4 / 1，背包跟着换、分类被原版拨回武器。装备页**点得到的四个槽**都有读数 —— 武器是 `EquipPack` 构造函数给的开局自带（张小凡 月苗刀 / 陆雪琪 藏璎环 / 文敏 鸳鸯刀），头盔 / 鞋 / 盔甲是这一条穿上的。护臂与饰品走不到：`gloveButton` / `decorationButton` 声明了却从没 `new` 过 |
 | `menu-func` | 菜单（`driver` = `menu`） | 天书页设定子菜单的展开与收起、BGM 开关、退出那一排展开（xl-6lo.7）：`func.drawn` 取到**五组互不相同**的按钮集合。收起走的是命令栏那一击（`FuncButtons.checkPressed` 的第一个循环）。「关特殊音效」那一步 `music` 是**空的**，而别的每一次按下都有一声 `换list.wav` —— 原版 `off_click` 那一支就是不出声 |
+| `menu-task` | 菜单（`driver` = `menu`，`setup.scene` = `脚本1.txt`） | 顶栏「当前任务:」走 if 那一支（xl-03x.10）：驱动器先 `new Reader("脚本1.txt")`，`task` 8 步全是「快去大活看演出吧」，四页各翻一次、每页顶栏都画。没给 `setup.scene` 的菜单剧本 `task` 恒为 `null` —— 它们从不进场景 |
 | `battle-min` | 战斗（`driver` = `battle`） | `剧情1.txt` 的那场固定遭遇（三人对三怪），从开场动画打到分出胜负。第一回合的两步写成显式指令，之后 `autoAttack` 打完 |
 | `battle-em3-box` | 战斗（`driver` = `battle`） | 让 xl-1dv.8（`EnemySlector` 判 em3 用了 `height1`）在真值里露头的那一场：`脚本20.txt` 第 3 行的 Fight 数据，em1 的图 188×220 而 em3 的图 124×172 |
 | `battle-defeat-scene` | 战斗（`driver` = `battle`） | 打输的第一条出口：`脚本22.txt` 第 1 行的剧情必败战（`罹年居士` 独自一只，hp/hurt/defense 全是 9999）。全灭之后一路记到切回 `scenePanel`，张小凡与文敏各回半血。第 2/3 槽是 `null` —— 原版的 Fight 数据一行可以只写一只怪 |

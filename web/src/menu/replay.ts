@@ -1,3 +1,4 @@
+import { readerStaticsFor } from '../data/readerStatics'
 import { createMenuWorld } from './world'
 import type { MenuConfig } from './world'
 import type { MenuWorld } from './types'
@@ -31,4 +32,19 @@ export function replayMenuSetup(setup: MenuConfig): MenuWorld {
     // xl-03x.17：开局升级。导出器调原版 `levelUp()`，这边调 `levelUpMenuHero`。
     levelUps: setup.levelUps,
   })
+}
+
+/**
+ * 顶栏「当前任务:」那一句（`Reader.task`），照剧本回显的 `setup.scene` 推（xl-03x.10）。
+ *
+ * 它不是菜单世界的状态：原版 `Command.drawCommand()` 画的时候现读那个 static，
+ * 而那个 static 只有进场景的 `new Reader(...)` 会写。导出器给了 `setup.scene` 就
+ * 在一个干净 JVM 里读那一本，所以这里是「那一本的 `Task` 段，没有就 null」——
+ * **不是**「没有就留着上一个场景的」，干净 JVM 里没有上一个场景。
+ * 没给 `setup.scene` = 一个场景都没进过 = null。
+ *
+ * 游戏里不走这里：会话那一侧喂的是场景世界的 `readerStatics.task`（`game/menuTask.ts`）。
+ */
+export function replayMenuTask(setup: { readonly scene?: string | undefined }): string | null {
+  return setup.scene === undefined ? null : readerStaticsFor(setup.scene).task
 }

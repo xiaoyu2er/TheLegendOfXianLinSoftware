@@ -28,6 +28,7 @@ import {
   openMenu,
 } from './session'
 import { menuDrawList } from '../menu/render/drawList'
+import { menuTaskOf } from './menuTask'
 import { menuTextureIds } from '../menu/render/assets'
 import type { MenuRenderer } from '../menu/render/menuRenderer'
 import { menuDisabledReasonAt } from '../menu/step'
@@ -636,7 +637,7 @@ export function useGame(
         return
       }
       if (menuLoadingRef.current) return
-      menuRenderer.draw(menuDrawList(world))
+      menuRenderer.draw(menuDrawList(world, menuTaskOf(next.scene)))
     }
 
     /**
