@@ -254,6 +254,9 @@ describe('资产逻辑 ID', () => {
       'ls:',
       // 结局面板（xl-czb.6），在 `sources/End/` 下。
       'end:',
+      // 音效（xl-03x.5），`sources/music/` 整个目录。条数与源目录一一对应由
+      // `sfxAssets.test.ts` 守着，这里只登记前缀。
+      'sfx:',
     ]
     expect(ids.filter((id) => !known.some((prefix) => id.startsWith(prefix)))).toEqual([])
   })

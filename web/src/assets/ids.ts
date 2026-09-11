@@ -122,6 +122,19 @@ export function bgmAssetId(musicName: string): AssetId {
 }
 
 /**
+ * `换list.wav` → `sfx:换list`。音效的烘焙在 xl-03x.5，素材根目录见
+ * `sfxAssets.ts`。
+ *
+ * **扩展名不进 ID**，而且去扩展名不认大小写：原版 `Check.java` 调的是
+ * `战斗胜利.MP3`，磁盘上是 `战斗胜利.mp3`。原版跑在大小写不敏感的文件系统上
+ * 照样找得到；ID 要是带着扩展名，这一首在 web 端就是「查不到」。两个源文件
+ * 只差扩展名的话会撞成同一个 ID —— 那由烘焙器当场拦下（见 `bakeSfx`）。
+ */
+export function sfxAssetId(musicName: string): AssetId {
+  return `sfx:${stem(basename(musicName))}`
+}
+
+/**
  * 药品菜单里那张介绍图（xl-rh9.12）。
  *
  * 入参是 `sources/Shop/drug.txt` 第 4 列那个**文件名**（`金创药.png`），
