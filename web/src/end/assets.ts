@@ -11,8 +11,8 @@ import { END_PICTURE_COUNT } from './world'
  *
  * **几张是现数的**：烘焙器扫 `sources/End/` 整个目录，每一个文件都必须落在这四类
  * 里的一类、每一类要的文件都必须在盘上 —— 两个方向各缺一个都硬失败
- * （`scripts/bake.ts` 的结局那一段）。这里的三条路径与张数由 `assets.test.ts` 从 GBK
- * 源码现读对撞。
+ * （`scripts/bake.ts` 的结局那一段）。这里的三条路径由 `render/drawList.test.ts`、
+ * 张数由 `world.test.ts` 从 GBK 源码现读对撞。
  *
  * ⚠️ **24.jpg 也烘**，哪怕它从来没被画出来过（`world.ts` 的 `updateEnd`）：原版每一轮
  * 照样读它，缺了它 `Reader.readImage` 会报缺图。烘不烘由「原版读不读」定，不由

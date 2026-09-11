@@ -32,7 +32,7 @@ describe('EndPanel 的常数与源码一致', () => {
 
   it('update()：两个并列的 if、步长、上界', () => {
     const update = SRC.slice(SRC.indexOf('publicvoidupdate(){'), SRC.indexOf('publicvoidrun()'))
-    expect(update.length).toBeGreaterThan(0)
+    expect(SRC.indexOf('publicvoidupdate(){'), '源码里找不到 update()').toBeGreaterThanOrEqual(0)
     expect(update).toContain(
       `if(code<${END_PICTURE_COUNT}){currentImage=Reader.readImage("sources/End/"+code+".jpg");code++;}` +
         `if(code==${END_PICTURE_COUNT}){currentImage=Reader.readImage("sources/End/"+code+".jpg");code=1;}`,

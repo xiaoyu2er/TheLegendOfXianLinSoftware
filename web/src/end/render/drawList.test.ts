@@ -13,7 +13,7 @@ const PAINT = SRC.slice(SRC.indexOf('publicvoidpaint(Graphicsg){'), SRC.indexOf(
 
 describe('坐标与素材从原版现读', () => {
   it('paint()：isDraw 挡着，四层的次序与落点', () => {
-    expect(PAINT.length).toBeGreaterThan(0)
+    expect(SRC.indexOf('publicvoidpaint(Graphicsg){'), '源码里找不到 paint()').toBeGreaterThanOrEqual(0)
     expect(PAINT).toContain(
       'if(isDraw){bufferGraphics.drawImage(back,0,0,this);bufferGraphics.drawImage(currentImage,0,0,this);' +
         'bufferGraphics.drawImage(word,wordX,wordY,this);bufferGraphics.drawImage(blank,blankX,blankY,this);',

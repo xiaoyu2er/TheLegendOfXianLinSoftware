@@ -26,7 +26,7 @@ import { javaSource } from '../test/javaSource'
  * 下面两条各从源码与行为两头确认。
  */
 
-/** 全部场景里所有带 `$` 的字符串，按它落在哪个字段分开。分母现扫（烘好的 96 份）。 */
+/** 全部场景里所有带 `$` 的字符串，按它落在哪个字段分开。分母现扫（烘好的全部场景）。 */
 function dollarHits(): { scene: string; field: string; group?: number; text: string }[] {
   const hits: { scene: string; field: string; group?: number; text: string }[] = []
   for (const name of SCENE_NAMES) {

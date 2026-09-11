@@ -267,6 +267,10 @@ export interface Session {
    * （`switchTo("end")` 那一句）。所以这里推迟到头一次进结局才建 —— 在那之前它一拍
    * 都不走，两者观察不到差别。建好之后**再也不摘**：那条 `while(true)` 没有出口，
    * 被退出键切走（进了菜单）之后它照样每 100 ms 走一圈（`end/world.ts`）。
+   *
+   * ⚠️ 未复刻：原版「起」不重建 `endPanel`（`GameLauncher.init()` 的调用点被注释掉），
+   * 所以那条线程与字幕停下的位置活过新局 —— 新局再走到 `$`，原版一进来就定格；这一层
+   * 「起」整个重建会话（`NewGameCarry` 不带它），会从头再滚一遍。未量过。
    */
   readonly end: EndLoop | null
   readonly deps: SessionDeps
@@ -759,8 +763,8 @@ export function advanceSession(
  *
  * 头一次进来才建那份面板世界与那条线程。⚠️ 原版每 `switchTo("end")` 一次就**多起一条**
  * 线程（`start()` 里 `new Thread(this).start()`），这里第二次进来只把旗标重置、不多起一条。
- * 走不走得到第二次：`$` 在全部脚本里只出现在 脚本41 那一段对话里（`end/trigger.test.ts`
- * 现扫），那段对话按完 `dialogueEventOver` 就翻真、不会再开。⚠️ 未验证的推理：读一个
+ * 走不走得到第二次：2026-09-10 的读数是 `$` 只出现在 脚本41 那一段对话里（`end/trigger.test.ts`
+ * 现扫断言「对话里的 `$` 只落在一个场景」），那段对话按完 `dialogueEventOver` 就翻真、不会再开。⚠️ 未验证的推理：读一个
  * 停在那段对话之前的档再按一遍，可能是一条路 —— 那时字幕已经停在底，多一条线程只让
  * 过场画在停下之前多翻一张，而两条线程谁先跑是竞态。未复刻，未量过。
  */

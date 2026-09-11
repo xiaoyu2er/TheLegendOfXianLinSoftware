@@ -162,8 +162,10 @@ describe('「有进无出」三样', () => {
     const src = javaSource('src/main/GameLauncher.java').replace(/\s+/g, '')
     const keyPressed = src.slice(src.indexOf('publicvoidkeyPressed(KeyEvente){'), src.indexOf('publicvoidkeyReleased'))
     const forwarded = [...keyPressed.matchAll(/if\(currentPanel==(\w+)Panel\)/g)].map((m) => m[1])
-    expect(forwarded.length).toBeGreaterThan(0)
     expect(forwarded.sort()).toEqual(['battle', 'ls', 'scene'])
+    // 读出来的每一支，keyReceiver 都原样交回；别的面板一律谁都收不到。
+    for (const p of forwarded) expect(keyReceiver(p as 'scene' | 'ls' | 'battle')).toBe(p)
+    for (const p of ['start', 'shop'] as const) expect(keyReceiver(p)).toBeNull()
     // `switchTo("end")` 那一支没有 `currentPanel=`。
     const endCase = src.slice(src.indexOf('case"end":'), src.indexOf('break;', src.indexOf('case"end":')))
     expect(endCase).toContain('switcher.show(c,"endPanel");endPanel.start();')
