@@ -14,8 +14,8 @@ import type { Snapshot } from './playerCoverage'
  * 实际行数对得上。
  *
  * **真值源是入库的快照 `tools/issue-snapshot/issues.json`，不是 `.beads/issues.jsonl`。**
- * 后者是 bd 的被动导出，实测过期（2026-09-11：它 125 条、open 25；活库 251 条、
- * 非 closed 84），拿它撞会静默地对着一份旧名单点头。快照由 `tools/export-issues.sh`
+ * 后者是 bd 的被动导出，实测过期（读数见 `docs/player-coverage.md`「快照不是」那一条），
+ * 拿它撞会静默地对着一份旧名单点头。快照由 `tools/export-issues.sh`
  * 从活库导出，「重导后差异为空」守它是不是活库现在的样子。
  */
 
@@ -104,6 +104,11 @@ describe('problems', () => {
 
   it('一列不齐的行 → 红', () => {
     expect(problems(ok.replace('| 走路 | 能 | 链上 | — |', '| 走路 | 能 | 链上 |'), SNAP).join('\n')).toMatch(/走路.*列/)
+  })
+
+  it('同表头的表出现两张 → 红（第二张不许被静默跳过）', () => {
+    const twice = `${ok}\n| 玩家能做的事 | Web 能不能做 | 走主线碰不碰得到 | 欠的那部分归 | 依据（现查） |\n|---|---|---|---|---|\n| 偷偷加的 | **不能** | 随时 | — | — |\n`
+    expect(problems(twice, SNAP).join('\n')).toMatch(/出现了 2 次/)
   })
 
   it('快照是空的 → 红', () => {

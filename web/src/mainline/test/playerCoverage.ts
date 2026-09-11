@@ -35,7 +35,16 @@ export interface Row {
 export interface Coverage {
   readonly rows: readonly Row[]
   readonly refs: readonly Ref[]
-  readonly reading: { rows: number; can: number; cannot: number; wrong: number } | undefined
+  readonly reading: Tally | undefined
+  /** 表头 `| 玩家能做的事 |` 出现了几次。只认第一张，所以多于一张要报 —— 否则第二张整张被静默跳过。 */
+  readonly tables: number
+}
+
+export interface Tally {
+  readonly rows: number
+  readonly can: number
+  readonly cannot: number
+  readonly wrong: number
 }
 
 const COLUMNS = 5
@@ -70,7 +79,8 @@ export function parseCoverage(md: string): Coverage {
   const lines = md.split('\n')
   const refs = lines.flatMap((l, i) => refsIn(l, i + 1))
   const rows: Row[] = []
-  const start = lines.findIndex((l) => HEADER.test(l))
+  const headers = lines.flatMap((l, i) => (HEADER.test(l) ? [i] : []))
+  const start = headers[0] ?? -1
   if (start >= 0) {
     // 表头之后隔一行分隔线，连续的 `|` 行都算表体。
     for (let i = start + 2; i < lines.length && lines[i]!.trim().startsWith('|'); i++) {
@@ -85,14 +95,15 @@ export function parseCoverage(md: string): Coverage {
   }
   const m = md.match(READING)
   const reading = m ? { rows: +m[1]!, can: +m[2]!, cannot: +m[3]!, wrong: +m[4]! } : undefined
-  return { rows, refs, reading }
+  return { rows, refs, reading, tables: headers.length }
 }
 
 /** 列出所有问题；空表示引用完整。每条都点名行号或票号，红了一眼能找到。 */
 export function problems(md: string, snapshot: Snapshot): string[] {
   const out: string[] = []
   if (Object.keys(snapshot).length === 0) out.push('票据快照是空的 —— 空快照下任何票号都「不存在」，拒绝判')
-  const { rows, refs, reading } = parseCoverage(md)
+  const { rows, refs, reading, tables } = parseCoverage(md)
+  if (tables > 1) out.push(`表头「| 玩家能做的事 |」出现了 ${tables} 次，判据只认第一张 —— 合成一张表`)
   if (rows.length === 0) out.push('对照表一行都没读到（找不到表头「| 玩家能做的事 |」，或表是空的）')
 
   for (const r of refs) {
@@ -118,9 +129,10 @@ export function problems(md: string, snapshot: Snapshot): string[] {
   }
 
   const count = (v: Verdict) => rows.filter((r) => r.verdict === v).length
-  const actual = { rows: rows.length, can: count('能'), cannot: count('不能'), wrong: count('不对') }
+  const actual: Tally = { rows: rows.length, can: count('能'), cannot: count('不能'), wrong: count('不对') }
+  const keys = ['rows', 'can', 'cannot', 'wrong'] as const
   if (!reading) out.push('没找到读数那句「共 N 行（能 A · 不能 B · 能但不对 C）」')
-  else if (JSON.stringify(reading) !== JSON.stringify(actual)) {
+  else if (keys.some((k) => reading[k] !== actual[k])) {
     out.push(`读数写的是 ${JSON.stringify(reading)}，表里现数是 ${JSON.stringify(actual)}`)
   }
   return out

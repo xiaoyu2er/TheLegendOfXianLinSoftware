@@ -11,7 +11,7 @@
 # `git diff tools/issue-snapshot` 必须为空（或者直接跑 --check）。
 #
 # ⚠️ 为什么不直接读 .beads/issues.jsonl：那是 bd 的**被动导出**，实测是过期的
-# （2026-09-11：它 125 条、open 25；活库 251 条、非 closed 84）。拿它当真值，
+# （读数见 docs/player-coverage.md「快照不是」那一条）。拿它当真值，
 # 判据会静默地对着一份旧名单点头。这里只认活库。
 #
 # ⚠️ 这份快照只能在有 bd 库的机器上重导（库是 gitignore 掉的嵌入式 Dolt），CI 上
