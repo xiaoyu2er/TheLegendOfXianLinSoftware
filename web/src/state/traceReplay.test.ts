@@ -360,7 +360,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   // 对话框十二个字段，xl-9bd.10。⚠️ 十一条里只有几条真的开过口；一份从头到尾
@@ -389,7 +388,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   // 旁白六个字段，xl-9bd.11。⚠️ 只有 `dorm-intro` 与 `milestone` 真的播过旁白
@@ -414,7 +412,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   // 场景文件名与 isScript，xl-9bd.12（出口切换）。
@@ -438,7 +435,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   isScript: [
@@ -461,7 +457,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   // 选择框那 28 个字段，xl-yg6.8。整列来自 `src/scene/SelectEvent.java` 一个
@@ -487,7 +482,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   // 宝箱与「得到物品」提示框，xl-yg6.10（`EquipmentEvent` + `TreasureBox`）。
@@ -516,7 +510,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   // `MusicPlayer.currentPlayingBGM`，xl-9bd.12。
@@ -544,7 +537,6 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-both',
     'mapshort-height',
     'mapshort-width',
-    // NPC 数据有毛病的那个场景（xl-03x.13）：原版吞掉异常、只建出前 3 个 NPC。
     'npc-defect',
   ],
   // ——— 读档专属那几组（xl-i06.10）。读数见 LOAD_ONLY_GROUPS 的注释。———

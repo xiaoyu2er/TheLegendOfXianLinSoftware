@@ -30,7 +30,10 @@ describe('NPC 摆放与四种运动状态', () => {
     return (scene.npcList ?? []).map((row, i) => ({ scene: name, i, row }))
   })
 
-  /** `KNOWN_DEFECTS` 里那些位置所在的场景 —— 数据坏到连原版都会崩的地方。 */
+  /**
+   * `KNOWN_DEFECTS` 里那些位置所在的场景 —— 数据坏到原版建 NPC 那一步抛异常
+   * （被 `Reader.switchReader` 吞掉、场景照进）的地方。
+   */
   const brokenScenes = new Set(
     KNOWN_DEFECTS.map((d) => d.where.split(' ')[0]?.replace(/\.txt$/, '')),
   )
@@ -86,10 +89,24 @@ describe('NPC 摆放与四种运动状态', () => {
     // 那条坏记录挪到第 2 条、存成 GBK 喂给 `tools.Reader`，npcList 4 条、
     // npcs 只有 1 个（清洁工）。
     const scene = getScene('仙二205')
-    const rows = scene.npcList!
-    const bad = rows[3]!
-    const moved = { ...scene, npcList: [rows[0]!, bad, rows[1]!, rows[2]!] }
+    const original = scene.npcList!
+    const badAt = KNOWN_DEFECTS.map((d) => /^仙二205\.txt npcList\[(\d+)\]$/.exec(d.where)?.[1])
+      .filter((i) => i !== undefined)
+      .map(Number)
+    expect(badAt).toEqual([original.length - 1]) // 坏记录恰好是最后一条，挪到第 2 条才分得开
+    const bad = original[badAt[0]!]!
+    const moved = { ...scene, npcList: [original[0]!, bad, ...original.slice(1, badAt[0])] }
     expect(createNpcs(moved).map((npc) => npc.name)).toEqual(['清洁工'])
+  })
+
+  it('状态码不是整数也是停下，状态码是 3 才是跳过', () => {
+    // 原版每一支都先 `Integer.parseInt(sg[0])`：不是整数就抛（被吞、停下），
+    // 是 3 就哪一支都不进（跳过）。今天的数据里两种都没有，用合成的一条钉住。
+    const scene = getScene('仙二205夜')
+    const good = scene.npcList![0]!
+    const withCode = (code: string) => ({ ...scene, npcList: [[code, ...good.slice(1)], good] })
+    expect(createNpcs(withCode('x')).length).toBe(0)
+    expect(createNpcs(withCode('3')).length).toBe(1)
   })
 
   it('建不出来的只接住数据错，不接住别的', () => {

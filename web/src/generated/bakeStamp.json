@@ -49,7 +49,7 @@
     "web/src/state/exit.ts": "ea688ea78d3d4a3b8819ca9b9aa304e82b188fd0645ba650d083a6f1d0e0abbc",
     "web/src/state/fight.ts": "3863f5a19b2018fc080309d6429932141cddfaef640e19d5b427e27b6799b047",
     "web/src/state/narratage.ts": "bb488b10c3869eaf58f3f678c931ebb48d681c9aa3632f3e519cd0443205dfc6",
-    "web/src/state/npc.ts": "d300dedc1cdf58606e95e475551f005cf99f04ba2f8d21fdb6dd8de4d4265b49",
+    "web/src/state/npc.ts": "1704738b3025072eab8b69dca823f31f85eb5076c76dd9654a92894754ebd1d1",
     "web/src/state/role.ts": "3b2ca2f6d64483d21639e1645f48b20879222a59ba563b5c821b1ec70fd23da3",
     "web/src/state/select.ts": "c6f0f0e0edb88c39bbcdc15e727e18952a3370a47c4f734009d69ec567228da9",
     "web/src/state/timer.ts": "836ef72b45e1930db3aeea089bbe6b699eee75a9d0af483990be80b7be0f7056",

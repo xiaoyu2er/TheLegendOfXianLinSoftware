@@ -131,11 +131,13 @@ export function createNpcs(scene: SceneScript, nowMs = 0): NpcState[] {
  * {@link NpcRowError}；状态码不是 0/1/2 就返回 `null`。
  */
 function npcFromRow(row: readonly string[], where: string, nowMs: number): NpcState | null {
-  const type = row[0]
-  // 原版的 if/else 链没有第四个分支：状态码 3（四向运动）只写在注释里，
-  // 那样的 NPC 不会被创建。这里的"跳过"就是它的忠实实现。
-  if (type !== '0' && type !== '1' && type !== '2') return null
   const at = (k: number) => field(row, k, where)
+  // 每一支都先 `Integer.parseInt(sg[0])`：状态码不是整数就抛（→ 停下），
+  // 是整数但不是 0/1/2 就哪一支都不进（→ 跳过）。原版的 if/else 链没有第四个
+  // 分支：状态码 3（四向运动）只写在注释里，那样的 NPC 不会被创建。
+  const code = int(at(0), where)
+  if (code !== 0 && code !== 1 && code !== 2) return null
+  const type = String(code)
   const x = int(at(1), where)
   const y = int(at(2), where)
   if (type === '0') {
@@ -183,7 +185,7 @@ function npcFromRow(row: readonly string[], where: string, nowMs: number): NpcSt
 }
 
 /** 一条 NPC 记录建不出来（原版在那里抛、被 `switchReader` 吞掉）。 */
-export class NpcRowError extends Error {}
+class NpcRowError extends Error {}
 
 /**
  * 场景初始化时两个定时器的到期时刻都是 `nowMs + 200`：原版在**构造函数里**
