@@ -24,6 +24,7 @@ import shop.DrugPack;
 import shop.Equipment;
 import shop.EquipmentPack;
 import tools.Clock;
+import tools.Reader;
 
 /**
  * 菜单面板的驱动器。**一步 = 一次输入事件**，不是一个 tick —— 唯一的例外是
@@ -438,6 +439,11 @@ public final class MenuDriver implements TraceDriver {
         MusicPlayer.CAN_PLAY_BGM = MusicPlayer.NO;
         MusicReader.closeMusic();
 
+        // 顶栏「当前任务:」读的是 static 的 Reader.task，而它唯一被赋值的地方是
+        // Reader 读到 Task 段那一句 —— 不给 setup.scene 的话它一辈子是 null（xl-03x.10）。
+        // 走的是原版进场景那一句 new Reader(fileName)，不直接写那个字段。
+        if (script.setup.scene != null) enterScene(script.setup.scene);
+
         SaveAndLoad.zhang = script.setup.party.contains("zhang");
         SaveAndLoad.lu = script.setup.party.contains("lu");
         SaveAndLoad.wen = script.setup.party.contains("wen");
@@ -470,6 +476,32 @@ public final class MenuDriver implements TraceDriver {
         // 最后一步：打开音效记录并当场自检。放在铺开局状态之后，是为了让
         // addEquipment/addDrug 万一出声也不会算到第 0 步头上。
         MusicTap.arm(script.name);
+    }
+
+    /**
+     * {@code new Reader(fileName)}，并核两件它自己不会报的事：
+     *
+     * <ul>
+     *   <li>文件在。{@code Reader} 的构造函数把异常吞掉只 printStackTrace，文件名
+     *       打错时它照样返回，而 {@code Reader.task} 还是 null —— 导出来就是一份
+     *       「当前任务:无」，与另外几条剧本长得一样。</li>
+     *   <li>脚本的 Role 段与 {@code setup.party} 一致。Role 段也写
+     *       {@code SaveAndLoad.zhang/lu/wen}，两边不一致时谁赢只取决于这里谁先谁后，
+     *       而那样的真值是一个原版不会出现的开局。</li>
+     * </ul>
+     */
+    private void enterScene(String fileName) {
+        if (!new java.io.File("script/" + fileName).isFile()) {
+            ExportTrace.die(script.name + "：setup.scene 指的 script/" + fileName + " 不存在");
+        }
+        new Reader(fileName);
+        boolean[] role = { SaveAndLoad.zhang, SaveAndLoad.lu, SaveAndLoad.wen };
+        boolean[] want = { script.setup.party.contains("zhang"), script.setup.party.contains("lu"),
+                script.setup.party.contains("wen") };
+        if (!Arrays.equals(role, want)) {
+            ExportTrace.die(script.name + "：" + fileName + " 的 Role 段读出来是 zhang/lu/wen = "
+                    + Arrays.toString(role) + "，setup.party 是 " + script.setup.party);
+        }
     }
 
     /**
@@ -642,6 +674,9 @@ public final class MenuDriver implements TraceDriver {
         b.append(",\"magic\":").append(magicJson());
         b.append(",\"func\":").append(funcJson());
         b.append(",\"mouse\":").append(mouseJson());
+        // 顶栏 Command.drawCommand() 画「当前任务:」时读的那个 static（xl-03x.10）。
+        // null 照记 null —— 画成「无」是绘制那一层的事，不在这里替它翻译。
+        b.append(",\"task\":").append(Json.str(Reader.task));
         return b.append("}").toString();
     }
 

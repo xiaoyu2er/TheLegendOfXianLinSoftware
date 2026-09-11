@@ -1,0 +1,18 @@
+{
+  "driver": "menu",
+  "name": "menu-task",
+  "description": "顶栏「当前任务:」那一行走 if 那一支（xl-03x.10）。另外五条菜单剧本的 task 列恒为 null —— 不是原版菜单恒画「无」，而是 MenuDriver 只建 MenuPanel、从不经过 new Reader(...)，而 Reader.task 唯一被赋值的地方就是 Reader 读到脚本 Task 段那一句（src/tools/Reader.java:267）。这一条用 setup.scene 让驱动器先照原版进场景的那一句 new Reader(\"脚本1.txt\") 读一遍，于是 Reader.task = 「快去大活看演出吧」，Command.drawCommand() 画出来的就是那一句。四页各翻一次，顶栏在每一页上都画。\n\n⚠️ setup.party 必须与脚本 Role 段读出来的一致（脚本1 只有张小凡），驱动器核这件事，不一致就当场退出 —— Role 段也写 SaveAndLoad.zhang/lu/wen，两边打架时谁赢是个没人会注意到的顺序问题。",
+  "setup": {
+    "scene": "脚本1.txt",
+    "party": ["zhang"],
+    "fullHeal": true
+  },
+  "maxSteps": 20,
+  "every": 1,
+  "steps": [
+    { "op": "tab", "name": "equip" },
+    { "op": "tab", "name": "magic" },
+    { "op": "tab", "name": "func" },
+    { "op": "tab", "name": "thing" }
+  ]
+}

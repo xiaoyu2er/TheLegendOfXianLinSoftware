@@ -54,6 +54,12 @@ public final class MenuScript {
 
     /** 开局状态。 */
     public static final class Setup {
+        /**
+         * 开菜单之前「最近一次进的那个场景」（xl-03x.10）。可缺省，缺省 = 一个场景都
+         * 没进过。给了的话驱动器先照原版进场景那一句 {@code new Reader(scene)} 读一遍，
+         * 于是 {@code Reader.task} 等于那本脚本的 Task 段 —— 顶栏「当前任务:」读的就是它。
+         */
+        public final String scene;
         /** 已入队的角色，对应 {@code SaveAndLoad.zhang/lu/wen}。 */
         public final List<String> party;
         /** 把三个人的 hp/mp 拉满。见 {@link MenuDriver#start()} 里的说明。 */
@@ -61,8 +67,8 @@ public final class MenuScript {
         public final List<Item> equipment;
         public final List<Item> drugs;
 
-        Setup(List<String> party, boolean fullHeal, List<Item> equipment, List<Item> drugs) {
-            this.party = party; this.fullHeal = fullHeal;
+        Setup(String scene, List<String> party, boolean fullHeal, List<Item> equipment, List<Item> drugs) {
+            this.scene = scene; this.party = party; this.fullHeal = fullHeal;
             this.equipment = equipment; this.drugs = drugs;
         }
     }
@@ -260,7 +266,7 @@ public final class MenuScript {
     }
 
     private static Setup loadSetup(Object o) {
-        if (o == null) return new Setup(new ArrayList<String>(), true,
+        if (o == null) return new Setup(null, new ArrayList<String>(), true,
                 new ArrayList<Item>(), new ArrayList<Item>());
         Map<String, Object> s = JsonIn.obj(o, "setup");
         List<String> party = new ArrayList<>();
@@ -272,7 +278,7 @@ public final class MenuScript {
                 party.add((String) p);
             }
         }
-        return new Setup(party, JsonIn.boolOr(s, "fullHeal", true),
+        return new Setup(JsonIn.strOr(s, "scene", null), party, JsonIn.boolOr(s, "fullHeal", true),
                 loadItems(s.get("equipment"), "setup.equipment"),
                 loadItems(s.get("drugs"), "setup.drugs"));
     }
@@ -294,7 +300,10 @@ public final class MenuScript {
         StringBuilder b = new StringBuilder();
         b.append("{\"name\":").append(Json.str(name));
         b.append(",\"description\":").append(Json.str(description));
-        b.append(",\"setup\":{\"party\":[");
+        // scene 缺省时不回显：另外几条剧本的回显因此逐字节不变，不必为它重导。
+        b.append(",\"setup\":{");
+        if (setup.scene != null) b.append("\"scene\":").append(Json.str(setup.scene)).append(',');
+        b.append("\"party\":[");
         for (int i = 0; i < setup.party.size(); i++) {
             if (i > 0) b.append(',');
             b.append(Json.str(setup.party.get(i)));
