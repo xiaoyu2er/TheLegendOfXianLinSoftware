@@ -3,6 +3,8 @@ import { KNOWN_MISSING } from '../../assets/knownMissing'
 import type { SceneScript } from '../../data/types'
 import {
   SEGMENT_KINDS,
+  anyPlotBattle,
+  hasDialogueFight,
   type Platform,
   type Truths,
   describeBreak,
@@ -16,6 +18,7 @@ import {
   reachable,
   readPlotBosses,
   readStart,
+  segmentReport,
   unreachable,
   walkChain,
 } from './chain'
@@ -88,38 +91,61 @@ const UNREACHABLE_WIN32: Readonly<Record<string, string>> = {
   '大迷宫1.txt': '没有任何出口指向它',
 }
 
-/** 占位名出口（xl-1dv.13）各自的裁定。 */
+/** 占位名出口（xl-1dv.13）各自的裁定。键是「脚本 出口名」，一本里有两个也不会被压成一条。 */
 const PLACEHOLDER_VERDICTS: Readonly<Record<string, 'breaks-if-early' | 'never-breaks'>> = {
-  '脚本11.txt': 'breaks-if-early',
-  '脚本23.txt': 'breaks-if-early',
+  '脚本11.txt 中途逃跑': 'breaks-if-early',
+  '脚本23.txt 消失': 'breaks-if-early',
   // 自己没有对话编号，沿用 脚本24 那个已经走完的对话对象（xl-1dv.7），「没走完」那一支永远进不去。
-  '脚本24+.txt': 'never-breaks',
-  '脚本31.txt': 'breaks-if-early',
-  '脚本37.txt': 'breaks-if-early',
-  '脚本40.txt': 'breaks-if-early',
+  '脚本24+.txt 出现黑衣人': 'never-breaks',
+  '脚本31.txt 李洵逃跑': 'breaks-if-early',
+  '脚本37.txt 比武第二阶段': 'breaks-if-early',
+  '脚本40.txt 最终话': 'breaks-if-early',
 }
+
+/** 产品侧已知缺失清单里挂在某张票下的出口名（去掉 `script/` 前缀）。 */
+const registeredExits = (issue: string): string[] =>
+  KNOWN_MISSING.filter((k) => k.issue === issue).map((k) => k.path.replace(/^script\//, '')).sort()
 
 /**
  * **缺陷交集清单**：主线那几条已登记的原版缺陷，各在不在主线上（`win32` 链）。
  * `chain` = 链上某本就带着它；`closure` = 只在够得着的场景里；`off` = 够不着。
  * 「主线不经过它」这件事哪天改道会失效 —— 现算的一侧会变，这里就红。
  */
-const DEFECTS: readonly { issue: string; on: 'chain' | 'closure' | 'off'; files: (t: Truths) => string[] }[] = [
-  { issue: 'xl-1dv.13', on: 'chain', files: (t) => filesWithExit(t, (n) => isPlaceholder(t, n)) },
-  { issue: 'xl-1dv.11', on: 'chain', files: (t) => filesWithExit(t, (n) => isTrailingSpace(t, n)) },
-  { issue: 'xl-1dv.12', on: 'off', files: (t) => filesWithExit(t, (n) => isMissingFile(t, n)) },
-  // 机制：`initiation` 只在有对话编号时新建 DialogueEvent。票面写「20 个场景」，按这个机制
-  // 数出来的是全库所有没有对话编号的脚本，比 20 多 —— 票面的数怎么数的没写，这里不跟它对。
-  { issue: 'xl-1dv.7', on: 'chain', files: (t) => [...t.values()].filter((s) => s.dialogueCode === null).map((s) => s.script) },
+const DEFECTS: readonly {
+  issue: string
+  /** 现算出来带着这个缺陷的那几本（人签，与现算对撞）。 */
+  where: readonly string[]
+  on: 'chain' | 'closure' | 'off'
+  files: (t: Truths) => string[]
+}[] = [
+  {
+    issue: 'xl-1dv.13',
+    where: ['脚本11.txt', '脚本23.txt', '脚本24+.txt', '脚本31.txt', '脚本37.txt', '脚本40.txt'],
+    on: 'chain',
+    files: (t) => filesWithExit(t, (n) => isPlaceholder(t, n)),
+  },
+  // 票面只列了 仙二205 / 仙二205夜 两本（不在链上、只在闭包里）。脚本32 是同族、票面没列的第三本
+  // —— 它唯一的出口就是这个名字，posix 下主线正断在它这里。
+  { issue: 'xl-1dv.11', where: ['仙二205.txt', '仙二205夜.txt'], on: 'closure', files: (t) => filesWithExit(t, (n) => isTrailingSpace(t, n)).filter((f) => !f.startsWith('脚本')) },
+  { issue: 'xl-1dv.11（票面未列）', where: ['脚本32.txt'], on: 'chain', files: (t) => filesWithExit(t, (n) => isTrailingSpace(t, n)).filter((f) => f.startsWith('脚本')) },
+  { issue: 'xl-1dv.12', where: ['剧情1.txt'], on: 'off', files: (t) => filesWithExit(t, (n) => isMissingFile(t, n)) },
+  // 机制：`initiation` 只在有对话编号时新建 DialogueEvent。在主线上**起作用**的是那几本
+  // 「有下一段剧情、却没有自己对话编号」的剧情脚本 —— 它们推不推得动剧情全看上一本留下的对象。
+  // 票面写「20 个场景」，怎么数的没写（全库无对话编号的有 52 本），这里不跟那个数对。
+  {
+    issue: 'xl-1dv.7',
+    where: ['脚本20.txt', '脚本24+.txt'],
+    on: 'chain',
+    files: (t) => [...t.values()].filter((s) => s.nextScript !== null && s.dialogueCode === null).map((s) => s.script),
+  },
 ]
 
 // ── 判据 ────────────────────────────────────────────────────────────────────
 
 describe('源码现读', () => {
-  it('起点与推剧情的敌人名单都读得出来', () => {
+  // 读不出来的时候 readStart / readPlotBosses 自己抛；这里只核读出来的起点在真值里。
+  it('起点是真值里的一本脚本', () => {
     expect(truths.has(start.script)).toBe(true)
-    expect(start.currentScript).toHaveLength(3)
-    expect(bosses.size).toBeGreaterThan(0)
   })
 })
 
@@ -130,13 +156,11 @@ describe('连通性', () => {
     // 走到的是结局那本，不是「没有下一段剧情」就停了。
     const last = truths.get(chain.scripts.at(-1)!)!
     expect(SEGMENT_KINDS['结局']!(last, bosses)).toBe(true)
-    expect(chain.hops.length).toBe(chain.scripts.length - 1)
   })
 
   it(`posix：主线断在 ${POSIX_BREAK.from}，因为它的出口名带行尾空格（${POSIX_BREAK.issue}）`, () => {
     const chain = chainOf('posix')
-    expect(chain.broken?.from).toBe(POSIX_BREAK.from)
-    expect(chain.broken?.reason).toBe('unreachable')
+    expect(chain.broken).toMatchObject({ reason: 'unreachable', from: POSIX_BREAK.from })
     const exits = exitsOf(truths.get(POSIX_BREAK.from)!)
     expect(exits.length).toBeGreaterThan(0)
     expect(exits.every((n) => isTrailingSpace(truths, n))).toBe(true)
@@ -145,7 +169,9 @@ describe('连通性', () => {
   })
 
   it('篡改：把某一跳的下一段剧情指到不存在的脚本，报得出断在哪一跳', () => {
-    const hop = chainOf('win32').hops[19]!
+    // 挑链中间那一跳：头尾各有别的判据盯着，中间那一跳最能说明「报得出是哪一跳」。
+    const { hops } = chainOf('win32')
+    const hop = hops[Math.floor(hops.length / 2)]!
     const s = truths.get(hop.from)!
     const broken = chainOf('win32', tampered(hop.from, { nextScript: [s.nextScript![0]!, s.nextScript![1]!, '不存在.txt'] })).broken
     expect(broken).toEqual({ reason: 'missing', index: hop.index, from: hop.from, target: '不存在.txt' })
@@ -153,6 +179,8 @@ describe('连通性', () => {
   })
 })
 
+// 不在登记里的那几跳，`hopKind` 判出来的就是 'exit' —— 按定义「出口目标在本脚本的出口段里」。
+// 所以这一条对撞就是「每一跳的出口目标都在本脚本出口段里」的判据，别的跳单独再核一遍是恒真。
 describe('每一跳的出口目标', () => {
   it('不在本脚本出口段里的那几跳与登记一致（双向）', () => {
     const computed = Object.fromEntries(
@@ -162,11 +190,31 @@ describe('每一跳的出口目标', () => {
     )
     expect(computed).toEqual(NON_DIRECT_HOPS)
   })
+})
 
-  it('其余每一跳：出口目标就在本脚本的出口段里', () => {
-    const direct = chainOf('win32').hops.filter((h) => !(h.from in NON_DIRECT_HOPS))
-    expect(direct.length).toBeGreaterThan(0)
-    for (const h of direct) expect(exitsOf(truths.get(h.from)!), h.from).toContain(h.triple[1])
+describe('链模型的前提（数据里钉住，别只写在注释里）', () => {
+  const chain = chainOf('win32')
+  const closure = reachable(truths, chain)
+  const roamOnly = [...closure].filter((f) => !chain.scripts.includes(f))
+
+  it('自由场景没有自己的下一段剧情、也没有自己的对话编号 —— 走过它们 nextScript 与对话对象都不会被换掉', () => {
+    expect(roamOnly.length).toBeGreaterThan(0)
+    for (const f of roamOnly) {
+      expect(truths.get(f)!.nextScript, f).toBeNull()
+      expect(truths.get(f)!.dialogueCode, f).toBeNull()
+    }
+  })
+
+  it('闭包里只有链上的战斗跳那几本带推剧情名单上的敌人（三类战斗都查）', () => {
+    const withBoss = [...closure].filter((f) => anyPlotBattle(truths.get(f)!, bosses)).sort()
+    const battleHops = chain.hops.filter((h) => h.how.kind === 'battle').map((h) => h.from).sort()
+    expect(withBoss).toEqual(battleHops)
+  })
+
+  it('每一个战斗跳的对话里都有 @ 那一句（否则那场剧情固定战开不起来）', () => {
+    for (const h of chain.hops.filter((x) => x.how.kind === 'battle')) {
+      expect(hasDialogueFight(truths.get(h.from)!), h.from).toBe(true)
+    }
   })
 })
 
@@ -197,7 +245,7 @@ describe('占位名出口：踩的顺序不对才断（xl-1dv.13）', () => {
   const chain = chainOf('win32')
   const found = placeholders(truths, chain, reachable(truths, chain), start.currentScript)
 
-  it('每一个都在链上、且就是本脚本的下一段剧情的场景名 —— 对话走完踩上去是一跳，不是崩溃', () => {
+  it('每一个都在链上、且就是本脚本下一段剧情的场景名（ExitEvent 那一支认的正是这个名字）', () => {
     expect(found.length).toBeGreaterThan(0)
     for (const p of found) {
       expect(chain.scripts, p.script).toContain(p.script)
@@ -206,13 +254,13 @@ describe('占位名出口：踩的顺序不对才断（xl-1dv.13）', () => {
   })
 
   it('各自的裁定与登记一致', () => {
-    expect(Object.fromEntries(found.map((p) => [p.script, p.verdict]))).toEqual(PLACEHOLDER_VERDICTS)
+    expect(found).toHaveLength(Object.keys(PLACEHOLDER_VERDICTS).length)
+    expect(Object.fromEntries(found.map((p) => [`${p.script} ${p.name}`, p.verdict]))).toEqual(PLACEHOLDER_VERDICTS)
   })
 
   it('全库的占位名与产品侧已知缺失清单那几条逐个相同', () => {
     const names = [...truths.values()].flatMap((s) => exitsOf(s).filter((n) => isPlaceholder(truths, n)))
-    const registered = KNOWN_MISSING.filter((k) => k.issue === 'xl-1dv.13').map((k) => k.path.replace(/^script\//, ''))
-    expect(names.sort()).toEqual(registered.sort())
+    expect(names.sort()).toEqual(registeredExits('xl-1dv.13'))
   })
 })
 
@@ -221,9 +269,9 @@ describe('缺陷交集清单', () => {
   const closure = reachable(truths, chain)
 
   for (const d of DEFECTS) {
-    it(`${d.issue} 登记为 ${d.on}`, () => {
-      const files = d.files(truths)
-      expect(files.length, `${d.issue} 在全库里一处都找不到了 —— 缺陷没了还是选择器坏了`).toBeGreaterThan(0)
+    it(`${d.issue} 在 ${d.where.join(' / ')}，登记为 ${d.on}`, () => {
+      const files = d.files(truths).sort()
+      expect(files, `${d.issue} 现算出来落在哪几本`).toEqual([...d.where].sort())
       const on = files.some((f) => chain.scripts.includes(f)) ? 'chain' : files.some((f) => closure.has(f)) ? 'closure' : 'off'
       expect(on, files.join(',')).toBe(d.on)
     })
@@ -235,8 +283,7 @@ describe('缺陷交集清单', () => {
       ['xl-1dv.12', isMissingFile],
     ] as const) {
       const names = new Set([...truths.values()].flatMap((s) => exitsOf(s).filter((n) => pred(truths, n))))
-      const registered = KNOWN_MISSING.filter((k) => k.issue === issue).map((k) => k.path.replace(/^script\//, ''))
-      expect([...names].sort(), issue).toEqual(registered.sort())
+      expect([...names].sort(), issue).toEqual(registeredExits(issue))
     }
   })
 })
@@ -251,5 +298,20 @@ describe('段落类别的选择器', () => {
   it('结局全库只有一本，就在链尾', () => {
     const ends = [...truths.values()].filter((s) => SEGMENT_KINDS['结局']!(s, bosses)).map((s) => s.script)
     expect(ends).toEqual([chainOf('win32').scripts.at(-1)])
+  })
+
+  it('段落报表：链上 / 只在闭包里两栏互不相交、都在闭包里、结局那一栏落在链上', () => {
+    const chain = chainOf('win32')
+    const closure = reachable(truths, chain)
+    const report = segmentReport(truths, chain, closure, bosses)
+    expect(Object.keys(report)).toEqual(Object.keys(SEGMENT_KINDS))
+    for (const [kind, { chain: on, closureOnly }] of Object.entries(report)) {
+      for (const f of on) expect(chain.scripts, kind).toContain(f)
+      for (const f of closureOnly) {
+        expect(closure.has(f), kind).toBe(true)
+        expect(chain.scripts, kind).not.toContain(f)
+      }
+    }
+    expect(report['结局']).toEqual({ chain: [chain.scripts.at(-1)], closureOnly: [] })
   })
 })

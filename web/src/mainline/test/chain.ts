@@ -91,9 +91,12 @@ export function readPlotBosses(): ReadonlySet<string> {
   return new Set(names)
 }
 
+/** 去掉末尾的空格与点 —— Win32 路径规范化做的事，也是下面几族缺陷分类用的同一把尺。 */
+export const bare = (name: string): string => name.replace(/[ .]+$/, '')
+
 /** 一个出口名在给定平台上打开的是哪本脚本；打不开是 `undefined`。 */
 export function resolve(truths: Truths, name: string, platform: Platform): string | undefined {
-  const file = platform === 'win32' ? name.replace(/[ .]+$/, '') : name
+  const file = platform === 'win32' ? bare(name) : name
   return truths.has(file) ? file : undefined
 }
 
@@ -123,9 +126,24 @@ export function roam(truths: Truths, from: readonly string[], platform: Platform
 export const endsGame = (s: SceneScript): boolean =>
   (s.dialogue ?? []).some((seg) => seg.some((sentence) => sentence.some((f) => f.includes('$'))))
 
-/** 剧情固定战里第一场敌 1 在推剧情名单上的那个敌人。 */
+/**
+ * 剧情固定战（`battle1`，由对话里的 `@` 那一句推着一场一场打）里，敌 1 在推剧情名单上的
+ * 那个敌人 —— 不一定是第一场（脚本38 是第三场）。
+ */
 export const plotBattle = (s: SceneScript, bosses: ReadonlySet<string>): string | undefined =>
   (s.battle1 ?? []).map((b) => b[4] ?? '').find((e) => bosses.has(e))
+
+/**
+ * 三类战斗（随机遭遇 `battle0` / 剧情固定战 `battle1` / 选择战 `battle2`）都走
+ * `FightEvent.fight`，敌 1 在名单上就一样推剧情。链只用 `battle1`（{@link plotBattle}），
+ * 另外两类由测试断言在闭包里不出现名单上的人 —— 出现了就是一条链没建模的旁路。
+ */
+export const anyPlotBattle = (s: SceneScript, bosses: ReadonlySet<string>): boolean =>
+  [s.battle0, s.battle1, s.battle2].some((list) => (list ?? []).some((b) => bosses.has(b[4] ?? '')))
+
+/** 对话里有没有 `@` 那一句（`Dialogue.java` 把它读成 `dialogueFight`，说完开下一场 `battle1`）。 */
+export const hasDialogueFight = (s: SceneScript): boolean =>
+  (s.dialogue ?? []).some((seg) => seg.some((sentence) => sentence.some((f) => f.includes('@'))))
 
 export type HopKind =
   /** 开打前推剧情。 */
@@ -144,8 +162,11 @@ export interface Hop {
 }
 
 export type ChainBreak =
+  | { reason: 'no-start'; index: 0; target: string }
+  /** 下一段剧情的脚本名（`target`）在真值里没有。 */
   | { reason: 'missing'; index: number; from: string; target: string }
-  | { reason: 'unreachable'; index: number; from: string; target: string }
+  /** 要踩的出口名（`exit`，一个场景名）哪里都踩不到，也没有推剧情的战斗。 */
+  | { reason: 'unreachable'; index: number; from: string; exit: string }
   | { reason: 'cycle'; index: number; from: string; target: string }
   | { reason: 'dead-end'; index: number; from: string }
 
@@ -176,16 +197,11 @@ export function hopKind(
 }
 
 /** 顺着 `nextScript` 从起点走到结局，或走到断处。 */
-export function walkChain(
-  truths: Truths,
-  platform: Platform,
-  start: string = readStart().script,
-  bosses: ReadonlySet<string> = readPlotBosses(),
-): Chain {
+export function walkChain(truths: Truths, platform: Platform, start: string, bosses: ReadonlySet<string>): Chain {
   const scripts = [start]
   const hops: Hop[] = []
   const done = (broken?: ChainBreak): Chain => (broken ? { platform, scripts, hops, broken } : { platform, scripts, hops })
-  if (!truths.has(start)) return done({ reason: 'missing', index: 0, from: '(起点)', target: start })
+  if (!truths.has(start)) return done({ reason: 'no-start', index: 0, target: start })
   for (let cur = start; ; ) {
     const s = get(truths, cur)
     if (endsGame(s)) return done()
@@ -196,7 +212,7 @@ export function walkChain(
     if (!truths.has(target)) return done({ reason: 'missing', index, from: cur, target })
     if (scripts.includes(target)) return done({ reason: 'cycle', index, from: cur, target })
     const how = hopKind(truths, s, triple, bosses, platform)
-    if (!how) return done({ reason: 'unreachable', index, from: cur, target: scene })
+    if (!how) return done({ reason: 'unreachable', index, from: cur, exit: scene })
     hops.push({ index, from: cur, triple, how })
     scripts.push(target)
     cur = target
@@ -206,10 +222,12 @@ export function walkChain(
 /** 断点的人话，测试失败时直接打出来。 */
 export function describeBreak(b: ChainBreak): string {
   switch (b.reason) {
+    case 'no-start':
+      return `起点 ${b.target} 在数据层真值里没有`
     case 'missing':
       return `主线断在第 ${b.index} 跳：${b.from} 的下一段剧情指向 ${b.target}，数据层真值里没有这本脚本`
     case 'unreachable':
-      return `主线断在第 ${b.index} 跳：${b.from} 要踩的出口 ${b.target} 既不在它的出口段里、也不在从它走得到的场景里，而它也没有推剧情的战斗`
+      return `主线断在第 ${b.index} 跳：${b.from} 要踩的出口 ${b.exit} 既不在它的出口段里、也不在从它走得到的场景里，而它也没有推剧情的战斗`
     case 'cycle':
       return `主线在第 ${b.index} 跳绕回来了：${b.from} → ${b.target}`
     case 'dead-end':
@@ -243,7 +261,11 @@ export const unreachable = (truths: Truths, closure: ReadonlySet<string>): strin
  *
  * 本脚本自己**没有**对话编号时，`initiation` 不新建 `DialogueEvent`，沿用上一本的
  * （xl-1dv.7）—— 上一跳是出口跳（含走自由场景）的话，那个对象的 `dialogueEventOver`
- * 必为真（出口跳要求对话走完），于是这种占位名**永远不会**走到断的那一支。
+ * 必为真（出口跳要求对话走完），于是这种占位名**永远不会**走到断的那一支。这个前提要求
+ * 途经的自由场景都没有自己的对话编号（否则会换掉那个对象）—— 由测试断言。
+ *
+ * 没建模：读档那一支（`sal.isLoad` 时 `initiation` 用读档的对话编号新建对象，xl-1dv.33）。
+ * 这里的裁定只说「从新游戏一路走下来」。
  */
 export interface Placeholder {
   script: string
@@ -259,17 +281,23 @@ export interface Placeholder {
   verdict: 'breaks-if-early' | 'never-breaks' | 'always-breaks'
 }
 
-/** 占位名：打不开，去掉行尾空白也打不开，而且不像文件名（不带 `.txt`）。 */
-export const isPlaceholder = (truths: Truths, name: string): boolean =>
-  !truths.has(name.trimEnd()) && !name.trimEnd().endsWith('.txt')
+/**
+ * 打不开的出口名分三族，按 {@link bare} 之后的样子分：
+ * - `trailing`：去掉末尾空格/点就打得开（xl-1dv.11）；
+ * - `missing-file`：像文件名（`.txt`）却没有这个文件（xl-1dv.12）；
+ * - `placeholder`：根本不像文件名（xl-1dv.13）。
+ * 逐字打得开的是 `undefined`。
+ */
+export function badExit(truths: Truths, name: string): 'trailing' | 'missing-file' | 'placeholder' | undefined {
+  if (truths.has(name)) return undefined
+  const b = bare(name)
+  if (truths.has(b)) return 'trailing'
+  return b.endsWith('.txt') ? 'missing-file' : 'placeholder'
+}
 
-/** 出口名带行尾空白、去掉就打得开（xl-1dv.11）。 */
-export const isTrailingSpace = (truths: Truths, name: string): boolean =>
-  name !== name.trimEnd() && truths.has(name.trimEnd())
-
-/** 像文件名、却没有这个文件（xl-1dv.12）。 */
-export const isMissingFile = (truths: Truths, name: string): boolean =>
-  !truths.has(name.trimEnd()) && name.trimEnd().endsWith('.txt')
+export const isPlaceholder = (truths: Truths, name: string): boolean => badExit(truths, name) === 'placeholder'
+export const isTrailingSpace = (truths: Truths, name: string): boolean => badExit(truths, name) === 'trailing'
+export const isMissingFile = (truths: Truths, name: string): boolean => badExit(truths, name) === 'missing-file'
 
 export function placeholders(truths: Truths, chain: Chain, closure: ReadonlySet<string>, startCurrent: Triple): Placeholder[] {
   const out: Placeholder[] = []
