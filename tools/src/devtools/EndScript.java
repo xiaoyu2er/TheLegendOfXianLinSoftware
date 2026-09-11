@@ -1,10 +1,13 @@
 package devtools;
 
+import java.awt.event.KeyEvent;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -56,10 +59,22 @@ public final class EndScript {
 
     static final List<String> OPS = Arrays.asList("enter", "tick", "key", "wake");
     /**
-     * 认得的键名。{@code ScenePanel.keyPressed}（按键实际落到的地方，见 {@link EndDriver}）
-     * 分支判的就是这七个键；多认一个不会错，但也读不出任何新东西。
+     * 认得的键名 → 键码，只此一份：解析层按它拒绝，驱动器按它派发。
+     * {@code ScenePanel.keyPressed}（按键实际落到的地方，见 {@link EndDriver}）分支判的
+     * 就是这七个键。
      */
-    static final List<String> KEYS = Arrays.asList("enter", "escape", "space", "left", "right", "up", "down");
+    static final Map<String, Integer> KEYS;
+    static {
+        Map<String, Integer> k = new LinkedHashMap<>();
+        k.put("enter", KeyEvent.VK_ENTER);
+        k.put("escape", KeyEvent.VK_ESCAPE);
+        k.put("space", KeyEvent.VK_SPACE);
+        k.put("left", KeyEvent.VK_LEFT);
+        k.put("right", KeyEvent.VK_RIGHT);
+        k.put("up", KeyEvent.VK_UP);
+        k.put("down", KeyEvent.VK_DOWN);
+        KEYS = Collections.unmodifiableMap(k);
+    }
 
     private EndScript(String name, String description, String scene, int maxSteps, List<Instruction> steps) {
         this.name = name; this.description = description; this.scene = scene;
@@ -98,8 +113,8 @@ public final class EndScript {
                     break;
                 case "key":
                     key = JsonIn.str(s, "key");
-                    if (!KEYS.contains(key)) {
-                        throw new IllegalArgumentException("key 只认 " + KEYS + "，实际 " + key);
+                    if (!KEYS.containsKey(key)) {
+                        throw new IllegalArgumentException("key 只认 " + KEYS.keySet() + "，实际 " + key);
                     }
                     break;
                 default:

@@ -42,7 +42,6 @@ public final class EndScriptTest {
         // 正例 + 回显：写对了的进得了剧本，而且每个参数都进了 trace 头里那份回显。
         EndScript s = load(ENTER + ",{\"op\":\"tick\",\"times\":384,\"expect\":\"stop\"},"
                 + "{\"op\":\"key\",\"key\":\"escape\"},{\"op\":\"wake\",\"times\":2}");
-        Checks.eq("四条指令都读进来了", 4, s.steps.size());
         Checks.eq("回显带着全部参数",
                 "{\"name\":\"probe\",\"description\":\"\",\"setup\":{\"scene\":\"脚本41.txt\"},\"maxSteps\":1000,"
                         + "\"steps\":[{\"op\":\"enter\"},{\"op\":\"tick\",\"times\":384,\"expect\":\"stop\"},"

@@ -94,9 +94,9 @@ import tools.Reader;
  *       循环体里没有 break / return，catch 只包住 sleep；{@code isStop} 只挡住
  *       {@code update()} 的内容。真值里：{@code wake} 步把真线程叫醒，等它走完一整圈
  *       循环体再睡回去，{@code loop.alive} 记它还在不在、{@code loop.wakes} 记它在
- *       {@code isStop} 之后又走了几圈。⚠️ 冻结状态下它恒在睡，{@code alive} 在非 wake 步
- *       按构造成立；分辨力只在 wake 步上 —— 原版要是 {@code while(!isStop)}，叫醒那一下
- *       它就 TERMINATED 了。
+ *       {@code isStop} 之后又走了几圈。{@code loop} **只在 wake 步上记**：冻结状态下别的步上
+ *       它恒在睡，记了是按构造成立的装饰；分辨力只在 wake 步上 —— 原版要是
+ *       {@code while(!isStop)}，叫醒那一下它就 TERMINATED 了。
  *   <li><b>「画面冻在最后一帧」—— 读下来成立。</b>{@code isStop} 之后 {@code update()} 不再
  *       改任何字段、不再 {@code repaint()}，而 {@code isDraw} 没有人复位 —— 任何一次
  *       重绘都画出同一张。真值里：{@code isDraw} 一直是 true，定格之后 {@code repainted}
@@ -149,6 +149,10 @@ public final class EndDriver implements TraceDriver {
     private String shown;
     private boolean repainted;
     private int wakes;
+    /** 这一步是不是 wake。{@code loop} 那一列只在 wake 步上有值。 */
+    private boolean woke;
+    /** 这一拍 update() 之前的 code，{@link #picture()} 按它问原版读过的那张。 */
+    private int codeBefore;
 
     private int ip;
     private int at;
@@ -210,6 +214,7 @@ public final class EndDriver implements TraceDriver {
         pending.clear();
         card = null;
         repainted = false;
+        woke = false;
         int tapBefore = tap.count();
 
         at = ip;
@@ -251,6 +256,7 @@ public final class EndDriver implements TraceDriver {
     private void tick(EndScript.Instruction in) {
         boolean last = sub == in.times - 1;
         boolean stoppedBefore = getBool("isStop");
+        codeBefore = getInt("code");
         int r = ep.repaints;
         ep.update();
         repainted = ep.repaints != r;
@@ -270,23 +276,14 @@ public final class EndDriver implements TraceDriver {
     private void key(String name) {
         int before = sp.keys;
         // 事件源不被读：原版那个方法只看 getKeyCode() 与 isControlDown()。
-        launcher.keyPressed(new KeyEvent(sp, KeyEvent.KEY_PRESSED, 0L, 0, vk(name), KeyEvent.CHAR_UNDEFINED));
+        // 按之前当前面板是谁：认不出就硬失败。原版顶层分发只转给场景 / 存读档 / 战斗
+        // 三块，后两块这里没立（字段是 null），所以「落到场景」与「谁都没收到」是仅有的
+        // 两种结局 —— to 取 scene 或 null，null 就是真的没人收到，不是「落到了别处」。
+        currentName();
+        launcher.keyPressed(new KeyEvent(sp, KeyEvent.KEY_PRESSED, 0L, 0, EndScript.KEYS.get(name), KeyEvent.CHAR_UNDEFINED));
         int got = sp.keys - before;
         if (got > 1) fail("一次按键场景面板收到了 " + got + " 次");
         pending.add("{\"e\":\"key\",\"key\":" + Json.str(name) + ",\"to\":" + (got == 1 ? "\"scene\"" : "null") + "}");
-    }
-
-    private static int vk(String name) {
-        switch (name) {
-            case "enter":  return KeyEvent.VK_ENTER;
-            case "escape": return KeyEvent.VK_ESCAPE;
-            case "space":  return KeyEvent.VK_SPACE;
-            case "left":   return KeyEvent.VK_LEFT;
-            case "right":  return KeyEvent.VK_RIGHT;
-            case "up":     return KeyEvent.VK_UP;
-            case "down":   return KeyEvent.VK_DOWN;
-            default: throw new IllegalArgumentException(name);
-        }
     }
 
     /**
@@ -327,6 +324,7 @@ public final class EndDriver implements TraceDriver {
         }
         if (!done) fail("叫醒原版线程之后 " + WAIT_MS + " ms 内它既没走完一圈、也没退出（err 缓冲：" + cap + "）");
         if (loop.isAlive()) wakes++;
+        woke = true;
         repainted = ep.repaints != r;
         pending.add("{\"e\":\"wake\"}");
     }
@@ -363,7 +361,6 @@ public final class EndDriver implements TraceDriver {
         GameLauncher.currentPanel = sp;
 
         launcher = allocateLauncher();
-        loadPictures();
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
 
         // 结局面板自己一声都不出（EndPanel 里没有 readmusic）；按键落到场景那边
@@ -372,30 +369,28 @@ public final class EndDriver implements TraceDriver {
     }
 
     /**
-     * 过场画的分母**从磁盘现数**：{@code sources/End/} 下文件名是纯数字的 .jpg。
-     * 原版源码里写死的是 25（{@code code<25} / {@code code==25}），两者对不上时
-     * {@link #picture()} 会在认不出的那一拍硬失败。
+     * 当前画着第几张过场画，按引用认；还没读过任何一张是 null。
+     *
+     * **不预热缓存。**起手先把 N.jpg 全读一遍的话，原版自己那第一轮真解码在导出里
+     * 就从没发生过（评审逮到的）。所以只问原版**这一拍已经读过的**那几张：先看认过的；
+     * 认不出就依次试 {@code codeBefore}（第一个 {@code if} 读的那张）与 25（第二个
+     * {@code if} 读的那张）。第二个只在第一个对不上时才试 —— 对不上说明第二个 {@code if}
+     * 这一拍成立过，25 已经被原版读过，这一问不会提前把它读进缓存。
+     *
+     * 认到的 N 必须真有文件在磁盘上；试遍了也对不上就硬失败 —— 那说明 readImage 不再
+     * 命中缓存、真的每帧重读了（见类注释「每帧重读磁盘」）。
      */
-    private void loadPictures() {
-        File[] files = new File(PICTURE_DIR).listFiles();
-        if (files == null) ExportTrace.die("找不到过场画目录 " + PICTURE_DIR);
-        for (File f : files) {
-            String n = f.getName();
-            if (n.matches("[0-9]+\\.jpg")) {
-                int k = Integer.parseInt(n.substring(0, n.length() - 4));
-                // 路径拼法与 EndPanel.update() 逐字相同：缓存按文件名认。
-                pictures.put(k, Reader.readImage(PICTURE_DIR + k + ".jpg"));
-            }
-        }
-        if (pictures.isEmpty()) ExportTrace.die(PICTURE_DIR + " 下一张纯数字编号的 .jpg 都没有");
-    }
-
-    /** 当前画着第几张过场画，按引用认；还没读过任何一张是 null。 */
     private Integer picture() {
         Image cur = (Image) field(ep, "currentImage");
         if (cur == null) return null;
         for (Map.Entry<Integer, Image> e : pictures.entrySet()) {
             if (e.getValue() == cur) return e.getKey();
+        }
+        for (int n : new int[] { codeBefore, 25 }) {
+            if (!new File(PICTURE_DIR + n + ".jpg").isFile()) continue;
+            // 路径拼法与 EndPanel.update() 逐字相同：缓存按文件名认。
+            Image img = Reader.readImage(PICTURE_DIR + n + ".jpg");
+            if (img == cur) { pictures.put(n, img); return n; }
         }
         fail("当前那张过场画不是 " + PICTURE_DIR + " 下任何一张的缓存对象（code=" + field(ep, "code")
                 + "）—— readImage 不再命中缓存、真的每帧重读了？见类注释「每帧重读磁盘」");
@@ -499,8 +494,13 @@ public final class EndDriver implements TraceDriver {
         b.append(",\"isDraw\":").append(getBool("isDraw"));
         b.append(",\"isStop\":").append(getBool("isStop"));
         b.append(",\"repainted\":").append(repainted);
-        b.append(",\"loop\":{\"alive\":").append(loop != null && loop.isAlive())
-         .append(",\"wakes\":").append(wakes).append('}');
+        // 只在 wake 步记：冻结状态下别的步上它按构造成立（线程恒在睡），记了是装饰。
+        if (woke) {
+            b.append(",\"loop\":{\"alive\":").append(loop.isAlive())
+             .append(",\"wakes\":").append(wakes).append('}');
+        } else {
+            b.append(",\"loop\":null");
+        }
         return b.append('}').toString();
     }
 

@@ -1154,7 +1154,8 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 每一步记 `current`（`GameLauncher.currentPanel`：scene / menu）、`card`（这一步拦下来的面板
 切换）、`wordY` / `blankY` / `code` / `isDraw` / `isStop`（原版字段原值）、`picture`（当前画着
 第几张过场画，**按缓存对象的引用认**）、`repainted`（这一步原版有没有调 `repaint()`）、
-`loop`（原版那条线程 `alive`，以及 `isStop` 之后又走过几圈 `wakes`），外加 `input` 与 `music`。
+`loop`（**只在 `wake` 步上有值**：原版那条线程 `alive`，以及 `isStop` 之后又走过几圈 `wakes`；
+别的步上线程恒在冻结的 sleep 里，记了是按构造成立的装饰，所以是 `null`），外加 `input` 与 `music`。
 **不记**两条横坐标（构造之后没人写）与图片像素（素材归数据层）。
 
 读数里值得先知道的三件（`end-credits`，2026-09-10）：
