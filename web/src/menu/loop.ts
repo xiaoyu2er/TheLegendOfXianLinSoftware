@@ -52,16 +52,27 @@ export function createMenuTicker(world: MenuWorld, timeScale = 1): MenuTicker {
  * `elapsedMs` 为负（时钟被调过）按 0 处理：宁可停一拍，不可倒着走。
  *
  * 世界是**就地改**的，返回的 `world` 与传进来的是同一个对象。
+ *
+ * `heard`（xl-03x.7）：给了就把**每一步**请求的音效依次追加进去。必须在这里逐步
+ * 收，不能等推完再读 `world.music`：那是每步开头清空的瞬时量，一拍里推了几步
+ * （按下 + 松开、事件 + 脉冲），推完读到的只剩最后一步的。
  */
 export function advanceMenu(
   ticker: MenuTicker,
   arriving: readonly MenuInput[],
   elapsedMs: number,
+  heard?: string[],
 ): MenuTicker {
-  for (const input of arriving) stepMenu(ticker.world, [input])
+  for (const input of arriving) {
+    stepMenu(ticker.world, [input])
+    heard?.push(...ticker.world.music)
+  }
   const budget = ticker.carryMs + Math.max(0, elapsedMs) * ticker.timeScale
   const ticks = Math.floor(budget / MENU_TICK_MS)
-  for (let i = 0; i < ticks; i++) stepMenu(ticker.world, TICK_PULSE)
+  for (let i = 0; i < ticks; i++) {
+    stepMenu(ticker.world, TICK_PULSE)
+    heard?.push(...ticker.world.music)
+  }
   return { ...ticker, carryMs: budget - ticks * MENU_TICK_MS }
 }
 
