@@ -46,7 +46,13 @@
  *
  * ⚠️ **16 这个位数不是被数据钉死的**：实测 16..31 里**任何一个**配上「半步截尾」
  * 都给出同一张表（表在 16 位上就已经稳定了，再多的位数改不动它）。所以把它改成
- * 23 是**看不出来的**，别把 16 读成一个量出来的常数。真正被钉死的是**半步截尾**
+ * 23 是**看不出来的**，别把 16 读成一个量出来的常数。
+ *
+ * ## 不透明那一支（xl-03x.15）
+ *
+ * 旁白背景（639×395，全不透明）拉满画布也改成 CPU 按表拼，走的是不透明那条循环：
+ * {@link opaqueSourceIndexes}，经 `BlitLoop` 选。上面「用的是带透明那一份」说的是
+ * 提示图；默认值仍是 `'transparent'`，战斗那边行为不变。真正被钉死的是**半步截尾**
  * 这件事 —— 改成向上取整（也就是不透明那条循环的做法），24 条测试里 4 条当场红。
  *
  * 判对错的是那两张表，不是这段公式 —— 见 `scaledBlit.test.ts`。
@@ -74,6 +80,53 @@ const MAX_SRC_LEN = 255
 const MAX_DEST_RATIO = 2
 
 /**
+ * 源图透不透明，Java2D 走的是哪一条 blit 循环。见文件头与 {@link opaqueSourceIndexes}。
+ */
+export type BlitLoop = 'transparent' | 'opaque'
+
+/**
+ * 不透明那条循环**量过**的 (源长, 目标长) 对，黄金数据两轴扫描范围之外的那几对。
+ *
+ * 只有旁白背景那一句（xl-03x.15）：`Narratage.drawNarratage` 的
+ * `drawImage(img, 0,0,1024,640, 0,0,639,395)`，两条轴各一对。量法与判据在
+ * `ExportScaledBlit` 的 `narratage` 那一节；这里是登记，不是推导 —— 新添一对
+ * 必须先让导出器量过。
+ */
+const MEASURED_OPAQUE_PAIRS: readonly (readonly [number, number])[] = [
+  [639, 1024],
+  [395, 640],
+]
+
+/**
+ * **源图全不透明**时目标第 i 个像素取的源下标（xl-03x.15）。
+ *
+ * ```
+ *   inc = (srcLen << 23) / destLen     // 整数除法，截尾
+ *   loc = (inc + 1) / 2                // 半步，向上取整
+ *   src(i) = (loc + i * inc) >> 23
+ * ```
+ *
+ * 这是 `ExportScaledBlit` 头注里拟合出来的那一份（1..31 位里**只有 23** 配半步
+ * 向上吻合），同样**不是**从 OpenJDK 源码里读的 —— 那条循环在 JDK 的 native
+ * 代码里，这个仓库里没有它的源码。判对错的是黄金数据：两轴扫描（源 128 / 24）
+ * 加旁白那两对（源 639 / 395，由原版那句 `drawImage` 真画一遍读回）。
+ *
+ * 数都在 2^53 以内（639·2^23·1024 ≈ 5.5e12），所以用浮点做整数算术是精确的。
+ */
+export function opaqueSourceIndexes(srcLen: number, destLen: number): number[] {
+  requirePositiveInt(srcLen, 'srcLen')
+  requirePositiveInt(destLen, 'destLen')
+  const measured = MEASURED_OPAQUE_PAIRS.some(([s, d]) => s === srcLen && d === destLen)
+  if (!measured) guardSweepRange(srcLen, destLen)
+  const one = 2 ** 23
+  const inc = Math.floor((srcLen * one) / destLen)
+  const loc = Math.floor((inc + 1) / 2)
+  const out = new Array<number>(destLen)
+  for (let i = 0; i < destLen; i++) out[i] = Math.floor((loc + i * inc) / one)
+  return out
+}
+
+/**
  * 目标第 i 个像素取的源下标，i = 0..destLen-1。**源图必须带透明**，理由见文件头。
  *
  * `srcLen` / `destLen` 都要是正整数。
@@ -81,17 +134,7 @@ const MAX_DEST_RATIO = 2
 export function nearestSourceIndexes(srcLen: number, destLen: number): number[] {
   requirePositiveInt(srcLen, 'srcLen')
   requirePositiveInt(destLen, 'destLen')
-  if (srcLen > MAX_SRC_LEN) {
-    throw new Error(
-      `缩放采样只在源长 ≤ ${MAX_SRC_LEN} 上量过（见 tools/scaled-blit-golden/），收到 ${srcLen}`,
-    )
-  }
-  if (destLen > srcLen * MAX_DEST_RATIO) {
-    throw new Error(
-      `缩放采样只扫到源长的 ${MAX_DEST_RATIO} 倍（见 tools/scaled-blit-golden/），` +
-        `源长 ${srcLen} 配目标长 ${destLen} 是外推`,
-    )
-  }
+  guardSweepRange(srcLen, destLen)
   const inc = Math.floor((srcLen * ONE) / destLen)
   const loc = Math.floor(inc / 2)
   const out = new Array<number>(destLen)
@@ -115,8 +158,12 @@ export interface BlitRun {
  * 渲染器按区间搬像素：一段一次 `drawImage`，缩小时是 1:1 的整段拷贝、放大时是
  * 「一个源像素铺满 length 个目标像素」，两种都不经过任何插值，与原版一致。
  */
-export function nearestBlitRuns(srcLen: number, destLen: number): BlitRun[] {
-  const idx = nearestSourceIndexes(srcLen, destLen)
+export function nearestBlitRuns(
+  srcLen: number,
+  destLen: number,
+  loop: BlitLoop = 'transparent',
+): BlitRun[] {
+  const idx = loop === 'opaque' ? opaqueSourceIndexes(srcLen, destLen) : nearestSourceIndexes(srcLen, destLen)
   const runs: BlitRun[] = []
   let start = 0
   for (let i = 1; i <= destLen; i++) {
@@ -160,13 +207,14 @@ export interface ScaledBlitPasses {
  * 十行的软件 blitter 把这两趟跑一遍，结果必须等于采样表的外积）。
  *
  * `src` 是源图里那块区域的位置与大小（提示图恒为整张图）；`dest` 只要尺寸，
- * 落点由调用方摆。
+ * 落点由调用方摆。`loop` 按源图透不透明选（提示图带透明，旁白背景全不透明）。
  */
 export function scaledBlitPasses(
   src: { x: number; y: number; width: number; height: number },
   dest: { width: number; height: number },
+  loop: BlitLoop = 'transparent',
 ): ScaledBlitPasses {
-  const horizontal = nearestBlitRuns(src.width, dest.width).map((run) => ({
+  const horizontal = nearestBlitRuns(src.width, dest.width, loop).map((run) => ({
     sx: src.x + run.srcIndex,
     sy: src.y,
     sw: 1,
@@ -176,7 +224,7 @@ export function scaledBlitPasses(
     dw: run.length,
     dh: src.height,
   }))
-  const vertical = nearestBlitRuns(src.height, dest.height).map((run) => ({
+  const vertical = nearestBlitRuns(src.height, dest.height, loop).map((run) => ({
     sx: 0,
     sy: run.srcIndex,
     sw: dest.width,
@@ -187,6 +235,21 @@ export function scaledBlitPasses(
     dh: run.length,
   }))
   return { horizontal, vertical }
+}
+
+/** 黄金数据两轴扫描覆盖的范围。之外的输入要响，理由见 {@link MAX_SRC_LEN}。 */
+function guardSweepRange(srcLen: number, destLen: number): void {
+  if (srcLen > MAX_SRC_LEN) {
+    throw new Error(
+      `缩放采样只在源长 ≤ ${MAX_SRC_LEN} 上量过（见 tools/scaled-blit-golden/），收到 ${srcLen}`,
+    )
+  }
+  if (destLen > srcLen * MAX_DEST_RATIO) {
+    throw new Error(
+      `缩放采样只扫到源长的 ${MAX_DEST_RATIO} 倍（见 tools/scaled-blit-golden/），` +
+        `源长 ${srcLen} 配目标长 ${destLen} 是外推`,
+    )
+  }
 }
 
 function requirePositiveInt(v: number, name: string): void {

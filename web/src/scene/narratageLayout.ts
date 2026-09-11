@@ -31,6 +31,49 @@
  * 这消掉的是**横向漂移**，不是字形差：浏览器的粗体比 Java2D 重（同一行亮度
  * > 220 的像素 java 2508 / web 3017），笔画边缘的差另有交代。
  */
+import { scaledBlitPasses } from '../battle/render/scaledBlit'
+import type { ScaledBlitPasses } from '../battle/render/scaledBlit'
+import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
+
+/**
+ * 背景图的源矩形。原版 `drawNarratage` 那一句（GBK 现读）：
+ *
+ *     g.drawImage(backImages1.get(index), 0, 0, 1024, 640, 0, 0, 639, 395, scene);
+ *
+ * 源 (0,0)-(639,395) 恰好是整张图（52 张 PNG 全是 639×395、RGB 无 alpha，
+ * `ExportScaledBlit` 逐张核），拉满目标 (0,0)-(1024,640)。
+ */
+export const BG_SRC_WIDTH = 639
+export const BG_SRC_HEIGHT = 395
+
+/**
+ * **背景图拉满画布要搬哪些矩形**（xl-03x.15）。
+ *
+ * 不交给 GPU 采样。原先是 `Sprite.setSize(1024, 640)`，差异只在第 599 行、
+ * 横贯整行（xl-t0h / xl-yg6.12 实测 dorm-intro 36 帧，单帧最多 264 个像素）。
+ * 追下去是这样：
+ *
+ * - 原版那条循环（源图全不透明，走 Java2D 的不透明 blit）在这一对长度上**量**出来
+ *   的采样表，与理想最近邻 `floor((i + 0.5) * 源长 / 目标长)` 两条轴**逐个相同**，
+ *   与 `opaqueSourceIndexes` 的 23 位定点模型也逐个相同（黄金数据的 `narratage`
+ *   一节，由原版那句 `drawImage` 真画一遍梯度图读回；52 张真图画出来的像素与
+ *   两张表的外积逐个相同）。
+ * - 所以原版的取整没有任何特别之处，偏的是 GPU 那一侧。第 599 行的精确落点是
+ *   `599.5 * 395 / 640 = 370 + 1/256`，离纹素边界只有 1/256；⚠️ **但这不是
+ *   一个成立的解释**：87 / 215 / 343 / 471 这四行离边界同样恰好 1/256，却一个
+ *   像素都没差。GPU 为什么偏在这一行，**没查清，未验证**。
+ *
+ * 解法不押在那个「为什么」上：与 xl-ttu（提示图）同一个做法，CPU 按采样表拼好
+ * 一张 1024×640 的位图，再 1:1 贴上去 —— 这样哪一行取哪一行由表说了算，与 GPU
+ * 的实现无关。几何在这里算、能进 `pnpm test`，渲染器只负责把矩形交给 `drawImage`。
+ */
+export function narratageBgPasses(): ScaledBlitPasses {
+  return scaledBlitPasses(
+    { x: 0, y: 0, width: BG_SRC_WIDTH, height: BG_SRC_HEIGHT },
+    { width: STAGE_WIDTH, height: STAGE_HEIGHT },
+    'opaque',
+  )
+}
 
 /** 正文字号。原版 `Narratage.init` 的 `fontSize = 20`。 */
 export const FONT_SIZE = 20

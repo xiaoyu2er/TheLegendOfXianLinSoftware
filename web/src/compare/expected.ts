@@ -277,24 +277,6 @@ function coinDigits(single: number): GapRegion {
 }
 
 /**
- * `narratage-bg-row-599` 那一格的 `why` / `issue`：**两族混在一格里，几何上分不开** ——
- * 「缺口成因逐区点名、几族不许混写」（xl-yg6.3）的一处**有理由的例外**，写成具名常量，
- * 免得读起来像漏写。（同类的另一处 `WALLET_NOT_REPLAYED` —— 答题剧本金币数「字形 +
- * 取图页不跑钱包导致数值不同」—— 已由 xl-03x.3 还清并删掉：取图页与会话层共用记账那一段，
- * 数值由账本对撞逐帧守着，见 `compare/ledger.ts`。）
- *
- * 两族：旁白背景 639×395 拉满画布时第 599 行的取整（GPU 最近邻 vs Java2D 不透明 blit，
- * xl-t0h），与底部对话框第 4 行正文的字形（xl-9bd.17）—— 那一行文字也横穿 y=599。
- * 两者从不同帧出现（旁白帧没有对话框），可矩形是静态的。
- *
- * ⚠️ 这一处例外是 xl-yg6.12 实现时认定的，**没有经过裁定**（/code-review Spec 轴抓的）。
- */
-const ROW_599_MIXED = {
-  why: '两族混在一格、几何上分不开：旁白背景第 599 行的缩放取整（GPU 最近邻 vs Java2D 不透明 blit）+ 对话帧上第 4 行正文的字形',
-  issue: 'xl-t0h / xl-9bd.17',
-} as const
-
-/**
  * 从脚本1 开场的那两条剧本（`dorm-intro` 与 `milestone`）共用的缺口区（xl-yg6.12）。
  *
  * **矩形是共用的，数不是**（与 `shopGaps` 同一个套路）：两条开场走的是同一段旁白与
@@ -310,7 +292,6 @@ function script1Gaps(worst: {
   /** 顶上 6 条横带各自的「单帧最多」，一格一条。 */
   readonly topText: readonly [number, number, number, number, number, number]
   readonly bottomUpper: number
-  readonly row599: number
   readonly bottomLower: number
   readonly coin: number
 }): readonly GapRegion[] {
@@ -351,22 +332,16 @@ function script1Gaps(worst: {
       issue: GLYPH,
     },
     {
-      name: 'narratage-bg-row-599',
-      // 实测外接框 (0,599)-(1023,599)，只在旁白放着的帧上（dorm-intro 36/165 帧）。
-      // ⚠️ **这一行里有两个成因，几何上分不开**：对话框第 4 行文字（x≈200..560）
-      // 也横穿 y=599。两者从不同帧出现（旁白帧没有对话框），可矩形是静态的 ——
-      // 所以对话帧上那一行的字形像素也记在这个区里。把 x 切成三段量过：中段
-      // (194..605) 单帧最多 170 个落在 #3425（对话帧），旁白帧的中段同样会差，切不开。
-      maxPixels: worst.row599 * 2,
-      rect: { x0: 0, y0: 599, x1: 1023, y1: 599 },
-      ...ROW_599_MIXED,
-    },
-    {
       name: 'bottom-text-lower',
-      // 实测外接框 (200,600)-(558,614)。
+      // 实测外接框 (200,599)-(558,614)（xl-03x.15 重量）。上沿原先停在 600，把
+      // y=599 那一行让给旁白背景的取整区；那一区的账还完之后（旁白帧上第 599 行
+      // 两条剧本一个像素都不差，左段 0..193 与右段 606..1023 同样 0），这一行剩下
+      // 的只有对话框第 4 行文字（(200,599)-(555,599)，与本区同在 #3425 那 3 帧），
+      // 于是并回这里。⚠️ 代价：旁白帧上第 599 行 x=194..605 这一段也落进了这个区，
+      // 不再被硬比守着（实测旁白帧那一段 0 个；区是静态的，两族分不开）。
       maxPixels: worst.bottomLower * 2,
-      rect: { x0: 194, y0: 600, x1: 605, y1: 620 },
-      why: '底部样式 2 对话框第 4 行正文的字形（y=599 那一行记在上一个区里）',
+      rect: { x0: 194, y0: 599, x1: 605, y1: 620 },
+      why: '底部样式 2 对话框第 4 行正文的字形',
       issue: GLYPH,
     },
     coinDigits(worst.coin),
@@ -1249,12 +1224,11 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
       speechName: 1295,
       topText: [3707, 4950, 4638, 1983, 3466, 1366],
       bottomUpper: 11130,
-      row599: 264,
-      bottomLower: 2219,
+      bottomLower: 2389,
       coin: 584,
     }),
-    why: '旁白、对话正文与金币数的字形 + 旁白背景第 599 行的缩放取整；四个场景的地图、遮掩图、人物与两道门逐像素相等',
-    issue: 'xl-9bd.17 / xl-t0h',
+    why: '旁白、对话正文与金币数的字形；四个场景的地图、遮掩图、人物、两道门与旁白背景逐像素相等',
+    issue: 'xl-9bd.17',
   },
   'dorm-intro': {
     status: 'gap',
@@ -1306,20 +1280,24 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 上界里没人数过。成因是缩放采样的取整（GPU 最近邻 vs Java2D 不透明 blit），
     // 不属于字形 / 素材 / 签字偏离任何一族，单开 xl-t0h。
     //
+    // ⚠️ **xl-03x.15 把这笔账还了**：旁白背景改由 CPU 按原版采样表拼（`narratageBgPasses`），
+    // 第 599 行两条剧本旁白帧上一个像素都不差，那一区删掉；这一行剩下的对话框第 4 行
+    // 字形并进 bottom-text-lower。
+    //
     // 矩形与逐区的量法见 `script1Gaps`（与 milestone 共用）。
     gaps: script1Gaps({
       // 实测「单帧最多」（165 帧，`--every 25`，容差 8）：名字牌 #1625、六条横带
-      // #3825/#775/#800/#700/#725/#800、底部 #3425、第 599 行 #475、底部第 4 行
-      // #3425、金币数 #825。
+      // #3825/#775/#800/#700/#725/#800、底部 #3425、底部第 4 行
+      // #3425、金币数 #825。底部第 4 行那一格 xl-03x.15 上沿并到 599 后重量：2219 → 2389
+      // （多出来的 170 就是 y=599 那一行的对话框字形，与 milestone 同一读数）。
       speechName: 1295,
       topText: [3707, 4950, 4638, 1632, 3466, 1366],
       bottomUpper: 11130,
-      row599: 264,
-      bottomLower: 2219,
+      bottomLower: 2389,
       coin: 520,
     }),
-    why: '旁白、对话正文与金币数的字形（原版字体未交付）+ 旁白背景第 599 行的缩放取整',
-    issue: 'xl-9bd.17 / xl-t0h',
+    why: '旁白、对话正文与金币数的字形（原版字体未交付）',
+    issue: 'xl-9bd.17',
   },
   // ===================== 商店三条（xl-knp.10 接上 driver=shop） =====================
   //

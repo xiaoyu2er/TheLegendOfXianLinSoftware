@@ -13,7 +13,7 @@ import type { NpcState } from '../state/npc'
 import { createWorld } from '../state/step'
 import type { World } from '../state/types'
 import { TEXT_FONT_STACK } from '../textFont'
-import { FONT_SIZE, baselineY, layoutLine } from './narratageLayout'
+import { BG_SRC_HEIGHT, FONT_SIZE, baselineY, layoutLine, narratageBgPasses } from './narratageLayout'
 import { npcSprite } from './npcSprite'
 import {
   PRESENT_BASELINE,
@@ -241,7 +241,25 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
   const narratageLayer = new Container()
   narratageLayer.visible = false
   app.stage.addChild(narratageLayer)
-  const narratageBg = new Sprite()
+  // 背景那张 1024×640 是 CPU 拼的（xl-03x.15，见 `narratageBgPasses`）：先横着
+  // 把每一列搬进「目标宽 × 源高」的中间位图，再竖着把每一行搬到位。
+  const bgPasses = narratageBgPasses()
+  const bgMidCanvas = document.createElement('canvas')
+  bgMidCanvas.width = STAGE_WIDTH
+  bgMidCanvas.height = BG_SRC_HEIGHT
+  const bgOutCanvas = document.createElement('canvas')
+  bgOutCanvas.width = STAGE_WIDTH
+  bgOutCanvas.height = STAGE_HEIGHT
+  const bgMidCtx2d = bgMidCanvas.getContext('2d')
+  const bgOutCtx2d = bgOutCanvas.getContext('2d')
+  if (!bgMidCtx2d || !bgOutCtx2d) throw new Error('取不到旁白背景的 2D context')
+  const bgMidCtx = bgMidCtx2d
+  const bgOutCtx = bgOutCtx2d
+  bgMidCtx.imageSmoothingEnabled = false
+  bgOutCtx.imageSmoothingEnabled = false
+  /** 背景画布上现在拼的是第几帧；-1 = 还没拼过。 */
+  let blittedBg = -1
+  const narratageBg = new Sprite(nearest(Texture.from(bgOutCanvas)))
   narratageLayer.addChild(narratageBg)
   // 52 帧背景，只在这个场景真的有旁白时才载（`showScene`）。
   const narratageTextures: Texture[] = []
@@ -517,8 +535,23 @@ export async function createSceneRenderer(host: HTMLElement): Promise<SceneRende
       // 背景帧没载入。静默不画会表现为"旁白偶尔黑一下"，那是查不出来的。
       throw new Error(`旁白的第 ${narratage.bg} 帧背景没载入（共 ${narratageTextures.length} 帧）。`)
     }
-    narratageBg.texture = texture
-    narratageBg.setSize(STAGE_WIDTH, STAGE_HEIGHT)
+    // **不交给 GPU 采样**（xl-03x.15）：CPU 按原版的采样表拼好整张 1024×640，
+    // 再 1:1 贴。GPU 在第 599 行取错一行，理由与实测见 `narratageBgPasses`。
+    // 背景 180 ms 才换一帧，只在换帧时重拼。
+    if (narratage.bg !== blittedBg) {
+      const resource = texture.source.resource as CanvasImageSource | undefined
+      if (!resource) throw new Error(`旁白的第 ${narratage.bg} 帧背景取不到位图源`)
+      bgMidCtx.clearRect(0, 0, STAGE_WIDTH, BG_SRC_HEIGHT)
+      for (const r of bgPasses.horizontal) {
+        bgMidCtx.drawImage(resource, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
+      }
+      bgOutCtx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
+      for (const r of bgPasses.vertical) {
+        bgOutCtx.drawImage(bgMidCanvas, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
+      }
+      narratageBg.texture.source.update()
+      blittedBg = narratage.bg
+    }
 
     // `null` 的行原版不画（`if (bufferedText[i] != null)`），空串也不用画。
     const key = narratage.text.map((line) => line ?? '').join('\n')

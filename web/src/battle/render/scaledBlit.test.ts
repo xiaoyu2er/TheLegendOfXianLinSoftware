@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../../test/repoPath'
-import { nearestBlitRuns, nearestSourceIndexes, scaledBlitPasses } from './scaledBlit'
+import { softBlit } from '../../test/softBlit'
+import { nearestBlitRuns, nearestSourceIndexes, opaqueSourceIndexes, scaledBlitPasses } from './scaledBlit'
+import type { BlitRect } from './scaledBlit'
 
 /**
  * 黄金测试：这里算出来的采样表与**真的 Java2D** 扫出来的逐个相同。
@@ -102,6 +104,35 @@ describe('两条 blit 循环', () => {
       expect(nearestSourceIndexes(srcLen, destLen)).toEqual(golden.transparent.y.map[destLen])
       expect(nearestSourceIndexes(srcLen, destLen)).not.toEqual(golden.opaque.y.map[destLen])
     }
+  })
+})
+
+/**
+ * 不透明那条循环（xl-03x.15，旁白背景 639×395 全不透明）。两轴扫描的 `opaque`
+ * 表此前只用来证明「两条循环不一样」，现在它是 `opaqueSourceIndexes` 的判据。
+ */
+describe('opaqueSourceIndexes 与不透明那条循环逐个相同', () => {
+  it.each([
+    ['X（源 128 宽）', golden.opaque.x],
+    ['Y（源 24 高）', golden.opaque.y],
+  ] as [string, Axis][])('%s 的每一个目标长度', (_name, axis) => {
+    for (let destLen = 1; destLen < axis.map.length; destLen++) {
+      expect(opaqueSourceIndexes(axis.srcLen, destLen)).toEqual(axis.map[destLen])
+    }
+  })
+
+  it('扫描范围之外只认量过的那两对，别的照样响', () => {
+    expect(opaqueSourceIndexes(639, 1024)).toHaveLength(1024)
+    expect(opaqueSourceIndexes(395, 640)).toHaveLength(640)
+    expect(() => opaqueSourceIndexes(639, 1023)).toThrow(/量过/)
+    expect(() => opaqueSourceIndexes(395, 641)).toThrow(/量过/)
+  })
+
+  it('scaledBlitPasses 按 loop 分派，不透明那条对上 opaque 表', () => {
+    const passes = scaledBlitPasses({ x: 0, y: 0, width: 128, height: 24 }, { width: 20, height: 10 }, 'opaque')
+    const flat = passes.horizontal.flatMap((r) => Array.from({ length: r.dw }, () => r.sx))
+    expect(flat).toEqual(golden.opaque.x.map[20])
+    expect(flat).not.toEqual(golden.transparent.x.map[20])
   })
 })
 
@@ -216,17 +247,7 @@ describe('scaledBlitPasses 搬出来的像素', () => {
     height,
     px: new Int32Array(width * height).fill(-1),
   })
-  /** `ctx.drawImage(src, sx,sy,sw,sh, dx,dy,dw,dh)` 在关掉插值时该做的事。 */
-  const blit = (src: Buf, dst: Buf, r: ReturnType<typeof scaledBlitPasses>['horizontal'][number]) => {
-    for (let y = 0; y < r.dh; y++) {
-      for (let x = 0; x < r.dw; x++) {
-        // 段内是整段拷贝（sw===dw）或整段复制（sw===1），两者都用同一句表达。
-        const sx = r.sx + (r.sw === r.dw ? x : Math.floor((x * r.sw) / r.dw))
-        const sy = r.sy + (r.sh === r.dh ? y : Math.floor((y * r.sh) / r.dh))
-        dst.px[(r.dy + y) * dst.width + (r.dx + x)] = src.px[sy * src.width + sx]!
-      }
-    }
-  }
+  const blit = (src: Buf, dst: Buf, r: BlitRect) => softBlit(src.px, src.width, dst.px, dst.width, r)
 
   const SRC_W = golden.transparent.x.srcLen
   const SRC_H = golden.transparent.y.srcLen

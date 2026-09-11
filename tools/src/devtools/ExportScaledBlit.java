@@ -113,6 +113,7 @@ public class ExportScaledBlit {
         File tmpDir = Files.createTempDirectory("xl-scaled-blit").toFile();
         Sweep transparent = sweepBoth(tmpDir, true);
         Sweep opaque = sweepBoth(tmpDir, false);
+        int[][] narratage = sweepNarratage(tmpDir);
         deleteTree(tmpDir);
 
         File f = new File(out);
@@ -127,6 +128,13 @@ public class ExportScaledBlit {
             writeSweep(w, "transparent", transparent);
             w.write(",\n");
             writeSweep(w, "opaque", opaque);
+            w.write(",\n");
+            w.write("  \"narratage\": {\n");
+            w.write("    \"x\": { \"srcLen\": " + NARR_SRC_W + ", \"destLen\": " + NARR_DEST_W
+                    + ", \"map\": " + flat(narratage[0]) + " },\n");
+            w.write("    \"y\": { \"srcLen\": " + NARR_SRC_H + ", \"destLen\": " + NARR_DEST_H
+                    + ", \"map\": " + flat(narratage[1]) + " }\n");
+            w.write("  }");
             w.write("\n}\n");
         }
         System.out.println("已写出 " + out + "：两种形态 × (X 目标长 1.." + MAX_DEST_W
@@ -325,6 +333,126 @@ public class ExportScaledBlit {
             }
         }
         return map;
+    }
+
+    /**
+     * 旁白背景那一句（xl-03x.15）：{@code Narratage.drawNarratage} 的
+     * {@code drawImage(img, 0,0,1024,640, 0,0,639,395, scene)}，GBK 源码现读。
+     */
+    private static final int NARR_SRC_W = 639;
+    private static final int NARR_SRC_H = 395;
+    private static final int NARR_DEST_W = 1024;
+    private static final int NARR_DEST_H = 640;
+    /** {@code Narratage} 构造函数里那条循环：{@code for (int i = 2; i <= 53; i++)}。 */
+    private static final int NARR_FIRST = 2;
+    private static final int NARR_LAST = 53;
+    private static final String NARR_DIR = "backImages/NarratageBackImages/";
+
+    /**
+     * 旁白背景拉满画布时两条轴的采样表，**照原版那一句真画一遍读回**。
+     *
+     * <p>两轴扫描的源长只有 128 / 24，这一对 (639→1024, 395→640) 在它们之外，
+     * 所以单独量，不外推。做法与 {@link #sweepBoth} 同一招，但几何换成原版的：
+     *
+     * <ul>
+     *   <li>梯度图与原版 52 张**同一种 PNG**：639×395、RGB 无 alpha（不透明那条
+     *       循环）。每个像素编码自己的坐标（x、y 各 10 位，拆进三个通道）。</li>
+     *   <li>走 {@code tools.Reader.readImage}，画到与 {@code ScenePanel.backImage}
+     *       同型的 {@code TYPE_INT_ARGB} 1024×640 上，调用逐字照抄。</li>
+     * </ul>
+     *
+     * <p>四条判据，任一条不成立退出码 1：
+     * <ol>
+     *   <li>原版 52 张全是 639×395、全不透明（否则这张表对它们不成立）；</li>
+     *   <li>每个读回的像素都不透明（没画上会读成透明）；</li>
+     *   <li>整块映射可分离：每一行的 x 都等于第 0 行、每一列的 y 都等于第 0 列；</li>
+     *   <li>**拿真图核**：原版那一句画每一张真图，结果逐像素等于「两张表的外积
+     *       搬原图像素」。表是梯度图量的，这一条证它对真图也成立。</li>
+     * </ol>
+     *
+     * @return {@code [x 表, y 表]}
+     */
+    private static int[][] sweepNarratage(File dir) throws Exception {
+        for (int k = NARR_FIRST; k <= NARR_LAST; k++) {
+            File f = narratageFile(k);
+            BufferedImage raw = ImageIO.read(f);
+            if (raw == null) fail("读不出旁白背景图：" + f.getPath());
+            if (raw.getWidth() != NARR_SRC_W || raw.getHeight() != NARR_SRC_H) {
+                fail(f.getPath() + " 是 " + raw.getWidth() + "×" + raw.getHeight()
+                        + "，不是原版源矩形的 " + NARR_SRC_W + "×" + NARR_SRC_H);
+            }
+            if (raw.getColorModel().hasAlpha()) {
+                fail(f.getPath() + " 带 alpha 通道，它未必走不透明那条 blit 循环");
+            }
+        }
+
+        BufferedImage src = new BufferedImage(NARR_SRC_W, NARR_SRC_H, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < NARR_SRC_H; y++) {
+            for (int x = 0; x < NARR_SRC_W; x++) {
+                src.setRGB(x, y, ((x & 0xFF) << 16) | ((y & 0xFF) << 8) | (x >> 8) | ((y >> 8) << 4));
+            }
+        }
+        File png = new File(dir, "narratage.png");
+        ImageIO.write(src, "png", png);
+        BufferedImage canvas = drawLikeNarratage(tools.Reader.readImage(png.getPath()));
+
+        int[] mx = new int[NARR_DEST_W];
+        int[] my = new int[NARR_DEST_H];
+        for (int j = 0; j < NARR_DEST_H; j++) {
+            for (int i = 0; i < NARR_DEST_W; i++) {
+                int argb = canvas.getRGB(i, j);
+                if ((argb >>> 24) != 0xFF) {
+                    fail("旁白梯度图读回透明像素 (" + i + "," + j + ")：这一笔根本没画上");
+                }
+                int x = ((argb >> 16) & 0xFF) | ((argb & 0x0F) << 8);
+                int y = ((argb >> 8) & 0xFF) | (((argb >> 4) & 0x0F) << 8);
+                if (x >= NARR_SRC_W || y >= NARR_SRC_H) {
+                    fail("旁白梯度图读回的源坐标越界：(" + x + "," + y + ")");
+                }
+                if (j == 0) mx[i] = x;
+                if (i == 0) my[j] = y;
+                if (x != mx[i] || y != my[j]) {
+                    fail("旁白缩放不可分离：(" + i + "," + j + ") 取到源 (" + x + "," + y
+                            + ")，两张一维表说的是 (" + mx[i] + "," + my[j] + ")");
+                }
+            }
+        }
+
+        for (int k = NARR_FIRST; k <= NARR_LAST; k++) {
+            File f = narratageFile(k);
+            BufferedImage raw = ImageIO.read(f);
+            BufferedImage drawn = drawLikeNarratage(tools.Reader.readImage(f.getPath()));
+            for (int j = 0; j < NARR_DEST_H; j++) {
+                for (int i = 0; i < NARR_DEST_W; i++) {
+                    int want = raw.getRGB(mx[i], my[j]);
+                    int got = drawn.getRGB(i, j);
+                    if (got != want) {
+                        fail(f.getPath() + " 的 (" + i + "," + j + ") 画出来是 "
+                                + Integer.toHexString(got) + "，两张表的外积说的是源 ("
+                                + mx[i] + "," + my[j] + ") 的 " + Integer.toHexString(want));
+                    }
+                }
+            }
+        }
+        return new int[][] {mx, my};
+    }
+
+    /** 第 k 张旁白背景（{@code Narratage} 构造函数里的拼法）。 */
+    private static File narratageFile(int k) {
+        return new File(NARR_DIR + "all_magic_21-" + k + ".png");
+    }
+
+    /** 原版那一句，逐字照抄，画到与 {@code ScenePanel.backImage} 同型的位图上。 */
+    private static BufferedImage drawLikeNarratage(Image img) {
+        BufferedImage canvas = new BufferedImage(NARR_DEST_W, NARR_DEST_H, BufferedImage.TYPE_INT_ARGB);
+        canvas.getGraphics().drawImage(img, 0, 0, 1024, 640, 0, 0, 639, 395, null);
+        return canvas;
+    }
+
+    private static String flat(int[] xs) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < xs.length; i++) sb.append(i == 0 ? "" : ",").append(xs[i]);
+        return sb.append(']').toString();
     }
 
     private static void deleteTree(File dir) {
