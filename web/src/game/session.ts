@@ -708,7 +708,7 @@ export function advanceSession(
       // 三个人的结果记回队伍。**记的是 `party` 不是 `heroes`**：两条打输的
       // 出口末尾都有一句 `heroes.clear()`，拿它记等于一个人都没记。
       rememberParty(battle.world.party)
-      panel = exit === 'scenePanel' ? 'scene' : titlePanel()
+      panel = exit === 'scenePanel' ? 'scene' : enterTitle()
       // `switchTo("scene")` 里那句 `SCENE_SIGNAL=1`：下一拍场景把自己的曲子
       // 放回去（进战斗那一下 BGM 被 `initial()` 换成了战斗曲，xl-yg6.11）。
       if (panel === 'scene') scene = signalScene(scene)
@@ -759,7 +759,7 @@ export function advanceSession(
     // 场景那一侧**不给信号**：原版 `switchTo("start")` 那一支没有 `SCENE_SIGNAL=1`。
     if (menuWantsTitle(menu.world)) {
       clearMenuTitle(menu.world)
-      panel = titlePanel()
+      panel = enterTitle()
     }
     // 「存档」/「提取」（xl-i06.9）：`setLastPanel("menu")` + `changeStateTo` +
     // `switchTo("ls")`。同一个理由的一次性信号。
@@ -926,7 +926,7 @@ function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadIn
  *
  * 存读档面板的退出键那一支在 `stepSaveLoad` 的出口上拨，理由见那里。
  */
-function titlePanel(): 'start' {
+function enterTitle(): 'start' {
   openBgm()
   return 'start'
 }
