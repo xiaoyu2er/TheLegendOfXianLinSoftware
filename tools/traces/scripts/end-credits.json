@@ -1,0 +1,15 @@
+{
+  "driver": "end",
+  "name": "end-credits",
+  "description": "结局从进来播到定格、再往后几步（xl-czb.5）。拍数从源码推：EndPanel 构造时 wordY=640，update() 里 wordY>-1280 时每拍 -5、等于 -1280 那拍 isStop=true，所以第 (640-(-1280))/5 拍停，expect=stop 让导出器核它恰好停在这一拍；同一拍 blankY 从 -1920 走到 0。定格之后再推 3 拍（画面不动、不再 repaint）；按一次回车（经原版 GameLauncher.keyPressed 落到场景面板，结局不动）；叫醒原版线程两次（isStop 之后照样一圈圈走、不退出）；最后按退出键 —— 原版把它交给场景面板，场景面板把它当成开菜单，结局被切走。",
+  "setup": { "scene": "脚本41.txt" },
+  "every": 8,
+  "steps": [
+    { "op": "enter" },
+    { "op": "tick", "times": 384, "expect": "stop" },
+    { "op": "tick", "times": 3 },
+    { "op": "key", "key": "enter" },
+    { "op": "wake", "times": 2 },
+    { "op": "key", "key": "escape" }
+  ]
+}

@@ -140,10 +140,13 @@ describe('跨端比对的期望表', () => {
     //
     // xl-i06.6 签进来过两条：第五支驱动器（saveload，存读档面板）的真值先落了；
     // xl-i06.12 把取图页的装配接上，两条换成了真量出来的分区表态，**这张表又空了**。
+    //
+    // xl-czb.5 签进来一条：第六支驱动器（end，结局面板）的真值先落了，面板与取图页
+    // 装配归 xl-czb.6。那张票接上之后这一条要删。
     expect(
       unassembled.map(([name]) => name),
       '表 unassembled 的剧本变了？改这份登记，下面那几条会跟着验它',
-    ).toEqual([])
+    ).toEqual(['end-credits'])
     for (const [name, e] of unassembled) assertNothingMeasured(name, e, /./)
     // 同上：登记空着时上面那个 for 一轮都不跑，分母写死的那一半在这里。
     assertRulesBite('unassembled', /./)

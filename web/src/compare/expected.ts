@@ -2156,6 +2156,12 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '只剩右下角金币数的字形；读档之后的大迷宫（图比碰撞网格大的那一种，照画）与主角逐像素相等',
     issue: 'xl-9bd.17',
   },
+  // 结局面板（driver=end，xl-czb.5）。真值先行，web 侧面板与取图页装配都还没做。
+  'end-credits': {
+    status: 'unassembled',
+    why: '结局面板的 web 侧还没做，取图页装配不出 driver=end',
+    issue: 'xl-czb.6',
+  },
 }
 
 /**
