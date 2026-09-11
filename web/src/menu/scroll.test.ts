@@ -661,13 +661,37 @@ describe('滚动条：拖拽滑块（xl-03x.9）', () => {
     expect(e.scroll, '松了手移动鼠标还在翻').toBe(2)
   })
 
-  it('按在滑块上不动就不翻 —— 按下本身不改位置', () => {
+  it('按在滑块上不动就不翻 —— 按下本身不改位置（从中间一行按起，两个方向的漂移都看得见）', () => {
     const w = equipWorld()
     const e = equipOf(w)
+    const max = maxScroll(V, WEAPON_ROWS)
+    // 从 0 按起的话，往上漂一行会被夹回 0、看不出来。
+    e.scroll = Math.floor(max / 2)
+    expect(e.scroll, '中间那一行离两端都不够一行').toBeGreaterThan(0)
+    expect(e.scroll).toBeLessThan(max)
+    const start = e.scroll
     const grab = grabThumb(w)
     expect(e.drag, '按在滑块上没开始拖').toBeTruthy()
+    expect(e.scroll, '按下就翻了').toBe(start)
     stepMenu(w, [{ e: 'move', ...grab }])
-    expect(e.scroll).toBe(0)
+    expect(e.scroll).toBe(start)
+  })
+
+  /**
+   * `step.ts` 让拖动排在悬停判定**前面**，而它声称这个次序对真值没有影响 ——
+   * 理由是指针拖滑块时落在槽那一列里，碰不到列表的命中带。这里把那句话变成
+   * 会红的：命中带的右界与槽的左沿都从常量现算，谁挪了谁先红。
+   */
+  it('命中带碰不到槽那一列（两页各一次）', () => {
+    for (const [view, length, name] of [
+      [EQUIP_LIST_VIEW, WEAPON_ROWS, '装备页'],
+      [DRUG_LIST_VIEW, viewportRows(DRUG_LIST_VIEW) + 1, '物品页'],
+    ] as const) {
+      const bar = scrollbar(view, length, 0)
+      expect(bar, `${name}的滚动条画不出来，这条判据是恒真的`).not.toBeNull()
+      // 命中带是开区间 (hitLeft, hitRight)，所以右界那一列本身就不在带里。
+      expect(view.hitRight, `${name}的命中带伸进了槽那一列`).toBeLessThanOrEqual(bar!.track.x)
+    }
   })
 
   it('与槽内点击不打架：按在槽里滑块以外不开始拖，按在别处结束拖拽', () => {
@@ -790,7 +814,12 @@ describe('滚动条：滚动不进真值', () => {
     expect(during['equip']).toEqual(before['equip'])
     expect(during['drug']).toEqual(before['drug'])
     expect(during['music'], '拖拽不出声').toEqual([])
-    expect(JSON.stringify(during)).not.toContain('drag')
+    // 逐级查**键**，不查子串：哪天某个物品名里带 "drag" 不该让它红，而某一层
+    // 换个键名把锚点记进去（`anchorY`）应该红。
+    const keys = (o: unknown): string[] =>
+      o && typeof o === 'object' ? Object.entries(o).flatMap(([k, v]) => [k, ...keys(v)]) : []
+    const found = keys(during).filter((k) => ['drag', 'anchorY', 'anchorScroll', 'scroll'].includes(k))
+    expect(found, '快照里出现了拖拽 / 滚动的键').toEqual([])
   })
 
   /**
