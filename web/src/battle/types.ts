@@ -75,6 +75,12 @@ export interface Hero {
   exp: number
   expToLevelUp: number
   isLevelUp: boolean
+  /**
+   * `<主角>.skillNumber`（xl-03x.17）。建人时定下、技能菜单照它建按钮；胜利结算里
+   * `levelUp()` 可能把它 +1（`skills.ts` 的 `skillNumberAfterLevelUp`）—— 那一下影响
+   * 的是**下一场**的菜单，这一场的按钮早建好了。打完由 `rememberParty` 记回队伍。
+   */
+  skillNumber: number
   battleState: BattleState
   beAttackedAnimation: BeAttackedAnim
   victoryAnimation: FrameAnim

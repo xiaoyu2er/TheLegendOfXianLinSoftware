@@ -28,5 +28,7 @@ export function replayMenuSetup(setup: MenuConfig): MenuWorld {
     fullHeal: setup.fullHeal,
     drugs: setup.drugs,
     equipment: setup.equipment,
+    // xl-03x.17：开局升级。导出器调原版 `levelUp()`，这边调 `levelUpMenuHero`。
+    levelUps: setup.levelUps,
   })
 }

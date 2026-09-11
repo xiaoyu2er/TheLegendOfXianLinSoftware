@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
 import { javaStaticInt } from '../test/javaStaticInt'
-import { SKILLS, SKILL_MENU, SKILL_NUMBER, skillMpUse } from './skills'
+import {
+  SKILLS,
+  SKILL_MENU,
+  SKILL_NUMBER,
+  skillMpUse,
+  skillNumberAfterLevelUp,
+  skillNumberAfterLoad,
+} from './skills'
 import type { PartyKey } from './units'
 
 /**
@@ -35,6 +42,69 @@ describe('技能表对回原版源码', () => {
       const n = javaStaticInt(src, 'skillNumber', `${JAVA_CLASS[key]}.java`)
       expect(n, `${key} 的 skillNumber`).toBe(SKILL_NUMBER[key])
     }
+  })
+
+  /**
+   * 技能格数怎么涨（xl-03x.17）：两条路，三个人各自现读，**不许先假定三人同一套**。
+   *
+   * - `levelUp()`：`if(level==2||level==5||level==10){ skillNumber++; … }` —— 在
+   *   `level++` **之后**判，所以比的是新等级；
+   * - `intialFromInfo()`（读档）：三句并列的 `if(level>=N){ skillNumber=M; }`。
+   *   它只抬不压那一半由 `save/test/loadResidueOriginal.test.ts` 守，这里只取门槛与值。
+   */
+  describe('技能格数的两条涨法对回原版源码（xl-03x.17）', () => {
+    const body = (cls: string, header: string): string => {
+      const src = javaSource(`src/battle/${cls}.java`)
+      const start = src.indexOf(header)
+      expect(start, `${cls} 里找不到 ${header}`).toBeGreaterThanOrEqual(0)
+      let depth = 0
+      for (let i = start + header.length - 1; i < src.length; i++) {
+        if (src[i] === '{') depth++
+        else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1)
+      }
+      throw new Error(`${cls} 的 ${header} 花括号没配上`)
+    }
+    /** `levelUp()` 里给 skillNumber++ 的那一句的门槛，`level==N` 逐个取出来。 */
+    const levelUpGates = (b: string): number[] => {
+      const m = /if\s*\(([^)]*)\)\s*\{\s*skillNumber\s*\+\+\s*;/.exec(b)
+      if (m === null) return []
+      return [...m[1]!.matchAll(/level\s*==\s*(\d+)/g)].map((g) => Number(g[1]))
+    }
+    /** `intialFromInfo()` 里那三句 `if(level>=N){skillNumber=M;}`。 */
+    const loadTable = (b: string): [number, number][] =>
+      [...b.matchAll(/if\s*\(\s*level\s*>=\s*(\d+)\s*\)\s*\{?\s*skillNumber\s*=\s*(\d+)\s*;/g)].map((m) => [
+        Number(m[1]),
+        Number(m[2]),
+      ])
+
+    it.each(['zhang', 'yu', 'lu'] as const)('%s：levelUp 在新等级 ∈ 门槛时 +1，别的等级不动', (key) => {
+      const gates = levelUpGates(body(JAVA_CLASS[key], 'public void levelUp(){'))
+      // 选择器空转与「原版没有门槛」长得一样 —— 先证明抓到了东西。
+      expect(gates.length, `${key} 的 levelUp 里一个门槛都没抓到`).toBeGreaterThan(0)
+      for (let level = 2; level <= 12; level++) {
+        expect(skillNumberAfterLevelUp(level, 7), `${key} 升到 ${level} 级`).toBe(gates.includes(level) ? 8 : 7)
+      }
+    })
+
+    it.each(['zhang', 'yu', 'lu'] as const)('%s：读档按三句并列的 if 抬到表里那个值，够不着的留原值', (key) => {
+      const table = loadTable(body(JAVA_CLASS[key], 'public void intialFromInfo(){'))
+      expect(table.length, `${key} 的 intialFromInfo 里一句都没抓到`).toBeGreaterThan(0)
+      for (let level = 1; level <= 12; level++) {
+        for (const before of [0, 2, 5]) {
+          // 照源码逐句执行一遍：并列的 if，后一句盖前一句。
+          let want = before
+          for (const [gate, value] of table) if (level >= gate) want = value
+          expect(skillNumberAfterLoad(level, before), `${key} 读 ${level} 级档、读档前 ${before}`).toBe(want)
+        }
+      }
+    })
+
+    it('反面样本：levelUp 的门槛少写一个，选择器抓出来的就少一个', () => {
+      const b = body('ZhangXiaoFan', 'public void levelUp(){')
+      const broken = b.replace(/\|\|\s*level\s*==\s*5/, '')
+      expect(broken).not.toBe(b)
+      expect(levelUpGates(broken)).toHaveLength(levelUpGates(b).length - 1)
+    })
   })
 
   it('LaunchAttack 里那几发 skillAttack(mpUse, reminderCode, skillCode) 逐位对上', () => {

@@ -1,6 +1,6 @@
 import { menuButton, moveInButton, pressButton, releaseButton } from './buttons'
-import { SKILL_NUMBER } from '../battle/skills'
 import type { PartyKey } from '../battle/units'
+import type { MenuHero } from './heroes'
 import type { MenuButtonState, ScollHero } from './types'
 
 /**
@@ -157,9 +157,11 @@ export function createMagicState(): MagicState {
  * 所以折算进了绘制；这一处真值记，所以留在状态里。
  *
  * ⚠️ 两个循环**重叠一格**，见文件头注第二条。别"顺手修好"。
+ *
+ * `skillNumber` 是**当前卷轴角色此刻的格数**，调用方从菜单那三个人身上取（xl-03x.17）。
+ * 这里原先直接读 `SKILL_NUMBER`（三个 static 的初值），等级怎么涨按钮都一颗不多。
  */
-export function magicDrawThisPanel(magic: MagicState, whichHero: ScollHero): void {
-  const n = SKILL_NUMBER[magicHero(whichHero).party]
+export function magicDrawThisPanel(magic: MagicState, whichHero: ScollHero, skillNumber: number): void {
   for (const { hero } of MAGIC_HEROES) {
     const list = magic.buttons[hero]
     if (hero !== whichHero) {
@@ -167,8 +169,8 @@ export function magicDrawThisPanel(magic: MagicState, whichHero: ScollHero): voi
       for (const b of list) b.isDraw = false
       continue
     }
-    for (let i = 0; i < n; i++) list[i]!.isDraw = true
-    for (let i = n - 1; i < MAGIC_BUTTON_COUNT; i++) list[i]!.isDraw = false
+    for (let i = 0; i < skillNumber; i++) list[i]!.isDraw = true
+    for (let i = skillNumber - 1; i < MAGIC_BUTTON_COUNT; i++) list[i]!.isDraw = false
   }
 }
 
@@ -271,6 +273,17 @@ export function magicHero(hero: ScollHero): (typeof MAGIC_HEROES)[number] {
   const entry = MAGIC_HEROES.find((h) => h.hero === hero)
   if (!entry) throw new Error(`奇术页没有 ${hero} 号角色`)
   return entry
+}
+
+/**
+ * 卷轴当前那个人**此刻**有几格技能 —— 菜单那三个人身上的 `skillNumber`（xl-03x.17）。
+ * 按名字找，找不到是抛：返回一个缺省值的话，「这个人没建」会画成「这个人两格」。
+ */
+export function magicSkillNumber(heroes: readonly MenuHero[], whichHero: ScollHero): number {
+  const { name } = magicHero(whichHero)
+  const h = heroes.find((x) => x.name === name)
+  if (h === undefined) throw new Error(`菜单里没有 ${name}，奇术页不知道画几颗`)
+  return h.skillNumber
 }
 
 /** 真值 `magic` 那一列的形状。`snapshot.ts` 转手给它。 */

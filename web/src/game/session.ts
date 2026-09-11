@@ -435,6 +435,7 @@ function liveParty(carry: Readonly<Record<PartyKey, PartyMemberState>>) {
     ...attributesOf(m),
     hp: m.hp,
     mp: m.mp,
+    skillNumber: m.skillNumber,
   })
   return { zhang: live(carry.zhang), lu: live(carry.lu), yu: live(carry.yu) }
 }
@@ -533,6 +534,8 @@ export function configFor(
       yu: attributesOf(carry.yu),
       lu: attributesOf(carry.lu),
     },
+    // 技能菜单几颗按钮（xl-03x.17）。原版读的是那三个 static，这一层读队伍。
+    skillNumbers: { zhang: carry.zhang.skillNumber, yu: carry.yu.skillNumber, lu: carry.lu.skillNumber },
     enemies: enemySlots(info),
     // 原版这里没有种子（`Math.random()` 直调），见 `SessionDeps.random`。
     seed: Math.trunc(deps.random() * 0x7fffffff),

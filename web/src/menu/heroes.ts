@@ -1,6 +1,6 @@
 import { HEROES, derive } from '../battle/units'
 import type { Attributes, PartyKey } from '../battle/units'
-import { SKILL_NUMBER } from '../battle/skills'
+import { SKILL_NUMBER, skillNumberAfterLevelUp } from '../battle/skills'
 import { DEFAULT_WEAPONS, withWeapon } from './defaultWeapons'
 import { attributesOf } from '../fakes/party'
 
@@ -83,6 +83,12 @@ export interface LiveParty extends Readonly<Attributes> {
   readonly level: number
   readonly hp: number
   readonly mp: number
+  /**
+   * 技能格数（xl-03x.17）。原版奇术页读的是那三个 static，与战斗、读档改的是同一份；
+   * 这一层菜单是另建的世界，所以得喂。菜单里没有路改得动它，所以 `rememberMenuParty`
+   * 不往回记。
+   */
+  readonly skillNumber: number
 }
 
 /**
@@ -137,7 +143,8 @@ export function createMenuHeroes(
       mpMax: d.mpMax,
       defense: d.defense,
       skillDefense: d.skillDefense,
-      skillNumber: SKILL_NUMBER[key],
+      // 喂了队伍就是队伍那一份；回放真值不喂，那是一个干净 JVM：三个 static 的初值。
+      skillNumber: now?.skillNumber ?? SKILL_NUMBER[key],
     }
   })
 }
@@ -167,6 +174,48 @@ export function refreshMenuHero(h: MenuHero): void {
   h.skillDefense = d.skillDefense
   if (h.hp >= h.hpMax) h.hp = h.hpMax
   if (h.mp >= h.mpMax) h.mp = h.mpMax
+}
+
+/**
+ * 原版 `levelUp()` 在菜单那三个人身上跑一次 —— 只给菜单剧本的 `setup.levelUps` 用
+ * （xl-03x.17，`MenuDriver` 在同一处调的是原版自己的 `levelUp()`）。
+ *
+ * 次序照抄：等级 +1 → 四项 `+=` → 技能格数按新等级涨 → `refreshValue()` → 血与灵力拉满。
+ * 格数那一句与战斗胜利结算的 `levelUp`（`battle/step.ts`）调的是**同一个**
+ * `skillNumberAfterLevelUp` —— 两处各写一份的话，改错一处只红一半。
+ * 经验那两句（`exp -= expToLevelUp`、重算 `expToLevelUp`）不在这里：菜单真值不记经验。
+ *
+ * ⚠️ 四项 `+=` 与战斗那份 `levelUp` 是**同一段的两份抄本**，没合成一个，因为两边字段名
+ * 对不齐（这边 `spirit`、那边 `sprit`，见 `menuAttributes`）。改一处要改另一处；改漏了
+ * 由 `menu-magic-levels` 的 `heroes` 那一列逐步对真值（导出器那边跑的是原版 `levelUp()`）。
+ */
+export function levelUpMenuHero(h: MenuHero, key: PartyKey): void {
+  h.level++
+  const d = HEROES[key].levelUpDelta
+  h.physicalPower += d.physicalPower
+  h.spirit += d.sprit
+  h.agile += d.agile
+  h.strength += d.strength
+  h.skillNumber = skillNumberAfterLevelUp(h.level, h.skillNumber)
+  refreshMenuHero(h)
+  h.hp = h.hpMax
+  h.mp = h.mpMax
+}
+
+/** 剧本 `setup.levelUps` 的键（`zhang` / `lu` / `wen`，与 `setup.party` 同一套）→ 队伍键。 */
+const PARTY_OF_SETUP_NAME: Readonly<Record<string, PartyKey>> = { zhang: 'zhang', lu: 'lu', wen: 'yu' }
+
+/** 按 `setup.levelUps` 让菜单里的人各升几级。不认识的键是抛 —— 静静跳过就是「剧本以为自己升过级」。 */
+export function applyMenuLevelUps(
+  heroes: MenuHero[],
+  levelUps: Readonly<Record<string, number>> | undefined,
+): void {
+  for (const [who, times] of Object.entries(levelUps ?? {})) {
+    const key = PARTY_OF_SETUP_NAME[who]
+    if (key === undefined) throw new Error(`setup.levelUps 里不认识的名字：${who}`)
+    const i = MENU_HERO_ORDER.findIndex((o) => o.key === key)
+    for (let n = 0; n < times; n++) levelUpMenuHero(heroes[i]!, key)
+  }
 }
 
 /**
@@ -206,6 +255,8 @@ export function refreshMenuHeroes(
       Object.assign(h, menuAttributes(attributesOf(now)))
       h.hp = now.hp
       h.mp = now.mp
+      // 上一次开菜单之后打的仗、读的档都可能改了它（xl-03x.17）。
+      h.skillNumber = now.skillNumber
     }
     // 派生值重算 + 那两句只夹不补。血 / 灵力超过新上限时在这里被夹回去，
     // 与 `createMenuHeroes` 里那两句 `Math.min` 同一件事。

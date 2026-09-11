@@ -10,7 +10,8 @@ import { getParty, rememberParty, resetParty } from '../fakes/party'
 import { createMemorySaveStore } from '../save/memoryStore'
 import { getCoins, resetWallet } from '../fakes/wallet'
 import { drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
-import { HEROES, derive } from '../battle/units'
+import { HEROES, derive, expToLevelUp } from '../battle/units'
+import { MENU_HERO_ORDER } from '../menu/heroes'
 import type { PartyKey } from '../battle/units'
 import { readBattleTrace } from '../battle/trace'
 import { replayBattle } from '../battle/replay'
@@ -28,6 +29,8 @@ import {
   NO_INPUT,
   advanceSession,
   battleWorldOf,
+  menuWorldOf,
+  openMenu,
   configFor,
   createSession,
   currentBgm,
@@ -106,6 +109,8 @@ function levelParty(level: number): void {
         isDead: false,
         angryValue: 0,
         isAngry: false,
+        // 格数不是这个函数要验的东西，照原样留着。
+        skillNumber: getParty()[key].skillNumber,
       },
     ])
   }
@@ -489,6 +494,41 @@ describe('场景 → 战斗 → 场景', () => {
       carry: { zhang: { ...dead, isDead: false, hp: 7 } },
     })
     expect(hurt.zxf!.hp).toBe(7)
+  })
+
+  it('打赢跨过 10 级那道门槛：格数 +1、记进队伍，下一场技能菜单与奇术页都多一颗（xl-03x.17）', () => {
+    // 9 级、经验差 1 点升级：这一场打赢必过 10 级。三个人各自的出厂格数不同（2/3/2），
+    // 所以先抬到同一个 4 —— 过门槛后该是 5。「10」是 `levelUp` 那三道门槛（2/5/10）里
+    // 离 9 最近的一道，由 `skills.test.ts` 从源码现读。
+    levelParty(9)
+    for (const key of ['zhang', 'yu', 'lu'] as PartyKey[]) {
+      getParty()[key].exp = expToLevelUp(9) - 1
+      getParty()[key].skillNumber = 4
+    }
+    const session = openSession(createWorld(getScene('迷宫1')), deps())
+    const first = runBattleToExit(walkUntilBattle(session).session).session
+    expect(first.panel, '这一场要打赢才有结算').toBe('scene')
+    const party = getParty()
+    for (const key of ['zhang', 'yu', 'lu'] as PartyKey[]) {
+      // 只核真出了战的：没出战的那位原版一个字都没被动过。
+      if (party[key].level === 9) continue
+      expect(party[key].level, `${key} 升到 10`).toBe(10)
+      expect(party[key].skillNumber, `${key} 的格数`).toBe(5)
+    }
+    const leveled = (['zhang', 'yu', 'lu'] as PartyKey[]).filter((k) => party[k].level === 10)
+    expect(leveled.length, '至少一个人真的升了级 —— 否则上面那个循环一条都没核').toBeGreaterThan(0)
+
+    // 下一场：技能菜单那一组按钮数 = 队伍上的格数。
+    const second = walkUntilBattle(first).session
+    const menu = battleWorldOf(second)!.skillMenu
+    for (const key of leveled) expect(menu.groups[key], `${key} 的技能菜单`).toHaveLength(5)
+    // 开菜单：奇术页读的那三个人也是 5。
+    const opened = openMenu({ ...first })
+    MENU_HERO_ORDER.forEach(({ key, name }, i) => {
+      const h = menuWorldOf(opened)!.heroes[i]!
+      expect(h.name).toBe(name)
+      expect(h.skillNumber, name).toBe(party[key].skillNumber)
+    })
   })
 
   it('第二场接着第一场：血、经验、等级都带过去了', () => {

@@ -74,16 +74,49 @@ export function skillMpUse(entry: SkillEntry, mpMax: number): number {
 }
 
 /**
- * 每个人的技能菜单上有几颗按钮。
+ * `ZhangXiaoFan.skillNumber` 等三个 **static 字段的初值** —— 开机那一刻的技能格数。
  *
- * 就是 `ZhangXiaoFan.skillNumber` 等三个 **static 字段的初值**。导出器只写
- * `ZhangXiaoFan.level = n` 再 new 一个出来，构造函数一个字都不碰 skillNumber
- * ——**等级再高，菜单上仍然是这几颗**。改 skillNumber 的只有两处：`levelUp()`
- * （战斗胜利结算里，归 xl-rh9.5）与 `intialFromInfo()`（读档，战斗面板走不到）。
+ * **它只是初值，不是「此刻几颗」**（xl-03x.17）。此刻几颗活在队伍上
+ * （`fakes/party.ts` 的 `PartyMemberState.skillNumber`，原版那三个 static 的对应物），
+ * 改它的只有两处，都在这个文件下面：升级（{@link skillNumberAfterLevelUp}）与读档
+ * （{@link skillNumberAfterLoad}）。这张表今天还被读的地方只剩「没有队伍可读」的那几条：
+ * 队伍的出厂值，以及回放真值时剧本没写的缺省 —— 导出器只写 `level = n` 再 new 一个
+ * 出来，构造函数一个字都不碰 skillNumber，所以那一份真值里**等级再高也是这几颗**。
  *
  * 判据在 `skills.test.ts`：它打开 GBK 的原版源码把那三个初值解出来再对。
  */
 export const SKILL_NUMBER: Readonly<Record<PartyKey, number>> = { zhang: 2, yu: 3, lu: 2 }
+
+/**
+ * `levelUp()` 里那句 `if(level==2||level==5||level==10){ skillNumber++; }` —— 三个人
+ * **逐字相同**（现读，判据在 `skills.test.ts`，三个类各自解一遍）。
+ *
+ * 判的是 `level++` **之后**的等级，所以 `level` 传新等级。是 `==` 不是 `>=`：
+ * 一次只升一级，每个门槛恰好过一次。玉洁开局 3 级、3 颗，于是她只剩 5 / 10 两次。
+ */
+const LEVEL_UP_GATES: readonly number[] = [2, 5, 10]
+
+export function skillNumberAfterLevelUp(level: number, skillNumber: number): number {
+  return LEVEL_UP_GATES.includes(level) ? skillNumber + 1 : skillNumber
+}
+
+/**
+ * `intialFromInfo()`（读档）里那三句**并列的** `if(level>=N){ skillNumber=M; }`，
+ * 三个人逐字相同。并列、没有 `else`、没有一句往下写 —— 所以**只抬不压**：
+ * 读一个低级档之前已经抬过的话，读完留着高的（JVM 读数：先读 存档0 再读 存档1
+ * 得 5 / 5 / 3，见 `save/test/loadResidueOriginal.test.ts`）。
+ */
+const LOAD_TABLE: readonly (readonly [level: number, skillNumber: number])[] = [
+  [2, 3],
+  [5, 4],
+  [10, 5],
+]
+
+export function skillNumberAfterLoad(level: number, skillNumber: number): number {
+  let n = skillNumber
+  for (const [gate, value] of LOAD_TABLE) if (level >= gate) n = value
+  return n
+}
 
 /** `image/技能说明/<这个名字>/<n>.png`，也是真值里 `menus.skill.introImage` 的前半。 */
 export const SKILL_INTRO_DIR: Readonly<Record<PartyKey, string>> = {
@@ -105,7 +138,7 @@ function entry(
  *
  * ⚠️ 原版对第 3/4/5 颗都套着 `if(<主角>.skillNumber>=n)` —— 也就是说
  * **按钮存在与否由 skillNumber 定，而这张表写的是满级五颗**。菜单实际画几颗、
- * 点得到哪几颗，由 `SKILL_NUMBER` 说了算。
+ * 点得到哪几颗，由那个人此刻的格数说了算（`Hero.skillNumber`，出自队伍；xl-03x.17）。
  */
 export const SKILL_MENU: Readonly<Record<PartyKey, readonly SkillMenuEntry[]>> = {
   zhang: [

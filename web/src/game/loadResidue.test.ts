@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
 import { resetDrugPack } from '../fakes/drugPack'
-import { resetParty } from '../fakes/party'
+import { getParty, resetParty } from '../fakes/party'
 import { resetWallet } from '../fakes/wallet'
 import type { MenuInput } from '../menu/step'
 import { createMemorySaveStore } from '../save/memoryStore'
@@ -236,6 +236,46 @@ describe('背景音乐：读档之后是读进的那个场景的曲子（spec �
     const s = advanceSession(loadGame(picked), NO_INPUT, 10)
     expect(currentBgm(s)).toBe(getScene('脚本38').sceneMusic)
     expect(currentBgm(s)).not.toBe(getScene('脚本1').sceneMusic)
+  })
+})
+
+describe('技能格数：读档只抬不压（xl-03x.17；原版那一半在 save/test/loadResidueOriginal.test.ts）', () => {
+  /**
+   * JVM 读数（xl-i06.11 的探针，读数抄在 `loadResidueOriginal.test.ts`）：读 存档0（11/10/11 级）
+   * → 5/5/5；接着读 存档1（1/1/3 级）→ **5/5/3**。张小凡与陆雪琪 1 级，三句 if 一句都不成立，
+   * 留着 5；玉洁 3 级，`>=2` 那句把她写成 3。
+   *
+   * ⚠️ 只读 存档1 的话它**分辨不了**「读档那条路更没更新」—— 1/1/3 级抬出来的正是出厂值
+   * 2/2/3。所以这里先读 存档0 把格数抬起来，再读 存档1。
+   */
+  const counts = () => {
+    const p = getParty()
+    return { zhang: p.zhang.skillNumber, lu: p.lu.skillNumber, yu: p.yu.skillNumber }
+  }
+
+  it('先读 存档0 再读 存档1：5/5/5 → 5/5/3，开菜单看到的也是它', () => {
+    fresh()
+    let s: RunningSession = loadGame(pickedFromMenu([SLOT0, SLOT1]))
+    expect(counts()).toEqual({ zhang: 5, lu: 5, yu: 5 })
+    s = openMenu(s)
+    s = advanceSession(s, { ...NO_INPUT, menu: menuClick(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
+    const b = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.readButton
+    s = advanceSession(s, { ...NO_INPUT, menu: menuClick(...buttonCenter(b)) }, 0)
+    s = loadGame(advanceSession(s, { ...NO_INPUT, saveload: slotClick(1) }, 0))
+    expect(counts()).toEqual({ zhang: 5, lu: 5, yu: 3 })
+    // 菜单那三个人是 `refreshMenuWorld` 从队伍刷的 —— 奇术页就读它们。
+    s = openMenu(s)
+    expect(menuWorldOf(s)!.heroes.map((h) => [h.name, h.skillNumber])).toEqual([
+      ['zhangxiaofan', 5],
+      ['luxueqi', 5],
+      ['yujie', 3],
+    ])
+  })
+
+  it('对照：开机直接读 存档1 是出厂值 2/2/3 —— 上面那条的 5 是从 存档0 留下来的', () => {
+    fresh()
+    loadGame(pickedFromMenu([SLOT1]))
+    expect(counts()).toEqual({ zhang: 2, lu: 2, yu: 3 })
   })
 })
 

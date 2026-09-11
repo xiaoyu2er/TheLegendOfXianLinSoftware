@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import battle.Hero;
 import media.MusicPlayer;
@@ -457,6 +458,21 @@ public final class MenuDriver implements TraceDriver {
         for (MenuScript.Item it : script.setup.equipment) addEquipment(it);
         for (MenuScript.Item it : script.setup.drugs) addDrug(it);
 
+        // 升级（xl-03x.17）：调原版自己的 levelUp()，技能格数怎么涨由它说了算。放在
+        // new MenuPanel() 之后，于是四项 += 落在已经带着开局武器的属性上 —— 与游戏里
+        // 「穿着武器打赢一场」同一个次序。升完核等级真的涨了那么多（调空了的话剧本会
+        // 以为自己升过级，导出一份格数一颗没变的真值）。
+        for (Map.Entry<String, Integer> e : script.setup.levelUps.entrySet()) {
+            Hero h = partyHero(e.getKey());
+            int before = staticInt(h.getClass(), "level");
+            for (int i = 0; i < e.getValue(); i++) h.levelUp();
+            int after = staticInt(h.getClass(), "level");
+            if (after != before + e.getValue()) {
+                ExportTrace.die("setup.levelUps." + e.getKey() + "：等级 " + before + " → " + after
+                        + "，应当涨 " + e.getValue());
+            }
+        }
+
         // 无参的 MenuPanel 构造函数里 new 出来的三个英雄走的是空构造函数，
         // 静态的 hp/mp 因此停在 0（只有带 BattlePanel 的那个构造函数会拉满）。
         // 一份 hp=0 的菜单真值是原版根本不会出现的状态，而且会让"喝药回血"
@@ -675,6 +691,16 @@ public final class MenuDriver implements TraceDriver {
     private String currentHero() {
         Object scoll = field(current(), "scoll");
         return scoll == null ? "null" : String.valueOf(getInt(scoll, "whichHero"));
+    }
+
+    /** 剧本里的队伍名 → 菜单上那个人（{@code wen} 是 {@code hero4}，与 {@code SaveAndLoad.wen} 同名）。 */
+    private Hero partyHero(String who) {
+        switch (who) {
+            case "zhang": return mp.hero1;
+            case "lu":    return mp.hero2;
+            case "wen":   return mp.hero4;
+            default: throw new IllegalArgumentException("不认识的队伍名 " + who);
+        }
     }
 
     private List<Hero> heroes() {

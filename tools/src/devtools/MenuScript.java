@@ -60,10 +60,21 @@ public final class MenuScript {
         public final boolean fullHeal;
         public final List<Item> equipment;
         public final List<Item> drugs;
+        /**
+         * 开局先让谁升几级（xl-03x.17）：键是 {@link #PARTY} 里的名字，值是调几次原版自己的
+         * {@code levelUp()}。菜单剧本原先没有办法让等级离开出厂值，于是奇术页的技能格数
+         * 永远是那三个 static 的初值，「格数随等级涨」在菜单真值里一格都看不见。
+         *
+         * 走 {@code levelUp()} 而不是直接写 {@code skillNumber}：写 static 的话真值记下的只是
+         * 剧本自己写的数，涨的规则一个字都没被原版执行过。空表时不回显（老剧本的回显逐字节不变）。
+         */
+        public final Map<String, Integer> levelUps;
 
-        Setup(List<String> party, boolean fullHeal, List<Item> equipment, List<Item> drugs) {
+        Setup(List<String> party, boolean fullHeal, List<Item> equipment, List<Item> drugs,
+              Map<String, Integer> levelUps) {
             this.party = party; this.fullHeal = fullHeal;
             this.equipment = equipment; this.drugs = drugs;
+            this.levelUps = levelUps;
         }
     }
 
@@ -261,7 +272,7 @@ public final class MenuScript {
 
     private static Setup loadSetup(Object o) {
         if (o == null) return new Setup(new ArrayList<String>(), true,
-                new ArrayList<Item>(), new ArrayList<Item>());
+                new ArrayList<Item>(), new ArrayList<Item>(), new LinkedHashMap<String, Integer>());
         Map<String, Object> s = JsonIn.obj(o, "setup");
         List<String> party = new ArrayList<>();
         if (s.get("party") != null) {
@@ -272,9 +283,23 @@ public final class MenuScript {
                 party.add((String) p);
             }
         }
+        Map<String, Integer> levelUps = new LinkedHashMap<>();
+        if (s.get("levelUps") != null) {
+            Map<String, Object> lu = JsonIn.obj(s.get("levelUps"), "setup.levelUps");
+            for (String who : lu.keySet()) {
+                if (!PARTY.contains(who)) {
+                    throw new IllegalArgumentException("setup.levelUps 的键只能是 " + PARTY + "，实际 " + who);
+                }
+                int n = JsonIn.i(lu, who);
+                // 0 次等于没写，负数没有意义 —— 都硬失败，免得剧本以为自己升过级。
+                if (n < 1) throw new IllegalArgumentException("setup.levelUps." + who + " 必须为正，实际 " + n);
+                levelUps.put(who, n);
+            }
+        }
         return new Setup(party, JsonIn.boolOr(s, "fullHeal", true),
                 loadItems(s.get("equipment"), "setup.equipment"),
-                loadItems(s.get("drugs"), "setup.drugs"));
+                loadItems(s.get("drugs"), "setup.drugs"),
+                levelUps);
     }
 
     private static List<Item> loadItems(Object o, String what) {
@@ -302,6 +327,15 @@ public final class MenuScript {
         b.append("],\"fullHeal\":").append(setup.fullHeal);
         b.append(",\"equipment\":").append(itemsJson(setup.equipment));
         b.append(",\"drugs\":").append(itemsJson(setup.drugs));
+        if (!setup.levelUps.isEmpty()) {
+            b.append(",\"levelUps\":{");
+            int i = 0;
+            for (Map.Entry<String, Integer> e : setup.levelUps.entrySet()) {
+                if (i++ > 0) b.append(',');
+                b.append(Json.str(e.getKey())).append(':').append(e.getValue());
+            }
+            b.append('}');
+        }
         b.append("}");
         b.append(",\"maxSteps\":").append(maxSteps);
         b.append(",\"steps\":[");

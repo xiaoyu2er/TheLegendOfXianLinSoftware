@@ -1,5 +1,6 @@
 import { declareFake } from './fake'
 import { HEROES, derive, expToLevelUp } from '../battle/units'
+import { SKILL_NUMBER } from '../battle/skills'
 import type { Attributes, PartyKey } from '../battle/units'
 import { DEFAULT_WEAPONS, withWeapon } from '../menu/defaultWeapons'
 import { MENU_HERO_ORDER } from '../menu/heroes'
@@ -80,6 +81,16 @@ export interface PartyMemberState extends HeroCarry, Attributes {
    * 与存档无关）。存档要它，所以从战斗那边记回来。
    */
   isAngry: boolean
+  /**
+   * 技能格数（xl-03x.17）—— `ZhangXiaoFan.skillNumber` 等三个 static 的对应物，**全游戏
+   * 唯一的落点**：战斗建技能菜单、菜单奇术页画几颗按钮，都从这里读。
+   *
+   * **不是等级的函数**，所以要单独记：出厂值是那三个 static 的初值（`SKILL_NUMBER`），
+   * 升级时按 `skillNumberAfterLevelUp` 涨、读档时按 `skillNumberAfterLoad` 只抬不压。
+   * 读档那条只抬不压，是它不能由等级现推的原因 —— 先读 11 级的档再读 1 级的档，
+   * 原版是 5 颗，按等级推是 2 颗。
+   */
+  skillNumber: number
 }
 
 /**
@@ -127,6 +138,7 @@ export function initialMember(key: PartyKey): PartyMemberState {
     isDead: false,
     angryValue: 0,
     isAngry: false,
+    skillNumber: SKILL_NUMBER[key],
   }
   // 第 2 步末尾那句 `refreshValue()` 的两句夹上限。**这三把开局武器**的四个
   // 加成都非负，上限只涨不跌，所以在这个函数里它是空操作 —— 照抄是因为
@@ -197,6 +209,9 @@ export function rememberParty(
       isDead: h.isDead,
       angryValue: h.angryValue,
       isAngry: h.isAngry,
+      // 胜利结算的 `levelUp()` 可能刚把它 +1。不记的话下一场、下一次开菜单都退回旧数，
+      // 而旧数是个完全合法的格数（xl-03x.17）。
+      skillNumber: h.skillNumber,
     }
   }
 }

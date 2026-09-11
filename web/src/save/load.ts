@@ -1,4 +1,5 @@
 import { HEROES, derive } from '../battle/units'
+import { skillNumberAfterLoad } from '../battle/skills'
 import type { PartyKey } from '../battle/units'
 import type { PartyMemberState } from '../fakes/party'
 import type { EquipPackState } from '../menu/equipPanel'
@@ -23,7 +24,7 @@ import type { ReadBack } from './format'
  *
  * **纯函数**：读档之前的三个人由调用方交进来（`before`），落到队伍单例上是会话层的事
  * （`fakes/party.ts` 的 `setParty`）。技能格数（`skillNumber`，`intialFromInfo` 按等级
- * 抬那三个 static）这一层没有落点，登记在 `traceReplay.test.ts` 的 PENDING 里。
+ * 抬那三个 static）落在队伍上（xl-03x.17），规则见 `battle/skills.ts` 的 `skillNumberAfterLoad`。
  *
  * ## 照抄的两处原版毛病
  *
@@ -73,6 +74,9 @@ export function heroesFromSave(
       isAngry: r.isAngry,
       isDead: r.isDead,
       exp: r.exp,
+      // `intialFromInfo()` 开头那三句并列的 if：按存档里的等级只抬不压，起点是**读档前**
+      // 那一份（xl-03x.17）。
+      skillNumber: skillNumberAfterLoad(r.level, before[pk].skillNumber),
     }
   }
 

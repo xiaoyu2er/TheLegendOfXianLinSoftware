@@ -225,7 +225,7 @@ const LOAD_ONLY_GROUPS: readonly string[] = [
 /**
  * 读档专属那几组从哪里取。前两组在世界上；其余几组在会话层那几个单例与菜单装备页上 ——
  * 所以读档剧本的回放**走会话层真正的读档那一路**（`applyReadBack`，见 `loadedSession`），
- * 不是在这里把存档字段搬一遍。`skillNumber` 没有观察函数：这一层没有它的落点（PENDING）。
+ * 不是在这里把存档字段搬一遍。`skillNumber` 从 xl-03x.17 起有落点（队伍），观察函数照读队伍。
  */
 const LOAD_OBSERVERS: Readonly<Record<string, (world: World, session: RunningSession) => unknown>> = {
   /** `loadSceneInfo` 回填的剧情进度。`nextScript` 为 null 即原版的 `new String[3]`。 */
@@ -261,6 +261,11 @@ const LOAD_OBSERVERS: Readonly<Record<string, (world: World, session: RunningSes
         ]
       }),
     )
+  },
+  /** 技能格数（xl-03x.17）。真值那一列的键是 zhang / lu / yu，与 `heroes` 同序。 */
+  skillNumber: () => {
+    const p = getParty()
+    return { zhang: p.zhang.skillNumber, lu: p.lu.skillNumber, yu: p.yu.skillNumber }
   },
   worn: (_w, s) => WORN_HEROES.map((h) => ({ ...equipOf(s).packs[h] })),
   drugs: () => DRUGS.map((d) => drugCount(d.name)),
@@ -552,6 +557,10 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   coins: ['load-slot0', 'load-slot1', 'load-slot2'],
   // 装备库存**读不回来**：三格全是读档前的值（出厂的 0），而存档0 那一行有 5 格非零。
   stock: ['load-slot0', 'load-slot1', 'load-slot2'],
+  // xl-03x.17：技能格数落在队伍上（`fakes/party.ts`），读档按 `skillNumberAfterLoad` 抬。
+  // ⚠️ `load-slot1` 那一格**分辨不了「读档那条路更没更新」**：存档1 是 1 / 1 / 3 级，按规则
+  // 抬出来的恰好等于出厂值 2 / 2 / 3。能红的是 slot0（5/5/5）与 slot2（4/4/4）。
+  skillNumber: ['load-slot0', 'load-slot1', 'load-slot2'],
 }
 
 /**
@@ -643,15 +652,9 @@ const DEAD_SUBFIELDS: readonly DeadSubfield[] = [
  * 的坑）。分母仍然是磁盘：少写一条，上面那条 `unaccounted` 立刻红。
  */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  // xl-yg6.11 把最后一格 `audio × battle-door` 挪进 ALIGNED 之后这里空过一阵。
-  //
-  // 读档之后的技能格数（xl-i06.10 读档真值现读）：原版 `intialFromInfo` 按等级把那三个
-  // static 抬到 3 / 4 / 5，这一层的队伍不记它、战斗建人时也不传 —— 没有落点。
-  skillNumber: {
-    'load-slot0': 'xl-i06.13',
-    'load-slot1': 'xl-i06.13',
-    'load-slot2': 'xl-i06.13',
-  },
+  // 空的。xl-yg6.11 把最后一格 `audio × battle-door` 挪进 ALIGNED 之后空过一阵；之后
+  // 读档那三格 `skillNumber` 挂在这里（没有落点），xl-03x.17 把技能格数落到队伍上之后
+  // 挪进了 ALIGNED。空着是**当前的读数**，不是这张表的形状。
 }
 
 /**
