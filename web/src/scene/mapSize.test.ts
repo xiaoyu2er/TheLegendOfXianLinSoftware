@@ -1,10 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { TILE } from '../state/role'
+import { SCENE_TRACE_NAMES, readTrace } from '../state/trace'
 import { imageSize } from '../test/imageSize'
 import { repoPath } from '../test/repoPath'
 import { checkMapSize } from './mapSize'
-import { computeViewport, mapTiles } from './viewport'
+import { MAP_UNIT, computeViewport, mapTiles } from './viewport'
 
 /**
  * 地图图片尺寸与碰撞网格对不对得上（xl-i06.12 追出来，xl-czb.3 还 xl-i06.14 的账）。
@@ -79,6 +80,30 @@ describe('地图图片与碰撞网格', () => {
           ? []
           : [`${scene.script} ${size.width}×${size.height} 取到 ${far.x}×${far.y}`]
       })
+    expect(outside).toEqual([])
+  })
+
+  it('原版那一侧的真值：走进短图场景的每一条真值，逐拍的源矩形都落在那张图内', () => {
+    // 上一条用的是这一层自己的 `computeViewport`，它夹错了判据会跟着一起错；这一条读的是
+    // 原版导出器记下的 `viewport` 列。分母是磁盘上的场景真值里「走进了短图场景」的那些拍。
+    const shortByScript = new Map(
+      classified.filter((c) => c.kind === 'short').map((c) => [c.scene.script, c.size]),
+    )
+    let checked = 0
+    const outside: string[] = []
+    for (const name of SCENE_TRACE_NAMES) {
+      for (const tick of readTrace(name).ticks) {
+        const size = shortByScript.get(tick.scene)
+        if (size === undefined || tick.viewport === null) continue
+        checked++
+        const x = tick.viewport.lastTileX * MAP_UNIT - MAP_UNIT
+        const y = tick.viewport.lastTileY * MAP_UNIT - MAP_UNIT
+        if (x > size.width || y > size.height) {
+          outside.push(`${name} ${tick.scene} 取到 ${x}×${y}，图是 ${size.width}×${size.height}`)
+        }
+      }
+    }
+    expect(checked, '没有一拍走进过短图场景 —— 下面那句 toEqual([]) 就是在空集上通过').toBeGreaterThan(0)
     expect(outside).toEqual([])
   })
 
