@@ -7,7 +7,7 @@ import { sceneSourceOf } from '../state/trace'
 import { createWorld } from '../state/step'
 import { roleTileX, roleTileY } from '../state/role'
 import { MENU_TICK_MS } from '../menu/loop'
-import { FUNC_MAIN_ORDER } from '../menu/funcButtons'
+import { FUNC_MAIN_ORDER, drawnFuncButtons } from '../menu/funcButtons'
 import { DRUGS } from '../battle/drugs'
 import { HEROES, derive } from '../battle/units'
 import { createBattle } from '../battle/world'
@@ -763,5 +763,36 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     const idle = createSession(DEPS)
     const s = enterScene(idle, createWorld(getScene('宿舍')))
     expect(s.menu, '「起」把菜单重建了').toBe(idle.menu)
+  })
+})
+
+/**
+ * 天书页「确认离开」走一整条会话也纹丝不动（xl-03x.12）。`menu/funcButtons.test.ts`
+ * 那几条管的是菜单世界自己；票面要的「面板不变」是**会话**的 `panel`，而把它
+ * 顺手切走的那一句只会写在 `advanceSession` 里，菜单世界那几条看不见。
+ */
+describe('天书页「确认离开」走会话也纹丝不动（xl-03x.12）', () => {
+  it('点下去再推一秒：还在菜单、还在天书页、按钮组不变、背景音乐没换', () => {
+    let s = openMenu(inScene('宿舍'))
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
+    const fb = () => menuWorldOf(s)?.panels.funcPanel.funcButtons ?? null
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb()!.main.exitButton)) }, 0)
+    expect(fb()!.sub.exitForSure.isDraw, '点了「退出」却没展开「确认离开」').toBe(true)
+
+    const signature = () => ({
+      panel: s.panel,
+      menuPanel: menuWorldOf(s)?.panel ?? null,
+      drawn: fb() === null ? null : drawnFuncButtons(fb()!),
+      bgm: currentBgm(s),
+    })
+    // 期望值在动作之前记下 —— 不拿动作之后两个被同一次动作同步过的量互比。
+    const before = signature()
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb()!.sub.exitForSure)) }, 0)
+    s = advanceSession(s, NO_INPUT, 1000)
+    expect(signature(), '点「确认离开」之后会话变了').toEqual(before)
+
+    // 对照：同一个会话里点「返回」真的回场景 —— 「面板变了」在这条路上是看得见的。
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb()!.main.returnButton)) }, 0)
+    expect(s.panel, '对照失效：点「返回」也没切面板').toBe('scene')
   })
 })

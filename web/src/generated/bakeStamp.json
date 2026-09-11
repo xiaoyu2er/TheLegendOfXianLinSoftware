@@ -34,7 +34,7 @@
     "web/src/menu/equipPanel.ts": "2a2d9fd68b54159779df138b98745b6c8c3d53b3fe125fc16d20d137c837dd57",
     "web/src/menu/equipment.ts": "d3c2a56e7ad50e41e7f4c6d72772d7da3fb77a6e90f3e661746d159f2605667b",
     "web/src/menu/equipmentPictures.ts": "5abf7b56c272159a0a228d9dcfe793ff18d0ecbfebfd8baaa1e8b043c669143a",
-    "web/src/menu/funcButtons.ts": "37d7b3e45bb8e715a45beee5321df7f9d294cfb9a3785b70eb27f103323a0413",
+    "web/src/menu/funcButtons.ts": "450dae8a252ef359a8b048a5ee547bde9ad62ffe7035ae6999d458d0144069b3",
     "web/src/menu/heroes.ts": "f055783884856ada3c2c8562d7ad3cc8dc4ce45a665b76274cac3093535cae00",
     "web/src/menu/magic.ts": "c686a1c2e4c00e3bab3f4fee52d6a034bed13d73c48383c83cd80e3bb5e2723a",
     "web/src/menu/scroll.ts": "540934d8d4d69c1dc5689d843984cd6e1d9268a310bb95da7d49478a01d1aea6",

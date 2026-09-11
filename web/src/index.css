@@ -292,9 +292,11 @@ body {
    转）。`:hover` / `:focus-visible` 这两条路都进同一个状态，见
    `StartPanel.tsx` 的 onMouseEnter / onFocus。
 
-   **禁用的那颗也换**：原版 `StartButton.isMoveIn` 只看坐标，不看这颗按钮能
-   不能点 —— 它根本没有"禁用"这个概念。点不点得动由 `disabled` 与那颗按钮的
-   `title` 表达，不靠"装作没看见"。 */
+   **禁用的那颗不换**（2026-09-11 实测，xl-03x.12；这里原先写的是「也换」，
+   没跑过）：React 对 `disabled` 的按钮连 `mouseenter` / `mousemove` 都不派发，
+   于是「结」悬停不换图、高亮不转 —— 原版 `StartButton.isMoveIn` 只看坐标、
+   会换。这是禁用口径连带的差，登在 ADR-0001 `start-exit-disabled` 那一行；
+   天书页「确认离开」照同一口径也不换。 */
 
 /* 那圈 4 帧高亮画在按钮自己的 (x, y) 上，原版 drawButton 无条件画它。
    它比按钮大一圈，靠上面那条 overflow: visible 溢出。 */

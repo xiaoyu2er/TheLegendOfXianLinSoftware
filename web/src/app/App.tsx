@@ -92,6 +92,8 @@ export function App() {
   const lsHostRef = useRef<HTMLDivElement>(null)
   const endHostRef = useRef<HTMLDivElement>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
+  /** 菜单画布此刻挂的 `title` —— 指针停在禁用的「确认离开」上时是理由（xl-03x.12）。 */
+  const [menuTitle, setMenuTitle] = useState<string | null>(null)
   /**
    * **现在该在哪个场景**，`null` = 还没开局、停在标题上（xl-q7f）。
    *
@@ -278,7 +280,11 @@ export function App() {
   const onMenuMouse = (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!inMenu) return
     const at = stagePoint(event)
-    if (at) view.menuInput({ e, x: at.x, y: at.y })
+    if (!at) return
+    view.menuInput({ e, x: at.x, y: at.y })
+    // 画布上没有 `<button disabled title>` 可挂，禁用按钮的理由按坐标问出来、
+    // 挂在宿主上 —— 与标题页「结」同一口径（xl-03x.12）。
+    setMenuTitle(view.menuTitleAt(at.x, at.y))
   }
 
   /**
@@ -351,6 +357,7 @@ export function App() {
               onMouseUp={onMenuMouse('release')}
               onMouseMove={onMenuMouse('move')}
               onWheel={onMenuWheel}
+              title={inMenu && menuTitle !== null ? menuTitle : undefined}
               data-testid="menu-host"
             />
             <div

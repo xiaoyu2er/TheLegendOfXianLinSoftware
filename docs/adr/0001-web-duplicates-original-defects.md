@@ -62,7 +62,7 @@
 | `dialogue-skip-printing` | **（待签 · xl-03x.4 补登）****原版没有**「跳过逐字打印」：句子没打完时 `DialogueEvent.keyPressed` / `NPCEvent.keyPress` 什么也不做，只能等 | **加了**：回车把当前这一屏一次打满（`state/dialogue.ts` 的 `skipPrinting`），空格那一路与原版逐字同构 | xl-9bd.10 的验收标准要它。挂回车不挂空格，是为了让这条增量一次都踩不到真值（真值里的空格全在句子打完之后） | `state/dialogue.test.ts`「跳过逐字打印（原版没有的加法）」 |
 | `start-focus-hover` | **（待签 · xl-03x.4 补登）****原版没有键盘焦点**：标题四颗按钮只认鼠标坐标 | **加了**：Tab 到一颗按钮上等于鼠标移进来（换图 + 那圈高亮转起来），离开等于移出 | 无障碍。只补 CSS 的话 Tab 过来的人看到一颗半死的按钮 | `start/StartPanel.test.tsx`「键盘 Tab 过来也换图、也转高亮」 |
 | `saveload-notices` | **（待签 · xl-03x.4 补登）****原版没有**存读档面板上那几行状态字（原版的档是同步读写本地文件，没有「正在读」「读不上来」「没写进去」这几种状态） | **加了**：`app/App.tsx` 的 `SaveLoadNotices`，画在 DOM overlay 上、不进画布 | 浏览器存储是异步的、会失败。不说一声的话，「还没读上来」画成三个空槽是一句谎话。放在 overlay 上是为了不被当成原版画面去逐帧比 | `game/saveloadSession.test.ts` 与 `save/store.test.ts`（就绪 / 失败 / 写失败几种状态） |
-| `start-exit-disabled` | **（待签 · xl-03x.4 补登）**标题「结」是 `System.exit(0)`（`src/start/StartPanel.java:234`） | 按钮画出来、**禁用**，带一句 `disabledReason` | 浏览器里没有对应物（`window.close()` 对地址栏进来的页面一声不吭）；xl-u23 量过三条路之后的定案（用户 2026-09-08 裁定）。⚠️ **这一行会被 `xl-03x.12` 改写**：M8 规格定的是「画出来、点了什么都不发生」，与菜单「确认离开」合成一行重签 | `start/buttons.test.ts` |
+| `start-exit-disabled` | **（待签 · xl-03x.12 改写，合两处）**两颗按钮都是 `System.exit(0)`：标题「结」（`src/start/StartPanel.java:234`），与天书页「退出」→「确认离开」（`src/menu/FuncButtons.java:379`；退出之前还先出一声 `换list.wav`、收起按钮组） | 两颗都**画出来、禁用**，带一句理由。标题那颗是 `<button disabled title>`（`start/buttons.ts` 的 `START_BUTTON_WIRING.end`）；天书页那颗在画布上（`menu/funcButtons.ts` 的 `FUNC_DISABLED`）：照画、照原版展开收起（`isDraw` 不动，真值 `func.drawn` 不受影响），但不响应悬停 / 按下 / 松开 —— 贴图恒为常态、不出声、不收按钮组，理由挂在菜单画布宿主的 `title` 上。**两颗悬停都不换图**：React 对禁用的按钮不派发 `mouseenter`（2026-09-11 jsdom 实测），而原版会换 | 浏览器里没有对应物（`window.close()` 对地址栏进来的页面一声不吭）；xl-u23 量过三条路之后的定案（用户 2026-09-08 裁定）。M8 规格原定「画出来、点了什么都不发生」，主干在 xl-03x.12 的评论里改裁为与 xl-u23 统一：禁用让「浏览器做不到」在画面上看得见，而「按钮好好的、点了没反应」与「没接线」长得一模一样 | 标题：`start/StartPanel.test.tsx`「禁用的两颗各带一句理由」+「禁用的那两颗点下去屏幕纹丝不动」；天书页：`menu/funcButtons.test.ts`「天书页『确认离开』是禁用的」一组、`game/menuSession.test.ts`「走会话也纹丝不动」、`app/appMenu.test.tsx`「挂上理由的 title」 |
 | `end-not-kept-across-new-game` | **（待签 · xl-03x.4 补登）**点「起」**不重建 `endPanel`**（`GameLauncher.init()` 的调用点被注释掉），所以结局那条线程与字幕停下的位置活过新局 —— 新局再走到 `$`，原版一进来就定格 | 「起」整个重建会话（`NewGameCarry` 不带结局），新局走到 `$` 从头再滚一遍 | 这是 `new-game-resets-party` 那个取舍连带出来的：「起」回出厂状态靠的是整个重建会话。⚠️ **未量过**（`game/session.ts` 的 `Session.end` 自己写着）；M8 规格把「重开一局把结局那条线程一起丢掉」划进跨面板那一族、这一轮不收（xl-03x.1 Out of Scope），所以它今天是一条**没有归属票**的偏离 —— 登在这里，免得它只活在一句注释里 | **暂无会红的判据**（要跨面板才看得见） |
 | `end-thread-not-duplicated` | **（待签 · xl-03x.4 补登）**每 `switchTo("end")` 一次，`EndPanel.start()` 就 `new Thread(this).start()` **多起一条**结局线程 | 第二次进结局只把旗标重置，不多起一条 | 与「读档多起一条场景循环」同一个理由：这一层没有线程模型。⚠️ **走不走得到第二次未验证**：`$` 只出现在脚本41 那一段对话里、按完就不再开（`end/trigger.test.ts`）；读一个停在那段对话之前的档再按一遍可能是一条路 —— 未量过 | **暂无会红的判据**（上面那条路走不走得到都还没量） |
 | `map-source-overflow-throws` | **（待签 · xl-03x.4 补登）**地图图片**比碰撞网格要的源矩形还小**时，`drawMap` 的源矩形越出图片，Java2D 画出来的是一种说不清的残缺（xl-czb.3 的探针：1022×640 那张少画两整列，1023×639 那张缺的像素最左一个在 x=0） | **硬失败**：`scene/mapSize.ts` 的 `checkMapSize` 抛 | 拉伸、补边、夹取都会画出「看起来对」的画面。今天**没有场景走得到**这条路（比源矩形小一两像素的那 6 张走的是另一支、已复刻） | `scene/mapSize.test.ts` |
@@ -96,7 +96,8 @@ web 端选了其中说得通的那条。这一句也有判据，与上面同一�
   （`menu/render/drawList.ts`，刷新已经在 `drinkDrug` 里）、开机那一帧 `startView` 不推进
   （`start/panelState.ts`，开机时两支都不会触发，`panelState.test.ts` 钉住）。原版做的事 web 端一件没少，只是换了地方做。
 - **欠账，不是取舍**（有票、将来要做成与原版一致）：菜单松手落在下一帧时被丢
-  （`xl-z4f`）、菜单「确认离开」的后半段（`menu/funcButtons.ts`，归 `xl-03x.12`）。
+  （`xl-z4f`）。（菜单「确认离开」的后半段原先也列在这里；xl-03x.12 把它定成禁用，
+  并进了上表 `start-exit-disabled` 那一行，不再是欠账。）
 - **已知缺口，登在逐帧比对的分区表态里**：字形（`textFont.ts`、`compare/expected.ts`）。
   它们不是「决定不做」，是「做不到逐像素」，那份账有上界守着。
 

@@ -24,11 +24,13 @@ import {
   isRunning,
   loadGame,
   loadTargetOf,
+  menuWorldOf,
   openMenu,
 } from './session'
 import { menuDrawList } from '../menu/render/drawList'
 import { menuTextureIds } from '../menu/render/assets'
 import type { MenuRenderer } from '../menu/render/menuRenderer'
+import { menuDisabledReasonAt } from '../menu/step'
 import type { MenuInput } from '../menu/step'
 import { previewFrame } from '../shop/preview'
 import { shopTextureIds } from '../shop/render/assets'
@@ -104,6 +106,11 @@ export interface GameView {
    * 而战斗那一侧只认按下 —— 合成一个入口就得在这一层猜"这一下算哪种"。
    */
   readonly menuInput: (input: MenuInput) => void
+  /**
+   * 菜单画布上这个坐标（舞台**逻辑坐标**）该挂的 `title`，`null` = 不挂。今天只有
+   * 天书页那颗禁用的「确认离开」有（xl-03x.12）；菜单没开着一律 `null`。
+   */
+  readonly menuTitleAt: (x: number, y: number) => string | null
   /** 商店贴图还在载入 —— 进门那一下、以及装备店换一栏商品时各有这几十毫秒。 */
   readonly shopLoading: boolean
   /**
@@ -775,6 +782,13 @@ export function useGame(
     menuInputRef.current.push(input)
   }
 
+  /** 菜单画布上这个坐标该挂的 `title`。读的是此刻的菜单世界，见 `GameView.menuTitleAt`。 */
+  const menuTitleAt = (x: number, y: number): string | null => {
+    const session = sessionRef.current
+    const world = session === null ? null : menuWorldOf(session)
+    return world === null ? null : menuDisabledReasonAt(world, x, y)
+  }
+
   /** 店里的一次鼠标事件（舞台**逻辑坐标**）。店没开着就丢掉。 */
   const shopInput = (input: ShopInput): void => {
     if (sessionRef.current?.panel !== 'shop') return
@@ -795,6 +809,7 @@ export function useGame(
     shopLoading,
     click,
     menuInput,
+    menuTitleAt,
     shopInput,
     restart,
     saveLoad,

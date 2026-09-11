@@ -4,6 +4,7 @@ import { repoPath } from '../test/repoPath'
 import { javaSource } from '../test/javaSource'
 import {
   FUNC_ALL_KEYS,
+  FUNC_DISABLED,
   FUNC_MAIN_ORDER,
   FUNC_SUB_GROUPS,
   FUNC_SUB_ORDER,
@@ -14,7 +15,7 @@ import {
 import type { FuncMainKey, FuncSubKey } from './funcButtons'
 import { menuHitCenter } from '../test/menuHit'
 import { hits } from './buttons'
-import { menuWantsScene, stepMenu } from './step'
+import { menuDisabledReasonAt, menuWantsScene, stepMenu } from './step'
 import { createMenuWorld } from './world'
 
 /**
@@ -403,8 +404,9 @@ describe('天书页 · 设定与退出子菜单', () => {
     walk(['setButton', 'setClick', 'off_click', 'on_click'])
   })
 
-  it('点「退出」展开确认离开 / 重新开始；两颗都点得响', () => {
-    walk(['exitButton', 'exitForSure'])
+  it('点「退出」展开确认离开 / 重新开始；「重新开始」点得响', () => {
+    // 「确认离开」不在这里走：它是禁用的（`FUNC_DISABLED`，xl-03x.12），第 11 段
+    // 有意不照抄 —— 那一颗的判据在文件末尾「天书页『确认离开』是禁用的」一组。
     walk(['exitButton', 'restart'])
   })
 
@@ -489,11 +491,104 @@ describe('天书页 · 设定与退出子菜单', () => {
     expect(fb.sub.setKey.image).toBe('normal')
   })
 
-  it('解析出来的每一段都被走过 —— 除了那段死代码', () => {
+  it('解析出来的每一段都被走过 —— 除了那段死代码与禁用的那几颗', () => {
     // 分母是**解析出来的**段落名单，不是手写的。新加一段而没人走它就红。
-    const unreached = SECTIONS.map((s) => s.guard).filter((g) => !walked.has(g) && g !== 'setKey')
+    // 有意走不到的两类：`setKey`（原版死代码）与 `FUNC_DISABLED`（手写登记，xl-03x.12）。
+    const skipped = new Set<string>(['setKey', ...Object.keys(FUNC_DISABLED)])
+    const unreached = SECTIONS.map((s) => s.guard).filter((g) => !walked.has(g) && !skipped.has(g))
     expect(unreached, 'checkPressed() 里有段落一次都没走到').toEqual([])
-    // 反过来：`setKey` 那一段必须走不到（它是死代码），走到了说明有人"修好"了它。
-    expect(walked.has('setKey')).toBe(false)
+    // 反过来：它们必须走不到。`setKey` 走到了说明有人"修好"了死代码；禁用的走到了
+    // 说明有人拿参照模型去验一段有意不照抄的代码。
+    for (const g of skipped) expect(walked.has(g), `${g} 那一段被走了`).toBe(false)
+    // 登记里的每一颗在原版里确实有一段 —— 登记写歪了（键不存在）这里就红。
+    for (const key of Object.keys(FUNC_DISABLED)) expect(sectionOf(key).ops.length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * 「确认离开」：原版 `System.exit(0)`，浏览器里没有对应物 —— **禁用 + 理由**，
+ * 与标题页「结」同一口径（xl-03x.12，ADR-0001 `start-exit-disabled`）。
+ *
+ * 「没反应」与「没接线」长得一模一样，所以这里每条都带一个**对照**：同一组里
+ * 活着的「重新开始」在同一条路上确实有反应。没有对照的话，「移动事件没送到」
+ * 「落点点空了」都会让这几条读起来是绿的。
+ */
+describe('天书页「确认离开」是禁用的', () => {
+  /** 进天书页、点「退出」，把「确认离开 / 重新开始」那一组展开。 */
+  function exitGroupOpen() {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    w.panel = 'funcPanel'
+    const fb = w.panels.funcPanel.funcButtons
+    if (!fb) throw new Error('funcPanel 没有 funcButtons')
+    const exit = menuHitCenter(fb.main.exitButton)
+    stepMenu(w, [{ e: 'press', ...exit }])
+    stepMenu(w, [{ e: 'release', ...exit }])
+    expect(fb.sub.exitForSure.isDraw, '点了「退出」却没展开「确认离开」').toBe(true)
+    expect(fb.sub.restart.isDraw, '点了「退出」却没展开「重新开始」').toBe(true)
+    const at = menuHitCenter(fb.sub.exitForSure)
+    expect(hits(fb.sub.exitForSure, at.x, at.y), '落点没打中「确认离开」').toBe(true)
+    return { w, fb, at }
+  }
+
+  it('登记：禁用的只有「确认离开」一颗，理由写的是 System.exit(0)', () => {
+    // 手写的登记（纪律 3），在这里签一次字：多禁用一颗、或者把它放开，都要改这一行。
+    expect(Object.keys(FUNC_DISABLED)).toEqual(['exitForSure'])
+    expect(FUNC_DISABLED.exitForSure).toContain('System.exit(0)')
+  })
+
+  it('禁用态：移进去、按下去、松开，贴图都停在常态，isclicked 一次都不置真', () => {
+    const { w, fb, at } = exitGroupOpen()
+    // 对照：活着的那颗移进去就换成「待点」 —— 证明移动事件确实走到了子按钮。
+    stepMenu(w, [{ e: 'move', ...menuHitCenter(fb.sub.restart) }])
+    expect(fb.sub.restart.image, '对照失效：活着的「重新开始」移进去也没换图').toBe('waitclick')
+
+    const b = fb.sub.exitForSure
+    stepMenu(w, [{ e: 'move', ...at }])
+    expect(b.image, '悬停换图了').toBe('normal')
+    stepMenu(w, [{ e: 'press', ...at }])
+    expect(b.image, '按下换图了').toBe('normal')
+    expect(b.isclicked, 'isclicked 被置真了').toBe(false)
+    stepMenu(w, [{ e: 'release', ...at }])
+    expect(b.image, '松开换图了').toBe('normal')
+  })
+
+  it('点下去：面板不变、按钮组不变、不出声、不发任何信号', () => {
+    const { w, fb, at } = exitGroupOpen()
+    // 期望值在动作**之前**记下（dispatch 的「事后比」那一族）。
+    const signature = () => ({
+      panel: w.panel,
+      drawn: drawnFuncButtons(fb),
+      audio: { ...w.audio },
+      exitToScene: fb.exitToScene,
+      saveLoadRequest: fb.saveLoadRequest,
+      wantsScene: menuWantsScene(w),
+    })
+    const before = signature()
+    stepMenu(w, [{ e: 'press', ...at }])
+    expect(w.music, '点「确认离开」出声了').toEqual([])
+    stepMenu(w, [{ e: 'release', ...at }])
+    for (let i = 0; i < 10; i++) stepMenu(w)
+    expect(signature(), '点「确认离开」之后有东西变了').toEqual(before)
+
+    // 对照：同一个世界里点「重新开始」出一声 —— 这一列在这条路上是看得见的。
+    const restart = menuHitCenter(fb.sub.restart)
+    stepMenu(w, [{ e: 'press', ...restart }])
+    expect(w.music, '对照失效：点「重新开始」也没出声').toEqual(['换list.wav'])
+  })
+
+  it('理由挂在它的命中框上：展开时读得到，收着、点别处、换页都读不到', () => {
+    const w = createMenuWorld({ party: ['zhang'], fullHeal: true })
+    w.panel = 'funcPanel'
+    const fb = w.panels.funcPanel.funcButtons!
+    const at = menuHitCenter(fb.sub.exitForSure)
+    // 收着的时候那片地方可能住着别的按钮（「开」背景音乐的命中框与它重叠），不该冒理由。
+    expect(menuDisabledReasonAt(w, at.x, at.y), '收着也冒理由').toBeNull()
+
+    const open = exitGroupOpen()
+    expect(menuDisabledReasonAt(open.w, open.at.x, open.at.y)).toBe(FUNC_DISABLED.exitForSure)
+    const restart = menuHitCenter(open.fb.sub.restart)
+    expect(menuDisabledReasonAt(open.w, restart.x, restart.y), '活着的按钮上冒理由').toBeNull()
+    open.w.panel = 'thingPanel'
+    expect(menuDisabledReasonAt(open.w, open.at.x, open.at.y), '换了页还冒理由').toBeNull()
   })
 })
