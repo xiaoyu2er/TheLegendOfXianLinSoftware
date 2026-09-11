@@ -4,9 +4,10 @@ import { START_SCENE } from '../../data/scenes'
 import { getScene } from '../../data/scenesEager'
 import { createWorld, step } from '../../state/step'
 import { sceneSourceOf } from '../../state/trace'
-import type { TilePos, World } from '../../state/types'
+import type { World } from '../../state/types'
 import { repoPath } from '../../test/repoPath'
 import { type Hop, type Truths, bare, exitsOf, loadTruths, plotBattle, readPlotBosses, readStart, walkChain } from './chain'
+import { landingMismatches } from './landing'
 
 /**
  * **交接判据**（xl-czb.7）：主线上相邻两段的交接点对得上 —— 前一段记下的目标 ==
@@ -46,11 +47,6 @@ const chain = walkChain(truths, 'win32', start.script, bosses)
 const scenes = sceneSourceOf(getScene)
 
 const TILE = 32
-const tileOf = (w: World): TilePos => ({ x: Math.floor(w.role.px / TILE), y: Math.floor(w.role.py / TILE) })
-const parseTile = (spec: string): TilePos => {
-  const [x, y] = spec.split('/').map(Number)
-  return { x: x!, y: y! }
-}
 
 /** 这本脚本的对话当作已经放完：出口那一支（分支 1）认的就是 `dialogueEventOver`。 */
 function storyDone(w: World): World {
@@ -155,10 +151,8 @@ describe('交接：链上每一跳，前一段记下的三元组 == Web 状态�
         throw new Error(`Web 状态层走到第 ${r.brokenAt} 跳就走不下去了：${String(r.error)}`)
       }
       // 后一段的起点：站在下一本剧情脚本里、剧情三元组就是前一段记下的那一份、落点是它的第 0 格。
-      expect(r.after.scene, '进的脚本').toBe(hop.triple[2])
-      expect(r.after.currentScript, 'currentScript').toEqual([...hop.triple])
-      expect(tileOf(r.after), '落点').toEqual(parseTile(hop.triple[0]))
-      expect(r.after.isScript, 'isScript').toBe(true)
+      // 尺子与连跑（`playthrough.test.ts`）共用一份：`landing.ts`。
+      expect(landingMismatches(r.after, hop)).toEqual([])
     },
   )
 })
