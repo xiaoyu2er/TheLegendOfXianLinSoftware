@@ -41,7 +41,7 @@ describe('菜单顶栏「当前任务:」对齐真值 task 列', () => {
   }
 
   it('至少一条真值走到 if 那一支（task 非 null）—— 否则上面全是「无」对「无」', () => {
-    // 分母是磁盘上的真值；这条守的是「非 null 那一支有人盖到」。只剩五条老剧本时
+    // 分母是磁盘上的真值；这条守的是「非 null 那一支有人盖到」。只剩没给 `setup.scene` 的剧本时
     // 上面的逐步用例照样全绿，而绿的全是「当前任务:无」对「当前任务:无」。
     const covering = MENU_TRACE_NAMES.filter((name) =>
       readMenuTrace(name).ticks.some((tick) => tick['task'] !== null && tick['task'] !== undefined),

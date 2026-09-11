@@ -39,7 +39,7 @@ export function replayMenuSetup(setup: MenuConfig): MenuWorld {
  * 而那个 static 只有进场景的 `new Reader(...)` 会写。导出器给了 `setup.scene` 就
  * 在一个干净 JVM 里读那一本，所以这里是「那一本的 `Task` 段，没有就 null」——
  * **不是**「没有就留着上一个场景的」，干净 JVM 里没有上一个场景。
- * 没给 `setup.scene` = 一个场景都没进过 = null（另外五条菜单剧本）。
+ * 没给 `setup.scene` = 一个场景都没进过 = null。
  *
  * 游戏里不走这里：会话那一侧喂的是场景世界的 `readerStatics.task`（`game/menuTask.ts`）。
  */

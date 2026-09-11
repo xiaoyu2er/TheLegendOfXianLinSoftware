@@ -89,7 +89,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   mouse: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-task'],
   func: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-task'],
   // xl-03x.10。`Reader.task` —— 不是菜单世界的状态，快照里那一格来自 `replayMenuTask`
-  // （见 `runAll`）。五条老剧本恒为 null；非 null 那一支靠 `menu-task`。它画成什么字
+  // （见 `runAll`）。没给 `setup.scene` 的剧本恒为 null；非 null 那一支靠 `menu-task`。它画成什么字
   // 另有逐步判据：`render/taskTitle.test.ts`。
   task: ['menu-equip', 'menu-magic', 'menu-func', 'menu-hero', 'menu-scroll', 'menu-task'],
 }

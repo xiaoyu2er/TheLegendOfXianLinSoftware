@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { repoPath } from '../test/repoPath'
 import { getScene } from '../data/scenesEager'
 import { readMenuTrace } from '../menu/trace'
 import { createWorld, initiate } from '../state/step'
@@ -13,9 +15,18 @@ const SCENE = TRACE.script.setup.scene!
 const JAVA_TASK = TRACE.ticks[0]!['task'] as string
 
 describe('menuTaskOf：菜单顶栏读场景那一侧的 Reader.task', () => {
-  it('前提：那份真值确实进了一本有 Task 段的脚本', () => {
-    expect(SCENE).toMatch(/\.txt$/)
+  it('前提：那份真值的 task 非 null —— 否则下面比的是 null 对 null', () => {
     expect(typeof JAVA_TASK).toBe('string')
+  })
+
+  it('游戏里每一处画菜单都喂 menuTaskOf —— 那一行退回 menuDrawList(world) 就红', () => {
+    // useGame 是 React hook，没法在 Node 上跑；这里读它的源码。分母是文件里
+    // `menuDrawList(` 的调用处数，一处都没有时要响（文件改名 / 挪走与「都喂了」不能同形）。
+    const src = readFileSync(repoPath('web/src/game/useGame.ts'), 'utf8')
+    // `menuDrawList(` 带括号，import 那一行匹配不到。
+    const calls = src.match(/menuDrawList\([^\n]*/g) ?? []
+    expect(calls.length).toBeGreaterThan(0)
+    for (const call of calls) expect(call).toContain('menuTaskOf(next.scene)')
   })
 
   it('进了那一本之后，顶栏喂的是原版读出来的那一句', () => {
