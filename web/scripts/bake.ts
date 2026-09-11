@@ -66,9 +66,11 @@ import {
   npcAssetId,
   roleAssetId,
   equipPictureAssetId,
+  sfxAssetId,
   startAssetId,
   startFrameAssetId,
 } from '../src/assets/ids'
+import { SFX_ROOT, sfxProductPath } from '../src/assets/sfxAssets'
 import type { DialogueImageName } from '../src/assets/ids'
 import { normalizePath } from '../src/assets/path'
 import { listFiles } from '../src/assets/listFiles'
@@ -637,6 +639,8 @@ function main(): void {
 
   bakeBgm(scenes, manifest)
 
+  bakeSfx(manifest)
+
   writeFileSync(MANIFEST_OUT, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   writeFileSync(MISSING_OUT, `${JSON.stringify(missingIds.sort(), null, 2)}\n`, 'utf8')
   console.log(
@@ -1188,13 +1192,54 @@ function bakeBgm(scenes: readonly SceneScript[], manifest: Record<string, string
  * 用 `afconvert`（macOS 自带）而不是 ffmpeg：这台机器上没有 ffmpeg，而烘焙
  * 器本来就已经要 `cwebp` 了 —— 产物入库，只有重新烘焙的人才需要这两个工具。
  */
-function toAac(source: string, destination: string): number {
+function toAac(source: string, destination: string, sampleRate?: number): number {
   useInput(source)
   mkdirSync(dirname(destination), { recursive: true })
   // -s 0 = CBR。默认的 VBR 策略会**忽略 -b**，转出来跟源一样大（实测
   // 舒缓.mp3 2.06 MB → 2.04 MB），而且不报错。
-  execFileSync('afconvert', ['-f', 'm4af', '-d', 'aac', '-b', '96000', '-s', '0', source, '-o', destination])
+  const format = sampleRate === undefined ? 'aac' : `aac@${sampleRate}`
+  execFileSync('afconvert', ['-f', 'm4af', '-d', format, '-b', '96000', '-s', '0', source, '-o', destination])
   return statSync(destination).size
+}
+
+/**
+ * 音效（xl-03x.5）：`sources/music/` 整个目录转成 AAC，全部进映射表。
+ * 为什么是整个目录、为什么进主包，见 `src/assets/sfxAssets.ts` 的头注。
+ *
+ * **输出采样率钉在 44100**，不跟源走。沿用 BGM 那组参数（96 kbps CBR）时，
+ * 源是 22050 Hz 单声道的那一批 afconvert 直接报
+ * `Couldn't set audio converter property ('!dat')` 退出 —— AAC 在
+ * 22050 Hz 单声道下给不出 96 kbps（实测 64 kbps 可以、80 kbps 不行）。
+ * 升到 44100 之后 35 个全部转得出来，而升采样不损音质，只多占字节。
+ *
+ * AAC 的编码器会在开头塞 2112 帧 priming（44100 Hz 下约 48 ms），对「一响
+ * 就要出声」的音效是致命的 —— 前提是解码端不剪。实测（无头 Chrome 的
+ * `decodeAudioData`，35 个逐个比源）：解出来的长度与源**逐样本相等**，
+ * 起音点也对得上，即 Chrome 按 m4a 里记的 priming 剪掉了。⚠️ Safari 与
+ * Firefox **没量过**。
+ */
+function bakeSfx(manifest: Record<string, string>): void {
+  const files = readdirSync(resolve(REPO, SFX_ROOT))
+    .filter((f) => !f.startsWith('.'))
+    .sort()
+  if (files.length === 0) {
+    // "一个都没扫到"与"全烘完了"在产物上长得一样。
+    console.error(`${SFX_ROOT} 下一个文件都没有 —— 音效的分母是从这里现扫的`)
+    process.exit(1)
+  }
+  let bytes = 0
+  for (const file of files) {
+    const id = sfxAssetId(file)
+    if (manifest[id] !== undefined) {
+      // 两个源文件只差扩展名（或大小写）会压成同一个 ID，后烘的悄悄盖掉先烘的。
+      console.error(`音效 ${file} 与已烘的 ${manifest[id]} 撞成同一个资产 ${id}`)
+      process.exit(1)
+    }
+    const relative = sfxProductPath(file)
+    manifest[id] = relative
+    bytes += toAac(resolve(REPO, SFX_ROOT, file), resolve(ASSETS_OUT, relative), 44100)
+  }
+  console.log(`音效 ${files.length} 个 → sfx/*.m4a 共 ${kb(bytes)}（全部进映射表）`)
 }
 
 function requireAfconvert(): void {

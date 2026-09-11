@@ -69,6 +69,21 @@ describe('烘焙指纹', () => {
   })
 
   /**
+   * 音效那一类的分母同样数得出来（xl-03x.5）：`bakeSfx` 烘的就是
+   * `sources/music/` 整个目录。往里加一个文件却不重烘，上一条「输入还是
+   * 那一份」看不见它 —— 它只核记下了的。这条补的是那个方向。
+   */
+  it('sources/music/ 下的每一个文件都在输入名单里', () => {
+    const files = readdirSync(repoPath('sources/music'))
+      .filter((f) => !f.startsWith('.'))
+      .map((f) => `sources/music/${f}`)
+      .sort()
+    expect(files.length).toBeGreaterThan(0)
+    const recorded = Object.keys(STAMP.inputs).filter((p) => p.startsWith('sources/music/'))
+    expect(recorded.sort()).toEqual(files)
+  })
+
+  /**
    * 映射表与产物目录必须**互相盖满**。
    *
    * 烘焙器开头会 `rmSync` 整个产物目录，中途失败就留下半套产物加一张旧的
