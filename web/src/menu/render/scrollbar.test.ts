@@ -63,6 +63,31 @@ describe('滚动条画出来的那一半', () => {
     expect(bottom.map((r) => r.y)).toEqual(top.map((r) => r.y))
   })
 
+  /**
+   * 拖拽（xl-03x.9）走的是另一条改 `scroll` 的路，画的那一半要**在这条路上**
+   * 再核一遍：仍然只画一屏、画的是拖到的那几件，滑块画在拖到的位置上。
+   */
+  it('拖滑块到底：仍然只画一屏，画的是最后那几件，滑块画在底上', () => {
+    const w = equipWorld()
+    const list = equipList(w.panels.equipPanel.equip!)
+    const rows = viewportRows(EQUIP_LIST_VIEW)
+    const max = maxScroll(EQUIP_LIST_VIEW, list.length)
+    expect(max, '这一场翻不动，下面的判据是恒真的').toBeGreaterThan(0)
+    const bar = scrollbar(EQUIP_LIST_VIEW, list.length, 0)!
+    const grab = { x: bar.thumb.x + 1, y: bar.thumb.y + 1 }
+    stepMenu(w, [{ e: 'press', ...grab }])
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
+    expect(w.panels.equipPanel.equip!.scroll).toBe(max)
+
+    const drawn = listRows(menuDrawList(w), EQUIP_X_START)
+    expect(drawn).toHaveLength(rows)
+    expect(drawn.map((r) => r.text)).toEqual(list.slice(max).map((i) => i.name))
+    for (const r of drawn) expect(r.y).toBeLessThanOrEqual(EQUIP_LIST_VIEW.box.bottom)
+    const thumb = rects(menuDrawList(w))[1]!
+    const atBottom = scrollbar(EQUIP_LIST_VIEW, list.length, max)!.thumb
+    expect(thumb.kind === 'rect' && [thumb.y, thumb.height]).toEqual([atBottom.y, atBottom.height])
+  })
+
   it('撑过框时画出滚动条那两块矩形，位置与 `scrollbar()` 算的相同', () => {
     const w = equipWorld()
     const list = equipList(w.panels.equipPanel.equip!)

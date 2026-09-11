@@ -2,6 +2,7 @@ import type { EquipPanelState } from './equipPanel'
 import type { FuncButtonsState } from './funcButtons'
 import type { MenuHero } from './heroes'
 import type { MagicState } from './magic'
+import type { ScrollDrag } from './scroll'
 
 /**
  * 菜单状态层的世界。**与场景 / 战斗平级的一块面板**，不是覆盖层
@@ -110,6 +111,8 @@ export interface DrugPanelState {
    * 同形，同样**不进真值**。
    */
   scroll: number
+  /** 正在拖滑块时的锚点（xl-03x.9）。同样**不进真值**，见 `scroll.ts` 的 `ScrollDrag`。 */
+  drag: ScrollDrag | null
   /** `use_button`。⚠️ 开局 `isDraw` 是 **No**，构造函数最后一句按回去的。 */
   useButton: MenuButtonState
 }

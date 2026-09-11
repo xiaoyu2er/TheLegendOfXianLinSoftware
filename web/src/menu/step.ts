@@ -16,7 +16,7 @@ import {
   drugPanelReleased,
   visibleDrugs,
 } from './drugPanel'
-import { pressScrollTrack, wheelScroll } from './scroll'
+import { dragScroll, pressScrollTrack, releaseScrollDrag, wheelScroll } from './scroll'
 import {
   magicCheckMoveIn,
   magicCheckPressed,
@@ -190,6 +190,10 @@ function menuMouseReleased(w: MenuWorld, x: number, y: number): void {
   drugPanelReleased(p)
   // 奇术页的松开**扫全部三组**，不只当前角色那一组（原版就是这么写的）。
   if (p.magic) magicCheckReleased(p.magic, p.currentX, p.currentY)
+  // 拖滑块结束（xl-03x.9）。只结束当前页的 —— 松手与按下一样只送给当前页，
+  // 而拖拽只能在当前页上开始。
+  if (p.equip) releaseScrollDrag(p.equip)
+  if (p.drug) releaseScrollDrag(p.drug)
 }
 
 function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
@@ -199,6 +203,17 @@ function menuMouseMoved(w: MenuWorld, x: number, y: number): void {
   const p = currentPanel(w)
   p.currentX = x
   p.currentY = y
+  // 拖滑块（xl-03x.9）。浏览器按住左键的移动也送成 `move`，这是忠实的：原版
+  // `MenuPanel` 的 `mouseDragged` 与 `mouseMoved` 两支逐字相同（都是
+  // `checkMoveIn` + `checkAllButtonMoveIn`），所以拖拽不另开一种输入。
+  //
+  // **排在悬停判定前面**：先把列表翻到拖到的那一行，下面 `equipCheckMoveIn`
+  // 那条命中带按翻好的位置算 —— 指针若在拖的途中漂进了列表，选中的是屏幕上
+  // 那一行，而不是上一拍的那一行。今天两页的命中带（x 548..618 / 448..578）
+  // 与槽那一列（770..777 / 723..730）不相交，所以真值走到的每一步都不受这个
+  // 次序影响（真值里根本没有拖拽，`drag` 恒为 null、这两句什么都不做）。
+  if (p.equip) dragScroll(EQUIP_LIST_VIEW, p.equip, equipList(p.equip).length, p.currentY)
+  if (p.drug) dragScroll(DRUG_LIST_VIEW, p.drug, visibleDrugs(w.drugPack).length, p.currentY)
   scollCheckMoveIn(w, p)
   // `FuncPanel.checkAllButtonMoveIn` 只有 `fb.checkMoveIn()` 一句 —— 三态贴图
   // 的「待点」那一态靠它。真值不记 `image`，所以这一条由逐帧比对守（xl-6lo.14）。

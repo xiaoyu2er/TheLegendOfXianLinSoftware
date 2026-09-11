@@ -572,7 +572,203 @@ describe('滚动条：够得着那一半没被改掉', () => {
   })
 })
 
+describe('滚动条：拖拽滑块（xl-03x.9）', () => {
+  /**
+   * 期望值全从 `scrollbar()` 与真值那份武器列表算：拖多少像素该到第几行，
+   * 看的是「滑块在第 at 行时画在哪」—— 把指针挪过去，列表就该在第 at 行。
+   * 这把尺子与画出来的滑块是同一把，所以不写一个像素常量。
+   */
+  const V = EQUIP_LIST_VIEW
+
+  /** 按在滑块正中，返回按下的点。 */
+  function grabThumb(w: MenuWorld): { x: number; y: number } {
+    const bar = scrollbar(V, WEAPON_ROWS, equipOf(w).scroll)
+    if (!bar) throw new Error('这一场的列表没撑过框，滚动条都不画，拖拽判据是恒真的')
+    const at = { x: bar.thumb.x + 1, y: bar.thumb.y + Math.floor(bar.thumb.height / 2) }
+    stepMenu(w, [{ e: 'press', ...at }])
+    return at
+  }
+
+  /** 滑块在第 `at` 行时比在第 `from` 行时往下挪了几像素。 */
+  function thumbShift(from: number, at: number): number {
+    return scrollbar(V, WEAPON_ROWS, at)!.thumb.y - scrollbar(V, WEAPON_ROWS, from)!.thumb.y
+  }
+
+  it('按住滑块往下拖，列表逐行跟着走 —— 每一行都拖得到', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const max = maxScroll(V, WEAPON_ROWS)
+    expect(max, '翻不动的列表验不了拖拽').toBeGreaterThan(1)
+    const grab = grabThumb(w)
+    for (let at = 0; at <= max; at++) {
+      stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + thumbShift(0, at) }])
+      expect(e.scroll, `滑块拖到第 ${at} 行的位置`).toBe(at)
+    }
+    // 往回拖同样逐行跟着。
+    for (let at = max; at >= 0; at--) {
+      stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + thumbShift(0, at) }])
+      expect(e.scroll, `往回拖到第 ${at} 行的位置`).toBe(at)
+    }
+  })
+
+  it('拖过两端夹住；从端点外往回拖，从端点起算', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const max = maxScroll(V, WEAPON_ROWS)
+    const grab = grabThumb(w)
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
+    expect(e.scroll, '拖过底').toBe(max)
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y - 1000 }])
+    expect(e.scroll, '拖过顶').toBe(0)
+    // 指针回到按下的那一点：列表回到按下时的那一行（锚点不随夹取漂）。
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y }])
+    expect(e.scroll).toBe(0)
+  })
+
+  it('松手就停：松手之后再移动，列表一行都不动', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const grab = grabThumb(w)
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + thumbShift(0, 2) }])
+    expect(e.scroll).toBe(2)
+    stepMenu(w, [{ e: 'release', x: grab.x, y: grab.y + thumbShift(0, 2) }])
+    expect(e.drag, '松手之后还在拖').toBeNull()
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
+    expect(e.scroll, '松了手移动鼠标还在翻').toBe(2)
+  })
+
+  it('按在滑块上不动就不翻 —— 按下本身不改位置', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const grab = grabThumb(w)
+    expect(e.drag, '按在滑块上没开始拖').toBeTruthy()
+    stepMenu(w, [{ e: 'move', ...grab }])
+    expect(e.scroll).toBe(0)
+  })
+
+  it('与槽内点击不打架：按在槽里滑块以外不开始拖，按在别处结束拖拽', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const rows = viewportRows(V)
+    const max = maxScroll(V, WEAPON_ROWS)
+    const bar = scrollbar(V, WEAPON_ROWS, 0)!
+    // 按在滑块下方：翻一屏（槽内点击那条路），**不**进入拖拽。
+    const below = { x: bar.track.x + 1, y: bar.thumb.y + bar.thumb.height + 5 }
+    stepMenu(w, [{ e: 'press', ...below }])
+    expect(e.scroll).toBe(Math.min(rows, max))
+    expect(e.drag, '槽内点击进了拖拽').toBeNull()
+    stepMenu(w, [{ e: 'move', x: below.x, y: below.y - 1000 }])
+    expect(e.scroll, '槽内点击之后移动鼠标把列表拖走了').toBe(Math.min(rows, max))
+
+    // 拖着的时候（松手丢了）再按一下别处：拖拽结束，之后移动不翻。
+    const w2 = equipWorld()
+    const e2 = equipOf(w2)
+    const grab = grabThumb(w2)
+    stepMenu(w2, [{ e: 'press', x: V.box.left - 50, y: V.box.top + 10 }])
+    expect(e2.drag, '按在别处之后还在拖').toBeNull()
+    stepMenu(w2, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
+    expect(e2.scroll).toBe(0)
+  })
+
+  it('与滚轮不打架：拖到一半滚一格，滚出来的位置不被下一次移动吃掉', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const max = maxScroll(V, WEAPON_ROWS)
+    expect(max, '这一场翻得动的行数不够拖一行再滚一行').toBeGreaterThanOrEqual(2)
+    const grab = grabThumb(w)
+    const y1 = grab.y + thumbShift(0, 1)
+    stepMenu(w, [{ e: 'move', x: grab.x, y: y1 }])
+    expect(e.scroll).toBe(1)
+    stepMenu(w, [{ e: 'wheel', x: grab.x, y: y1, rows: 1 }])
+    expect(e.scroll).toBe(2)
+    // 指针没动：位置留在滚轮给的那一行，而不是被拖拽拽回第 1 行。
+    stepMenu(w, [{ e: 'move', x: grab.x, y: y1 }])
+    expect(e.scroll, '滚轮的结果被拖拽吃掉了').toBe(2)
+    // 再往回拖一行的距离：从滚轮给的那一行起算。
+    stepMenu(w, [{ e: 'move', x: grab.x, y: y1 - thumbShift(1, 2) }])
+    expect(e.scroll).toBe(1)
+  })
+
+  it('拖完之后，滚轮与槽内点击都从拖到的那一行接着走', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const rows = viewportRows(V)
+    const grab = grabThumb(w)
+    stepMenu(w, [
+      { e: 'move', x: grab.x, y: grab.y + thumbShift(0, 2) },
+      { e: 'release', x: grab.x, y: grab.y + thumbShift(0, 2) },
+    ])
+    expect(e.scroll).toBe(2)
+    stepMenu(w, [{ e: 'wheel', x: V.box.left + 10, y: V.box.top + 10, rows: -1 }])
+    expect(e.scroll).toBe(1)
+    const bar = scrollbar(V, WEAPON_ROWS, e.scroll)!
+    stepMenu(w, [{ e: 'press', x: bar.track.x + 1, y: bar.track.y }])
+    expect(e.scroll, '滑块上方按一下翻回去一屏').toBe(Math.max(0, 1 - rows))
+  })
+
+  it('物品页走的是同一条路（编的存货，理由同上面那条）', () => {
+    const w = replayMenu(trace)
+    w.panel = 'thingPanel'
+    const d = drugOf(w)
+    const rows = viewportRows(DRUG_LIST_VIEW)
+    w.drugPack = Array.from({ length: rows + 4 }, (_, i) => ({ name: `试药${i}`, count: 1 }))
+    const length = visibleDrugs(w.drugPack).length
+    const max = maxScroll(DRUG_LIST_VIEW, length)
+    expect(max).toBeGreaterThan(0)
+    const bar = scrollbar(DRUG_LIST_VIEW, length, 0)!
+    const grab = { x: bar.thumb.x + 1, y: bar.thumb.y + 1 }
+    stepMenu(w, [{ e: 'press', ...grab }])
+    const shift = scrollbar(DRUG_LIST_VIEW, length, max)!.thumb.y - bar.thumb.y
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + shift }])
+    expect(d.scroll).toBe(max)
+    stepMenu(w, [{ e: 'release', x: grab.x, y: grab.y + shift }])
+    expect(d.drag).toBeNull()
+  })
+
+  it('拖回顶之后，真值在框外选中过的那几行照样点得中（够得着那一半）', () => {
+    const rows = viewportRows(V)
+    const outside = WEAPON_SELECTED.filter((i) => i >= rows)
+    expect(outside).not.toEqual([])
+    for (const i of outside) {
+      const w = equipWorld()
+      const e = equipOf(w)
+      const grab = grabThumb(w)
+      stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
+      expect(e.scroll, '这一场根本没拖起来').toBeGreaterThan(0)
+      stepMenu(w, [
+        { e: 'move', ...grab },
+        { e: 'release', ...grab },
+      ])
+      expect(e.scroll).toBe(0)
+      moveToSlot(w, i, 0)
+      const tick = trace.ticks.find((t) => equipColumn(t).tab === 'weapon' && equipColumn(t).selected === i)
+      expect(e.currentEquipment, `拖过一趟之后第 ${i} 行点不中了`).toBe(equipColumn(tick!).selectedName)
+    }
+  })
+})
+
 describe('滚动条：滚动不进真值', () => {
+  /**
+   * 拖拽状态（「正在拖、从哪一行拖起」）同样**不进真值**：它是 web 侧那条
+   * 滚动条例外的一部分，原版连滚动条都没有，更没有对应物（xl-03x.9）。
+   */
+  it('拖一趟滑块，快照里 equip 与 drug 两列一个字都没变，也没有 drag 这一列', () => {
+    const w = equipWorld()
+    const e = equipOf(w)
+    const before = snapshotMenu(w)
+    const bar = scrollbar(EQUIP_LIST_VIEW, WEAPON_ROWS, 0)!
+    const grab = { x: bar.thumb.x + 1, y: bar.thumb.y + 1 }
+    stepMenu(w, [{ e: 'press', ...grab }])
+    stepMenu(w, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
+    expect(e.drag, '这一场根本没进拖拽，下面那条比对就是恒真').toBeTruthy()
+    expect(e.scroll, '这一场根本没拖起来').toBeGreaterThan(0)
+    const during = snapshotMenu(w)
+    expect(during['equip']).toEqual(before['equip'])
+    expect(during['drug']).toEqual(before['drug'])
+    expect(during['music'], '拖拽不出声').toEqual([])
+    expect(JSON.stringify(during)).not.toContain('drag')
+  })
+
   /**
    * 原版没有滚动条，所以真值里没有任何一列会因为翻页而变。这条判据是
    * `menuTrace.test.ts` 那 45 个格子的**补充**：那边跑的是 offset 恒为 0 的

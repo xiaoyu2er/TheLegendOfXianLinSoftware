@@ -71,6 +71,7 @@ export function createDrugPanelState(): DrugPanelState {
   return {
     currentDrug: null,
     scroll: 0,
+    drag: null,
     useButton: menuButton(USE_BUTTON_X, USE_BUTTON_Y, USE_BUTTON_W, USE_BUTTON_H, false),
   }
 }
