@@ -87,6 +87,8 @@ describe('useGame 的音效接线', () => {
       vi.advanceTimersByTime(TICK_MS)
     })
     expect(result.current.panel).toBe('menu')
+    // 先证 pump 真在调 play（每拍一次，空数组也调）—— 否则下面的 `[]` 一次没调也成立。
+    expect(play).toHaveBeenCalled()
     expect(handed(), '开菜单那一下原版不出声').toEqual([])
 
     const tab = tabPressFromTruth()
@@ -100,10 +102,13 @@ describe('useGame 的音效接线', () => {
     expect(play).toHaveBeenCalled()
     expect(handed()).toEqual(tab.music)
 
+    const callsBefore = play.mock.calls.length
     act(() => {
       result.current.menuInput({ e: 'release', x: tab.x, y: tab.y })
       vi.advanceTimersByTime(500)
     })
+    // pump 还活着（这半秒里又调过 play）—— 否则下面那句在 pump 停掉时也成立。
+    expect(play.mock.calls.length).toBeGreaterThan(callsBefore)
     expect(handed(), '松开那一下原版不出声（菜单在按下时出声）').toEqual(tab.music)
   })
 })

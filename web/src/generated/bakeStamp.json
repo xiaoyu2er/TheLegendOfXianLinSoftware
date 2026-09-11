@@ -54,7 +54,7 @@
     "web/src/state/role.ts": "3b2ca2f6d64483d21639e1645f48b20879222a59ba563b5c821b1ec70fd23da3",
     "web/src/state/select.ts": "c6f0f0e0edb88c39bbcdc15e727e18952a3370a47c4f734009d69ec567228da9",
     "web/src/state/timer.ts": "836ef72b45e1930db3aeea089bbe6b699eee75a9d0af483990be80b7be0f7056",
-    "web/src/state/treasure.ts": "c3e115a47f90d241a61c544e254729b5ac3e6ce84bd210e4e894853c87d3fafb",
+    "web/src/state/treasure.ts": "a62de1fb5166ec43cf7c9544216c35265813eff9f7eead3fb5d8cd3f8fca85f1",
     "web/src/state/types.ts": "d5e63355986f72d2c661aa039fe9e9f7a7bbaffce027446b34d9a3b905d99fd3"
   },
   "inputs": {

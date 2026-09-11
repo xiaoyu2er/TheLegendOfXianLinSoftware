@@ -1855,10 +1855,10 @@ function checkHeroDead(w: BattleWorld): void {
   }
   if (!w.heroes.every((h) => h.isDead)) return
   // 原版这里还有一句 `MusicReader.readmusic("战斗失败.wav")`。**还没做，不是
-  // 故意不复刻**（所以不带 `@exception` 标记）：`readmusic` 走的是另一个
+  // 故意不复刻**（所以不带 ADR-0001 的例外标记）：`readmusic` 走的是另一个
   // MusicPlayer，碰不到 `currentPlayingBGM` —— 导出器的 `audio.bgm` 取的正是后者；
   // 音效有自己的观察点 tools.MusicLog，而 `BattleDriver` 没接它，所以战斗真值里
-  // 没有音效列可对。战斗那 25 处音效连同真值归 xl-b36（xl-03x.7 只接了菜单与商店）。
+  // 没有音效列可对。战斗的音效连同真值归 xl-b36（xl-03x.7 只接了菜单与商店）。
   w.progressBar.isDraw = false
   w.gameOver.isDraw = true
   w.gameOver.isStop = false

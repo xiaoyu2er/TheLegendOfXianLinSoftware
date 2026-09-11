@@ -283,8 +283,7 @@ export interface Session {
    * 这里是那几步各自的依次相接，交给 `audio/sfxPlayer.ts` 的 `play` 一拍一次
    * （{@link playSfx}）。空数组 = 这一拍没出声，**不是**「该静音了」。
    *
-   * 只有菜单与商店两处往里收：战斗（原版 25 处）与场景（1 处）没有音效真值、状态层
-   * 也还不产出，归 xl-b36。
+   * 只有菜单与商店两处往里收：战斗与场景没有音效真值、状态层也还不产出，归 xl-b36。
    */
   readonly sfx: readonly string[]
   readonly deps: SessionDeps

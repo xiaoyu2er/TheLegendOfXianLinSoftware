@@ -49,9 +49,13 @@ import type { RunningSession, SessionDeps, SessionInput } from './session'
  *   它是「谁已经接上了」，改成从磁盘推就成了被守的东西给自己签字（dispatch.md
  *   纪律 3 的那条 ⚠️）。
  *
- * 两者对撞：分母里任何一份的驱动器不在登记里 → 红，点名它归哪张票。战斗与
- * 场景那两支（原版 25 + 1 处调用点）今天**没有音效真值**，所以不在分母里 ——
- * 它们在 xl-b36，那张票的真值一导出来，这里第一条就会红。
+ * 两者对撞：分母里任何一份的驱动器不在登记里 → 红，点名它归哪张票（篡改读数：
+ * 把 `menu` 从登记里删掉，「每一份都已接线」与「集合 == 分母」两条红）。战斗与
+ * 场景两支今天**没有音效真值**，所以不在分母里 —— 它们归 xl-b36。
+ *
+ * ⚠️ 分母只认**每一步顶层的 `music` 列**（`MusicTap` 的现成写法，menu / shop /
+ * saveload / end 四支都是它）。xl-b36 要是把音效导到别处（比如 `audio` 底下），
+ * 这里扫不到、会安静地保持绿 —— 那张票的票面写着要照 `MusicTap` 导。
  */
 
 const DEPS: SessionDeps = {
@@ -153,7 +157,10 @@ function pump(s: RunningSession, step: Step, player: Pick<SfxPlayer, 'play'>): R
 }
 
 const IDLE: Step = { input: NO_INPUT, elapsed: 0 }
-/** 每一步之后空转几拍。不必多：读当前值的写法第一个空拍就会多交一次。 */
+/**
+ * 每一步之后空转几拍。篡改读数：把接线改成「推完读世界上的 `music`」，空转 3 拍时
+ * 「一步一拍」那 9 条全红；同一篡改下把这里改成 0，那 9 条全绿 —— 逮住它的就是空转。
+ */
 const IDLE_PUMPS = 3
 
 /**
@@ -245,9 +252,8 @@ for (const driver of Object.keys(WIRED)) {
       it(`${name}：一步一拍、拍间空转 —— 每一步交给播放器的 == 真值那一步`, () => {
         const replay = WIRED[driver]!(name)
         const got = stepThenIdle(replay)
-        expect(got).toHaveLength(replay.truth.length)
-        got.forEach((names, t) => {
-          expect(names, `${name}@${t}`).toEqual(replay.truth[t])
+        replay.truth.forEach((want, t) => {
+          expect(got[t], `${name}@${t}`).toEqual(want)
         })
       })
 
