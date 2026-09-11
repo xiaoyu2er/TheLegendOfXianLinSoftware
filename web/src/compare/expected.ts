@@ -1597,6 +1597,42 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '只剩字形 —— 这条剧本一张 sources/Shop/ 的插图都没画到，技能动画与鼠标游标逐像素相等',
     issue: 'xl-9bd.17',
   },
+  'menu-magic-levels': {
+    status: 'gap',
+    // xl-03x.17 暂定：先照 menu-magic 的字形区起步，跑一遍从差异图上量了再改。
+    gaps: [
+      {
+        name: 'task-title',
+        maxPixels: 2232,
+        rect: { x0: 6, y0: 10, x1: 147, y1: 45 },
+        why: '顶栏「当前任务:无」那行字的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'scoll-level',
+        maxPixels: 334,
+        rect: { x0: 221, y0: 173, x1: 249, y1: 207 },
+        why: '卷轴上的等级数字（30 号红字）的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'page-list-text',
+        maxPixels: 5902,
+        rect: { x0: 533, y0: 173, x1: 849, y1: 213 },
+        why: '奇术页技能说明那行字的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'bottom-message-text',
+        maxPixels: 5038,
+        rect: { x0: 504, y0: 558, x1: 820, y1: 594 },
+        why: '底部那几行说明文字的字形',
+        issue: 'xl-9bd.17',
+      },
+    ],
+    why: '只剩字形',
+    issue: 'xl-9bd.17',
+  },
   'menu-scroll': {
     status: 'gap',
     // 15 帧（剧本自报 `every: 1`）。装备页武器分类塞满 20 件，撑过装备4.png

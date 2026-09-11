@@ -96,9 +96,12 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
  * 那一列会**一直停在开局的十五个 true 上**，而"从没翻到过奇术页"与"翻到了
  * 但一颗按钮都没关掉"长得一样。
  *
- * 前者（`drawScoll()` 那三句）不在这里：真值不记头像的 `isDraw`，而绘制层
- * 已经把它折算成"或上出战名单"了（`render/drawList.ts`）。两处的分界是
- * **真值记不记**，不是"原版写在哪个方法里"。
+ * 前者（`drawScoll()` 那三句）**原先也不在这里**，理由是「真值不记头像的 `isDraw`，
+ * 绘制层已经把它折算成或上出战名单」。**那条理由只对了画的那一半**：`isDraw=No` 的
+ * 按钮 `isPressedButton` 整个跳过，所以它还决定**点不点得着头像**，而那一下真值记着
+ * （`hero` 一列）。一直没露出来，是因为老剧本点头像之前都先移过鼠标（`checkMoveIn`
+ * 同样会打开二号四号）；`menu-magic-levels` 进奇术页、推一拍、直接点二号头像 ——
+ * 原版切过去了，这一层没切（xl-03x.17 现撞）。所以现在两句都在这里跑。
  *
  * ⚠️ **只画当前页**，与原版一致：`CardLayout` 盖住的三页 `repaint()` 不会
  * 真画。四页全画的话，从没翻到过的奇术页也会把按钮关掉 —— `menu-equip`
@@ -107,6 +110,8 @@ export function stepMenu(w: MenuWorld, inputs: readonly MenuInput[] = []): MenuW
 function paintCurrentPanel(w: MenuWorld): void {
   const p = currentPanel(w)
   if (p.equip) paintEquip(p.equip, w.music)
+  // `FatherPanel.paint()` 里 `scoll.drawScoll(g)` 在 `drawThisPanel(g)` 之前；两者互不相干。
+  if (p.scoll) scollDrawSideEffect(w, p.scoll)
   if (p.magic && p.scoll) magicDrawThisPanel(p.magic, p.scoll.whichHero, magicSkillNumber(w.heroes, p.scoll.whichHero))
 }
 
@@ -323,6 +328,14 @@ function scollCheckPressed(w: MenuWorld, p: MenuSubPanel): void {
     s.whichHero = hero
     w.music.push('换头像.wav')
   }
+}
+
+/**
+ * `Scoll.drawScoll()` 开头那三句：`if(SaveAndLoad.zhang/lu/wen){ heroN.isDraw=Yes; }`。
+ * 只开不关，与 `checkMoveIn` 不同的是**一号也在里面**。
+ */
+function scollDrawSideEffect(w: MenuWorld, s: NonNullable<MenuSubPanel['scoll']>): void {
+  for (const { field, party } of SCOLL_HEROES) if (w.party[party]) s[field].isDraw = true
 }
 
 /**
