@@ -177,7 +177,8 @@ public final class SceneDriver implements TraceDriver {
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
         installTimers();
-        // 播种（xl-03x.3）：场景里读 Math.random() 的有三处 —— 计步战斗挑场次、
+        // 播种（xl-03x.3）：场景里读 Math.random() 的（2026-09-11 照 Web 侧 state/step.ts
+        // 的替身读出来的，未在原版里逐处数）有三处 ——计步战斗挑场次、
         // 宝箱、答题加扣金币（`500 + (int)(500 * Math.random())`）。不播的话原版
         // 每导一次金币都不同（同一条 question-answer 两次读到 9117 与 9055），跨端
         // 逐帧比对的账本（ExportTrace 的 frames.json `ledger`）就无从对起。

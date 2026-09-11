@@ -373,6 +373,14 @@ function compareOne(
     if (!existsSync(file)) throw new Error(`${m.script} 的取图页没留下 ${file} —— 重跑一遍取图`)
     const web = (JSON.parse(readFileSync(file, 'utf8')) as (LedgerEntry | null)[]).map((e) => e ?? undefined)
     ledger = judgeLedger(m.ticks, m.ledger, web)
+  } else {
+    // 反方向：取图页交了账本而这里没登记，那一套的账就没人对 —— 与「登记了却不交」
+    // （judgeLedger 里的硬失败）对撞，登记才有分辨力。
+    const file = join(webDir, LEDGER_FILE)
+    const handed = existsSync(file) && (JSON.parse(readFileSync(file, 'utf8')) as unknown[]).some((e) => e !== null)
+    if (handed) {
+      throw new Error(`${m.script}（driver=${m.driver}）的取图页交了账本，LEDGER_DRIVERS 却没登记这一支 —— 登记上，否则这笔账没人对`)
+    }
   }
 
   const whole = regions ? null : judgeWhole(sequence, expectation)

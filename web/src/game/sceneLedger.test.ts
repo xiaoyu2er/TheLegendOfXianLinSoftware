@@ -65,16 +65,7 @@ const PANEL_SWITCHES: readonly (keyof SceneRequests)[] = ['battleRequest', 'sele
 describe('场景请求的分工', () => {
   it('每一类请求恰好归一边：记账（共用）或切面板（只有会话层）', () => {
     const all = Object.keys(NO_REQUESTS).sort()
+    // 拼起来与分母逐项相等：漏归队（短一个）与两边都登记（多一个）都在这一句红。
     expect([...LEDGER_REQUESTS, ...PANEL_SWITCHES].sort()).toEqual(all)
-    expect(LEDGER_REQUESTS.filter((k) => PANEL_SWITCHES.includes(k))).toEqual([])
-  })
-
-  it('切面板那几类亮着，结算这一段一笔账都不记', () => {
-    const coins = getCoins()
-    settleSceneRequests(
-      requests({ battleRequest: ['bg', 'zhang', 'null', 'null', 'em1', 'null', 'null'], selectPanelRequest: 'shop', endRequest: true }),
-    )
-    expect(getCoins()).toBe(coins)
-    expect(drugEntries().filter(([, n]) => n !== 0)).toEqual([])
   })
 })

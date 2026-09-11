@@ -22,7 +22,7 @@
     "web/src/data/types.ts": "8d659392b947586e5b77e922e198e54d1506508414501393676bf4dac575d072",
     "web/src/end/assets.ts": "93775a2f57917da568c578e36cfaa937d4919758aa69f28f07e98df2accae411",
     "web/src/end/world.ts": "3c049e4f72409f1f8bef6c6f7f285e65a8bd7e5efa7a278dfebed9b34e0eb31e",
-    "web/src/fakes/drugPack.ts": "ca8b533b6b31b18412df12af20ff8920d3b187518506fa5cfa1aa15e95a4698d",
+    "web/src/fakes/drugPack.ts": "003184297e2f49b7edbf163f3c4eb73976ad3e1cc5d3367327cdfdf8fef274b3",
     "web/src/fakes/equipmentPack.ts": "62407ecbacdc8e19210dc1c50d8d977d17b166e1844c4de26a3d967d091dc1a9",
     "web/src/fakes/fake.ts": "28f22754d073e7bb4c7b050d0576bc3b7e8c1d5fe6f61f560c8afe023eafa7b5",
     "web/src/fakes/party.ts": "5ef9c289665a700ee901bf6b8604e46b7a9351c1092d3ebfede0b64877f2763f",
