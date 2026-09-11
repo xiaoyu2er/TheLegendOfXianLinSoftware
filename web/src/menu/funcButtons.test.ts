@@ -501,6 +501,8 @@ describe('天书页 · 设定与退出子菜单', () => {
     // 说明有人拿参照模型去验一段有意不照抄的代码。
     for (const g of skipped) expect(walked.has(g), `${g} 那一段被走了`).toBe(false)
     // 登记里的每一颗在原版里确实有一段 —— 登记写歪了（键不存在）这里就红。
+    // 实测（xl-03x.12 评审时）：往登记里加一个 `exitForSur`，这条与上面的「登记」
+    // 那条各红一次（`sectionOf` 当场抛），`tsc` 也报错（退出码 2）。
     for (const key of Object.keys(FUNC_DISABLED)) expect(sectionOf(key).ops.length).toBeGreaterThan(0)
   })
 })

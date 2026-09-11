@@ -153,7 +153,7 @@ function allSubButtons(fb: FuncButtonsState): MenuButtonState[] {
  *
  * 「禁用」逐条对齐标题页那颗 `<button disabled>` 在浏览器里的样子（2026-09-11 在
  * jsdom 里实测：React 对禁用的按钮连 `mouseenter` / `mousemove` 都不派发，「结」
- * 悬停不换图）：
+ * 悬停不换图；⚠️ 真浏览器里没量过）：
  *
  * - **照画**，照原版展开收起 —— `isDraw` 一处不改；
  * - **不响应**悬停、按下、松开：贴图恒为常态，`isclicked` 永不置真，于是
