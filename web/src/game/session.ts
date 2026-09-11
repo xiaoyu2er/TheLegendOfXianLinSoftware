@@ -271,6 +271,8 @@ export interface Session {
    * ⚠️ 未复刻：原版「起」不重建 `endPanel`（`GameLauncher.init()` 的调用点被注释掉），
    * 所以那条线程与字幕停下的位置活过新局 —— 新局再走到 `$`，原版一进来就定格；这一层
    * 「起」整个重建会话（`NewGameCarry` 不带它），会从头再滚一遍。未量过。
+ *
+ * @exception ADR-0001#end-not-kept-across-new-game
    */
   readonly end: EndLoop | null
   readonly deps: SessionDeps

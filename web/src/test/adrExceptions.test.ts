@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from './repoPath'
+import { tsFiles } from './scanRoots'
 
 /**
  * ADR-0001 例外表与代码里「故意不复刻」标记的**双向对撞**（xl-03x.4）。
@@ -11,14 +12,19 @@ import { repoPath } from './repoPath'
  * - **登记侧**：`docs/adr/0001-web-duplicates-original-defects.md` 「例外」一节那张表，
  *   每一行第一格是它的键（`` `kebab-key` ``）。**人写、人签**，这个文件一行都不生成它。
  * - **代码侧**：`web/src` 与 `web/scripts` 里每一处 `@exception ADR-0001#<键>` 标记，
- *   现扫出来的。
+ *   现扫出来的（扫描根与 `fakes/registry.test.ts` 共用 `scanRoots.ts`，
+ *   少扫一片由 `scanRoots.test.ts` 守）。
  *
- * 两个方向都要红：
+ * 两个方向都要红（xl-03x.4 实跑，每条 cp 备份、篡改、跑、还原、cmp）：
  *
  * | 篡改 | 哪一条红 |
  * |---|---|
- * | 代码里多一处标记，表里没有那一行 | 「每一处标记都指向表里真有的一行」 |
- * | 表里有一行，代码里零处标记指向它 | 「表里每一行，代码里至少一处标记指向它」 |
+ * | 代码里多一处 `@exception ADR-0001#no-such-row` | 「每一处标记都指向表里真有的一行」，只红这一条 |
+ * | 删掉 `data/scenes.ts` 里唯一那处 `win32-script-filename` 标记 | 「表里每一行，代码里至少一处标记指向它」，只红这一条 |
+ * | 同一处写成 `@exception ADR-0001 #win32-…`（笔误） | 「笔误要响」+「至少一处」两条 |
+ * | 表中间插一个空行 | 「中间没有空行」，只红这一条 |
+ *
+ * 在这个文件出现之前，同样的篡改没有任何判据会红 —— 那正是这张表漏掉一族两个里程碑的样子。
  *
  * ## ⚠️ 它只管以后，管不住历史
  *
@@ -32,9 +38,6 @@ import { repoPath } from './repoPath'
  * 上没有漏登的例外，只证明「带了标记的」与「表里写着的」对得上。
  */
 
-/** 扫描根：与 `fakes/registry.test.ts` 同一对，那边有 tsconfig 对撞守着它不漏目录。 */
-const SCAN_ROOTS = ['web/src', 'web/scripts'] as const
-
 const ADR = 'docs/adr/0001-web-duplicates-original-defects.md'
 
 /** 这个文件自己的文档里写着标记的样子，扫它会把文档当成标记。 */
@@ -43,39 +46,39 @@ const SELF = 'web/src/test/adrExceptions.test.ts'
 const KEY = '[a-z0-9]+(?:-[a-z0-9]+)*'
 
 /**
- * 标记。**`@exception` 后面不跟一个合法引用也要抓出来**（第二组为空）——
- * 写成 `@exception ADR-0001 #key`、`@exception adr-0001#Key` 之类的笔误时，
- * 只认完整形状的正则会安静地漏掉它，而漏掉与「这里没有例外」长得一样。
+ * 两道正则**逐行对数**，数不一样就是笔误：
+ *
+ * - `LOOSE` 认任何大小写的 `@exception` 起头（`@exceptions`、`@Exception` 都算）；
+ * - `STRICT` 只认完整形状，而且键后面不许紧跟 `. - # 字母数字` ——
+ *   否则 `#win32-script-filename.bak`、`#a-` 会被截成一个恰好存在的键，安静地通过。
+ *
+ * 只用一道严格正则的话，写歪了的标记匹配零处，而零处与「这里没有例外」长得一样。
  */
-const MARKER = new RegExp(`@exception\\b(?:\\s+ADR-0001#(${KEY})\\b)?`, 'g')
-
-function sourceFiles(): string[] {
-  const out: string[] = []
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name)
-      if (entry.isDirectory()) walk(path)
-      else if (/\.tsx?$/.test(entry.name)) out.push(path)
-    }
-  }
-  for (const root of SCAN_ROOTS) walk(repoPath(root))
-  return out
-}
+const LOOSE = /@exception/gi
+const STRICT = new RegExp(`@exception ADR-0001#(${KEY})(?![\\w.#-])`, 'g')
 
 interface Marker {
+  /** 写歪了的标记为 `null`。 */
   readonly key: string | null
   readonly at: string
+  readonly inTest: boolean
 }
 
 const MARKERS: readonly Marker[] = (() => {
   const found: Marker[] = []
-  for (const path of sourceFiles()) {
+  for (const path of tsFiles({ tests: true })) {
     const rel = relative(repoPath('.'), path)
     if (rel === SELF) continue
-    const lines = readFileSync(path, 'utf8').split('\n')
-    lines.forEach((line, i) => {
-      for (const m of line.matchAll(MARKER)) found.push({ key: m[1] ?? null, at: `${rel}:${i + 1}` })
-    })
+    const inTest = /\.test\.tsx?$/.test(rel)
+    readFileSync(path, 'utf8')
+      .split('\n')
+      .forEach((line, i) => {
+        const at = `${rel}:${i + 1}`
+        const strict = [...line.matchAll(STRICT)].map((m) => m[1]!)
+        const loose = line.match(LOOSE)?.length ?? 0
+        for (const key of strict) found.push({ key, at, inTest })
+        for (let n = strict.length; n < loose; n++) found.push({ key: null, at, inTest })
+      })
   }
   return found
 })()
@@ -133,6 +136,12 @@ describe('ADR-0001 例外表 ⇄ 代码里的 @exception 标记', () => {
     expect(MARKERS.filter((m) => m.key === null).map((m) => m.at)).toEqual([])
   })
 
+  it('标记只写在实现旁边，不写进测试文件', () => {
+    // 取舍住在实现里。测试文件里的一处标记能单独满足下面「至少一处指向它」，
+    // 于是实现那边的标记丢了也照样绿。
+    expect(MARKERS.filter((m) => m.inTest).map((m) => m.at)).toEqual([])
+  })
+
   it('每一处标记都指向表里真有的一行（代码里多一处而表里没有 → 红）', () => {
     const orphan = MARKERS.filter((m) => m.key !== null && !ROWS.has(m.key)).map((m) => `${m.key} (${m.at})`)
     expect(
@@ -143,7 +152,7 @@ describe('ADR-0001 例外表 ⇄ 代码里的 @exception 标记', () => {
   })
 
   it('表里每一行，代码里至少一处标记指向它（表里有而代码零处 → 红）', () => {
-    const pointed = new Set(MARKERS.map((m) => m.key))
+    const pointed = new Set(MARKERS.filter((m) => !m.inTest).map((m) => m.key))
     const unpointed = [...ROWS].filter(([key]) => !pointed.has(key)).map(([key, no]) => `${key} (${ADR}:${no})`)
     expect(
       unpointed,

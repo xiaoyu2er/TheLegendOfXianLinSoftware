@@ -13,6 +13,7 @@
  * 所以这一层的规矩是两句话：
  *
  * - **看得见那一半改**：只画滚动窗口里的那几行，右边加一条滚动条。
+ *   @exception ADR-0001#list-clipped-with-scrollbar
  * - **够得着那一半不改**：命中带仍然按 `originalY += rowHeight` 一路往下排，
  *   没有下界。翻页只是把整排带子**整体上移** `offset` 行；`offset` 为 0 时
  *   算式与原版逐字相同，`menu-scroll` 第 9 / 10 步（选中第 16 行与第 19 行，
@@ -25,7 +26,7 @@
  * 而那片区域住着六颗槽位按钮（y 135..155）。所以命中只从第 `offset` 行起算，
  * 卷上去的行点不中。原版永远 `offset == 0`，这条例外在那边观测不到。
  *
- * @exception ADR-0001#list-clipped-with-scrollbar
+ * @exception ADR-0001#scrolled-up-rows-unhittable
  *
  * ## 滚动位置**不进真值**
  *
