@@ -23,6 +23,7 @@
 | `menu` | 一次输入事件（`tick` 指令则是一次 `run()` 循环体） | `menu-equip` `menu-magic` | `MenuDriver.java` |
 | `shop` | 一次输入事件 | `tools/traces/scripts/shop-*.json`（这一列同样别抄第二份 —— xl-knp.3 一次就加了两份） | `ShopDriver.java` |
 | `saveload` | 一次输入事件（进面板 / 槽位的按下与松开 / 退出键） | `tools/traces/scripts/saveload-*.json` | `SaveLoadDriver.java`（xl-i06.6） |
+| `end` | 一拍（`EndPanel.run()` 循环体一次 = 一次 `update()` + 一次 `paint()`）；进来 / 按键 / 叫醒线程各一步 | `tools/traces/scripts/end-*.json` | `EndDriver.java`（xl-czb.5） |
 
 **「剧本」这一列里写出来的名字是 2026-09-07 的读数，不是名单。** 权威的名单在
 磁盘上，每份剧本自报 `driver`（缺省算 `scene`）；现数一遍：
@@ -1115,6 +1116,59 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 
 ⚠️ 本机写出来的档是 **LF**：`BufferedWriter.newLine()` 跟平台走，入库样例是 CRLF。
 
+## 结局剧本与结局真值（`driver` = `end`）
+
+`start.EndPanel`，第六支（xl-czb.5）。**没有任何键鼠监听**，一条 `while(true){ sleep(100); update(); }`
+线程推四层绘制，所以一步是一拍，同场景那支。正典在 `EndDriver` 与 `EndScript` 的类注释里，
+这里只记读的人最先要知道的几件。
+
+### 剧本
+
+```json
+{
+  "driver": "end",
+  "name": "end-credits",
+  "setup": { "scene": "脚本41.txt" },
+  "every": 8,
+  "steps": [
+    { "op": "enter" },
+    { "op": "tick", "times": 384, "expect": "stop" },
+    { "op": "key", "key": "escape" }
+  ]
+}
+```
+
+| 指令 | 参数 | 语义 |
+|---|---|---|
+| `enter` | — | 原版那一句 `GameLauncher.switchTo("end")`（唯一调用点在 `DialogueEvent.keyPressed`，由对话文本里的 `$` 触发）。必须是第一条，只许一条 |
+| `tick` | `times`、`expect`（可选，只认 `stop`） | 推 `times` 拍。写了 `expect: "stop"` 时 `isStop` 必须**恰好在最后一拍**翻真，早了晚了都硬失败 —— 「跑多少拍」从源码推出来之后，由它核 |
+| `key` | `key`（enter / escape / space / 四个方向） | 经**原版自己的** `GameLauncher.keyPressed` 分发一次 |
+| `wake` | `times` | 把原版那条线程叫醒，等它走完一整圈循环体再睡回去。只许在 `isStop` 之后 |
+
+**拍数怎么推**：构造时 `wordY=640`，`update()` 里 `wordY>-1280` 时每拍 −5、等于 −1280 那拍
+`isStop=true`，所以第 (640−(−1280))/5 拍停；同一拍 `blankY` 从 −1920 走到 0。剧本里写的是
+推出来的那个数，`expect: "stop"` 让导出器核它。
+
+### 真值
+
+每一步记 `current`（`GameLauncher.currentPanel`：scene / menu）、`card`（这一步拦下来的面板
+切换）、`wordY` / `blankY` / `code` / `isDraw` / `isStop`（原版字段原值）、`picture`（当前画着
+第几张过场画，**按缓存对象的引用认**）、`repainted`（这一步原版有没有调 `repaint()`）、
+`loop`（原版那条线程 `alive`，以及 `isStop` 之后又走过几圈 `wakes`），外加 `input` 与 `music`。
+**不记**两条横坐标（构造之后没人写）与图片像素（素材归数据层）。
+
+读数里值得先知道的三件（`end-credits`，2026-09-10）：
+
+- **24.jpg 从来没被画出来过。** `code==24` 那一拍第一个 `if` 读 24、推成 25，第二个 `if` 当场
+  成立、读 25、拨回 1。一轮 24 拍，`picture` 取遍 1..23 与 25。
+- **每帧重读磁盘对快照无影响。** `readImage` 走 `Toolkit.getImage`，按文件名缓存：第二轮起
+  返回的是同一个 Image 对象；一轮之后把某张图从磁盘上删掉，照样返回缓存的那张。`picture`
+  按引用认，缓存哪天不再命中，导出当场硬失败。
+- **「有进无出」不成立：退出键会把结局切走。** `switchTo("end")` 不更新 `currentPanel`，于是它
+  **仍是场景面板**，之后的每次按键都交给场景 —— 退出键在那里是开菜单。真值里 `key` 步的
+  `to` 是 `scene`，退出键那一步 `card = menuPanel`、`current = menu`。线程永不退出与画面定格
+  这两样读下来成立（`loop.alive` 在叫醒之后仍为真；定格后 `repainted` 为假、`isDraw` 一直为真）。
+
 ## 现有的剧本
 
 | 剧本 | 场景 | 覆盖 |
@@ -1150,3 +1204,4 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `load-slot0` | `脚本1.txt` → 读档 → `脚本38.txt` | **中途读档**（先进一局 脚本1 再 `Loader.load(0)`）：三人 11 / 10 / 11 级、身上三件武器、59868 钱；`dialogueEventOver=false`、`dialogueOrder=3`。存档0 装备店那一行有 5 格非零，读档之后 `stock` 全 0 —— 读不回来（xl-1dv.32） |
 | `load-slot1` | 读档 → `脚本1.txt` | **跳过旁白**：同一个脚本、同一个 `isScript=true`，`dorm-intro` 开头是 810 拍旁白，这一份一拍都不起来，主角当场走得动 |
 | `load-slot2` | 读档 → `脚本20.txt` | 读进一个**没有 `Dialogue` 段**的脚本：`initiation` 走 `else if (sal.isLoad)` 那一支新建对话对象。脚本20 也没有 NPC 段（`npcs` 恒空，登记在 `EMPTY_COLUMNS`） |
+| `end-credits` | 结局（`driver` = `end`，起手站在 `脚本41.txt`） | 结局从进来播到定格（xl-czb.5）：字幕与侧栏每拍 5 像素、过场画一轮 24 拍，第 384 拍 `isStop`；定格后再 3 拍不动也不 repaint；回车落到场景面板、结局不动；叫醒原版线程两次仍活着；退出键 —— 场景把它当开菜单，`card = menuPanel` |

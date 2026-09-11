@@ -259,9 +259,19 @@ public final class ExportTrace {
                 scriptJson = s.toJson();
                 return new SaveLoadDriver(s);
             }
+            case "end": {
+                EndScript s = EndScript.load(scriptFile);
+                scriptName = s.name;
+                scriptScene = "end";
+                // 结局是 tick 驱动的：一拍 = EndPanel.run() 循环体一次，那一句是
+                // Clock.sleep(100)。剧本里 key / wake 那几步不是拍，不推时间。
+                scriptTickMs = 100;
+                scriptJson = s.toJson();
+                return new EndDriver(s);
+            }
             default:
                 die(scriptFile.getPath() + " 的 driver 是 \"" + want
-                        + "\"，导出器只认 scene / battle / menu / shop / saveload");
+                        + "\"，导出器只认 scene / battle / menu / shop / saveload / end");
                 return null;
         }
     }
