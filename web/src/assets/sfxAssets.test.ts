@@ -9,6 +9,13 @@ import { SFX_ROOT, sfxProductPath } from './sfxAssets'
 
 const MANIFEST = manifest as Record<string, string>
 
+/** 源目录现扫，与 `bakeSfx` 同一个口径（跳过点文件）。 */
+function sourceFiles(): string[] {
+  return readdirSync(repoPath(SFX_ROOT))
+    .filter((f) => !f.startsWith('.'))
+    .sort()
+}
+
 describe('音效素材进烘焙管线（xl-03x.5）', () => {
   it('ID 不带扩展名，去扩展名不认大小写', () => {
     expect(sfxAssetId('换list.wav')).toBe('sfx:换list')
@@ -18,14 +25,16 @@ describe('音效素材进烘焙管线（xl-03x.5）', () => {
 
   it(`${SFX_ROOT}/ 下的每一个文件都进了映射表，且指向它自己的产物`, () => {
     // 分母现扫：少烘一个的表现是「那一声是哑的」，没人听得出来。
-    const files = readdirSync(repoPath(SFX_ROOT)).filter((f) => !f.startsWith('.')).sort()
+    const files = sourceFiles()
     expect(files.length).toBeGreaterThan(0)
     const wrong = files.filter((f) => MANIFEST[sfxAssetId(f)] !== sfxProductPath(f))
     expect(wrong).toEqual([])
   })
 
   it('映射表里的音效条目与源目录一一对应（不多不少）', () => {
-    const files = readdirSync(repoPath(SFX_ROOT)).filter((f) => !f.startsWith('.'))
+    const files = sourceFiles()
+    // 两边都空时下面的 toEqual 恒真。
+    expect(files.length).toBeGreaterThan(0)
     const ids = Object.keys(MANIFEST).filter((k) => k.startsWith('sfx:')).sort()
     expect(ids).toEqual([...new Set(files.map(sfxAssetId))].sort())
   })
@@ -58,11 +67,6 @@ describe('音效素材进烘焙管线（xl-03x.5）', () => {
     const unresolved = [...names].filter((n) => MANIFEST[sfxAssetId(n)] === undefined).sort()
     expect(unresolved).toEqual([])
   })
-
-  it('产物目录 sfx/ 下的每个文件都有人指', () => {
-    const products = listFiles(repoPath('web/src/generated/assets/sfx')).map((f) => `sfx/${f}`)
-    expect(products.length).toBeGreaterThan(0)
-    const mapped = new Set(Object.values(MANIFEST))
-    expect(products.filter((p) => !mapped.has(p))).toEqual([])
-  })
+  // 「产物目录里的每个文件都有人指」不在这里另写：`bakeStamp.test.ts` 的
+  // 「映射表与产物目录互相盖满」对整个产物目录两个方向都查了。
 })

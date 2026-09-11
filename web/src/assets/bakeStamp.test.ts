@@ -7,6 +7,7 @@ import manifest from '../generated/assets.json'
 import stamp from '../generated/bakeStamp.json'
 import { BAKER_ENTRY, bakerSources, hashFile, hashFiles } from './bakeStamp'
 import { listFiles } from './listFiles'
+import { SFX_ROOT } from './sfxAssets'
 import type { BakeStamp } from './bakeStamp'
 
 /**
@@ -73,13 +74,13 @@ describe('烘焙指纹', () => {
    * `sources/music/` 整个目录。往里加一个文件却不重烘，上一条「输入还是
    * 那一份」看不见它 —— 它只核记下了的。这条补的是那个方向。
    */
-  it('sources/music/ 下的每一个文件都在输入名单里', () => {
-    const files = readdirSync(repoPath('sources/music'))
+  it(`${SFX_ROOT}/ 下的每一个文件都在输入名单里`, () => {
+    const files = readdirSync(repoPath(SFX_ROOT))
       .filter((f) => !f.startsWith('.'))
-      .map((f) => `sources/music/${f}`)
+      .map((f) => `${SFX_ROOT}/${f}`)
       .sort()
     expect(files.length).toBeGreaterThan(0)
-    const recorded = Object.keys(STAMP.inputs).filter((p) => p.startsWith('sources/music/'))
+    const recorded = Object.keys(STAMP.inputs).filter((p) => p.startsWith(`${SFX_ROOT}/`))
     expect(recorded.sort()).toEqual(files)
   })
 
