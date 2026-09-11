@@ -214,6 +214,7 @@ export function useGame(
    * 这一次进店是什么时候（`performance.now()`）。`null` = 店没开着。
    * 鼠标图与四条人物动画的帧号从它数起 —— 原版那条动画线程是面板建好就在跑的，
    * 帧号本来就不对应任何状态，从进门那一刻数只是让它从第 0 格起。
+   * @exception ADR-0001#panel-threads-run-while-hidden
    */
   const shopSinceRef = useRef<number | null>(null)
   /** 按 ESC 那一下：下一拍开菜单。原版 `ScenePanel.keyPressed` 的那句。 */

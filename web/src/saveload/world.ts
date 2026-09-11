@@ -27,6 +27,8 @@ import type { SaveStore } from '../save/store'
  * 那条 10 Hz 的 `while(true)` 线程只推绘制量（帧号、当前图片），与点击判定、槽位
  * 空不空走完全不相交的两条链（xl-i06.6 量过）。不复刻，同菜单那四条同形线程一族；
  * 帧号归渲染层自己数。**按钮上那段光效开没开**是状态（`isMoveIn` 改它），在这里。
+ *
+ * @exception ADR-0001#panel-threads-run-while-hidden
  */
 export type SaveLoadMode = 'save' | 'load'
 

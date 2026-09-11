@@ -169,6 +169,7 @@ export const START_BUTTON_WIRING: Readonly<Record<StartButtonKey, StartButtonWir
     // - 换一个说得清的行为（回标题 / 提示「请关掉这个标签页」）—— 那是在
     //   复刻品里加一个原版没有的行为，与 ADR-0001 的方向相反。
     //
+    // @exception ADR-0001#start-exit-disabled
     // 所以留成禁用。**画出来而不是不画**也是有意的：不画的话「这一版还没做」
     // 与「原版本来就只有三颗按钮」在画面上分不开。
     disabledReason: '浏览器里没有 System.exit(0) 的对应物，定案不做（xl-u23）',

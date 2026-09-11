@@ -136,6 +136,7 @@ export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
         onMouseMove={() => panel.hover(button.key)}
         onMouseEnter={() => panel.hover(button.key)}
         onMouseLeave={() => panel.hover(null)}
+        // @exception ADR-0001#start-focus-hover
         // 键盘走到这颗上等于"鼠标移进来"：原版没有这一条（它只认坐标），
         // 是这里补的无障碍。补它而不是只补一条 CSS，是为了让那圈高亮动画
         // 也跟着转 —— 只换图不转动画，Tab 过来的人看到的是一颗半死的按钮。

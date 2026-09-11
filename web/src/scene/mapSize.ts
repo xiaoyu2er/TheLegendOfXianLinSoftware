@@ -25,6 +25,8 @@ import { MAP_UNIT } from './viewport'
  *   哨兵像素（x ≥ 1022 两整列没画），1023×639 那张留下 1663 个、而且最左一个在
  *   x=0 —— 不是简单地少画一条边。那条路今天没有场景走得到，没有复刻；拉伸、补边、
  *   夹取都会画出「看起来对」的画面，所以宁可抛。
+ *
+ * @exception ADR-0001#map-source-overflow-throws
  */
 export function checkMapSize(
   script: string,

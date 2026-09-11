@@ -25,6 +25,8 @@
  * 而那片区域住着六颗槽位按钮（y 135..155）。所以命中只从第 `offset` 行起算，
  * 卷上去的行点不中。原版永远 `offset == 0`，这条例外在那边观测不到。
  *
+ * @exception ADR-0001#list-clipped-with-scrollbar
+ *
  * ## 滚动位置**不进真值**
  *
  * `offset` 挂在装备页与物品页自己的状态上，而 `snapshotEquip` /
@@ -146,6 +148,8 @@ export function rowBaseline(v: ListViewport, index: number, offset: number): num
  *
  * `offset == 0` 时就是原版那句 `int originalY = y_start_point - 22;` 加上
  * `originalY += 22` 的第 index 次 —— 一个字都没变。
+ *
+ * @exception ADR-0001#list-offscreen-rows-still-hit
  */
 export function rowBandTop(v: ListViewport, index: number, offset: number): number {
   return rowBaseline(v, index, offset) - v.rowHeight

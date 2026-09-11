@@ -73,6 +73,8 @@ export function loadSceneInfo(
  * `loader.load(i)` → `t.start()` → `switchTo("scene")` 里，第一句是 {@link loadSceneInfo}，
  * 第三句的 `SCENE_SIGNAL=1` 让下一拍场景把自己的曲子放上（`World.sceneSignal`）。
  *
+ * @exception ADR-0001#load-extra-scene-loop
+ *
  * 第二句（多起一条场景循环，于是中途读档之后双倍速）**不复刻**：这一层没有线程模型。
  * 那条例外与它的判据归 xl-i06.11。
  */

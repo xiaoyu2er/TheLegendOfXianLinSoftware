@@ -152,6 +152,7 @@ export function drugCheckMoveIn(w: MenuWorld, p: MenuSubPanel): void {
   if (!d) return
   const list = visibleDrugs(w.drugPack)
   if (list.length !== 0) {
+    // @exception ADR-0001#scrolled-up-rows-unhittable
     // 滚动位置（xl-6lo.13）：整排带子往上挪 `offset` 行，卷上去的行不参与。
     // `offset == 0` 时与原版逐字相同，而原版永远是 0。
     const offset = clampScroll(DRUG_LIST_VIEW, list.length, d.scroll)

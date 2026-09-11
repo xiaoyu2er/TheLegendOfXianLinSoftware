@@ -718,6 +718,8 @@ export function pressSpace(
  *
  * 语义：把当前这一屏一次打满 —— 就是把 `wordsRun` 那一拍连着跑到它自己停表
  * 为止。所以终点与"等它慢慢打完"完全一致（同一个函数），不是另写一套。
+ *
+ * @exception ADR-0001#dialogue-skip-printing
  */
 export function skipPrinting(d: DialogueDraft, now: number): void {
   if (!d.printing) return
