@@ -28,7 +28,7 @@ import { exactRectsOf, judgeExact, rectDiffering } from '../src/compare/exactReg
 import type { ExactFrame, ExactTraceTick, ExactVerdict } from '../src/compare/exactRegions'
 import { repoPath } from '../src/test/repoPath'
 import { judgeWhole } from '../src/compare/verdict'
-import { judgeLedger } from '../src/compare/ledger'
+import { firstLedgerDivergence, judgeLedger } from '../src/compare/ledger'
 import type { LedgerEntry, LedgerVerdict } from '../src/compare/ledger'
 import { launch } from './cdp'
 import type { Browser } from './cdp'
@@ -369,10 +369,7 @@ function compareOne(
   // 与像素判据互不相干，同样是叠上去的一条。
   let ledger: LedgerVerdict | undefined
   if (LEDGER_DRIVERS.includes(m.driver)) {
-    const file = join(webDir, LEDGER_FILE)
-    if (!existsSync(file)) throw new Error(`${m.script} 的取图页没留下 ${file} —— 重跑一遍取图`)
-    const web = (JSON.parse(readFileSync(file, 'utf8')) as (LedgerEntry | null)[]).map((e) => e ?? undefined)
-    ledger = judgeLedger(m.ticks, m.ledger, web)
+    ledger = judgeLedger(m.ticks, m.ledger, readLedgerFile(webDir, m.script))
   } else {
     // 反方向：取图页交了账本而这里没登记，那一套的账就没人对 —— 与「登记了却不交」
     // （judgeLedger 里的硬失败）对撞，登记才有分辨力。
@@ -407,6 +404,13 @@ function compareOne(
   }
 
   return { name: m.script, expectation, sequence, ok, verdict, regions, exact, ledger }
+}
+
+/** 取图页在 `dir` 里留下的逐帧账本；没交的帧读成 `undefined`（JSON 里是 null）。 */
+function readLedgerFile(dir: string, script: string): (LedgerEntry | undefined)[] {
+  const file = join(dir, LEDGER_FILE)
+  if (!existsSync(file)) throw new Error(`${script} 的取图页没留下 ${file} —— 重跑一遍取图`)
+  return (JSON.parse(readFileSync(file, 'utf8')) as (LedgerEntry | null)[]).map((e) => e ?? undefined)
 }
 
 /** 逐帧比原版与某一侧产物的差异。`side` 是 `<剧本>/` 下的子目录名。 */
@@ -465,7 +469,16 @@ async function runSelfCheck(
       .map((c, i) => (c.differing === broken[i]!.differing ? null : c.tick))
       .filter((t): t is number => t !== null)
     const first = changed.length > 0 ? changed[0]! : null
-    const pass = first === fromTick
+    // 前提「注入只改画面」由账本核（xl-2e0）：两轮世界不同时，上面那个帧号比的是两个
+    // 世界，指向哪一帧都说明不了判据有没有诊断力 —— 那一轮直接判失败并说清是哪一种。
+    const diverged = LEDGER_DRIVERS.includes(m.driver)
+      ? firstLedgerDivergence(
+          m.ticks,
+          readLedgerFile(join(root, m.script, 'web'), m.script),
+          readLedgerFile(join(root, m.script, 'web-broken'), m.script),
+        )
+      : null
+    const pass = first === fromTick && diverged === null
     ok = ok && pass
     process.stdout.write(
       `  ${pass ? '通过' : '失败'}  ${m.script.padEnd(12)} ` +
@@ -473,7 +486,13 @@ async function runSelfCheck(
         `首个变化帧 ${first === null ? '无（改坏了却没响）' : `#${first}`} · ` +
         `变了 ${changed.length}/${m.ticks.length} 帧\n`,
     )
-    if (!pass) {
+    if (diverged !== null) {
+      process.stdout.write(
+        `        两轮不是同一个世界：第 ${diverged.tick} 帧账本 ${diverged.detail}。` +
+          `注入只改画面，账本不该变 —— 取图页有不确定的输入（如没播种的随机数，xl-2e0），` +
+          `或者 web/ 是旧的一轮（--skip-capture 不重截干净版）。上面的帧号不算数。\n`,
+      )
+    } else if (!pass) {
       process.stdout.write(
         `        判据没有诊断力：把主角画偏 ${HERO_DX} 像素之后，` +
           `${first === null ? '一帧都没变' : `最先变的是 #${first}，不是注入点 #${fromTick}`}。\n`,

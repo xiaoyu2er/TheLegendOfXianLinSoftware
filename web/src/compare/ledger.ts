@@ -41,6 +41,12 @@ export interface LedgerVerdict {
   readonly firstMismatch: number | null
 }
 
+/** 两轮取图的账本第一次分叉在哪一帧，以及两边各是什么数。 */
+export interface LedgerDivergence {
+  readonly tick: number
+  readonly detail: string
+}
+
 /**
  * 逐帧对账。**两端都得交齐**：原版帧清单里没有账本、原版药包是空表、取图页某一帧没交
  * 账本、帧数对不上 —— 都是硬失败（抛），不是「没什么可比」。空药包对空药包恒等，那样的
@@ -99,4 +105,50 @@ export function judgeLedger(
       `账本 ${ticks.length} 帧逐帧相等（金币 ${java[0]!.coins} → ${last.coins}` +
       `，末帧药包 ${held.length === 0 ? '空' : held.join(' ')}）。`,
   }
+}
+
+/**
+ * 流水线自检用：**干净版与改坏版两轮取图，是不是同一个世界**（xl-2e0）。返回第一帧账本
+ * 不同的帧号与两边的数；逐帧相等是 `null`。
+ *
+ * 自检的前提是「注入只改画面、世界状态一个字节都不动」，而它从前只比像素，不核这个前提。
+ * xl-2e0 就栽在这里：取图页那时没播种（`step()` 缺省 `Math.random`），两轮各掷一次扣款额，
+ * 金额第一位数字恰好在 #1200 那一帧第一次露出来 —— 自检于是报「首个变化帧 #1200，不是
+ * 注入点」，读起来像判据失灵、像渲染不确定，其实是**两轮比的不是同一个世界**。
+ *
+ * 比的是 Web 对 Web，不经过原版：两轮都交齐才比，少一帧是硬失败（理由同 `judgeLedger`）。
+ *
+ * ⚠️ 只核账本那两样（金币、药包）。别的随机源分叉而账本恰好相同时（比如计步战斗挑了
+ * 另一场、却还没打到结算），这里是 `null`，自检退回只看像素 —— 它是一道加固，不是全覆盖。
+ */
+export function firstLedgerDivergence(
+  ticks: readonly number[],
+  clean: readonly (LedgerEntry | undefined)[],
+  broken: readonly (LedgerEntry | undefined)[],
+): LedgerDivergence | null {
+  if (ticks.length === 0) throw new Error('账本一帧都没有 —— 空序列不算两轮相等')
+  if (clean.length !== ticks.length || broken.length !== ticks.length) {
+    throw new Error(`账本帧数对不上：清单 ${ticks.length} 帧，干净版 ${clean.length} 份，改坏版 ${broken.length} 份`)
+  }
+  const drugsOf = (e: LedgerEntry): string =>
+    e.drugs
+      .filter((d) => d.count !== 0)
+      .map((d) => `${d.name}×${d.count}`)
+      .sort()
+      .join(' ')
+  for (let i = 0; i < ticks.length; i++) {
+    const t = ticks[i]!
+    const a = clean[i]
+    const b = broken[i]
+    if (a === undefined || b === undefined) {
+      throw new Error(`第 ${t} 帧${a === undefined ? '干净版' : '改坏版'}没交账本`)
+    }
+    const problems: string[] = []
+    if (a.coins !== b.coins) problems.push(`金币 干净版 ${a.coins} / 改坏版 ${b.coins}`)
+    if (drugsOf(a) !== drugsOf(b)) {
+      problems.push(`药包 干净版 [${drugsOf(a) || '空'}] / 改坏版 [${drugsOf(b) || '空'}]`)
+    }
+    if (problems.length > 0) return { tick: t, detail: problems.join('、') }
+  }
+  return null
 }
