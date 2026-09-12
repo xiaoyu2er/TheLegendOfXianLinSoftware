@@ -1,4 +1,15 @@
-import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
+import {
+  Application,
+  Assets,
+  Container,
+  Filter,
+  GlProgram,
+  Rectangle,
+  RenderTexture,
+  Sprite,
+  Texture,
+  defaultFilterVert,
+} from 'pixi.js'
 import { isDeferredBattleAsset } from '../../assets/battleAssets'
 import { resolveDeferredBattleAsset } from '../../assets/deferredBattle'
 import type { AssetId } from '../../assets/ids'
@@ -18,7 +29,7 @@ import { scaledBlitPasses } from './scaledBlit'
  * 缝只会得到一堆断言"我调用了 setTexture"的实现细节测试。真实像素由跨端剧本
  * 逐帧比对兜底（`docs/frame-compare.md`）。
  *
- * ## 三处必须照抄原版的绘制语义
+ * ## 四处必须照抄原版的绘制语义
  *
  * 1. **最近邻采样**。Java2D 的 `KEY_INTERPOLATION` 默认就是最近邻，Pixi 默认
  *    线性。战斗里 `Reminder` 那一层是真的在缩放（源 128×24 拉到目标 0..120 宽），
@@ -32,13 +43,43 @@ import { scaledBlitPasses } from './scaledBlit'
  * 3. **字画在基线上**。`g.drawString(s, x, y)` 的 y 是基线，不是行盒左上角。
  *    与 `scene/sceneRenderer.ts` 同一个理由，用 2D canvas 自己写字；ascent
  *    是量出来的，不是拍的常数（见 `textTexture`）。
+ *
+ * ## 第四处：画在一张不清屏的 ARGB 缓冲上（xl-84z）
+ *
+ * 原版的 `bufferedPic` 是 `TYPE_INT_ARGB`（非预乘、起始全透明），`paint()`
+ * **从不清屏**、合成规则是默认的 SrcOver —— 这三件 `drawList.test.ts` 回到
+ * GBK 源码上核。真值取的是这张缓冲本身（`BattleDriver.snapshotImage`），比对器
+ * 不看 alpha，所以**真值里的颜色就是缓冲的非预乘 RGB**。于是背景图半透明的边
+ * 在真值里跟不透明一样亮 —— 「校园小道」三条边（alpha 最低 99），清黑再贴的
+ * Web 只有原版的约 0.6 倍（xl-84z 票面读数）。
+ *
+ * 这边照搬：每次 `draw` 往一张**持久的** `RenderTexture` 上合成一遍（不清），
+ * 上屏时经 `unpremultiplyFilter` 把 RGB 除以 alpha、alpha 置 1。预乘与非预乘
+ * SrcOver 在实数上是同一个式子，所以原版的两项副作用也跟着来了：头一帧底下
+ * 是透明的（开场云雾合成在 alpha<1 的底上），以及边上透出**上一拍**的残影。
+ * 读数（battle-script3，提交 d35fc54a）：只做「背景忽略 alpha」时正好剩这两项，
+ * 第 0 / 25 帧共 2680 个像素；持久缓冲之后状态栏之外 0 个。
+ *
+ * ⚠️ 两处与**真游戏**不同，都没有真值、没量（xl-pgq）：
+ * - 原版上屏是 `g.drawImage(bufferedPic)` 以 SrcOver 画到 Swing 上，**并不扔
+ *   alpha**；这里上屏扔 alpha，对的是真值（导出的缓冲 + 不看 alpha 的比对器）。
+ *   两者只在缓冲 alpha 还没叠满的头几帧、半透明的边上不同。
+ * - 缓冲在 `load()` 时重置成透明，对的是导出器每场新建一块 `BattlePanel`；
+ *   原版游戏里一局之内几场战斗共用一块。
+ *
+ * 由此来的合同：**一拍只合成一次**（原版一拍 paint 一次）。`draw` 带拍号，
+ * 同一拍再调直接返回；跳过的拍由调用方补画（取图页逐拍画，游戏侧掉帧到
+ * 10 fps 以下时补不上，见 `useGame.ts`）。
  */
 
 export interface BattleRenderer {
   /** 把这一场用得到的纹理一次载齐。**必须在第一次 `draw` 之前 await 完。** */
   load(ids: readonly AssetId[]): Promise<void>
-  /** 画一帧：执行这份清单。 */
-  draw(ops: readonly DrawOp[]): void
+  /**
+   * 画第 `tick` 拍：执行这份清单，合成进持久缓冲。**同一拍再调直接返回** ——
+   * 缓冲不清屏，重复合成会让半透明的边比原版叠得快（见文件头第四处）。
+   */
+  draw(ops: readonly DrawOp[], tick: number): void
   destroy(): void
 }
 
@@ -53,6 +94,9 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     autoDensity: false,
     resolution: 1,
     background: '#000000',
+    // 上屏滤镜只写了 GLSL（`unpremultiplyFilter`）。Pixi 8 默认也先挑 WebGL，
+    // 这里写死是为了不让 WebGPU 那条从没跑过的路径被悄悄选中。
+    preference: 'webgl',
   })
   if (app.canvas.width !== STAGE_WIDTH || app.canvas.height !== STAGE_HEIGHT) {
     app.destroy({ removeView: true }, { children: true })
@@ -64,8 +108,15 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   app.canvas.className = 'stage-canvas'
   host.appendChild(app.canvas)
 
+  // 精灵都挂在 `stage` 上，但它**不在** `app.stage` 里：它只被 `draw` 显式地
+  // 合成进 `buffer` 一次。上屏的只有 `present` 那一张。见文件头第四处。
   const stage = new Container()
-  app.stage.addChild(stage)
+  const buffer = RenderTexture.create({ width: STAGE_WIDTH, height: STAGE_HEIGHT })
+  /** 上一次合成的是第几拍；-1 = 新建或刚 `load()`，下一次合成先清成全透明。 */
+  let lastTick = -1
+  const present = new Sprite(buffer)
+  present.filters = [unpremultiplyFilter()]
+  app.stage.addChild(present)
 
   const textures = new Map<AssetId, Texture>()
 
@@ -253,7 +304,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     return made
   }
 
-  function draw(ops: readonly DrawOp[]): void {
+  function draw(ops: readonly DrawOp[], tick: number): void {
+    if (tick === lastTick) return
     let n = 0
     for (const op of ops) {
       const s = slot(n)
@@ -304,6 +356,10 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     // 这一帧没用到的精灵全部藏起来。**不藏的话**上一帧的伤害数字会留在屏幕
     // 上，而那看起来像"伤害数字停留得久了一点"，不像一个错。
     for (let i = n; i < pool.length; i++) pool[i]!.sprite.visible = false
+    // 合成进持久缓冲：**不清**（原版 `paint()` 从不清屏），只有新一场的头一次
+    // 从全透明起步（`TYPE_INT_ARGB` 的初值）。
+    app.renderer.render({ container: stage, target: buffer, clear: lastTick < 0, clearColor: [0, 0, 0, 0] })
+    lastTick = tick
   }
 
   return {
@@ -319,9 +375,13 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
         }),
       )
       wanted.forEach((id, i) => textures.set(id, loaded[i]!))
+      // 新的一场：导出器每场新建一块 `BattlePanel`，缓冲从全透明起步。
+      // 与真游戏的偏离见文件头第四处（xl-pgq）。
+      lastTick = -1
     },
     draw,
     destroy(): void {
+      buffer.destroy(true)
       app.destroy({ removeView: true }, { children: true })
     },
   }
@@ -347,4 +407,35 @@ async function urlOf(id: AssetId): Promise<string> {
     throw new Error(`战斗渲染只认 battle: 与 ${DRUG_PREFIX} 前缀的逻辑 ID，收到 ${id}`)
   }
   return isDeferredBattleAsset(relative) ? resolveDeferredBattleAsset(id) : resolveAsset(id)
+}
+
+/**
+ * 上屏滤镜：把持久缓冲里的预乘颜色还原成原版位图的 RGB，alpha 扔掉。
+ *
+ * 原版的位图是非预乘的 ARGB，上屏与导出 PNG 之后比对器只看 RGB —— 也就是
+ * `rgb / a`。缓冲里从没被画过的地方 `a = 0`，原版那里是 `0x00000000`，
+ * RGB 也是黑，这里照给黑。
+ *
+ * 8 位缓冲存的是预乘值，alpha 低处还原会放大舍入；缓冲每拍都合成一次，舍入
+ * 还会逐拍累积，而原版存的是非预乘 8 位，两边舍入路径不同。**误差多大没有
+ * 单独量过**，能作证的只有 battle-script3 状态栏之外 0 个超容差像素（容差 8）。
+ *
+ * 只有 GLSL：渲染器写死 `preference: 'webgl'`，WebGPU 那一支没写也没跑过。
+ */
+function unpremultiplyFilter(): Filter {
+  const fragment = `
+in vec2 vTextureCoord;
+out vec4 finalColor;
+uniform sampler2D uTexture;
+
+void main()
+{
+    vec4 c = texture(uTexture, vTextureCoord);
+    finalColor = c.a > 0.0 ? vec4(c.rgb / c.a, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+}
+`
+  return new Filter({
+    glProgram: GlProgram.from({ vertex: defaultFilterVert, fragment, name: 'battle-unpremultiply' }),
+    resources: {},
+  })
 }

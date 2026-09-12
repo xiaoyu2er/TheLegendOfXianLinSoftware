@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { decodePng } from '../../compare/png'
 import { javaSource } from '../../test/javaSource'
@@ -98,6 +99,56 @@ describe('25 层的次序对回原版 paint()', () => {
         return name!
       })
     expect(mapped).toEqual([...BATTLE_LAYERS])
+  })
+})
+
+/**
+ * 战斗渲染器画在一张**不清屏的持久缓冲**上、上屏时扔掉 alpha —— 那样做的
+ * 理由**回到源码上取**（xl-84z）。理由本身写在 `battleRenderer.ts` 文件头
+ * 第四处；这里核它依赖的那几件事还成立。没有一份真值能替它作证：比对器不看
+ * alpha，而「原版为什么更亮」恰恰是 alpha 通道里的事。
+ */
+describe('原版离屏缓冲：非预乘 ARGB、从不清屏、默认 SrcOver', () => {
+  const panel = javaSource('src/battle/BattlePanel.java')
+
+  it('离屏缓冲是 TYPE_INT_ARGB（非预乘，起始全透明）', () => {
+    expect(panel).toContain('bufferedPic=new BufferedImage(WIDTH, HEIGHT,BufferedImage.TYPE_INT_ARGB);')
+  })
+
+  it('bufferedGraphics 只被 drawImage 与 setFont 调过 —— 从不清屏', () => {
+    const uses = [...panel.matchAll(/bufferedGraphics\.([A-Za-z]+)\s*\(/g)].map((m) => m[1])
+    // 正面数出来：一个都没抓到就是正则空转，不是「从不清屏」。
+    expect(uses.length).toBeGreaterThan(1)
+    expect(new Set(uses)).toEqual(new Set(['drawImage', 'setFont']))
+  })
+
+  it('paint() 里 25 层拿到的都是这同一个 bufferedGraphics', () => {
+    // 各层是经 `drawXxx(bufferedGraphics)` 拿到它的，上一条只数直接调用、看
+    // 不见这些；它们对缓冲做了什么由下一条全原版扫描兜底。背景那一层是
+    // `bufferedGraphics.drawImage(background)`，末句 `g.drawImage(bufferedPic)`
+    // 是上屏，两句都不是 `drawXxx(参数)` 的形状。
+    const body = panel.slice(panel.indexOf('public void paint(Graphics g){'), panel.indexOf('public void run()'))
+    const args = [...body.matchAll(/\.(draw[A-Za-z]+)\s*\(\s*([A-Za-z0-9_]*)\s*\)/g)]
+      .filter((m) => m[1] !== 'drawImage')
+      .map((m) => m[2])
+    expect(args).toHaveLength(BATTLE_LAYERS.length - 1)
+    expect(new Set(args)).toEqual(new Set(['bufferedGraphics']))
+  })
+
+  it('整个原版没有一处改合成规则或清屏', () => {
+    const files = (readdirSync(repoPath('src'), { recursive: true }) as string[]).filter((f) =>
+      f.endsWith('.java'),
+    )
+    // 分母与阳性对照：扫到了文件、而且解码后真读得出 drawImage —— 否则
+    // 「一处都没找到」与「文件没读进来」长得一样。
+    expect(files.length).toBeGreaterThan(50)
+    const text = files.map((f) => javaSource(join('src', f)))
+    expect(text.filter((s) => s.includes('drawImage(')).length).toBeGreaterThan(20)
+    for (const [i, s] of text.entries()) {
+      for (const word of ['setComposite', 'AlphaComposite', 'clearRect']) {
+        expect(s.includes(word), `${files[i]} 里有 ${word}`).toBe(false)
+      }
+    }
   })
 })
 

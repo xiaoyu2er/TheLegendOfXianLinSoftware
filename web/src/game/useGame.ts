@@ -629,7 +629,10 @@ export function useGame(
         return
       }
       if (battleLoadingRef.current) return
-      battleRenderer.draw(battleDrawList(world, next.battle.paint))
+      // 带拍号：同一拍每个 rAF 都会调到这里，渲染器按拍号只合成一次（xl-84z）。
+      // ⚠️ 一个 rAF 推了不止一拍时（掉帧到 10 fps 以下）中间那几拍这里补不上 ——
+      // 那几拍的世界已经被推过去了，半透明的边上会少几层残影。
+      battleRenderer.draw(battleDrawList(world, next.battle.paint), world.tick)
     }
 
     /**

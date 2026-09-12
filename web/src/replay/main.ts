@@ -684,7 +684,9 @@ const battleAssembly: Assembly = {
     battlePaint = createPaintState(world)
     battleTrace = parsed
     battleNext = 0
-    battleRenderer.draw(battleDrawList(world, battlePaint))
+    // **这里不画**（xl-84z）：战斗渲染器画在一张不清屏的持久缓冲上，多画这一帧
+    // 就等于原版多 paint 了一次 —— 原版第 0 帧的边缘 alpha 实测正好是「背景
+    // 只合成过一次」的值。第一次画在 seek(0) 里。
     // `scene` 这一栏对战斗来说是"打的哪一场"，报背景图，方便对着日志看。
     return { scene: parsed.script.background, tickCount: parsed.tickCount }
   },
@@ -706,8 +708,10 @@ const battleAssembly: Assembly = {
       // **按钮贴图要在 stepBattle 之前推**：原版那三个鼠标监听器跑在循环体
       // 之前，读的是这一拍开头的 `command.isDraw`（见 render/paint.ts）。
       stepBattleWithPaint(world, paint, tick.input)
+      // **每一拍都画**，不只画取样的那一拍（xl-84z）：原版一拍 paint 一次、
+      // 缓冲从不清，取样那一帧的边上透着上一拍的残影。
+      renderer.draw(breakBattleOps(battleDrawList(world, paint), battleNext), battleNext)
     }
-    renderer.draw(breakBattleOps(battleDrawList(world, paint), t))
     await twoFrames()
     // 战斗的虚拟时间就是拍号乘 tickMs（ADR-0003：固定步长，不跟画面刷新走）。
     return { t, timeMs: t * trace.script.tickMs, x: world.currentX, y: world.currentY }
