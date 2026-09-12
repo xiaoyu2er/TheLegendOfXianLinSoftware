@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { START_SCENE } from '../../data/scenes'
 import { enemySpec } from '../../battle/units'
+import { getScene } from '../../data/scenesEager'
 import { loadTruths, readPlotBosses, readStart, walkChain } from './chain'
 import { HOP_BUDGET, type Outcome, describeGap, describeOutcome, monsterGap, newGame, runMainline } from './playthrough'
 
@@ -44,7 +45,7 @@ const productHas = (name: string): boolean => {
 let outcome: Outcome
 
 beforeAll(() => {
-  outcome = runMainline(chain, truths, newGame(), { hopBudget: HOP_BUDGET })
+  outcome = runMainline(chain, truths, newGame(getScene), { hopBudget: HOP_BUDGET })
   console.log(describeOutcome(outcome))
   console.log(describeGap(monsterGap(truths, chain, productHas)))
 }, 120_000)

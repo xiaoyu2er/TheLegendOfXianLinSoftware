@@ -4,7 +4,6 @@ import type { RunningSession, SessionInput } from '../../game/session'
 import type { BattleInput } from '../../battle/step'
 import { decodePng } from '../../compare/png'
 import { START_SCENE } from '../../data/scenes'
-import { getScene } from '../../data/scenesEager'
 import { resetDrugPack } from '../../fakes/drugPack'
 import { resetParty } from '../../fakes/party'
 import { resetWallet } from '../../fakes/wallet'
@@ -15,6 +14,7 @@ import { isAllow } from '../../state/role'
 import { TICK_MS, createWorld } from '../../state/step'
 import { sceneSourceOf } from '../../state/trace'
 import type { ArrowKey, InputEvent, TilePos, World } from '../../state/types'
+import type { SceneScript } from '../../data/types'
 import { repoPath } from '../../test/repoPath'
 import { enemyNames } from '../../state/fight'
 import { type Chain, type Hop, type Truths, bare, exitsOf } from './chain'
@@ -121,8 +121,11 @@ function spriteSize(name: string): { width: number; height: number } {
 /**
  * 新游戏：清掉钱 / 药 / 队伍三个模块单例，建会话、点「起」进起点场景。随机数（计步战斗挑场次、
  * 战斗种子）用定种子的 `JavaRandom`，所以每次跑出来的是同一条路。
+ *
+ * 场景来源由调用方（测试文件）交进来：这个文件不叫 `*.test.ts`，而 eager 场景注册表只许测试
+ * 与 `scripts/` import（`data/sceneLoading.test.ts` 数着这份名单）。
  */
-export function newGame(): RunningSession {
+export function newGame(getScene: (name: string) => SceneScript): RunningSession {
   resetParty()
   resetWallet()
   resetDrugPack()

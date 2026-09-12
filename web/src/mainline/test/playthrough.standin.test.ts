@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { getScene } from '../../data/scenesEager'
 import { loadTruths, readPlotBosses, readStart, walkChain } from './chain'
 import { HOP_BUDGET, type Outcome, describeGap, describeOutcome, monsterGap, newGame, runMainline } from './playthrough'
 
@@ -62,7 +63,7 @@ let outcome: Outcome
 
 beforeAll(() => {
   for (const n of gap.missing) standIn.names.add(n)
-  outcome = runMainline(chain, truths, newGame(), { hopBudget: HOP_BUDGET })
+  outcome = runMainline(chain, truths, newGame(getScene), { hopBudget: HOP_BUDGET })
   console.log(describeOutcome(outcome))
   console.log(describeGap(gap))
   console.log(`替身用了：${JSON.stringify([...standIn.used])}`)
