@@ -54,6 +54,7 @@ public final class TestMain {
             "SaveDraftIntactTest", // xl-i06.5 存档草稿区没有覆盖掉真值
             "SaveLoadScriptTest",  // xl-i06.6 存读档剧本的解析层拒绝
             "EndScriptTest",       // xl-czb.5 结局剧本的解析层拒绝
+            "StartScriptTest",     // xl-whk 标题页剧本的解析层拒绝
     };
 
     public static void main(String[] args) {

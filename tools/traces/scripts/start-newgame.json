@@ -1,0 +1,15 @@
+{
+  "driver": "start",
+  "name": "start-newgame",
+  "description": "标题页点「起」一路走到切进场景（xl-whk）。移上「起」、按下、松开：setButton 开卷轴、signal=0。拍数从源码推：卷轴 10 帧，第 10 拍 paint 里 isUnfolded 翻真、startButtonAction 开两段载入动画并 loadTimer.start(30)，expect=unfold 核它；此后每拍 loadTimer 减一，第 30 拍减到 0 置 isCompleted，同一拍 paint 里 startLoadAction 走 case 0 —— switchTo(\"scene\")、两段载入动画停下、loadTimer 复位、isUnfolded 翻假 —— expect=switch 核它恰好在这一拍切走。",
+  "every": 1,
+  "steps": [
+    { "op": "tick", "times": 2 },
+    { "op": "move", "x": 210, "y": 169 },
+    { "op": "tick", "times": 2 },
+    { "op": "press", "x": 210, "y": 169 },
+    { "op": "release", "x": 210, "y": 169 },
+    { "op": "tick", "times": 10, "expect": "unfold" },
+    { "op": "tick", "times": 30, "expect": "switch" }
+  ]
+}

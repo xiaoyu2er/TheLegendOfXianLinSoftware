@@ -1,0 +1,27 @@
+{
+  "driver": "start",
+  "name": "start-about",
+  "description": "标题页的悬停与「转 → 回」整段过场（xl-whk）。先在空处晃一下、再依次移上「起」「承」「转」：进一颗、出其余每一颗，那圈 4 帧高亮跟着起停，按钮换成悬停图。点「转」（按下、松开各一步）：setButton 开卷轴、aboutTimer.start(10)、signal=2。拍数从源码推：卷轴 10 帧、i 从 0 起，第 10 拍 i==9 置 isLoop、同一拍 paint 里 drawScroll 翻 isUnfolded 并把「回」加进 buttons，expect=unfold 核它；这 10 拍里「关于我们」按 100*(9-timeLeft) 逐段揭开。再推 3 拍（整幅），移上「回」、点它：buttons.remove(back)、aboutTimer.start(10)、反向卷轴开播、signal=3；又是 10 帧，第 10 拍 isUnfolded 翻假、signal 复位 -1，expect=fold 核它，其间「关于我们」按 100*timeLeft 逐段收回。最后再推 2 拍。",
+  "every": 1,
+  "steps": [
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 600, "y": 300 },
+    { "op": "tick", "times": 2 },
+    { "op": "move", "x": 210, "y": 169 },
+    { "op": "tick", "times": 5 },
+    { "op": "move", "x": 210, "y": 269 },
+    { "op": "tick", "times": 2 },
+    { "op": "move", "x": 210, "y": 369 },
+    { "op": "tick", "times": 2 },
+    { "op": "press", "x": 210, "y": 369 },
+    { "op": "release", "x": 210, "y": 369 },
+    { "op": "tick", "times": 10, "expect": "unfold" },
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 810, "y": 569 },
+    { "op": "tick", "times": 2 },
+    { "op": "press", "x": 810, "y": 569 },
+    { "op": "release", "x": 810, "y": 569 },
+    { "op": "tick", "times": 10, "expect": "fold" },
+    { "op": "tick", "times": 2 }
+  ]
+}
