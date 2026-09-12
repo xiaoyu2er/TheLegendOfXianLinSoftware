@@ -1,40 +1,74 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../../test/repoPath'
 import { softBlit } from '../../test/softBlit'
-import { nearestBlitRuns, nearestSourceIndexes, opaqueSourceIndexes, scaledBlitPasses } from './scaledBlit'
-import type { BlitRect } from './scaledBlit'
+import {
+  blitShift,
+  fittedSourceIndexes,
+  measuredThumbnailSources,
+  nearestBlitRuns,
+  nearestSourceIndexes,
+  opaqueSourceIndexes,
+  scaledBlitPasses,
+} from './scaledBlit'
+import type { BlitExtent, BlitRect } from './scaledBlit'
 
 /**
  * 黄金测试：这里算出来的采样表与**真的 Java2D** 扫出来的逐个相同。
  *
- * 期望值不是这里写的，是 `tools/export-scaled-blit.sh` 用一张梯度图从 Java2D
- * 自己身上量出来的（`tools/src/devtools/ExportScaledBlit.java`），所以不是自己
- * 出题自己判卷。
+ * 期望值不是这里写的，是 `tools/export-scaled-blit.sh` 用梯度图从 Java2D 自己身上量
+ * 出来的（`tools/src/devtools/ExportScaledBlit.java`），所以不是自己出题自己判卷。
  *
- * 判据要挡住四种「看起来通过」：
+ * 判据要挡住这几种「看起来通过」：
  *
  * 1. **黄金数据读不到 / 是空的**。分母不是写死的常量，是从文件里数出来的
- *    （`map.length - 1`），而下面「覆盖范围」那一条要求它至少到源长的两倍；
- *    空表在那里就红，不会安静地跑零轮。
- * 2. **对错了那一张表**。黄金数据里有两张：源图带透明与全不透明各一份，Java2D
- *    对这两种走的是不同的 blit 循环。提示图全都带透明，所以复刻必须对上
- *    `transparent` 那张；「两张表确实不同，而且我们用的是带透明那张」单列一条，
- *    对上另一张就红。
- * 3. **表对了但用不上**。`nearestBlitRuns` 是渲染器真正照着搬像素的那份，
- *    所以它要还原回同一张表，而不是只测那个下标函数。
- * 4. **退回 GPU 的那套四舍五入**。「打平的位置」单列一条：提示图那两个真的会
- *    用到的目标长度上，`floor(k*i + k/2)`（GPU 最近邻的算法）与 Java 不一致的
- *    位置在这里被点名，改回去就红。
+ *    （`map.length - 1`），而「覆盖范围」那几条要求它至少到约定的长度；空表在那里就红，
+ *    不会安静地跑零轮。
+ * 2. **对错了那一张表**。每批都有两张：源图带透明与全不透明，Java2D 对这两种走的是
+ *    不同的 blit 循环。「两张表确实不同」单列，否则「对上某一张」是恒真的。
+ * 3. **表对了但用不上**。`nearestBlitRuns` 是渲染器真正照着搬像素的那份，所以它要
+ *    还原回同一张表，而不是只测那个下标函数。
+ * 4. **退回 GPU 的那套四舍五入**。「打平的位置」单列一条。
+ * 5. **退回旧的常数位数**（xl-cpo）。「带透明 16 位 / 不透明 23 位」在两轴扫描上一处不差，
+ *    所以只拿两轴扫描核是看不出来的；缩略图那一批里有两处专门钉它（纵轴跟着横轴的源宽变、
+ *    大迷宫那一对），见「定点位数由源尺寸定」。
  */
 
 const GOLDEN_PATH = 'tools/scaled-blit-golden/java-scaled-blit.json'
 
 type Axis = { srcLen: number; map: number[][] }
 type Tables = { x: Axis; y: Axis }
-type Golden = { note: string; transparent: Tables; opaque: Tables }
+type Pair = { x: number[]; y: number[] }
+type Sized = { width: number; height: number }
+type ThumbSize = Sized & { transparent: Pair; opaque: Pair }
+type Sweep = Sized & { transparent: { x: number[][]; y: number[][] }; opaque: { x: number[][]; y: number[][] } }
+type Check = Sized & { destWidth: number; destHeight: number; transparent: Pair; opaque: Pair }
+type Verdict = { loop: string; compared: number; distinguishing: number }
+type ThumbMap = Sized & {
+  name: string
+  alphaChannel: boolean
+  minAlpha: number
+  loop: 'transparent' | 'opaque' | 'either' | 'unknown'
+  atThumbnail: Verdict
+  atProbe: (Verdict & Sized) | null
+}
+type Golden = {
+  note: string
+  transparent: Tables
+  opaque: Tables
+  thumbnail: {
+    dest: { x: number; y0: number; stride: number; width: number; height: number }
+    sizes: ThumbSize[]
+    sweeps: Sweep[]
+    checks: Check[]
+    maps: ThumbMap[]
+  }
+}
 
 const golden = JSON.parse(readFileSync(repoPath(GOLDEN_PATH), 'utf8')) as Golden
+
+/** 两轴扫描那一批：源图 128×24（提示图）。 */
+const SWEEP_EXTENT: BlitExtent = { width: golden.transparent.x.srcLen, height: golden.transparent.y.srcLen }
 
 /** 复刻要对上的那一张：提示图带透明。 */
 const TRANSPARENT = golden.transparent
@@ -66,7 +100,7 @@ describe('黄金数据本身', () => {
 describe('nearestSourceIndexes 与 Java2D 逐个相同', () => {
   it.each(AXES)('%s 的每一个目标长度', (_name, axis) => {
     for (let destLen = 1; destLen < axis.map.length; destLen++) {
-      expect(nearestSourceIndexes(axis.srcLen, destLen)).toEqual(axis.map[destLen])
+      expect(nearestSourceIndexes(axis.srcLen, destLen, SWEEP_EXTENT)).toEqual(axis.map[destLen])
     }
   })
 })
@@ -91,8 +125,8 @@ describe('两条 blit 循环', () => {
     // 复刻跟的是带透明那张：在这些档上它必须对上 transparent、对不上 opaque。
     const srcLen = golden.transparent.x.srcLen
     for (const destLen of got) {
-      expect(nearestSourceIndexes(srcLen, destLen)).toEqual(golden.transparent.x.map[destLen])
-      expect(nearestSourceIndexes(srcLen, destLen)).not.toEqual(golden.opaque.x.map[destLen])
+      expect(nearestSourceIndexes(srcLen, destLen, SWEEP_EXTENT)).toEqual(golden.transparent.x.map[destLen])
+      expect(nearestSourceIndexes(srcLen, destLen, SWEEP_EXTENT)).not.toEqual(golden.opaque.x.map[destLen])
     }
   })
 
@@ -101,8 +135,8 @@ describe('两条 blit 循环', () => {
     expect(got).toContain(10)
     const srcLen = golden.transparent.y.srcLen
     for (const destLen of got) {
-      expect(nearestSourceIndexes(srcLen, destLen)).toEqual(golden.transparent.y.map[destLen])
-      expect(nearestSourceIndexes(srcLen, destLen)).not.toEqual(golden.opaque.y.map[destLen])
+      expect(nearestSourceIndexes(srcLen, destLen, SWEEP_EXTENT)).toEqual(golden.transparent.y.map[destLen])
+      expect(nearestSourceIndexes(srcLen, destLen, SWEEP_EXTENT)).not.toEqual(golden.opaque.y.map[destLen])
     }
   })
 })
@@ -117,15 +151,18 @@ describe('opaqueSourceIndexes 与不透明那条循环逐个相同', () => {
     ['Y（源 24 高）', golden.opaque.y],
   ] as [string, Axis][])('%s 的每一个目标长度', (_name, axis) => {
     for (let destLen = 1; destLen < axis.map.length; destLen++) {
-      expect(opaqueSourceIndexes(axis.srcLen, destLen)).toEqual(axis.map[destLen])
+      expect(opaqueSourceIndexes(axis.srcLen, destLen, SWEEP_EXTENT)).toEqual(axis.map[destLen])
     }
   })
 
-  it('扫描范围之外只认量过的那两对，别的照样响', () => {
-    expect(opaqueSourceIndexes(639, 1024)).toHaveLength(1024)
-    expect(opaqueSourceIndexes(395, 640)).toHaveLength(640)
-    expect(() => opaqueSourceIndexes(639, 1023)).toThrow(/量过/)
-    expect(() => opaqueSourceIndexes(395, 641)).toThrow(/量过/)
+  it('扫描范围之外只认量过的那几对，别的照样响', () => {
+    const narr = { width: 639, height: 395 }
+    expect(opaqueSourceIndexes(639, 1024, narr)).toHaveLength(1024)
+    expect(opaqueSourceIndexes(395, 640, narr)).toHaveLength(640)
+    expect(() => opaqueSourceIndexes(639, 1023, narr)).toThrow(/量过/)
+    expect(() => opaqueSourceIndexes(395, 641, narr)).toThrow(/量过/)
+    // 同一个源长，换一张没登记的源图（位数就换了）也不给答案。
+    expect(() => opaqueSourceIndexes(639, 1024, { width: 639, height: 640 })).toThrow(/量过/)
   })
 
   it('scaledBlitPasses 按 loop 分派，不透明那条对上 opaque 表', () => {
@@ -136,11 +173,176 @@ describe('opaqueSourceIndexes 与不透明那条循环逐个相同', () => {
   })
 })
 
+/**
+ * **存读档缩略图那一批**（xl-cpo）：`drawImage(img, 100, 100+i*200, 150, 100)`，
+ * `maps/` 下每一种尺寸、两条循环各一张表，外加三个样例槽源图的缩小扫描与单列的一对。
+ */
+describe('存读档缩略图：缩小区间', () => {
+  const T = golden.thumbnail
+  const sceneMaps = sceneMapNames()
+
+  it('黄金数据量的是原版那一句的几何', () => {
+    expect(T.dest).toEqual({ x: 100, y0: 100, stride: 200, width: 150, height: 100 })
+  })
+
+  it('maps/ 下每一张图都有判定，每一种尺寸都有两张表', () => {
+    const onDisk = readdirSync(repoPath('maps')).sort()
+    expect(T.maps.map((m) => m.name).sort()).toEqual(onDisk)
+    expect(onDisk.length).toBeGreaterThan(0)
+    const sizes = new Set(T.sizes.map((s) => `${s.width}x${s.height}`))
+    for (const m of T.maps) expect(sizes).toContain(`${m.width}x${m.height}`)
+    for (const s of T.sizes) {
+      for (const loop of ['transparent', 'opaque'] as const) {
+        expect(s[loop].x).toHaveLength(T.dest.width)
+        expect(s[loop].y).toHaveLength(T.dest.height)
+      }
+    }
+  })
+
+  // 模型本身（不经护栏）对每一种尺寸 —— 包括那些放大的小图标 —— 都要对上：这是「拟合
+  // 能不能外推到这里」那一问的答案，分母是 maps/ 下的全部尺寸。
+  it.each(['transparent', 'opaque'] as const)('%s：每一种尺寸画成 150×100 的两张表都与模型逐个相同', (loop) => {
+    let n = 0
+    for (const s of T.sizes) {
+      expect(fittedSourceIndexes(loop, s.width, 150, s)).toEqual(s[loop].x)
+      expect(fittedSourceIndexes(loop, s.height, 100, s)).toEqual(s[loop].y)
+      n++
+    }
+    expect(n).toBe(T.sizes.length)
+    expect(n).toBeGreaterThan(0)
+  })
+
+  it('三个样例槽的源图各有一批缩小扫描（横 1..150、纵 1..100），与模型逐个相同', () => {
+    const samples = sampleSlotMapSizes()
+    expect(samples.length).toBeGreaterThan(0)
+    for (const size of samples) {
+      const sweep = T.sweeps.find((s) => s.width === size.width && s.height === size.height)
+      expect(sweep, `${size.width}×${size.height} 没有扫描`).toBeDefined()
+      for (const loop of ['transparent', 'opaque'] as const) {
+        expect(sweep![loop].x.length - 1).toBe(150)
+        expect(sweep![loop].y.length - 1).toBe(100)
+        for (let d = 1; d <= 150; d++) expect(fittedSourceIndexes(loop, size.width, d, size)).toEqual(sweep![loop].x[d])
+        for (let d = 1; d <= 100; d++) expect(fittedSourceIndexes(loop, size.height, d, size)).toEqual(sweep![loop].y[d])
+      }
+    }
+  })
+
+  it('单列的那几对也与模型逐个相同', () => {
+    expect(T.checks.length).toBeGreaterThan(0)
+    for (const c of T.checks) {
+      for (const loop of ['transparent', 'opaque'] as const) {
+        expect(fittedSourceIndexes(loop, c.width, c.destWidth, c)).toEqual(c[loop].x)
+        expect(fittedSourceIndexes(loop, c.height, c.destHeight, c)).toEqual(c[loop].y)
+      }
+    }
+  })
+
+  it('场景地图出现过的每一种尺寸都登记成量过，登记里也没有多余的', () => {
+    const want = new Set(
+      T.maps.filter((m) => sceneMaps.has(m.name)).map((m) => `${m.width}x${m.height}`),
+    )
+    const got = new Set(measuredThumbnailSources().map((s) => `${s.width}x${s.height}`))
+    expect([...got].sort()).toEqual([...want].sort())
+  })
+
+  it('登记过的尺寸经护栏照常给答案，而且就是黄金表', () => {
+    for (const src of measuredThumbnailSources()) {
+      const s = T.sizes.find((x) => x.width === src.width && x.height === src.height)!
+      const passes = scaledBlitPasses({ x: 0, y: 0, ...src }, { width: 150, height: 100 }, 'opaque')
+      const flatX = passes.horizontal.flatMap((r) => Array.from({ length: r.dw }, () => r.sx))
+      const flatY = passes.vertical.flatMap((r) => Array.from({ length: r.dh }, () => r.sy))
+      expect(flatX).toEqual(s.opaque.x)
+      expect(flatY).toEqual(s.opaque.y)
+    }
+  })
+})
+
+/**
+ * 定点位数由源尺寸定（`31 - bitLength(宽 | 高)`），两条循环共用，只差半步那一下的取整。
+ * 这两条专门挡「退回旧的常数位数」—— 两轴扫描对它是瞎的（见文件头第 5 条）。
+ */
+describe('定点位数由源尺寸定', () => {
+  const T = golden.thumbnail
+  const size = (w: number, h: number) => T.sizes.find((s) => s.width === w && s.height === h)!
+
+  it('同是 640 → 100，纵轴的表跟着横轴的源宽变：1024×640 与 2048×640 第 2 行不同', () => {
+    const a = size(1024, 640).opaque.y
+    const b = size(2048, 640).opaque.y
+    expect(a).not.toEqual(b)
+    expect([a[2], b[2]]).toEqual([15, 16])
+    expect(blitShift({ width: 1024, height: 640 })).not.toBe(blitShift({ width: 2048, height: 640 }))
+    expect(fittedSourceIndexes('opaque', 640, 100, { width: 1024, height: 640 })).toEqual(a)
+    expect(fittedSourceIndexes('opaque', 640, 100, { width: 2048, height: 640 })).toEqual(b)
+  })
+
+  it('带透明那条也不是常数 16 位：2865×699 → 233×253 上 16 位对不上，按源尺寸定的对得上', () => {
+    const c = T.checks.find((x) => x.width === 2865 && x.height === 699)!
+    const shift16 = (srcLen: number, destLen: number) => {
+      const inc = Math.floor((srcLen * 2 ** 16) / destLen)
+      const loc = Math.floor(inc / 2)
+      return Array.from({ length: destLen }, (_, i) => Math.floor((loc + i * inc) / 2 ** 16))
+    }
+    expect(shift16(2865, 233)).not.toEqual(c.transparent.x)
+    expect(shift16(699, 253)).not.toEqual(c.transparent.y)
+    expect(fittedSourceIndexes('transparent', 2865, 233, c)).toEqual(c.transparent.x)
+  })
+
+  it('两轴扫描那张源图（128×24）上位数恰好是 23', () => {
+    expect(blitShift(SWEEP_EXTENT)).toBe(23)
+  })
+})
+
+/**
+ * **哪张图走哪条循环是跑出来的**：导出器把每张真地图照原版那一句画一遍，看它对上哪张表
+ * （`atThumbnail`），150×100 上两张表相同答不出来时，再挑一个两条循环不同的尺寸画一遍
+ * （`atProbe`）。这里核那份读数自己说得通，以及它支持的那条规律。
+ */
+describe('每张地图走哪条循环', () => {
+  const T = golden.thumbnail
+  const decisive = T.maps.filter((m) => m.loop === 'transparent' || m.loop === 'opaque')
+
+  it('分得出来的，全部符合「真有一个像素不透明度 < 255 才走带透明那条」', () => {
+    for (const m of decisive) {
+      expect({ name: m.name, loop: m.loop }).toEqual({
+        name: m.name,
+        loop: m.minAlpha < 255 ? 'transparent' : 'opaque',
+      })
+    }
+    // 两边都得有人，否则这条规律是恒真的。
+    expect(decisive.filter((m) => m.loop === 'transparent').length).toBeGreaterThan(0)
+    expect(decisive.filter((m) => m.loop === 'opaque').length).toBeGreaterThan(0)
+  })
+
+  it('带 alpha 通道、但每个像素都不透明的 PNG 走的是不透明那条（宿舍.png）', () => {
+    const m = T.maps.find((x) => x.name === '宿舍.png')!
+    expect({ alphaChannel: m.alphaChannel, minAlpha: m.minAlpha, loop: m.loop }).toEqual({
+      alphaChannel: true,
+      minAlpha: 255,
+      loop: 'opaque',
+    })
+  })
+
+  it('每个分得出来的判定背后都有至少一格两张表预言不同的像素', () => {
+    for (const m of decisive) {
+      const v = m.atThumbnail.loop === m.loop ? m.atThumbnail : m.atProbe!
+      expect(v.loop).toBe(m.loop)
+      expect(v.distinguishing).toBeGreaterThan(0)
+    }
+  })
+
+  it('分不出来的（either），在缩略图 150×100 上两张表逐个相同 —— 画出来一样', () => {
+    for (const m of T.maps.filter((x) => x.loop === 'either')) {
+      const s = T.sizes.find((x) => x.width === m.width && x.height === m.height)!
+      expect(s.transparent).toEqual(s.opaque)
+    }
+  })
+})
+
 describe('nearestBlitRuns', () => {
   it.each(AXES)('%s 的区间还原回同一张表', (_name, axis) => {
     for (let destLen = 1; destLen < axis.map.length; destLen++) {
       const flat: number[] = []
-      for (const run of nearestBlitRuns(axis.srcLen, destLen)) {
+      for (const run of nearestBlitRuns(axis.srcLen, destLen, SWEEP_EXTENT)) {
         expect(run.destStart).toBe(flat.length)
         expect(run.length).toBeGreaterThan(0)
         for (let k = 0; k < run.length; k++) flat.push(run.srcIndex)
@@ -150,7 +352,7 @@ describe('nearestBlitRuns', () => {
   })
 
   it('放大时一个源像素铺成一段', () => {
-    const runs = nearestBlitRuns(24, 48)
+    const runs = nearestBlitRuns(24, 48, SWEEP_EXTENT)
     expect(runs).toHaveLength(24)
     for (const run of runs) expect(run.length).toBe(2)
   })
@@ -220,11 +422,10 @@ describe('纹素边界上的平局', () => {
   })
 
   it('不透明那条循环更进一步：同一档里两个方向都有', () => {
-    // 这不是复刻要走的那条路（提示图全带透明），列在这里是因为它是「平局不是
+    // 这不是提示图要走的那条路（提示图全带透明），列在这里是因为它是「平局不是
     // 一条能凑的规则」最硬的那个证据，而且它是数据不是转述。
-    const tiesOf = (axis: Axis, destLen: number) => ties(axis, destLen)
-    expect(tiesOf(golden.opaque.x, 20)).toEqual({ up: 1, down: 3 })
-    expect(tiesOf(golden.opaque.y, 10)).toEqual({ up: 1, down: 1 })
+    expect(ties(golden.opaque.x, 20)).toEqual({ up: 1, down: 3 })
+    expect(ties(golden.opaque.y, 10)).toEqual({ up: 1, down: 1 })
   })
 })
 
@@ -232,7 +433,7 @@ describe('纹素边界上的平局', () => {
  * **两趟搬法搬出来的像素**，不是它调了几次 drawImage。
  *
  * `scaledBlitPasses` 是渲染器唯一的几何来源，而轴搞反、源偏移漏加、中间位图
- * 尺寸取错这几种错，在画面上都只表现为「提示图有点糊」—— 谁都不会去查。
+ * 尺寸取错这几种错，在画面上都只表现为「有点糊」—— 谁都不会去查。
  * 这里拿一个十行的软件 blitter 把两趟真的跑一遍，结果必须逐像素等于采样表的
  * 外积：目标 (i,j) = 源 (mx[i], my[j])。
  */
@@ -308,17 +509,47 @@ describe('说不清楚的输入要响', () => {
     [10, -3],
     [10, 2.5],
   ])('源长 %s 目标长 %s', (srcLen, destLen) => {
-    expect(() => nearestSourceIndexes(srcLen, destLen)).toThrow(/正整数/)
+    expect(() => nearestSourceIndexes(srcLen, destLen, { width: 10, height: 10 })).toThrow(/正整数/)
   })
 
   it('源长超出量过的范围要响，而不是编一个答案', () => {
-    expect(() => nearestSourceIndexes(256, 100)).toThrow(/量过/)
+    expect(() => nearestSourceIndexes(256, 100, { width: 256, height: 24 })).toThrow(/量过/)
+  })
+
+  it('源长既不是源图的宽也不是高，要响', () => {
+    expect(() => nearestSourceIndexes(100, 50, SWEEP_EXTENT)).toThrow(/既不是/)
   })
 
   it('目标长超出扫过的范围（源长的两倍）同样要响', () => {
     const srcLen = TRANSPARENT.y.srcLen
     // 边界上那一档是扫过的，必须照常给答案；再多一个就是外推。
-    expect(nearestSourceIndexes(srcLen, srcLen * 2)).toHaveLength(srcLen * 2)
-    expect(() => nearestSourceIndexes(srcLen, srcLen * 2 + 1)).toThrow(/外推/)
+    expect(nearestSourceIndexes(srcLen, srcLen * 2, SWEEP_EXTENT)).toHaveLength(srcLen * 2)
+    expect(() => nearestSourceIndexes(srcLen, srcLen * 2 + 1, SWEEP_EXTENT)).toThrow(/外推/)
   })
 })
+
+/** 数据层真值里出现过的场景地图名（96 本脚本的 `mapName`，现扫）。 */
+function sceneMapNames(): Set<string> {
+  const dir = repoPath('tools/ground-truth')
+  const names = new Set<string>()
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.json')) continue
+    names.add((JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { mapName: string }).mapName)
+  }
+  if (names.size === 0) throw new Error('数据层真值里一个场景地图名都没读到')
+  return names
+}
+
+/** 三个入库样例存档第一行的地图名 → 它在缩略图那一批里的尺寸。 */
+function sampleSlotMapSizes(): Sized[] {
+  const dir = repoPath('tools/ground-truth/存档')
+  const out: Sized[] = []
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) {
+    const save = JSON.parse(readFileSync(`${dir}/${f}`, 'utf8')) as { reads: { line: number; fields: string[] }[] }
+    const map = save.reads.find((r) => r.line === 1)!.fields[3]!
+    const m = golden.thumbnail.maps.find((x) => x.name === map)
+    if (!m) throw new Error(`${f} 的地图 ${map} 不在缩略图那一批里`)
+    out.push({ width: m.width, height: m.height })
+  }
+  return out
+}

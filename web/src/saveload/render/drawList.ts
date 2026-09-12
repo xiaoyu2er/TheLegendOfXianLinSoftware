@@ -1,4 +1,5 @@
 import type { AssetId } from '../../assets/ids'
+import type { BlitLoop } from '../../battle/render/scaledBlit'
 import { mapAssetId, startFrameAssetId } from '../../assets/ids'
 import { START_SEQUENCES } from '../../start/assets'
 import { LS_SEQUENCES, lsFrameId, lsImageId } from '../assets'
@@ -25,12 +26,12 @@ import type { SaveLoadWorld } from '../world'
  *     三颗按钮：drawImage(空白.png, 800, 150 + i*200) + 它那段光效
  *     鼠标那段动画画在 (currentX, currentY)
  *
- * ## ⚠️ 缩略图那一块是登记在案的缺口，不在这里拟合
+ * ## 缩略图按原版的采样表在 CPU 上缩（xl-cpo）
  *
- * 原版那句是 `drawImage(img, x, y, 150, 100, observer)` —— 交给平台自己缩放，
- * 没有手写循环；而本仓库已经拟合过的两条缩放循环按「源图带不带透明通道」分岔，
- * 拟合数据又是在**放大**区间上扫出来的，这里是大幅**缩小**。所以这一块照原尺寸
- * 交给 Pixi 缩放，**不去对齐像素**，缺口与成因归单立的那张票 xl-cpo（见 `op.scaled`）。
+ * 原版那句是 `drawImage(img, x, y, 150, 100, observer)` —— 交给平台自己缩放，没有手写
+ * 循环。Java2D 在这里走哪条 blit 循环、每个目标像素取哪个源像素，`tools/export-scaled-blit.sh`
+ * 照这一句真画量过（缩小区间，`maps/` 下每种尺寸），模型在 `battle/render/scaledBlit.ts`。
+ * 这里只登记**走哪条循环**（{@link THUMBNAIL_LOOP}），渲染器照 `op.scaled` 在 CPU 上拼。
  *
  * ## 动画帧号不在状态层里
  *
@@ -44,11 +45,10 @@ export type SaveLoadDrawOp =
       readonly x: number
       readonly y: number
       /**
-       * 给了就按这个尺寸画（`drawImage(img, x, y, w, h, …)`）。**只有缩略图用它**，
-       * 而那一块的像素是登记在案的缺口（平台自带的缩放；两条循环按源图透明通道
-       * 分岔，且缩小倍率落在既有拟合区间之外），挂 xl-cpo。
+       * 给了就按这个尺寸画（`drawImage(img, x, y, w, h, …)`）。**只有缩略图用它**。
+       * `loop` 是 Java2D 缩放时走的那条 blit 循环，渲染器照它选采样表（见 {@link THUMBNAIL_LOOP}）。
        */
-      readonly scaled?: { readonly width: number; readonly height: number }
+      readonly scaled?: { readonly width: number; readonly height: number; readonly loop: BlitLoop }
     }
   | {
       readonly kind: 'text'
@@ -73,6 +73,15 @@ export const LS_LAYOUT = {
   taskX: 400,
   taskY0: 120,
 } as const
+
+/**
+ * 缩略图走的 blit 循环：**不透明那条**。这是登记，不是推导 —— 判据是导出器把每张真地图
+ * 照原版那一句画出来、看它对上哪张表（`java-scaled-blit.json` 的 `thumbnail.maps`）。
+ * 场景地图全都没有真透明像素（带 alpha 通道的 PNG 也是每个像素 255），读数里 27 张跑出来
+ * 是不透明、1 张（教室2.png）两条循环在它的尺寸上画出来处处相同。`drawList.test.ts` 拿
+ * 那份读数逐张对撞；哪天冒出一张走带透明那条的场景地图，那里会红，这一行要跟着改成按图选。
+ */
+export const THUMBNAIL_LOOP: BlitLoop = 'opaque'
 
 /** `new Font("文鼎粗钢笔行楷", Font.BOLD, 20)`、`Color.WHITE`。 */
 export const LS_FONT_SIZE = 20
@@ -119,7 +128,7 @@ export function saveLoadDrawList(w: SaveLoadWorld, frames: SaveLoadFrames = FIRS
         id: mapAssetId(map),
         x: L.thumbX,
         y: L.thumbY0 + dy,
-        scaled: { width: L.thumbWidth, height: L.thumbHeight },
+        scaled: { width: L.thumbWidth, height: L.thumbHeight, loop: THUMBNAIL_LOOP },
       })
     }
     ops.push({ kind: 'text', text: mapLabel(map), x: L.mapNameX, y: L.mapNameY0 + dy })

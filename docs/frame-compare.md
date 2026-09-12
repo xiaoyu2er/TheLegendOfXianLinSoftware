@@ -1031,12 +1031,14 @@ question-memory 2207 → 1046。那一格的内容随取样帧落在滑动的哪
 
 | 剧本 | 帧 | 缺口区 | 硬比区 |
 |---|---|---|---|
-| saveload-menu | 9 | thumb-0/1/2（xl-cpo）· map-name-0/1/2 · task-0/1/2（字形） | 逐像素相等 |
-| saveload-start | 5 | thumb-0（xl-cpo）· map-name-0/1/2 · task-0/2（字形） | 逐像素相等 |
+| saveload-menu | 9 | map-name-0/1/2 · task-0/1/2（字形） | 逐像素相等（含缩略图） |
+| saveload-start | 5 | map-name-0/1/2 · task-0/2（字形） | 逐像素相等（含缩略图） |
 | load-slot0/1/2 | 8/11/9 | coin-digits（字形） | 逐像素相等 |
 
-- **缩略图整块挂 xl-cpo，不在本票拟合。** 大迷宫.png 那一格两端逐像素相等（反证：原版那块
-  4655 种颜色、空槽位置 144 种），所以不声明；读数记在 xl-cpo 上。
+- **缩略图原先整块挂 xl-cpo**（大地图.jpg 单帧 567、宿舍.png 480，大迷宫.png 恰好 0）。xl-cpo
+  在缩小区间上量了原版那句 `drawImage(img, 100, 100+i*200, 150, 100)` 的采样表
+  （`tools/export-scaled-blit.sh` 的 `thumbnail` 一节），渲染器改成 CPU 照表拼，四个 `thumb-*`
+  区删掉；2026-09-12 重跑两条剧本 14 帧，硬比区逐像素相等。
 - **追出来的第三族：地图图片与碰撞网格不等。** load-slot2 读进 脚本20，渲染器原先对「图 ≠
   网格 × 32」一律拒绝渲染。现数 96 个场景里 22 个对不上：图比网格大（大迷宫.png）的画法与相等
   时相同，放行（`web/src/scene/mapSize.ts`）；图比网格小的 20 个另立 **xl-i06.14**，照旧拒绝。

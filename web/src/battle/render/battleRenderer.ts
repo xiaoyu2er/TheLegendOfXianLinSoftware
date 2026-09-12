@@ -17,8 +17,7 @@ import { resolveAsset } from '../../assets/resolve'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
 import { TEXT_FONT_STACK } from '../../textFont'
 import type { DrawOp, Rect } from './drawList'
-import type { BlitRect } from './scaledBlit'
-import { scaledBlitPasses } from './scaledBlit'
+import { blitRectsOnto, scaledBlitPasses } from './scaledBlit'
 
 /**
  * 战斗层渲染器（Pixi）。**执行 `drawList` 那份清单，自己不做任何决定。**
@@ -236,30 +235,6 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   const scaledCache = new Map<string, Texture>()
 
   /**
-   * 开一张 canvas，把这些矩形逐个 `drawImage` 上去。
-   *
-   * `imageSmoothingEnabled=false` 是必须的：搬的段落要么是 1:1 的整段拷贝，
-   * 要么是"一个源像素铺满 length 个目标像素"，开着插值后者会被抹匀。
-   */
-  function blitOnto(
-    source: CanvasImageSource,
-    width: number,
-    height: number,
-    rects: readonly BlitRect[],
-  ): HTMLCanvasElement {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('取不到缩放贴图的 2D context')
-    ctx.imageSmoothingEnabled = false
-    for (const r of rects) {
-      ctx.drawImage(source, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
-    }
-    return canvas
-  }
-
-  /**
    * 按原版的采样表把一块源区域拼成目标尺寸的位图。**不经过 GPU 采样**，
    * 理由见文件头第 1 条与 `scaledBlit.ts`。
    *
@@ -295,8 +270,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
       dest,
     )
 
-    const mid = blitOnto(resource, dest.width, src.height, passes.horizontal)
-    const out = blitOnto(mid, dest.width, dest.height, passes.vertical)
+    const mid = blitRectsOnto(resource, dest.width, src.height, passes.horizontal)
+    const out = blitRectsOnto(mid, dest.width, dest.height, passes.vertical)
 
     const made = Texture.from(out)
     made.source.scaleMode = 'nearest'
