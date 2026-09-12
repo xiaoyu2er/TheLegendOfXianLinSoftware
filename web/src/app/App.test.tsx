@@ -74,6 +74,27 @@ describe('App', () => {
     expect(screen.getByTestId('scene-host')).toHaveAttribute('hidden')
   })
 
+  /**
+   * 标题页上聚焦一颗按钮按回车 / 空格，得按得动（xl-fqm）。
+   *
+   * **判据不看 click 有没有来**：按钮的键盘激活是 keydown / keyup 的**默认动作**，
+   * jsdom 不执行默认动作 —— 在这里数 click，修没修都是 0 次。看的是那个默认动作
+   * 有没有被拦：`fireEvent` 的返回值就是 `dispatchEvent` 的，`false` = 有人
+   * `preventDefault()` 了。真浏览器里 click 0 次的读数（票面）正是这一位为真造成的。
+   *
+   * 走的是真的 `useGame`（这个文件不 mock 它），拦的正是它挂在 window 上的那个监听。
+   */
+  it('标题页上聚焦按钮按回车 / 空格，默认动作不被拦（按钮按得动）', () => {
+    render(<App />)
+    const button = screen.getByRole('button', { name: '开始新游戏' })
+    button.focus()
+    expect(document.activeElement).toBe(button)
+    for (const key of ['Enter', ' ']) {
+      expect(fireEvent.keyDown(button, { key }), `keydown ${JSON.stringify(key)}`).toBe(true)
+      expect(fireEvent.keyUp(button, { key }), `keyup ${JSON.stringify(key)}`).toBe(true)
+    }
+  })
+
   it('开发模式下能跳到另一个场景，两个方向都通', () => {
     // 开发用入口，用来"不必每次从头玩到那里"。选项就是已烘焙的场景，
     // 不是另抄一份名单 —— 外加一项「标题」。

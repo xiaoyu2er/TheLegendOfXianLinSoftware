@@ -383,6 +383,11 @@ export function useGame(
         shiftKey: event.shiftKey,
       })
       if (!input) return
+      // 当前面板收不到键就**既不收也不拦**（xl-fqm）：原版 `GameLauncher.keyPressed`
+      // 只转给场景 / 存读档 / 战斗，会话那一侧本来也把别的面板的键丢掉（`NO_KEYS`）。
+      // 不拦是要紧的那一半 —— 按钮的键盘激活就是回车 / 空格的默认动作，标题页上
+      // 一律 `preventDefault` 等于 Tab 到「开始新游戏」按回车什么都不发生。
+      if (keyReceiver(panelRef.current) === null) return
       // 方向键默认会滚动页面。认下来的键就得拦住，否则一边走一边页面在动。
       event.preventDefault()
       queueRef.current.push(input)

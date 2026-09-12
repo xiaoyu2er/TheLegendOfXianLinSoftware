@@ -47,10 +47,10 @@
 | `web/src/battle/render/scaledBlit.ts:283` | 全局 | 工程 | 离屏画布（战斗与存读档共用的 `blitRectsOnto`，xl-cpo 从 `battleRenderer` 挪过来的） |
 | `web/src/game/enemySprites.ts:47` | 图片 | 工程 | 量怪物贴图的尺寸 |
 | `web/src/game/keyboard.ts:11,68,77` | 键盘 | 对应 `src/main/GameLauncher.java:186` | 按下 / 松开两路；逐键见下面「## 键位」 |
-| `web/src/game/useGame.ts:352,380,390,391,393,394` | 键盘 / 事件 / 全局 | 对应 `src/main/GameLauncher.java:186` | 窗口级键盘监听（原版 `this.addKeyListener(this)` 挂在 `JFrame` 上）。⚠️ 它对认下来的键一律 `preventDefault` —— **标题页上回车 / 空格按不动聚焦的按钮**，缺陷归 `xl-fqm`，见文末 |
+| `web/src/game/useGame.ts:352,380,395,396,398,399` | 键盘 / 事件 / 全局 | 对应 `src/main/GameLauncher.java:186` | 窗口级键盘监听（原版 `this.addKeyListener(this)` 挂在 `JFrame` 上）。只在 `keyReceiver` 认的面板上收键并 `preventDefault`，别的面板既不收也不拦 —— 标题页按钮的回车 / 空格激活靠的就是那个默认动作（`xl-fqm` 修，见文末）；`app/App.test.tsx`、`game/useGame.test.tsx` |
 | `web/src/game/useGame.ts:359` | 键盘 | 对应 `src/scene/ScenePanel.java:207` | ESC 开菜单 |
 | `web/src/game/useGame.ts:372` | 键盘 | 对应 `src/battle/BattlePanel.java:290` | 调试外挂键 J（xl-03x.14） |
-| `web/src/game/useGame.ts:470,489,803,804` | 时钟 / 定时 / 全局 | 对应 `src/scene/ScenePanel.java:276` | 10 ms 一拍，按真实流逝补拍；`state/loop.test.ts` |
+| `web/src/game/useGame.ts:475,494,808,809` | 时钟 / 定时 / 全局 | 对应 `src/scene/ScenePanel.java:276` | 10 ms 一拍，按真实流逝补拍；`state/loop.test.ts` |
 | `web/src/index.css:112` | 伪类 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏按钮悬停描边 |
 | `web/src/main.tsx:6` | 全局 | 工程 | 挂载根 |
 | `web/src/menu/render/menuRenderer.ts:129,148` | 全局 | 工程 | 量字 / 离屏画布 |
@@ -68,7 +68,7 @@
 | `web/src/start/StartPanel.tsx:155` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 「结」禁用的理由 |
 | `web/src/start/StartPanel.tsx:165,166,167,202` | 事件 / 元素 | 对应 `src/start/StartPanel.java:202` | `mouseMoved` |
 | `web/src/start/StartPanel.tsx:172,173` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 键盘焦点 = 悬停 |
-| `web/src/start/StartPanel.tsx:174` | 事件 | 对应 `src/start/StartPanel.java:192` | 原版在**松手**时响应（`mouseReleased` → `isRelesedButton`），`click` 也在松手时触发。⚠️ 用 `onClick` 还为了「键盘也按得动」，**真浏览器里按不动**，归 `xl-fqm` |
+| `web/src/start/StartPanel.tsx:174` | 事件 | 对应 `src/start/StartPanel.java:192` | 原版在**松手**时响应（`mouseReleased` → `isRelesedButton`），`click` 也在松手时触发。用 `onClick` 还为了「键盘也按得动」—— 真浏览器里曾经按不动，`xl-fqm` 修了 |
 | `web/src/start/StartPanel.tsx:186,195,210,216,226,252,261,277` | 无障碍 / 元素 | 工程 | 装饰图的 `alt=""`（读屏跳过） |
 | `web/src/start/useStartPanel.ts:113,115,116` | 时钟 / 定时 | 对应 `src/start/StartPanel.java:153` | 100 ms 一拍，按真实流逝补拍 |
 | `web/src/ui/DialogueBox.tsx:50,53` | 元素 / 无障碍 | 已登记 `ADR-0001#screen-reader-text` | `aria-live` + 视觉隐藏的整句（**xl-03x.22 补登**） |
@@ -100,6 +100,7 @@ web 那一格写成 JSON 字符串（空格键只能这么写：`" "`）。
 
 找法、读数与结构性盲区写在 ADR-0001「第三遍：从 web 侧出发」那一节。
 
-上面两处「见文末」说的是同一件事：标题页按钮在真浏览器里**键盘按不动**（回车、空格各测一次，click 0 次；
+上面「见文末」说的是：标题页按钮在真浏览器里曾经**键盘按不动**（回车、空格各测一次，click 0 次；
 对照 `.click()` 1 次）。`useGame.ts` 的窗口级监听对认下来的键一律 `preventDefault()`，吞掉了按钮的默认激活。
-这是缺陷不是例外，归 `xl-fqm`。
+这是缺陷不是例外，`xl-fqm` 修了：`keyReceiver` 不认的面板上既不收键也不拦。判据不数 click（jsdom 不执行默认动作，
+数出来修没修都是 0），数的是 `defaultPrevented`：`app/App.test.tsx` 标题页那条、`game/useGame.test.tsx` 场景里照旧拦那条。
