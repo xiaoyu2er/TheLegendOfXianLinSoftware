@@ -534,7 +534,8 @@ export function useGame(
           drawSaveLoad(next, now)
           session = next
         }
-        // 存读档面板 Esc 回标题（xl-6zf）：主题曲从头放，见 `bgmFromStart`。
+        // 同一首也从头放的那两拍（回标题 xl-6zf、场景消费 SCENE_SIGNAL xl-4io），见
+        // `bgmFromStart`。没开局时只到得了前一种：存读档面板 Esc 回标题。
         bgmRef.current?.sync(currentBgm(session), bgmFromStart(before, session))
         return
       }

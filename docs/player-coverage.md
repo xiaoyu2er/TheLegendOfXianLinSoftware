@@ -105,7 +105,7 @@
 | 菜单 奇术页：点技能看动画、说明、听音效 | 能（音效由音效播放器真的交出去，见「声音」那两行） | 随时 | — | `MagicPanel.java:343-456`；剧本 `menu-magic`（47 帧动画逐像素相等）；实跑 `magic.test.ts` 22/22 |
 | 菜单 奇术页的技能格数随等级涨 | 能（升级 2 / 5 / 10 级各 +1；读档只抬不压） | 随时 | —（xl-03x.17（closed）、xl-i06.13（closed）、xl-8ym（closed）） | `ZhangXiaoFan.java:223-224,720-727`、`MagicPanel.java:285-335`；剧本 `menu-magic-levels`；实跑 `magic.test.ts` 22/22、`loadSession.test.ts` 11/11 |
 | 菜单 天书「存档」/「提取」进存读档面板 | 能 | 随时 | — | `FuncButtons.java:192-213`；剧本 `saveload-menu`；实跑 `saveloadSession.test.ts` 10/10 |
-| 菜单 天书「设定」→ 背景音乐 开 / 关 | 能 | 随时 | — | `FuncButtons.java:288-319`；实跑 `menuAudio.test.ts` 5/5、`useGameBgm.test.tsx` 2/2 |
+| 菜单 天书「设定」→ 背景音乐 开 / 关 | 能 | 随时 | — | `FuncButtons.java:288-319`；实跑 `menuAudio.test.ts` 5/5、`useGameBgm.test.tsx` 4/4 |
 | 菜单 天书「设定」→ 特殊音效 开 / 关 | 能（关掉之后菜单与商店的声音真的停；战斗 / 场景里的音效本来就还不响，那是「声音」最后一行的事，不是开关的） | 随时 | —（xl-03x.8（closed）、xl-ebw（closed）） | `FuncButtons.java:321-350`、`MusicPlayer.java:84,167`；实跑 `sfxSwitch.test.ts` 3/3、`useGameSfx.test.tsx` 2/2 |
 | 菜单 天书「返回」回场景 | 能 | 随时 | 跨帧松手被丢掉：xl-z4f（closed） | `FuncButtons.java:224-232`；实跑 `menuSession.test.ts` 24/24。回来下一拍场景曲从头放（`ScenePanel.java:262-265` 那句 `readBGM` 不看同名）：实跑 `useGameBgm.test.tsx` 4/4「从菜单回场景的背景音乐」 |
 | 菜单 天书「退出」→「重新开始」回标题 | 能（回标题把背景音乐开关拨回「开」，xl-03x.21（closed）） | 随时 | —（xl-03x.11（closed）、xl-fbs（closed）） | `FuncButtons.java:353-368`；实跑 `menuSession.test.ts` 24/24、`funcButtons.test.ts` 23/23 |

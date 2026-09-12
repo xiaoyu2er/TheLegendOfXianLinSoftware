@@ -7,11 +7,10 @@ import type { SceneRenderer } from '../scene/sceneRenderer'
 import { prepareExits } from '../data/loadedScenes'
 import { loadScene } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
-import type { MenuInput } from '../menu/step'
 import { createMemorySaveStore } from '../save/memoryStore'
 import { TICK_MS, createWorld } from '../state/step'
 import { sceneSourceOf } from '../state/trace'
-import { buttonCenter } from '../test/menuClicks'
+import { buttonCenter, clickAt } from '../test/menuClicks'
 import { NO_INPUT, advanceSession, createSession, enterScene, menuWorldOf, openMenu } from './session'
 import type { SessionDeps } from './session'
 import { useGame } from './useGame'
@@ -21,13 +20,6 @@ const PROBE_DEPS: Omit<SessionDeps, 'saves'> = {
   scenes: sceneSourceOf(getScene),
   sprite: () => ({ width: 1, height: 1 }),
   random: () => 0.5,
-}
-
-function clickAt([x, y]: [number, number]): MenuInput[] {
-  return [
-    { e: 'press', x, y },
-    { e: 'release', x, y },
-  ]
 }
 
 /**
