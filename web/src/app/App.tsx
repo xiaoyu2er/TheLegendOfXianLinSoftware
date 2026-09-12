@@ -434,6 +434,7 @@ export function App() {
         }
         overlay={
           <>
+            {/* @exception ADR-0001#loading-notices —— 原版同步读盘，没有「载入中」这一种状态。 */}
             {status.kind === 'ready' || inBattle || inMenu || inShop || atTitle || inLs || inEnd || inShopPreview ? null : (
               <p className={`stage-notice stage-notice--${status.kind}`} role="status">
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
@@ -469,6 +470,7 @@ export function App() {
           </>
         }
       />
+      {/* @exception ADR-0001#toolbar-under-stage —— 原版窗口里只有画面：提示字与放大方式都是这一层加的。 */}
       <div className="toolbar">
         {devToolsEnabled() ? (
           <label className="toolbar-field">
