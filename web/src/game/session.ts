@@ -514,7 +514,7 @@ export function openMenu(session: RunningSession, carry = getParty()): RunningSe
   if (narratage.active || dialogue.speaking) return session
   // **刷新，不重建**（xl-6lo.18）：`switchTo("menu")` 那个 case 里除了换面板
   // 就只有三句 `refreshValue()`。装备槽位、全局背包、当前在哪一页原样留着。
-  refreshMenuWorld(session.menu.world, { live: liveParty(carry), audio: getAudioSettings() })
+  refreshMenuWorld(session.menu.world, { live: liveParty(carry), audio: getAudioSettings(), drugs: heldDrugs() })
   return { ...session, panel: 'menu' }
 }
 
@@ -557,6 +557,9 @@ export function configFor(
     },
     // 技能菜单几颗按钮（xl-03x.17）。原版读的是那三个 static，这一层读队伍。
     skillNumbers: { zhang: carry.zhang.skillNumber, yu: carry.yu.skillNumber, lu: carry.lu.skillNumber },
+    // 药品菜单的存货（xl-byy）。原版读的是 static 的 `DrugPack.drugList`，
+    // 这一层从药包现读；打的过程中每一拍写回（`advanceSession` 战斗那一段）。
+    drugStock: heldDrugs(),
     enemies: enemySlots(info),
     // 原版这里没有种子（`Math.random()` 直调），见 `SessionDeps.random`。
     seed: Math.trunc(deps.random() * 0x7fffffff),
@@ -710,6 +713,9 @@ export function advanceSession(
   // ——— 战斗那条线程 ———
   if (panel === 'battle' && battle !== null) {
     battle = advanceBattle(battle, input.battle, elapsedMs)
+    // 药**每一拍都写回**，理由与商店、菜单同一条：原版喝下去那一刻 static 的
+    // `DrugPack` 就变了。等打完再写的话，打输回标题那条出口也得记得写。
+    writeDrugsBack(battle.world.drugStock)
     const exit = battle.world.exitPanel
     if (exit !== null) {
       // 三个人的结果记回队伍。**记的是 `party` 不是 `heroes`**：两条打输的
@@ -752,6 +758,8 @@ export function advanceSession(
     // 等关菜单再记的话，中间那段时间队伍是陈的；而"陈的"与"对的"在只有一条
     // 出口的今天长得一模一样，明天多一条出口（存档、装备超市回菜单）就不是了。
     rememberMenuParty(menu.world.heroes)
+    // 物品页喝掉的药也每一拍写回（xl-bsv 的反方向）：存档读的是药包，不是菜单。
+    writeDrugsBack(menu.world.drugPack.map((s) => s.count))
     if (menuWantsScene(menu.world)) {
       panel = 'scene'
       // 天书页「返回」走的也是 `switchTo("scene")`，同一句 `SCENE_SIGNAL=1`。
@@ -921,7 +929,11 @@ function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadIn
   }
   // `switchTo("menu")` 那三句 `refreshValue()`：回菜单时属性按最新的刷一遍（同 `openMenu`）。
   if (panel === 'menu' && session.panel !== 'menu') {
-    refreshMenuWorld(session.menu.world, { live: liveParty(getParty()), audio: getAudioSettings() })
+    refreshMenuWorld(session.menu.world, {
+      live: liveParty(getParty()),
+      audio: getAudioSettings(),
+      drugs: heldDrugs(),
+    })
   }
   // 退出键回标题：`switchTo(lastPanel)` 落在 `"start"` 那一支。上面就绪、没就绪两段
   // 都翻得到这里，所以拨开关放在出口，不放进哪一段里。
@@ -1098,7 +1110,7 @@ function enterShop(
       seed: Math.trunc(deps.random() * 0x7fffffff),
     })
   w.coins = getCoins()
-  w.pack.drugs = DRUGS.map((d) => drugCount(d.name))
+  w.pack.drugs = heldDrugs()
   const owned = ownedEquipment(menu)
   for (const slot of EQUIP_SLOTS) w.pack.equipment[slot] = [...owned[slot]]
   // 换店不派发鼠标事件，只换引用 —— 与 `ShopDriver.open()` 同一个动作。
@@ -1106,15 +1118,40 @@ function enterShop(
   return w
 }
 
+/**
+ * 药包此刻的六个数，按 `DRUGS` 的次序（xl-byy / xl-bsv）。
+ *
+ * 原版的 `DrugPack.drugList` 是**一份** static，商店、菜单物品页、战斗药品菜单
+ * 读写的是同一张表。这一层三家各有自己的世界，落点只有 `fakes/drugPack.ts`
+ * 一处：进门（开店、开菜单、起一场架）时从这里现读，里面每一步之后由
+ * {@link writeDrugsBack} 写回。**三家都必须走这一对**：漏一家，那一家看到的就是
+ * 进门之前的数，而它自己单测全绿（xl-bsv、xl-byy 就是这么漏的）。
+ */
+function heldDrugs(): number[] {
+  return DRUGS.map((d) => drugCount(d.name))
+}
+
+/**
+ * 把某一家世界里的六个数写回药包。只写有变化的那几味，而且走 `addDrug` 的差值：
+ * 写成 `setDrugCount` 会让一味从没碰过的药在药包里留下一条 0 —— 账本对撞
+ * （`compare/ledger.ts`）比的正是「药包收到过哪些名字」。
+ */
+function writeDrugsBack(counts: readonly number[]): void {
+  if (counts.length !== DRUGS.length) {
+    throw new Error(`写回药包的有 ${counts.length} 个数，而药品有 ${DRUGS.length} 种`)
+  }
+  DRUGS.forEach((d, i) => {
+    const delta = counts[i]! - drugCount(d.name)
+    if (delta !== 0) addDrug(d.name, delta)
+  })
+}
+
 /** 店里这一步之后，把钱、药、装备写回那三处 static 的落点。 */
 function writeShopBack(w: ShopWorld, menu: MenuTicker): void {
   const coins = w.coins - getCoins()
   if (coins > 0) addCoins(coins)
   else if (coins < 0) reduceCoins(-coins)
-  DRUGS.forEach((d, i) => {
-    const delta = (w.pack.drugs[i] ?? 0) - drugCount(d.name)
-    if (delta !== 0) addDrug(d.name, delta)
-  })
+  writeDrugsBack(w.pack.drugs)
   // 就地改：菜单装备页读的就是这几个数组（`EquipPanelState.owned`）。
   const owned = ownedEquipment(menu)
   for (const slot of EQUIP_SLOTS) owned[slot].splice(0, owned[slot].length, ...w.pack.equipment[slot])

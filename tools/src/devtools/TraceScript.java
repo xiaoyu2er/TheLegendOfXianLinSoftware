@@ -132,6 +132,17 @@ public final class TraceScript {
      * 推一个出来会让 {@code battle-menus} 的技能菜单从 2 颗变成 4 颗。
      */
     public final Map<String, Integer> skillNumbers;
+    /**
+     * 开打之前背包里有哪几味药、各几件（xl-byy）：{@code DrugPack.addDrug(名字, 件数)}。
+     * **可以整个不写**，不写就一个字都不碰 —— 干净 JVM 里六种药全是 0，老剧本的
+     * 「点药走提示图」那一路靠的就是它。不写时也**不回显**，老真值逐字节不变。
+     *
+     * <p>为什么要剧本给：战斗里用药读的是 static 的 {@code DrugPack.drugList}，
+     * 而一个干净进程里只有商店、宝箱、战利品、读档往里写 —— 单写一条战斗剧本，
+     * 真的用药那一路一次都走不到。名字对不上是硬失败（原版 {@code addDrug}
+     * 会一声不响丢掉，丢掉之后这一场与「没写」长得一样）。
+     */
+    public final Map<String, Integer> drugs;
     /** 三个怪物槽位，形如 `怪物1/5`；空槽位写 `null`。就是 Fight 数据的后三列。 */
     public final List<String> enemies;
     /** `Math.random()` 的种子。战斗的伤害与怪物 AI 全靠它才可重复，见 BattleDriver。 */
@@ -212,13 +223,15 @@ public final class TraceScript {
     private TraceScript(String driver, String name, String description, String warmup, String scene,
                         boolean isScript, Integer load, int tickMs, int maxTicks, List<Instruction> steps,
                         String background, List<String> party, Map<String, Integer> levels,
-                        Map<String, Integer> skillNumbers, List<String> enemies, int seed) {
+                        Map<String, Integer> skillNumbers, Map<String, Integer> drugs,
+                        List<String> enemies, int seed) {
         this.driver = driver;
         this.name = name; this.description = description; this.warmup = warmup;
         this.scene = scene; this.isScript = isScript; this.load = load;
         this.tickMs = tickMs; this.maxTicks = maxTicks; this.steps = steps;
         this.background = background; this.party = party; this.levels = levels;
         this.skillNumbers = skillNumbers;
+        this.drugs = drugs;
         this.enemies = enemies; this.seed = seed;
     }
 
@@ -282,6 +295,7 @@ public final class TraceScript {
         List<String> party = null;
         Map<String, Integer> levels = null;
         Map<String, Integer> skillNumbers = null;
+        Map<String, Integer> drugs = null;
         List<String> enemies = null;
         int seed = 0;
         if (battle) {
@@ -321,6 +335,20 @@ public final class TraceScript {
                                 + who + " 写的是 " + n);
                     }
                     skillNumbers.put(who, n);
+                }
+            }
+            drugs = new LinkedHashMap<>();
+            if (m.containsKey("drugs")) {
+                // 顺序照 JSON 的书写顺序（JsonIn 用的是 LinkedHashMap）——
+                // addDrug 是累加、互不影响，顺序只关系到回显可复现。
+                Map<String, Object> dm = JsonIn.obj(m.get("drugs"), "drugs");
+                for (String drug : dm.keySet()) {
+                    int n = JsonIn.i(dm, drug);
+                    if (n < 1) {
+                        throw new IllegalArgumentException("drugs 里的件数至少是 1（写 0 等于没写），"
+                                + drug + " 写的是 " + n);
+                    }
+                    drugs.put(drug, n);
                 }
             }
             enemies = new ArrayList<>();
@@ -416,7 +444,7 @@ public final class TraceScript {
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
         return new TraceScript(driver, name, description, warmup, scene, isScript, load, tickMs, maxTicks,
-                steps, background, party, levels, skillNumbers, enemies, seed);
+                steps, background, party, levels, skillNumbers, drugs, enemies, seed);
     }
 
     /**
@@ -439,6 +467,8 @@ public final class TraceScript {
         appendIntMap(b, "level", levels);
         // 整个不写时**一个字都不回显** —— 老真值因此逐字节不变。
         if (!skillNumbers.isEmpty()) appendIntMap(b, "skillNumber", skillNumbers);
+        // 同上：没写 drugs 的老剧本一个字都不回显。
+        if (!drugs.isEmpty()) appendIntMap(b, "drugs", drugs);
         b.append(",\"enemies\":").append(Json.arrStr(enemies));
         b.append(",\"seed\":").append(seed);
         b.append(",\"tickMs\":").append(tickMs);

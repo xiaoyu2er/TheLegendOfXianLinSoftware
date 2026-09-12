@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
 import { attributesOf, getParty, resetParty } from '../fakes/party'
+import { addDrug, drugCount, resetDrugPack } from '../fakes/drugPack'
 import { createMemorySaveStore } from '../save/memoryStore'
 import { javaSource } from '../test/javaSource'
 import { sceneSourceOf } from '../state/trace'
@@ -68,6 +69,9 @@ const DEPS: SessionDeps = {
 
 function inScene(name: string): RunningSession {
   resetParty()
+  // 菜单每一拍把物品页的数写回模块级药包（xl-bsv），开菜单又从那里现读 ——
+  // 不清的话上一条用例喝剩的药会出现在下一条的物品页上。
+  resetDrugPack()
   return enterScene(createSession(DEPS), createWorld(getScene(name)))
 }
 
@@ -328,22 +332,14 @@ describe('场景 ↔ 菜单这条环路', () => {
  * 2. **穿一件盔甲**改四项属性，看队伍那边跟没跟上；
  * 3. **下一场战斗读到的是队伍那一份**，不是按等级重算出来的裸属性。
  *
- * ## 今天游戏本体走不到，判据里那一句"塞货"是怎么回事
+ * ## 药从哪来
  *
- * 药与装备在游戏本体里的唯一来源是商店（M4 / xl-knp），`openMenu` 不喂
- * `drugs` / `equipment`，六种药与六张装备表的持有量全是 0 —— 玩家点不出
- * 「使用」按钮。判据里那句"往背包里塞一瓶"就是药店将来要做的那一句，写在
- * 这里是**为了让这条路今天就有人走**：等到 M4 才发现写回漏了，中间这段时间
- * "没写回"与"写回了"长得一模一样。
+ * 药包的唯一落点是 `fakes/drugPack.ts`（商店、宝箱、战利品、读档都写它），
+ * `openMenu` 从那里现读（xl-bsv）。所以下面那句 `addDrug` 就是游戏本体里
+ * 药进背包的那一句，不是往菜单世界里塞货。装备那一半仍然走菜单装备页的
+ * `owned`（战利品另落一处，归 xl-5jx）。
  */
 describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
-  /** 往菜单世界的背包里塞货 —— 药店（xl-knp）将来做的就是这一句。 */
-  function stockDrug(s: RunningSession, name: string, count: number): void {
-    const stock = menuWorldOf(s)!.drugPack.find((d) => d.name === name)
-    if (!stock) throw new Error(`六种药里没有「${name}」`)
-    stock.count += count
-  }
-
   /** 物品页清单第 `index` 行的带中 —— 与 `MenuDriver.move()` 同一条公式。 */
   function drugRow(index: number): { x: number; y: number } {
     return {
@@ -360,10 +356,10 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     // "没被动过"与"被写成了 0"长得一样。
     Object.assign(getParty().zhang, { exp: 77, isDead: true, angryValue: 42 })
     const untouched = { ...getParty().zhang }
+    const drug = DRUGS[0]!
+    addDrug(drug.name, 1)
     s = openMenu(s)
 
-    const drug = DRUGS[0]!
-    stockDrug(s, drug.name, 1)
     const zhang = () => menuWorldOf(s)!.heroes[0]!
     expect(zhang().name, '第 0 个人应当是张小凡').toBe('zhangxiaofan')
     expect(zhang().hp, '菜单打开的那一刻看到的就该是队伍那个残血').toBe(1)
@@ -379,10 +375,15 @@ describe('菜单里改掉的血与属性回得到队伍（xl-6lo.16）', () => {
     expect(getParty().zhang.hp, '还没点「使用」，队伍不该动').toBe(1)
 
     const [ux, uy] = buttonCenter(menuWorldOf(s)!.panels.thingPanel.drug!.useButton)
+    // 期望值在动作之前记下（dispatch.md「事后比」）。
+    const heldBefore = drugCount(drug.name)
+    expect(heldBefore).toBe(1)
     s = advanceSession(s, { ...NO_INPUT, menu: click(ux, uy) }, 0)
 
     const inMenu = zhang().hp
     expect(inMenu, '这一口药没喝下去').toBe(1 + drug.addHp)
+    // xl-bsv 的反方向：喝掉的那一瓶当拍就从药包里扣掉（存档读的是药包）。
+    expect(drugCount(drug.name), '菜单里喝了药，药包没跟上').toBe(heldBefore - 1)
     // 正本判据一：**每一拍都写回**，不是等关菜单。
     expect(getParty().zhang.hp, '喝完这一拍队伍还是陈的').toBe(inMenu)
 
@@ -883,5 +884,51 @@ describe('天书页「确认离开」走会话也纹丝不动（xl-03x.12）', (
     // 对照：同一个会话里点「返回」真的回场景 —— 「面板变了」在这条路上是看得见的。
     s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb()!.main.returnButton)) }, 0)
     expect(s.panel, '对照失效：点「返回」也没切面板').toBe('scene')
+  })
+})
+
+/**
+ * 物品页读的是药包那一份（xl-bsv）。
+ *
+ * 原版物品页读 static 的 `DrugPack.drugList`，与商店、宝箱、战斗、读档同一张表。
+ * 这一层菜单世界只在 `createGameMenu` 里建一次；从前 `refreshMenuWorld` 不同步药，
+ * 于是药包里有 3 瓶、物品页上是 0 瓶 —— 两边各自的单测都是绿的。
+ */
+describe('物品页看得见药包里的药（xl-bsv）', () => {
+  /** 物品页上某味药的件数（菜单世界的存货，画的时候按 >0 过滤）。 */
+  function menuHeld(s: RunningSession, name: string): number {
+    const stock = menuWorldOf(s)!.drugPack.find((d) => d.name === name)
+    if (!stock) throw new Error(`菜单存货里没有「${name}」`)
+    return stock.count
+  }
+
+  it('建会话之前加的药，开菜单看得见', () => {
+    resetParty()
+    resetDrugPack()
+    const drug = DRUGS[0]!
+    addDrug(drug.name, 3)
+    const expected = drugCount(drug.name)
+    expect(expected, '对照失效：药包里本来就没进去').toBe(3)
+    let s = enterScene(createSession(DEPS), createWorld(getScene('宿舍')))
+    s = openMenu(s)
+    expect(menuHeld(s, drug.name)).toBe(expected)
+  })
+
+  it('开过一次菜单之后别处再加药，下次开菜单看到的是新的数', () => {
+    let s = inScene('宿舍')
+    const drug = DRUGS[1]!
+    s = openMenu(s)
+    expect(menuHeld(s, drug.name)).toBe(0)
+    // 关菜单：天书页「返回」。
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
+    const back = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.returnButton
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
+    expect(s.panel).toBe('scene')
+
+    // 商店 / 宝箱 / 战利品写的都是这一句。
+    addDrug(drug.name, 2)
+    const expected = drugCount(drug.name)
+    s = openMenu(s as RunningSession)
+    expect(menuHeld(s, drug.name), '菜单还是上次打开时的数').toBe(expected)
   })
 })

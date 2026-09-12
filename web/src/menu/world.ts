@@ -174,13 +174,32 @@ export function createMenuWorld(config: MenuConfig): MenuWorld {
  */
 export function refreshMenuWorld(
   w: MenuWorld,
-  config: Pick<MenuConfig, 'live' | 'audio'>,
+  config: Pick<MenuConfig, 'live' | 'audio'> & {
+    /**
+     * 药包此刻的六个数，按 `DRUGS` 的次序（xl-bsv）。原版物品页读的就是 static 的
+     * `DrugPack.drugList`，所以打开那一刻看到的是商店、宝箱、战斗、读档之后的数。
+     * 不给就不动（回放真值那条路的药来自剧本 setup，建世界时就定了）。
+     */
+    readonly drugs?: readonly number[] | undefined
+  },
 ): void {
   // ⚠️ **原地改，不还一份新的**（返回 `void` 是有意的）：还了 `MenuWorld` 的话
   // 它读起来像 `create*` 那族的不可变写法，而唯一的调用点根本没接返回值 ——
   // 下一个人照那个签名写 `const next = refreshMenuWorld(...)` 会以为原来那份
   // 没被动过。菜单世界的规矩是就地改（`types.ts` 文件头注）。
   refreshMenuHeroes(w.heroes, config.live)
+  if (config.drugs) {
+    const drugs = config.drugs
+    // `createDrugPack` 按 `DRUGS` 的次序建满六条，所以下标对得上；对不上就是
+    // 两边读的药表分了家 —— 抛，不按名字去猜。**就地改件数**：物品页那个
+    // `currentDrug` 认的是名字，条目对象换掉也不要紧，但就地改最省一次推理。
+    if (drugs.length !== w.drugPack.length) {
+      throw new Error(`药包有 ${drugs.length} 个数，菜单的存货有 ${w.drugPack.length} 条`)
+    }
+    w.drugPack.forEach((stock, i) => {
+      stock.count = drugs[i]!
+    })
+  }
   if (config.audio) {
     w.audio.bgm = config.audio.bgm
     w.audio.sfx = config.audio.sfx

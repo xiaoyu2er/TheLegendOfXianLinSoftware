@@ -1,0 +1,53 @@
+{
+  "name": "battle-drugs",
+  "description": "战斗里真的用药（xl-byy）。与 battle-menus 同一场遭遇（剧情1.txt 的三人对三怪），开打前背包里放 2 瓶金创药、1 包姜黄粉（drugs 字段 = DrugPack.addDrug）。文敏那一回合先点一瓶没有的还魄丹（存货 0，走 Reminder.show(19)），再点金创药（type 1 回血）；张小凡那一回合用技能2 花掉灵力，下一回合喝姜黄粉（type 2 回蓝）；陆雪琪那一回合（这时只剩 430/980 血）喝掉最后一瓶金创药。前三次都被夹到上限，最后一次不夹 —— 夹与不夹两支、回血/回蓝、回复数字、扣存货到 0、progressGo 都在这一条里；剩下交给普攻打完。",
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "party": [
+    "zhang",
+    "yu",
+    "lu"
+  ],
+  "level": {
+    "zhang": 5,
+    "yu": 5,
+    "lu": 5
+  },
+  "drugs": {
+    "金创药": 2,
+    "姜黄粉": 1
+  },
+  "enemies": [
+    "怪物1/5",
+    "怪物2/6",
+    "怪物2/7"
+  ],
+  "seed": 20260912,
+  "tickMs": 100,
+  "maxTicks": 4000,
+  "steps": [
+    { "op": "autoUntilRound", "round": 2, "max": 400, "budget": 500 },
+    { "op": "command", "button": "thing", "budget": 50 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "drugMenu", "button": "drug3", "budget": 50 },
+    { "op": "wait", "ticks": 40 },
+    { "op": "drugMenu", "button": "drug1", "budget": 50 },
+    { "op": "wait", "ticks": 20 },
+    { "op": "autoUntilRound", "round": 1, "max": 800, "budget": 900 },
+    { "op": "command", "button": "skill", "budget": 50 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "skillMenu", "button": "skill2", "budget": 50 },
+    { "op": "target", "enemy": 2, "budget": 50 },
+    { "op": "autoUntilRound", "round": 1, "max": 800, "budget": 900 },
+    { "op": "command", "button": "thing", "budget": 50 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "drugMenu", "button": "drug2", "budget": 50 },
+    { "op": "wait", "ticks": 20 },
+    { "op": "autoUntilRound", "round": 3, "max": 800, "budget": 900 },
+    { "op": "command", "button": "thing", "budget": 50 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "drugMenu", "button": "drug1", "budget": 50 },
+    { "op": "wait", "ticks": 20 },
+    { "op": "autoAttack", "until": "victory", "max": 2000 }
+  ]
+}
