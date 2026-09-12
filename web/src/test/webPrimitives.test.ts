@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ARROWS, KEYS } from '../game/keyboard'
+import { adrExceptionKeys } from './adrExceptionKeys'
 import { javaSource } from './javaSource'
 import { repoPath } from './repoPath'
 
@@ -36,7 +37,6 @@ import { repoPath } from './repoPath'
  */
 
 const LEDGER = 'docs/web-primitives.md'
-const ADR = 'docs/adr/0001-web-duplicates-original-defects.md'
 const ISSUES = 'tools/issue-snapshot/issues.json'
 
 interface Primitive {
@@ -131,12 +131,13 @@ interface Hit {
   readonly kinds: readonly Kind[]
 }
 
-/** `web/src/x/y.ts:12` → 这一行命中的类。 */
-/** 每一类命中的那几行原文，给「每一支都有见证」用。 */
-const HIT_LINES = new Map<Kind, string[]>()
-
-const HITS: ReadonlyMap<string, Hit> = (() => {
+/**
+ * `HITS`：`web/src/x/y.ts:12` → 这一行命中的类。
+ * `HIT_LINES`：每一类命中的那几行原文，给「每一支都有见证」用。
+ */
+const { HITS, HIT_LINES } = (() => {
   const hits = new Map<string, Hit>()
+  const hitLines = new Map<Kind, string[]>()
   for (const file of FILES) {
     const raw = readFileSync(repoPath(file), 'utf8')
     const isCss = CSS.test(file)
@@ -144,10 +145,10 @@ const HITS: ReadonlyMap<string, Hit> = (() => {
       if (!isCss && TS_COMMENT.test(line)) return
       const kinds = KINDS.filter((k) => PRIMITIVES[k].ext.test(file) && PRIMITIVES[k].re.test(line))
       if (kinds.length > 0) hits.set(`${file}:${i + 1}`, { kinds })
-      for (const k of kinds) HIT_LINES.set(k, [...(HIT_LINES.get(k) ?? []), line])
+      for (const k of kinds) hitLines.set(k, [...(hitLines.get(k) ?? []), line])
     })
   }
-  return hits
+  return { HITS: hits as ReadonlyMap<string, Hit>, HIT_LINES: hitLines as ReadonlyMap<Kind, readonly string[]> }
 })()
 
 /**
@@ -199,6 +200,21 @@ const JAVA_FILES = readdirSync(repoPath('src'), { recursive: true, encoding: 'ut
 const JAVA_LINES: ReadonlyMap<string, readonly string[]> = new Map(
   JAVA_FILES.map((f) => [f, javaSource(f).split(/\r?\n/)] as const),
 )
+
+/** 原版每个键 → 它出现的每一处 `src/…java:行`。 */
+const ORIGINAL_KEY_SITES: ReadonlyMap<string, ReadonlySet<string>> = (() => {
+  const out = new Map<string, Set<string>>()
+  for (const f of JAVA_FILES) {
+    JAVA_LINES.get(f)!.forEach((line, i) => {
+      if (/^\s*(?:\/\/|\*|\/\*)/.test(line)) return
+      for (const m of line.matchAll(ORIGINAL_KEY_RE)) {
+        const k = m[1] ?? m[2]!
+        out.set(k, (out.get(k) ?? new Set()).add(`${f}:${i + 1}`))
+      }
+    })
+  }
+  return out
+})()
 
 function scanAll(sources: Iterable<readonly [string, string]>, re: RegExp, skip: RegExp): Set<string> {
   const out = new Set<string>()
@@ -300,17 +316,31 @@ const SITE_ROWS: readonly SiteRow[] = tableRows('台账').map(({ no, cells }) =>
 interface KeyRow {
   readonly no: number
   readonly original: string | null
+  /** 「原版调用点」那一格展开成 `src/…java:行`。 */
+  readonly originalSites: readonly string[]
   readonly web: readonly string[]
   readonly verdict: Verdict | undefined
   readonly raw: string
 }
 
-/** 原版那一格：`` `VK_X` `` 或 `—`；web 那一格：逗号分隔的 JSON 字符串（`" "` 才写得出空格键），或 `—`。 */
+/**
+ * 原版那一格：`` `VK_X` `` 或 `—`；原版调用点：`` `src/…java:行,行` `` 用 ` · ` 隔开，或 `—`；
+ * web 那一格：逗号分隔的 JSON 字符串（`" "` 才写得出空格键），或 `—`。
+ */
 const KEY_ROWS: readonly KeyRow[] = tableRows('键位').map(({ no, cells }) => {
   const o = cells[0]!
   const om = /^`([A-Za-z0-9_]+)`$/.exec(o)
   if (!om && o !== '—') throw new Error(`${LEDGER}:${no} 原版那一格认不出来：${o}`)
-  const w = cells[1]!
+  const sc = cells[1]!
+  const originalSites =
+    sc === '—'
+      ? []
+      : sc.split(/\s*·\s*/).flatMap((part) => {
+          const m = /^`(src\/[^`:]+\.java):(\d+(?:,\d+)*)`$/.exec(part)
+          if (!m) throw new Error(`${LEDGER}:${no} 原版调用点那一格认不出来：${part}`)
+          return m[2]!.split(',').map((n) => `${m[1]}:${n}`)
+        })
+  const w = cells[2]!
   const web =
     w === '—'
       ? []
@@ -318,22 +348,10 @@ const KEY_ROWS: readonly KeyRow[] = tableRows('键位').map(({ no, cells }) => {
           if (!/^"(?:[^"\\]|\\.)*"$/.test(s)) throw new Error(`${LEDGER}:${no} web 那一格认不出来：${s}`)
           return JSON.parse(s) as string
         })
-  return { no, original: om ? om[1]! : null, web, verdict: parseVerdict(cells[2] ?? ''), raw: cells[2] ?? '' }
+  return { no, original: om ? om[1]! : null, originalSites, web, verdict: parseVerdict(cells[3] ?? ''), raw: cells[3] ?? '' }
 })
 
-/** 与 `originalPrimitives.test.ts` 同形而没有共用：从一个测试文件 import 另一个会把它的 describe 再注册一遍。 */
-const ADR_KEYS: ReadonlySet<string> = (() => {
-  const lines = readFileSync(repoPath(ADR), 'utf8').split('\n')
-  const start = lines.findIndex((l) => l.startsWith('## 例外'))
-  if (start < 0) throw new Error(`${ADR} 里找不到「## 例外」一节 —— 标题改了？`)
-  const end = lines.findIndex((l, i) => i > start && l.startsWith('## '))
-  const keys = new Set<string>()
-  for (const l of lines.slice(start + 1, end < 0 ? undefined : end)) {
-    const m = /^\|\s*`([a-z0-9]+(?:-[a-z0-9]+)*)`\s*\|/.exec(l)
-    if (m) keys.add(m[1]!)
-  }
-  return keys
-})()
+const ADR_KEYS = adrExceptionKeys()
 
 const SNAPSHOT: Readonly<Record<string, string>> = JSON.parse(readFileSync(repoPath(ISSUES), 'utf8'))
 
@@ -357,7 +375,6 @@ describe('web 侧浏览器平台 API ⇄ 台账（docs/web-primitives.md）', ()
     // 两个界标：扫描根或过滤条件写错时，它们最先掉出去。
     for (const anchor of ['web/src/app/App.tsx', 'web/src/index.css', 'web/src/game/useGame.ts'])
       expect(FILES, `${anchor} 不在扫描范围里`).toContain(anchor)
-    expect(existsSync(repoPath(LEDGER))).toBe(true)
     expect(HITS.size, 'web/src 里一处浏览器 API 都没扫到').toBeGreaterThan(0)
     expect(SITE_ROWS.length, `${LEDGER} 的台账一行都没读出来`).toBeGreaterThan(0)
     expect(KEY_ROWS.length, `${LEDGER} 的键位表一行都没读出来`).toBeGreaterThan(0)
@@ -395,12 +412,11 @@ describe('web 侧浏览器平台 API ⇄ 台账（docs/web-primitives.md）', ()
   })
 
   it('每一行的「类」一格与那几行实际命中的类一致', () => {
-    const wrong = SITE_ROWS.filter((r) => {
-      const actual = new Set(r.sites.flatMap((s) => HITS.get(s)?.kinds ?? []))
-      return [...actual].sort().join('/') !== [...r.kinds].sort().join('/')
-    }).map((r) => {
-      const actual = new Set(r.sites.flatMap((s) => HITS.get(s)?.kinds ?? []))
-      return `第 ${r.no} 行写「${r.kinds.join(' / ')}」，实际「${[...actual].join(' / ')}」`
+    const wrong = SITE_ROWS.flatMap((r) => {
+      const actual = [...new Set(r.sites.flatMap((s) => HITS.get(s)?.kinds ?? []))].sort()
+      return actual.join('/') === [...r.kinds].sort().join('/')
+        ? []
+        : [`第 ${r.no} 行写「${r.kinds.join(' / ')}」，实际「${actual.join(' / ')}」`]
     })
     expect(wrong).toEqual([])
   })
@@ -432,6 +448,17 @@ describe('键位：原版 KeyEvent.VK_* ⇄ web 认的键 ⇄ 台账「## 键位
     expect([...ORIGINAL_KEYS].filter((k) => !count.has(k)), '原版认、台账没写的键').toEqual([])
     expect([...count].filter(([, n]) => n.length > 1).map(([k, n]) => `${k} ← 第 ${n.join(' / ')} 行`)).toEqual([])
     expect([...count.keys()].filter((k) => !ORIGINAL_KEYS.has(k)), '台账写了、原版里没有的键').toEqual([])
+  })
+
+  it('每一行的「原版调用点」与那个键在原版里现扫出来的每一处逐一相等（少列、多列、行号过期 → 红）', () => {
+    const wrong = KEY_ROWS.flatMap((r) => {
+      const want = r.original ? [...(ORIGINAL_KEY_SITES.get(r.original) ?? [])].sort() : []
+      const got = [...r.originalSites].sort()
+      return want.join(' ') === got.join(' ')
+        ? []
+        : [`第 ${r.no} 行 ${r.original ?? '—'}：少列 ${want.filter((s) => !got.includes(s)).join(' ') || '无'}；多列 ${got.filter((s) => !want.includes(s)).join(' ') || '无'}`]
+    })
+    expect(wrong).toEqual([])
   })
 
   it('web 认的每一个键恰好落在一行，每一行的 web 键都真被认', () => {

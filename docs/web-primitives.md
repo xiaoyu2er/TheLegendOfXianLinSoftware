@@ -25,11 +25,11 @@
 | 调用点 | 类 | 判定 | 证据 |
 |---|---|---|---|
 | `web/src/app/App.tsx:73` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
-| `web/src/app/App.tsx:319,321,327,331` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:92` | 松手按「按下那一刻」的组件派（Swing 的 mouse grab），xl-z4f；`app/appMenu.test.tsx` |
+| `web/src/app/App.tsx:319,321,327,331` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab），xl-z4f；`app/appMenu.test.tsx` |
 | `web/src/app/App.tsx:379` | 元素 | 工程 | 外壳 `div` |
 | `web/src/app/App.tsx:395` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
-| `web/src/app/App.tsx:402` | 事件 | 对应 `src/menu/MenuPanel.java:92` | 菜单按下 |
-| `web/src/app/App.tsx:403` | 事件 | 对应 `src/menu/MenuPanel.java:108` | 菜单移动（`mouseMoved` / `mouseDragged` 两支逐字相同） |
+| `web/src/app/App.tsx:402` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
+| `web/src/app/App.tsx:403` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
 | `web/src/app/App.tsx:404` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
 | `web/src/app/App.tsx:405` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
 | `web/src/app/App.tsx:412,413,414` | 事件 | 对应 `src/shop/ShopPanel.java:173` | 两家店的按下 / 松开 / 移动（装备店是 `EquipmentShopPanel.java:249` 同形的一段） |
@@ -41,12 +41,12 @@
 | `web/src/app/App.tsx:533,535` | 事件 / 无障碍 | 已登记 `ADR-0001#stage-scales-to-window` | 全屏按钮 |
 | `web/src/app/devTools.ts:11` | 地址 / 全局 | 工程 | `?dev` 开关 |
 | `web/src/audio/bgmPlayer.ts:59,99` | 键盘 / 指针 / 事件 | 已登记 `ADR-0001#bgm-waits-for-gesture` | 自动播放被挡时等第一次手势（**xl-03x.22 补登**） |
-| `web/src/audio/bgmPlayer.ts:62` | 音频 | 对应 `src/media/MusicPlayer.java:48` | 背景音乐的唯一播放对象 |
-| `web/src/audio/sfxPlayer.ts:79` | 音频 | 对应 `src/media/MusicPlayer.java:88` | 音效的唯一播放对象 |
+| `web/src/audio/bgmPlayer.ts:62` | 音频 | 对应 `src/media/MusicPlayer.java:71` | 背景音乐开播（`play()` 里 `sourceDataLine.start()`）；web 只有一个播放对象、换 `src` |
+| `web/src/audio/sfxPlayer.ts:79` | 音频 | 对应 `src/media/MusicPlayer.java:111` | 音效开播（`playmusic()` 里 `sourceDataLine.start()`）；后一声顶掉前一声 |
 | `web/src/battle/render/battleRenderer.ts:137,157,250` | 全局 | 工程 | 量字 / 离屏画布 |
 | `web/src/game/enemySprites.ts:47` | 图片 | 工程 | 量怪物贴图的尺寸 |
 | `web/src/game/keyboard.ts:11,68,77` | 键盘 | 对应 `src/main/GameLauncher.java:186` | 按下 / 松开两路；逐键见下面「## 键位」 |
-| `web/src/game/useGame.ts:349,377,387,388,390,391` | 键盘 / 事件 / 全局 | 对应 `src/main/GameLauncher.java:186` | 窗口级键盘监听（原版 `this.addKeyListener(this)` 挂在 `JFrame` 上）。⚠️ 它对认下来的键一律 `preventDefault` —— **标题页上回车按不动聚焦的按钮**，见文末 |
+| `web/src/game/useGame.ts:349,377,387,388,390,391` | 键盘 / 事件 / 全局 | 对应 `src/main/GameLauncher.java:186` | 窗口级键盘监听（原版 `this.addKeyListener(this)` 挂在 `JFrame` 上）。⚠️ 它对认下来的键一律 `preventDefault` —— **标题页上回车 / 空格按不动聚焦的按钮**，缺陷归 `xl-fqm`，见文末 |
 | `web/src/game/useGame.ts:356` | 键盘 | 对应 `src/scene/ScenePanel.java:207` | ESC 开菜单 |
 | `web/src/game/useGame.ts:369` | 键盘 | 对应 `src/battle/BattlePanel.java:290` | 调试外挂键 J（xl-03x.14） |
 | `web/src/game/useGame.ts:467,486,796,797` | 时钟 / 定时 / 全局 | 对应 `src/scene/ScenePanel.java:276` | 10 ms 一拍，按真实流逝补拍；`state/loop.test.ts` |
@@ -67,7 +67,7 @@
 | `web/src/start/StartPanel.tsx:155` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 「结」禁用的理由 |
 | `web/src/start/StartPanel.tsx:165,166,167,202` | 事件 / 元素 | 对应 `src/start/StartPanel.java:202` | `mouseMoved` |
 | `web/src/start/StartPanel.tsx:172,173` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 键盘焦点 = 悬停 |
-| `web/src/start/StartPanel.tsx:174` | 事件 | 对应 `src/start/StartPanel.java:184` | 点击。⚠️ 用 `onClick` 是为了「键盘回车也按得动」，**真浏览器里按不动**，见文末 |
+| `web/src/start/StartPanel.tsx:174` | 事件 | 对应 `src/start/StartPanel.java:192` | 原版在**松手**时响应（`mouseReleased` → `isRelesedButton`），`click` 也在松手时触发。⚠️ 用 `onClick` 还为了「键盘也按得动」，**真浏览器里按不动**，归 `xl-fqm` |
 | `web/src/start/StartPanel.tsx:186,195,210,216,226,252,261,277` | 无障碍 / 元素 | 工程 | 装饰图的 `alt=""`（读屏跳过） |
 | `web/src/start/useStartPanel.ts:113,115,116` | 时钟 / 定时 | 对应 `src/start/StartPanel.java:153` | 100 ms 一拍，按真实流逝补拍 |
 | `web/src/ui/DialogueBox.tsx:50,53` | 元素 / 无障碍 | 已登记 `ADR-0001#screen-reader-text` | `aria-live` + 视觉隐藏的整句（**xl-03x.22 补登**） |
@@ -77,20 +77,23 @@
 
 原版一边是 `src/` 里每一处 `KeyEvent.VK_*` 与 `isXxxDown()`；web 一边是 `game/keyboard.ts` 的 `ARROWS` / `KEYS`、
 与 `event.key` / `event.code` 比较的字面量、`event` / `raw` 上读的修饰键。两边各自现扫，每个键恰好落一行。
+「原版调用点」那一格列出这个键在原版里**每一处**出现的行（现扫对撞：少列、多列、行号过期都红）——
+按键归并会把「同一个键在不同场合接得一不一样」藏起来，这一格至少让每一处都看得见、指得到。
+各场合的行为本身是行为真值逐步回放（`state/traceReplay.test.ts` 等）的事，这张表不核。
 web 那一格写成 JSON 字符串（空格键只能这么写：`" "`）。
 
-| 原版 | web | 判定 | 证据 |
-|---|---|---|---|
-| `VK_LEFT` | "ArrowLeft" | 照做 | `game/keyboard.test.ts`「四个方向键映射成四个方向」；`state/traceReplay.test.ts` |
-| `VK_RIGHT` | "ArrowRight" | 照做 | 同上 |
-| `VK_UP` | "ArrowUp" | 照做 | 同上（选择框里上下移动也是它，`SelectEvent.java:316`） |
-| `VK_DOWN` | "ArrowDown" | 照做 | 同上 |
-| `VK_SPACE` | " ", "Spacebar" | 照做 | `game/keyboard.test.ts`「空格认成 space」。`Spacebar` 是旧浏览器给同一个键报的名字，不是第二个键 |
-| `VK_ENTER` | "Enter" | 已登记 `ADR-0001#dialogue-skip-printing` | 选择框开着时是原版的确认键（`SelectEvent.java:341`，照做）；没开着时是加出来的「跳过逐字打印」 |
-| `VK_ESCAPE` | "Escape" | 照做 | 场景开菜单、存读档面板退出；菜单里的 `VK_ESCAPE`（`MenuPanel.java:126`）原版就收不到，照样收不到；`game/useGame.test.tsx` |
-| `VK_J` | "KeyJ", "j" | 照做 | 战斗里的调试外挂键（xl-03x.14）；认 `code` 是因为中文输入法开着时 `key` 是 `Process`；`game/useGame.test.tsx` |
-| `isControlDown` | "ctrlKey" | 照做 | 跑步；`game/keyboard.test.ts`「Ctrl 与 Shift 都算跑步键」 |
-| — | "shiftKey" | 已登记 `ADR-0001#shift-also-runs` | **原版没有**（xl-03x.22 补登） |
+| 原版 | 原版调用点 | web | 判定 | 证据 |
+|---|---|---|---|---|
+| `VK_LEFT` | `src/scene/RoleEvent.java:34` · `src/scene/ScenePanel.java:189,286` | "ArrowLeft" | 照做 | `game/keyboard.test.ts`「四个方向键映射成四个方向」；`state/traceReplay.test.ts` |
+| `VK_RIGHT` | `src/scene/RoleEvent.java:37` · `src/scene/ScenePanel.java:190,287` | "ArrowRight" | 照做 | 同上 |
+| `VK_UP` | `src/scene/RoleEvent.java:40` · `src/scene/ScenePanel.java:188,288` · `src/scene/SelectEvent.java:316,331` | "ArrowUp" | 照做 | 同上（选择框里上下移动也是它，`SelectEvent.java:316`） |
+| `VK_DOWN` | `src/scene/RoleEvent.java:43` · `src/scene/ScenePanel.java:187,289` · `src/scene/SelectEvent.java:316,323` | "ArrowDown" | 照做 | 同上 |
+| `VK_SPACE` | `src/scene/DialogueEvent.java:116` · `src/scene/NPCEvent.java:30` · `src/scene/ScenePanel.java:179,197` · `src/scene/SelectEvent.java:416` · `src/scene/TreasureBox.java:54` | " ", "Spacebar" | 照做 | `game/keyboard.test.ts`「空格认成 space」。`Spacebar` 是旧浏览器给同一个键报的名字，不是第二个键 |
+| `VK_ENTER` | `src/scene/SelectEvent.java:341` | "Enter" | 已登记 `ADR-0001#dialogue-skip-printing` | 选择框开着时是原版的确认键（`SelectEvent.java:341`，照做）；没开着时是加出来的「跳过逐字打印」 |
+| `VK_ESCAPE` | `src/menu/MenuPanel.java:126` · `src/scene/ScenePanel.java:207` · `src/start/LoadAndSavePanel.java:301` | "Escape" | 照做 | 场景开菜单、存读档面板退出；菜单里的 `VK_ESCAPE`（`MenuPanel.java:126`）原版就收不到，照样收不到；`game/useGame.test.tsx` |
+| `VK_J` | `src/battle/BattlePanel.java:290` | "KeyJ", "j" | 照做 | 战斗里的调试外挂键（xl-03x.14）；认 `code` 是因为中文输入法开着时 `key` 是 `Process`；`game/useGame.test.tsx` |
+| `isControlDown` | `src/main/GameLauncher.java:190` | "ctrlKey" | 照做 | 跑步；`game/keyboard.test.ts`「Ctrl 与 Shift 都算跑步键」 |
+| — | — | "shiftKey" | 已登记 `ADR-0001#shift-also-runs` | **原版没有**（xl-03x.22 补登） |
 
 ## 这一遍找到的，与它看不见的
 
