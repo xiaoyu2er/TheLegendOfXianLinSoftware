@@ -109,6 +109,9 @@ export function describeOutcome(o: Outcome): string {
 
 class PilotError extends Error {}
 
+/** 自动驾驶看出来的「被测对象走不下去了」—— 报成 `stuck`，不算自动驾驶的错。 */
+class StallError extends Error {}
+
 /** 怪物出场图的尺寸从真的 PNG 里量 —— 与 `game/session.test.ts` 同一条路。 */
 function spriteSize(name: string): { width: number; height: number } {
   const png = decodePng(readFileSync(repoPath('image/怪物', name, '1.png')))
@@ -221,6 +224,7 @@ export function runMainline(chain: Chain, truths: Truths, start: RunningSession,
       input = pilot.decide(s, hops[next])
     } catch (e) {
       if (e instanceof PilotError) return broken('pilot', e.message)
+      if (e instanceof StallError) return broken('stuck', e.message)
       throw e
     }
     try {
@@ -324,7 +328,7 @@ class Pilot {
     if (w.scene === story && !d.eventOver) return this.trigger(w)
     if (hop === undefined) return this.wait(`${w.scene} 的对话放完了，等结局`)
     if (hop.how.kind === 'battle') {
-      throw new PilotError(`${w.scene} 的对话放完了，第 ${hop.index} 跳那场推剧情的仗（${hop.how.boss}）却没开出来`)
+      throw new StallError(`${w.scene} 的对话放完了，第 ${hop.index} 跳那场推剧情的仗（${hop.how.boss}）却没开出来`)
     }
     return this.towardExit(w, hop.triple[1])
   }
