@@ -1,13 +1,13 @@
 {
   "baker": {
-    "web/scripts/bake.ts": "1a07ebc8038fc6619a7b1dde7dbb5b820a0bbaa0989b205c11385bb88b0ccaf2",
+    "web/scripts/bake.ts": "79bd788d3c433847b53fd0094bda0c51905aab4f4c2b92f54fe5ab7ddf7492fe",
     "web/src/assets/bakeStamp.ts": "ce6819bd95a15a71e572af8a643638036f3185605e46b0e601a8364f86cc7693",
     "web/src/assets/battleAssets.ts": "63bfa94f1d92a513ef0b05106480d69e42921f0057ffca864ed9000344e4986f",
     "web/src/assets/checkAssets.ts": "3189ce3f790ab621e58580fb6cc6f31b936a3f62e24c199b4ba6c463ae212db7",
     "web/src/assets/ids.ts": "811fe440eb72f4db2467123e6024c1efcce668f4fb0629927ca2e99aa87b1828",
     "web/src/assets/knownMissing.ts": "a7560f9327c723af39664b4301dac608c577318b761896c1d31ca52457ccb0a8",
     "web/src/assets/listFiles.ts": "fb1c2ddfb2d2834afbcd527b014bdb42e8e246182aa39f6b66b99a93b0698dec",
-    "web/src/assets/menuAssets.ts": "09dbaedb21455d93d67a1617a57fe4c8d9e58f6761e22092899cb96ced882a18",
+    "web/src/assets/menuAssets.ts": "32602fd877b582ea9c198f8bbf27a66a586c7d3841715629667ac5bff026242f",
     "web/src/assets/path.ts": "fd7bca3604aa4326356af9dce184108035bfef2606238377ebe498c440229077",
     "web/src/assets/sceneAssets.ts": "868bd3ecfcc66f8b1483eeb6f36940c6315240fe4933bd0c8ae02a2791038973",
     "web/src/assets/sfxAssets.ts": "4ee1767ffbf2d4009a32ed3ea4be2b58604711ef04f1c902c4ebdf635d221008",
