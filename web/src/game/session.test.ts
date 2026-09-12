@@ -37,6 +37,7 @@ import {
   createSession,
   currentBgm,
   enterScene,
+  sceneMusicReplayed,
 } from './session'
 import type { RunningSession, SessionDeps } from './session'
 import { getAudioSettings, rememberAudioSettings, resetAudioSettings } from './audioSettings'
@@ -329,6 +330,8 @@ describe('场景 → 战斗 → 场景', () => {
     const back = advanceSession(done.session, NO_INPUT, SCENE_PUMP_MS)
     expect(back.scene.world.sceneSignal).toBe(false)
     expect(currentBgm(back)).toBe(getScene('迷宫1').sceneMusic)
+    // 放回去的那一拍就是 readBGM 那一拍（xl-4io）：pump 靠这条边沿要求从头放。
+    expect(sceneMusicReplayed(done.session, back)).toBe(true)
 
     // 场景那一侧：主角像素坐标、脚本、NPC 名单、BGM 声明一个都没变。
     // （虚拟时间与 NPC 的定时器**是**会走的 —— 原版那条线程没停。）

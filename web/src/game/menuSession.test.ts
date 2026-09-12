@@ -37,6 +37,7 @@ import {
   enterScene,
   menuWorldOf,
   openMenu,
+  sceneMusicReplayed,
 } from './session'
 import type { RunningSession, SessionDeps } from './session'
 import type { BattleInfo } from '../state/fight'
@@ -98,9 +99,21 @@ describe('场景 ↔ 菜单这条环路', () => {
     expect(menuWorldOf(s)!.panel).toBe('funcPanel')
 
     const back = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.returnButton
+    const inMenu = s
     s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(back)) }, 0)
     expect(s.panel).toBe('scene')
     expect(menuWorldOf(s)).toBeNull()
+    // 场景曲从头放（xl-4io）：点「返回」那一拍只置 SCENE_SIGNAL，场景线程下一拍
+    // 才 readBGM —— 曲名前后都是宿舍那首，只有这条边沿分得出来。
+    expect(sceneMusicReplayed(inMenu, s)).toBe(false)
+    // 一拍都没推（pump 两帧间隔不足一拍时就是这样）：信号还在，readBGM 还没发生。
+    const idle = advanceSession(s, NO_INPUT, 0)
+    expect(idle.scene.world.sceneSignal).toBe(true)
+    expect(sceneMusicReplayed(s, idle)).toBe(false)
+    const replayed = advanceSession(s, NO_INPUT, MENU_TICK_MS)
+    expect(sceneMusicReplayed(s, replayed)).toBe(true)
+    expect(currentBgm(replayed)).toBe(getScene('宿舍').sceneMusic)
+    expect(sceneMusicReplayed(replayed, advanceSession(replayed, NO_INPUT, MENU_TICK_MS))).toBe(false)
     expect({
       x: roleTileX(s.scene.world.role),
       y: roleTileY(s.scene.world.role),

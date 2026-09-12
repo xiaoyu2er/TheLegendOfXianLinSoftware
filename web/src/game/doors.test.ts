@@ -34,6 +34,7 @@ import {
   createSession,
   currentBgm,
   enterScene,
+  sceneMusicReplayed,
   shopWorldOf,
 } from './session'
 import type { RunningSession, SessionDeps } from './session'
@@ -426,6 +427,11 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
     expect(back.scene.world.sceneSignal).toBe(true)
     const next = advanceSession(back, { scene: [], battle: [], menu: [] }, 10)
     expect(currentBgm(next)).toBe(getScene(trace.script.scene.replace(/\.txt$/, '')).sceneMusic)
+    // 那句 readBGM 不看同名（xl-4io）：进店前后曲名没变，从头放只能靠这条边沿。
+    // 点「返回游戏」那一拍只置信号，不算。
+    expect(sceneMusicReplayed(session, back)).toBe(false)
+    expect(sceneMusicReplayed(back, next)).toBe(true)
+    expect(sceneMusicReplayed(next, advanceSession(next, { scene: [], battle: [], menu: [] }, 10))).toBe(false)
     // ⚠️ 原版「是」那一支只有一句 switchTo，不清 isSelect / shopSelect：
     // 回来时选择框还开着，再按一下回车又进店 —— **进的是同一份店**（存货不重掷）。
     expect(next.scene.world.select.isSelect).toBe(true)
