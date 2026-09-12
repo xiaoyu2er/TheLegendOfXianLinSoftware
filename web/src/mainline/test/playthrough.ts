@@ -18,7 +18,7 @@ import type { SceneScript } from '../../data/types'
 import { repoPath } from '../../test/repoPath'
 import { enemyNames } from '../../state/fight'
 import { type Chain, type Hop, type Truths, bare, exitsOf } from './chain'
-import { landingMismatches } from './landing'
+import { landingMismatches, roleTileOf as tileOf } from './landing'
 
 /**
  * **主线连跑**（xl-03x.18）：从新游戏那一刻起，只喂按键，一拍一拍推会话层，看它能不能沿着
@@ -49,8 +49,9 @@ import { landingMismatches } from './landing'
  *
  * ## 断在哪
  *
- * 断了就报**断在第几跳**（`Hop.index`，从 1 数）与怎么断的。「卡」是一跳之内推了
- * `hopBudget` 拍还没落地；这时报的还有自动驾驶最后一刻想干什么（`intent`）—— 卡住可能是
+ * 断了就报**断在第几跳**（`Hop.index`，从 1 数）与怎么断的。「卡」（`stuck`）有两种：一跳之内推了
+ * `hopBudget` 拍还没落地；或者自动驾驶看出该发生的没发生（对话放完了、推剧情的仗却没开）。
+ * 报的还有自动驾驶最后一刻想干什么（`intent`）—— 卡住可能是
  * 被测对象的错，也可能是自动驾驶不会走，**两者要分开看**，报文里带着那句意图就是为了分。
  */
 
@@ -86,7 +87,7 @@ function dialogueMismatch(truths: Truths, hop: Hop, spoke: number): string[] {
 export type BreakKind =
   /** 被测对象抛了。 */
   | 'threw'
-  /** 一跳之内推满预算还没落地。 */
+  /** 走不下去了：一跳之内推满预算还没落地，或者自动驾驶看出该发生的没发生（对话放完了、推剧情的仗却没开）。 */
   | 'stuck'
   /** 落地了，但交接那把尺不认。 */
   | 'mismatch'
@@ -103,7 +104,10 @@ export type Outcome =
 
 /** 人话，测试失败时直接打出来。 */
 export function describeOutcome(o: Outcome): string {
-  if (o.kind === 'ended') return `走到了结局：${o.landings.length} 跳、${o.ticks} 拍`
+  if (o.kind === 'ended') {
+    const most = o.landings.reduce((a, b) => (b.ticks > a.ticks ? b : a))
+    return `走到了结局：${o.landings.length} 跳、${o.ticks} 拍；每跳最多 ${most.ticks} 拍（第 ${most.hop} 跳）`
+  }
   return `连跑断在第 ${o.hop} 跳（${o.how}）：${o.reason}；自动驾驶此刻在「${o.intent}」；已推 ${o.ticks} 拍`
 }
 
@@ -146,6 +150,24 @@ export interface Fight {
   monsters: readonly string[]
 }
 
+/** 出厂数据的缺口：缺哪几只（全库现数）、链上哪几场撞到它们。 */
+export interface MonsterGap {
+  missing: string[]
+  fights: Fight[]
+}
+
+/** 把一个「取出厂数据、没有就抛」的函数变成「有没有」。两份连跑测试各拿自己那一份 `enemySpec` 来问。 */
+export const specExists =
+  (spec: (name: string) => unknown) =>
+  (name: string): boolean => {
+    try {
+      spec(name)
+      return true
+    } catch {
+      return false
+    }
+  }
+
 /**
  * **出厂数据的缺口，现数**（xl-3hn）：全库脚本用到、而 `hasSpec` 说没有的那几只怪（`missing`），
  * 与链上各本里撞到它们的那几场（`fights`）。分母是数据层真值，一个都不手写。
@@ -154,7 +176,7 @@ export function monsterGap(
   truths: Truths,
   chain: Chain,
   hasSpec: (name: string) => boolean,
-): { missing: string[]; fights: Fight[] } {
+): MonsterGap {
   const all = new Set<string>()
   for (const s of truths.values()) {
     for (const list of [s.battle0, s.battle1, s.battle2]) for (const b of list ?? []) for (const n of enemyNames(b)) all.add(n)
@@ -174,12 +196,13 @@ export function monsterGap(
 }
 
 /** 缺口的一行读数，打进测试输出（关票理由与新票的数从这里抄）。 */
-export function describeGap(gap: { missing: string[]; fights: Fight[] }): string {
+export function describeGap(gap: MonsterGap): string {
   const plot = gap.fights.filter((f) => f.kind === 'battle1')
   const random = gap.fights.filter((f) => f.kind === 'battle0')
+  const plotScripts = [...new Set(plot.map((f) => f.script))]
   return (
     `缺出厂数据的怪 ${gap.missing.length} 只（${gap.missing.join('、')}）；` +
-    `链上撞到的剧情战 ${plot.length} 场、分布在 ${new Set(plot.map((f) => f.script)).size} 本（${[...new Set(plot.map((f) => f.script))].join('、')}）；` +
+    `链上撞到的剧情战 ${plot.length} 场、分布在 ${plotScripts.length} 本（${plotScripts.join('、')}）；` +
     `随机遭遇 ${random.length} 行、分布在 ${[...new Set(random.map((f) => f.script))].join('、') || '无'}`
   )
 }
@@ -190,12 +213,7 @@ export function describeGap(gap: { missing: string[]; fights: Fight[] }): string
  */
 export const HOP_BUDGET = 60_000
 
-export interface RunOptions {
-  /** 一跳之内最多推几拍。 */
-  hopBudget: number
-}
-
-export function runMainline(chain: Chain, truths: Truths, start: RunningSession, opts: RunOptions): Outcome {
+export function runMainline(chain: Chain, truths: Truths, start: RunningSession, hopBudget = HOP_BUDGET): Outcome {
   const { hops } = chain
   const pilot = new Pilot(chain, truths)
   const landings: Landing[] = []
@@ -218,8 +236,8 @@ export function runMainline(chain: Chain, truths: Truths, start: RunningSession,
   })
 
   for (;;) {
-    if (tick - hopStart >= opts.hopBudget) {
-      const what = next < hops.length ? `推了 ${opts.hopBudget} 拍还没落到 ${hops[next]!.triple[2]}` : `推了 ${opts.hopBudget} 拍还没进结局`
+    if (tick - hopStart >= hopBudget) {
+      const what = next < hops.length ? `推了 ${hopBudget} 拍还没落到 ${hops[next]!.triple[2]}` : `推了 ${hopBudget} 拍还没进结局`
       return broken('stuck', what)
     }
     let input: SessionInput
@@ -281,7 +299,6 @@ const DIRS: readonly { k: ArrowKey; dx: number; dy: number }[] = [
   { k: 'right', dx: 1, dy: 0 },
 ]
 
-const TILE = 32
 const key = (p: TilePos): string => `${p.x},${p.y}`
 
 /**
@@ -294,7 +311,8 @@ const key = (p: TilePos): string => `${p.x},${p.y}`
  * 3. 对话框开着：打印中按回车跳过，一句打完或一屏打满按空格；
  * 4. 还站在这一跳的出发脚本里、主线对话没放完：去触发下一段 —— 触发码是 `-1` 就等它自己
  *    开口，是一串坐标就走过去，是一个 NPC 序号就走到它跟前按空格；
- * 5. 对话放完了（或者已经走进了自由场景）：沿出口走向下一段剧情要踩的那个出口名。
+ * 5. 对话放完了（或者已经走进了自由场景）：沿出口走向下一段剧情要踩的那个出口名。这一跳若是
+ *    战斗跳，走到这一步就说明推剧情的仗该开没开 —— 报 `stuck`（`StallError`）。
  */
 class Pilot {
   intent = '开局'
@@ -450,10 +468,6 @@ class Pilot {
     this.intent = intent
     return { ...NONE, scene }
   }
-}
-
-function tileOf(w: World): TilePos {
-  return { x: Math.trunc(w.role.px / TILE), y: Math.trunc(w.role.py / TILE) }
 }
 
 /** 广度优先求到 `goal` 的最短路的第一步。`npcsBlock` 为假时把 NPC 当空气（它们会走开）。 */

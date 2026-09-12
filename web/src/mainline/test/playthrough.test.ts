@@ -3,7 +3,7 @@ import { START_SCENE } from '../../data/scenes'
 import { enemySpec } from '../../battle/units'
 import { getScene } from '../../data/scenesEager'
 import { loadTruths, readPlotBosses, readStart, walkChain } from './chain'
-import { HOP_BUDGET, type Outcome, describeGap, describeOutcome, monsterGap, newGame, runMainline } from './playthrough'
+import { type Outcome, describeGap, describeOutcome, monsterGap, newGame, runMainline, specExists } from './playthrough'
 
 /**
  * **主线状态层连跑 —— 真实产品数据**（xl-03x.18）：从新游戏一路按键走向结局，看它在哪断。
@@ -33,19 +33,13 @@ const truths = loadTruths()
 const start = readStart()
 const chain = walkChain(truths, 'win32', start.script, readPlotBosses())
 
-const productHas = (name: string): boolean => {
-  try {
-    enemySpec(name)
-    return true
-  } catch {
-    return false
-  }
-}
+const productHas = specExists(enemySpec)
 
 let outcome: Outcome
 
 beforeAll(() => {
-  outcome = runMainline(chain, truths, newGame(getScene), { hopBudget: HOP_BUDGET })
+  outcome = runMainline(chain, truths, newGame(getScene))
+  console.log(`链 ${chain.scripts.length} 本 / ${chain.hops.length} 跳（win32）`)
   console.log(describeOutcome(outcome))
   console.log(describeGap(monsterGap(truths, chain, productHas)))
 }, 120_000)

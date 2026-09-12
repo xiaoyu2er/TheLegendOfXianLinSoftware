@@ -18,11 +18,16 @@ export function landingMismatches(w: World, hop: Hop): string[] {
   if (JSON.stringify(w.currentScript) !== JSON.stringify(hop.triple)) {
     out.push(`currentScript 是 ${JSON.stringify(w.currentScript)}，应为 ${JSON.stringify(hop.triple)}`)
   }
-  const at = { x: Math.floor(w.role.px / TILE), y: Math.floor(w.role.py / TILE) }
+  const at = roleTileOf(w)
   const [x, y] = pos.split('/').map(Number)
   if (at.x !== x || at.y !== y) out.push(`落点是 ${at.x}/${at.y}，应为 ${pos}`)
   if (!w.isScript) out.push('isScript 是 false，应为 true')
   return out
+}
+
+/** 主角脚下那一格 —— 原版 `Role.getX()` 的整数除法（`state/role.ts` 的 `roleTileX`）。 */
+export function roleTileOf(w: World): { x: number; y: number } {
+  return { x: Math.trunc(w.role.px / TILE), y: Math.trunc(w.role.py / TILE) }
 }
 
 const TILE = 32
