@@ -268,6 +268,8 @@ describe('逐帧比对要的那一帧：只有 tick 步画', () => {
       expect(EXCEPTED.buttons?.[name], `${name} 悬停了「结」，它的 buttons 那一格该登在 EXCEPTED 里`).toBe('start-exit-disabled')
       const truth = TRACES.get(name)!.ticks
       const ours = REPLAYED.get(name)!.rows
+      // 只用来分「悬停之前 / 之后」。**不再断言它 > 0**：names 就是从 hover 步挑出来的，那句按构造
+      // 成立（xl-r0x 评审）；防空转的是 stepsWhere 一步都没选到就抛。
       let differs = 0
       truth.forEach((t, i) => {
         const { end: tEnd, ...tRest } = t.buttons as Btns
@@ -288,7 +290,6 @@ describe('逐帧比对要的那一帧：只有 tick 步画', () => {
           expect(visible(oEnd!), `${name} 第 ${i} 步：移开之后画面上的那几项两边一样`).toEqual(visible(tEnd!))
         }
       })
-      expect(differs).toBeGreaterThan(0)
     }
   })
 })
