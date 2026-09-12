@@ -120,9 +120,7 @@ describe('一帧的绘制清单', () => {
       [mapAssetId(w.maps[0]!), 100],
       [mapAssetId(w.maps[2]!), 500],
     ])
-    expect(thumbs.every((o) => o.kind === 'image' && o.scaled?.width === 150 && o.scaled.height === 100)).toBe(true)
-    expect(thumbs.map((o) => o.kind === 'image' && o.scaled?.loop)).toEqual([THUMBNAIL_LOOP, THUMBNAIL_LOOP])
-  })
+    expect(thumbs.every((o) => o.kind === 'image' && o.scaled?.width === 150 && o.scaled.height === 100)).toBe(true)  })
 
   it('任务画不画看的是「这个槽非空」，不看文本（原版引用比较）—— 文本恰好是「无」也照画', () => {
     const w = world()

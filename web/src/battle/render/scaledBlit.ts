@@ -18,7 +18,8 @@
  * 于是缩放**不再靠 GPU 采样**：这里按原版的规律算出「每个目标像素取哪个源
  * 像素」，渲染器照着它在 CPU 上拼出一张目标尺寸的位图，再 1:1 贴上去。顺带
  * 甩掉一个可移植性隐患 —— WebGL 的最近邻在**恰好落在纹素边界**上取哪一个是
- * 实现自定的。现在走这条路的有三处：提示图、旁白背景（xl-03x.15）、存读档缩略图（xl-cpo）。
+ * 实现自定的。战斗提示图最先这么做（xl-ttu），后来的旁白背景（xl-03x.15）与存读档缩略图
+ * （xl-cpo）照搬；谁在用，搜 `scaledBlitPasses` 的调用方。
  *
  * ## 规律是量出来的，判据是那几张表
  *
@@ -87,10 +88,6 @@ const MEASURED_BLITS: readonly { readonly src: BlitExtent; readonly dest: BlitEx
       [3200, 2560],
     ] as const
   ).map(([width, height]) => ({ src: { width, height }, dest: { width: 150, height: 100 } })),
-  // 导出器单列量的那一对（`thumbnail.checks`）。没有调用方画它；登记是为了让带护栏的产品函数
-  // 在这里也被黄金数据核到 —— 带透明那条退回旧的常数 16 位时，产品能走到的输入里只有它会红
-  // （xl-cpo 实测：不登记它，那条篡改 83 条测试全绿）。
-  { src: { width: 2865, height: 699 }, dest: { width: 233, height: 253 } },
 ]
 
 /** 存读档缩略图量过的源尺寸（{@link MEASURED_BLITS} 里目标是 150×100 的那几条）。给测试对撞用。 */
@@ -139,12 +136,28 @@ export function nearestSourceIndexes(srcLen: number, destLen: number, extent: Bl
 }
 
 function sourceIndexes(loop: BlitLoop, srcLen: number, destLen: number, extent: BlitExtent): number[] {
+  // 先认参数、再查量没量过：非法输入要报「要是正整数」，不是被护栏当成「没量过」。
+  requirePositiveInt(srcLen, 'srcLen')
+  requirePositiveInt(destLen, 'destLen')
+  guardMeasured(srcLen, destLen, extent)
+  return fittedSourceIndexes(loop, srcLen, destLen, extent)
+}
+
+/**
+ * **拟合出来的那个公式本身，不经护栏**（见文件头）。产品路径走带护栏的
+ * {@link nearestSourceIndexes} / {@link opaqueSourceIndexes}，它们只是在这外面套一层
+ * 「量过才给答案」。
+ *
+ * 单独导出是给 `scaledBlit.test.ts` 用的：黄金数据里有些尺寸（放大的小图标、缩小扫描、
+ * 单列的一对）不在任何调用方的登记里，护栏会拦 —— 而那里要问的恰恰是「公式在那些地方
+ * 成立吗」。测试直接核这一份，所以测试核的就是产品用的那一份，不是一份手抄。
+ */
+export function fittedSourceIndexes(loop: BlitLoop, srcLen: number, destLen: number, extent: BlitExtent): number[] {
   requirePositiveInt(srcLen, 'srcLen')
   requirePositiveInt(destLen, 'destLen')
   if (srcLen !== extent.width && srcLen !== extent.height) {
     throw new Error(`缩放采样的源长 ${srcLen} 既不是源图的宽也不是高（${extent.width}×${extent.height}）`)
   }
-  guardMeasured(srcLen, destLen, extent)
   const shift = blitShift(extent)
   const one = 2 ** shift
   const inc = Math.floor((srcLen * one) / destLen)
@@ -251,6 +264,30 @@ export function scaledBlitPasses(
     dh: run.length,
   }))
   return { horizontal, vertical }
+}
+
+/**
+ * 开一张 canvas，把 {@link scaledBlitPasses} 给出的一趟矩形逐个 `drawImage` 上去。渲染器
+ * 两趟各调一次（先横后竖）。这是这个文件里唯一碰 DOM 的函数，调用时才碰，所以模块本身
+ * 照样能在 Node 里被测试导入。
+ *
+ * `imageSmoothingEnabled=false` 是必须的：搬的段落要么是 1:1 的整段拷贝，
+ * 要么是「一个源像素铺满 length 个目标像素」，开着插值后者会被抹匀。
+ */
+export function blitRectsOnto(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  rects: readonly BlitRect[],
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('取不到缩放贴图的 2D context')
+  ctx.imageSmoothingEnabled = false
+  for (const r of rects) ctx.drawImage(source, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
+  return canvas
 }
 
 /**

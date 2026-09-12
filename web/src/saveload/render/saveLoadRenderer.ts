@@ -1,8 +1,7 @@
 import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
 import { resolveAsset } from '../../assets/resolve'
 import type { AssetId } from '../../assets/ids'
-import { scaledBlitPasses } from '../../battle/render/scaledBlit'
-import type { BlitRect } from '../../battle/render/scaledBlit'
+import { blitRectsOnto, scaledBlitPasses } from '../../battle/render/scaledBlit'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
 import { TEXT_FONT_STACK } from '../../textFont'
 import { LS_FONT_SIZE, LS_TEXT_COLOR } from './drawList'
@@ -93,18 +92,6 @@ export async function createSaveLoadRenderer(host: HTMLElement): Promise<SaveLoa
     return t
   }
 
-  /** 按一组矩形把 `source` 搬到一张新 canvas 上，关掉插值。 */
-  function blitOnto(source: CanvasImageSource, width: number, height: number, rects: readonly BlitRect[]): HTMLCanvasElement {
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('取不到存读档缩略图的 2D context')
-    ctx.imageSmoothingEnabled = false
-    for (const r of rects) ctx.drawImage(source, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
-    return canvas
-  }
-
   /**
    * 缩略图：整张地图按原版的采样表拼成目标尺寸（xl-cpo）。一张图一个缓存 —— 地图最大
    * 3200×2560，第一趟的中间位图是 150×2560，不值得每帧重拼。
@@ -122,8 +109,8 @@ export async function createSaveLoadRenderer(host: HTMLElement): Promise<SaveLoa
       { width: scaled.width, height: scaled.height },
       scaled.loop,
     )
-    const mid = blitOnto(resource, scaled.width, tex.height, passes.horizontal)
-    const out = blitOnto(mid, scaled.width, scaled.height, passes.vertical)
+    const mid = blitRectsOnto(resource, scaled.width, tex.height, passes.horizontal)
+    const out = blitRectsOnto(mid, scaled.width, scaled.height, passes.vertical)
     const made = Texture.from(out)
     made.source.scaleMode = 'nearest'
     scaledCache.set(key, made)

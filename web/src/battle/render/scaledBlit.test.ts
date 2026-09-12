@@ -4,13 +4,14 @@ import { repoPath } from '../../test/repoPath'
 import { softBlit } from '../../test/softBlit'
 import {
   blitShift,
+  fittedSourceIndexes,
   measuredThumbnailSources,
   nearestBlitRuns,
   nearestSourceIndexes,
   opaqueSourceIndexes,
   scaledBlitPasses,
 } from './scaledBlit'
-import type { BlitExtent, BlitLoop, BlitRect } from './scaledBlit'
+import type { BlitExtent, BlitRect } from './scaledBlit'
 
 /**
  * 黄金测试：这里算出来的采样表与**真的 Java2D** 扫出来的逐个相同。
@@ -76,9 +77,6 @@ const AXES: [string, Axis][] = [
   ['X（源 128 宽）', TRANSPARENT.x],
   ['Y（源 24 高）', TRANSPARENT.y],
 ]
-
-const indexes = (loop: BlitLoop, srcLen: number, destLen: number, extent: BlitExtent): number[] =>
-  loop === 'opaque' ? opaqueSourceIndexes(srcLen, destLen, extent) : nearestSourceIndexes(srcLen, destLen, extent)
 
 describe('黄金数据本身', () => {
   it.each(AXES)('%s 的覆盖范围至少到源长的两倍', (_name, axis) => {
@@ -206,8 +204,8 @@ describe('存读档缩略图：缩小区间', () => {
   it.each(['transparent', 'opaque'] as const)('%s：每一种尺寸画成 150×100 的两张表都与模型逐个相同', (loop) => {
     let n = 0
     for (const s of T.sizes) {
-      expect(model(loop, s.width, 150, s)).toEqual(s[loop].x)
-      expect(model(loop, s.height, 100, s)).toEqual(s[loop].y)
+      expect(fittedSourceIndexes(loop, s.width, 150, s)).toEqual(s[loop].x)
+      expect(fittedSourceIndexes(loop, s.height, 100, s)).toEqual(s[loop].y)
       n++
     }
     expect(n).toBe(T.sizes.length)
@@ -223,8 +221,8 @@ describe('存读档缩略图：缩小区间', () => {
       for (const loop of ['transparent', 'opaque'] as const) {
         expect(sweep![loop].x.length - 1).toBe(150)
         expect(sweep![loop].y.length - 1).toBe(100)
-        for (let d = 1; d <= 150; d++) expect(model(loop, size.width, d, size)).toEqual(sweep![loop].x[d])
-        for (let d = 1; d <= 100; d++) expect(model(loop, size.height, d, size)).toEqual(sweep![loop].y[d])
+        for (let d = 1; d <= 150; d++) expect(fittedSourceIndexes(loop, size.width, d, size)).toEqual(sweep![loop].x[d])
+        for (let d = 1; d <= 100; d++) expect(fittedSourceIndexes(loop, size.height, d, size)).toEqual(sweep![loop].y[d])
       }
     }
   })
@@ -233,12 +231,8 @@ describe('存读档缩略图：缩小区间', () => {
     expect(T.checks.length).toBeGreaterThan(0)
     for (const c of T.checks) {
       for (const loop of ['transparent', 'opaque'] as const) {
-        expect(model(loop, c.width, c.destWidth, c)).toEqual(c[loop].x)
-        expect(model(loop, c.height, c.destHeight, c)).toEqual(c[loop].y)
-        // 带护栏的产品函数也要对上（这几对登记在 MEASURED_BLITS 里）：测试侧那份模型只在两轴
-        // 扫描上与产品对齐过，而两轴扫描看不出「带透明退回 16 位」。
-        expect(indexes(loop, c.width, c.destWidth, c)).toEqual(c[loop].x)
-        expect(indexes(loop, c.height, c.destHeight, c)).toEqual(c[loop].y)
+        expect(fittedSourceIndexes(loop, c.width, c.destWidth, c)).toEqual(c[loop].x)
+        expect(fittedSourceIndexes(loop, c.height, c.destHeight, c)).toEqual(c[loop].y)
       }
     }
   })
@@ -277,8 +271,8 @@ describe('定点位数由源尺寸定', () => {
     expect(a).not.toEqual(b)
     expect([a[2], b[2]]).toEqual([15, 16])
     expect(blitShift({ width: 1024, height: 640 })).not.toBe(blitShift({ width: 2048, height: 640 }))
-    expect(model('opaque', 640, 100, { width: 1024, height: 640 })).toEqual(a)
-    expect(model('opaque', 640, 100, { width: 2048, height: 640 })).toEqual(b)
+    expect(fittedSourceIndexes('opaque', 640, 100, { width: 1024, height: 640 })).toEqual(a)
+    expect(fittedSourceIndexes('opaque', 640, 100, { width: 2048, height: 640 })).toEqual(b)
   })
 
   it('带透明那条也不是常数 16 位：2865×699 → 233×253 上 16 位对不上，按源尺寸定的对得上', () => {
@@ -290,7 +284,7 @@ describe('定点位数由源尺寸定', () => {
     }
     expect(shift16(2865, 233)).not.toEqual(c.transparent.x)
     expect(shift16(699, 253)).not.toEqual(c.transparent.y)
-    expect(model('transparent', 2865, 233, c)).toEqual(c.transparent.x)
+    expect(fittedSourceIndexes('transparent', 2865, 233, c)).toEqual(c.transparent.x)
   })
 
   it('两轴扫描那张源图（128×24）上位数恰好是 23', () => {
@@ -531,32 +525,6 @@ describe('说不清楚的输入要响', () => {
     // 边界上那一档是扫过的，必须照常给答案；再多一个就是外推。
     expect(nearestSourceIndexes(srcLen, srcLen * 2, SWEEP_EXTENT)).toHaveLength(srcLen * 2)
     expect(() => nearestSourceIndexes(srcLen, srcLen * 2 + 1, SWEEP_EXTENT)).toThrow(/外推/)
-  })
-})
-
-/**
- * 模型本身，**不经护栏**：黄金数据里有些尺寸（放大的小图标、扫描、单列的一对）不在任何
- * 调用方的登记里，护栏会拦 —— 而这里要问的恰恰是「模型在那些地方成立吗」。所以照文件头
- * 那段公式另写一遍，并且先与带护栏的那两个函数在两轴扫描上逐个对齐，免得两份各说各的。
- */
-function model(loop: BlitLoop, srcLen: number, destLen: number, extent: BlitExtent): number[] {
-  const shift = blitShift(extent)
-  const one = 2 ** shift
-  const inc = Math.floor((srcLen * one) / destLen)
-  const loc = loop === 'opaque' ? Math.floor((inc + 1) / 2) : Math.floor(inc / 2)
-  return Array.from({ length: destLen }, (_, i) => Math.floor((loc + i * inc) / one))
-}
-
-describe('测试里那份不经护栏的模型与产品代码是同一份', () => {
-  it.each(['transparent', 'opaque'] as const)('%s：两轴扫描的每一个目标长度', (loop) => {
-    for (const [srcLen, max] of [
-      [128, 256],
-      [24, 48],
-    ] as const) {
-      for (let d = 1; d <= max; d++) {
-        expect(model(loop, srcLen, d, SWEEP_EXTENT)).toEqual(indexes(loop, srcLen, d, SWEEP_EXTENT))
-      }
-    }
   })
 })
 
