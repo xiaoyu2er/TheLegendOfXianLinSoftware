@@ -294,6 +294,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `select.*` | **选择框 / 答题那套状态机**（xl-yg6.6），整列来自 `src/scene/SelectEvent.java` 一个对象。`active` ← `isSelect`（它同时是"走不动"的那道门）；`shop`/`equipShop`/`battle`/`question` ← 四个 `*Select` 旗标，**各记各的、不合成枚举**；`asking`/`answering` ← `isQuestion`/`isAnswer`；`yesNo` ← `count_selectYesNo`（**原版取值是 2 和 3**，照记不翻译）；`abcd` ← `count_selectABCD`；`battleNo`/`questionNo` ← `count_battle2`/`count_questionAndAnswer`；`boxW`/`boxH` ← 选择框滑入游标 `x_selectImage`/`y_selectImage`（每 40ms +50/+15，判据是自增**前**的 `x <= 500`，所以终值是 550/165 而不是 500/150）；`qx1..qy2` ← 问题框撑开游标 `x1..y2_questionImage`；`sentenceNo`/`wordNo`/`lineNo` ← 逐字打印的 `count_sentence`（**初值 1**）/`count_word`/`count_bufferedSentence`；`maxLength` ← 一行几个字（选择框 22、问题框 44，**会变**）；`boxMoving`/`qBoxMoving`/`printing` ← 三个定时器在不在跑；`answered`/`fought` ← `haveAnswered`/`haveFighted`；`sceneNo` ← `count_scene`（⚠️ **只有有题的场景才是下标**：原版只在 `question != null` 且认领到旧记录时才赋值，其余场景恒为初值 0，而那时 `recorder` 可能非空——那个 0 指着别人）；`recorder` ← `SelectEvent.mapName` 与 `answeredRecorder` 两张 static 表配对，"答过没"跨场景活在那里。<br>**题面与选项文本一律不进来**（`currentSentences`/`bufferedText`）：它们来自脚本，数据层已经逐字段钉住 —— 文本对不对归数据层，吐到第几个字归这里。`haveEnteredTheScene` 也不进来：它在构造函数里置真又立刻置回假，取快照时恒为 `false`，记进来是按构造成立的装饰。 |
 | `treasure.*` | **宝箱与"得到物品"提示框**（xl-yg6.6），来自 `src/scene/EquipmentEvent.java` 与它持有的那批 `src/scene/TreasureBox.java`。`presenting` ← `isDrawString`；`x` ← `x_presentImage`（**进场与退场共用这一个游标，而两段步长不同**：进场 -320 起每 50ms +32，到 352 停下起打字机；退场重新 `start()` 之后**头一拍是 +64**（352 那一拍三个 `if` 里第一个与第三个都成立），此后每拍 +32，终值 1056，再下一拍才停）；`wordNo` ← `count_word`；`moving`/`printing` ← 两个定时器；`boxes[].empty` ← `TreasureBox.isEmpty`；`boxes[].near` ← `TreasureBox.AroundHero`（⚠️ 原版**只置真、从不置回假**，走开之后照样是真 —— 照记不修）。<br>没有宝箱段的场景 `boxes` 是 **`null` 而不是 `[]`**："这个场景没有宝箱"与"有宝箱但一个都没建出来"必须分得开。提示语本身（`text`）不记：物品名归数据层，而数量与金额是 `Math.random()` 现掷的，记进来这一列每次导出都不同、`--check` 当场红。 |
 | `audio.bgm` | `MusicPlayer.currentPlayingBGM`。是一个可断言的字符串，不是"调用了 play()"。 |
+| `music` | 这一 tick `readmusic` 请求过的音效文件名，按先后（xl-b36，**顶层**，不在 `audio` 底下）。场景里只有 `EquipmentEvent.drawString` 那一句 `Clip750.wav`（开箱与答题）。机制见菜单一节的「音效」。 |
 | `viewport` | `OtherEvent.calOffset()` 算出的六元组，对应 spec 里的 `computeViewport`。 |
 | `drawOrder` | `npcs-first` / `hero-first`，对应 spec 里的 `computeDrawOrder`。**旁白期间是 `null`** —— 原版 `paint()` 里主角与 NPC 的绘制整个在 `if (!narratage.isNarratage)` 里面，那些帧没有绘制顺序这回事。 |
 | **读档专属八列** | **只在写了 `load` 的剧本里记**（xl-i06.10，`SceneDriver.appendLoadColumns`）。它们是读档回填的落点，普通剧本里全是出厂值，记进老真值是每拍多几十个数、验同一件事。`progress` ← `dialogueEvent.dialogueEventOver` / `dialogueOrder`、`currentScript`、`nextScript`、`fightEvent.battle1Over` / `countOfBattle1`；`partyFlags` ← `SaveAndLoad.zhang/lu/wen`；`heroes.{zhang,lu,yu}` ← 等级、经验、血、灵力、怒气、四项属性（按等级重算再叠装备加成之后）、`isAngry`、`isDead`；`skillNumber` ← 三个英雄类的那个 static（`intialFromInfo` 按等级抬）；`worn` ← 菜单装备页 `heroEquipPack` 三格各六件的名字；`drugs` ← `DrugPack.drugList` 各药件数；`coins` ← `Money.getCoins()`；`stock` ← 全局装备背包 `EquipmentPack` 六张表的件数 —— **读档不写它**（xl-1dv.32），这一列就是「读不回来」的真值。回放端的登记见 `web/src/state/traceReplay.test.ts` 的 `LOAD_ONLY_GROUPS`。 |
@@ -661,6 +662,7 @@ xl-1dv.5 记的"不调 paint 时 `command.isDraw` 是 0/120、调 paint 时 59/1
 | `<单位>.state` | 一个 `BattleState`。`x`/`y` 是 xl-rh9.11 补的 —— 状态图标就画在这两个数上，而 `clear()` **不清它们**（留着上一次的值）。`successRate` 不记：`set()` 只把它当入参读，那个字段恒为 0。 |
 | `reminder` | 提示图（xl-rh9.11）。画没画在 `ui.reminder` 里，这里是**画的是哪一张**与那个会张开的目标矩形。⚠️ `image` 是**文件号**：`show(i)` 取的是 `images.get(i)`，而 `images` 装的是 `1.png`..`22.png`，所以 `show(19)` 画的是 `20.png`。源矩形 `(0,0)-(128,24)` 与 `centreX/centreY` 是构造函数里的常量，不记。 |
 | `menus` | 技能菜单与药品菜单（xl-rh9.11）。**只在真的画出来那几拍才有内容**，其余是 `null` —— 两个菜单加起来二十来个字段，逐拍写满等于给每份真值凭空加上两千行恒定值。`buttons` 是每颗按钮现在贴的三张里的哪一张（1 常态 / 2 待点 / 3 按下），按**引用身份**认，认不出是硬失败。`skill.returnY` 落在 `226 + 按钮数×30` 上，而按钮数是 `skillNumber` 那个静态字段的初值（2/3/2），与等级无关。 |
+| `music` | 这一拍 `readmusic` 请求过的音效文件名，按先后（xl-b36，顶层）。来源三处：`LaunchAttack` 三人各七支（普攻 / 五技能 / 秘术，都以一句攻击声起头、在扣灵力判断之前；文敏技能1 多一句 `伏虎冲天.wav`）；`BeAttackedAnimation.update()` 的 `刀声.wav` —— `else currentTime++;` 没有花括号，那句 `readmusic` **不在 `else` 里**，每转完一圈都响，最后一圈也响；`Check` 里胜利那句在 `for(Hero …)` 循环**里面**（出战几人响几声 `战斗胜利.MP3`）、全灭一声 `战斗失败.wav`。 |
 
 ### 真值里能看见的原版缺陷
 
@@ -914,17 +916,21 @@ paint **之前**抓（同一个 `drawWarning()` 会把它们清零），音效�
 留在 `MenuDriver.step()` 里（只有它知道自己 paint 的是哪个面板、要抓哪几个
 字段），音效收到导出器那一处。
 
-`music` 只在 `menu` / `shop` 两支上打开。场景与战斗不 `arm()`，`MusicLog`
-一直是关的，没接 `music` 的那几份真值一个字节都没变（实测；xl-1vu.8 当时是
-7 份，别把这个分子写死 —— 每接一支就变）。
+**xl-b36 起每一支驱动器都接了 `music`**（哪几支接了，读各驱动器 `start()` 里有没有
+`MusicTap.arm` / `armAllowingSilence`，别信这里的名单）。`menu` / `shop` / `battle`
+用 `arm()`（必须响过：菜单商店每次有效点击都出声，战斗每份都有人出手，而
+`LaunchAttack` 的每一支都以 `readmusic` 起头）；`scene` / `saveload` / `end` /
+`start` 用 `armAllowingSilence()`。
 
-**场景要接的话，0 次是正确答案。** xl-1vu.11 拿 `SceneDriver` 真接了一遍做演示
-（两行，接完又撤掉 —— 接上会给五份场景真值每一步加一个 `music` 字段，那是改真值，
-不是这张纯重构票的事）：五份场景剧本 dorm-intro（4123 步）/ dorm-walk（538）/
-dorm-exit（1181）/ bigmap-walk（842）/ milestone（9158）**一声都不出** —— 走路、
-切场景、对话推进全都不走 `readmusic`。所以场景那一支要写的是
-`armAllowingSilence()`：头一次用 `arm()` 接，五份全部退出码 2 报「一个音效都没
-记到」，那是正确长得像失败。
+**场景那一支 0 次多半是正确答案。** 场景里出声的只有 `EquipmentEvent.drawString`
+末尾那句 `readmusic("Clip750.wav")`（开箱与答题都走它），走路、切场景、对话推进全都
+不走 `readmusic`。xl-1vu.11 当年拿 `arm()` 接五份场景剧本，五份全部退出码 2 报「一个
+音效都没记到」—— 正确长得像失败，所以写的是 `armAllowingSilence()`。xl-b36 接上时
+现数（2026-09-12）：18 份场景真值里响过的只有 maze-treasure（1 声）、question-answer
+（2 声）、question-memory（1 声）。
+
+**加一列不改别的列**（xl-b36 实测）：重导之后 battle 24 + scene 18 = 42 份逐份去掉
+`music` 列，与重导前逐字段相等；其余驱动器的真值一个字节都没变。
 
 BGM 不走这条路：
 `MusicPlayer.play` 里 `currentPlayingBGM = name` 本来就在任何开关判断之外。
