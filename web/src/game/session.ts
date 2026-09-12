@@ -29,6 +29,7 @@ import { addCoins, getCoins, reduceCoins } from '../fakes/wallet'
 import { addDrug, drugCount } from '../fakes/drugPack'
 import { DRUGS } from '../battle/drugs'
 import { EQUIP_SLOTS } from '../menu/equipment'
+import { addEquipment } from '../menu/equipPanel'
 import type { EquipSlot } from '../menu/equipment'
 import type { SelectRecord } from '../state/select'
 import { applyShopInput, stepShop } from '../shop/step'
@@ -717,6 +718,10 @@ export function advanceSession(
     // 药**每一拍都写回**，理由与商店、菜单同一条：原版喝下去那一刻 static 的
     // `DrugPack` 就变了。等打完再写的话，打输回标题那条出口也得记得写。
     applyDrugDelta(drugsBefore, battle.world.drugStock)
+    // 打赢那一拍发出去的装备搬进全局装备背包（xl-5jx）。一次性请求，搬完就清。
+    // 走 `addEquipment`：名字对不上出厂表的一声不响丢掉，与原版 `addEqupment` 同。
+    const equip = equipPanelOf(menu)
+    for (const name of battle.world.lootEquipment.splice(0)) addEquipment(equip, name, 1)
     const exit = battle.world.exitPanel
     if (exit !== null) {
       // 三个人的结果记回队伍。**记的是 `party` 不是 `heroes`**：两条打输的
@@ -1172,9 +1177,13 @@ function writeShopBack(w: ShopWorld, menu: MenuTicker, drugsBefore: readonly num
  * （`Session.menu` 的头注）。它没建出来就是菜单那一层坏了，**抛**，不是当成空。
  */
 function ownedEquipment(menu: MenuTicker) {
+  return equipPanelOf(menu).owned
+}
+
+function equipPanelOf(menu: MenuTicker) {
   const equip = menu.world.panels.equipPanel.equip
   if (equip === null) throw new Error('菜单装备页没有 equip 那一摊 —— 全局装备背包无处可落')
-  return equip.owned
+  return equip
 }
 
 /** 商店世界，店没开着就是 `null`。渲染层要它。 */

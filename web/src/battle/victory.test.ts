@@ -4,7 +4,6 @@ import { decodePng } from '../compare/png'
 import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
-import { equipmentCount, equipmentEntries, resetEquipmentPack } from '../fakes/equipmentPack'
 import { getCoins, resetWallet } from '../fakes/wallet'
 import { checkEnemyDead, stepBattle } from './step'
 import { replayBattle } from './replay'
@@ -206,7 +205,6 @@ describe('打赢之后：结算走完，回地图', () => {
     // 三个假货都是模块级单例（原版是静态字段）。不清的话「上一条用例留下的
     // 药」与「这一场真的发了药」长得一样。
     resetDrugPack()
-    resetEquipmentPack()
     resetWallet()
   })
 
@@ -392,21 +390,21 @@ describe('打赢之后：结算走完，回地图', () => {
     const coinsBefore = getCoins()
 
     for (let t = 1; t < awardAt; t++) stepBattle(w)
-    // 早一拍：三个包都还是空的。
-    expect([drugEntries(), equipmentEntries(), getCoins()]).toEqual([[], [], coinsBefore])
+    // 早一拍：药包、钱包、递出去的装备都还是空的。
+    expect([drugEntries(), [...w.lootEquipment], getCoins()]).toEqual([[], [], coinsBefore])
 
     stepBattle(w)
-    // 当拍：药进背包、装备进装备包、钱进钱包，各一份。
+    // 当拍：药进药包、钱进钱包，装备递到 `lootEquipment` 上等会话来搬（xl-5jx），各一份。
     expect(drugCount('还魄丹'), '商塔弟子掉的药').toBe(1)
-    expect(equipmentCount('御衡镇日刀'), '罹年居士掉的装备').toBe(1)
+    expect([...w.lootEquipment], '罹年居士掉的装备').toEqual(['御衡镇日刀'])
     expect(getCoins()).toBe(coinsBefore + totalMoney)
     // 一样不多：`things` 里有几件就发几件。
-    expect(drugEntries().length + equipmentEntries().length).toBe(w.victoryReminder.things.length)
+    expect(drugEntries().length + w.lootEquipment.length).toBe(w.victoryReminder.things.length)
 
-    const after = [drugEntries(), equipmentEntries(), getCoins()]
+    const after = [drugEntries(), [...w.lootEquipment], getCoins()]
     for (let t = 0; t < 30; t++) stepBattle(w)
     // 晚一拍起不再发 —— `thing_sx1` 之后一直是 0，那一支只走一次。
-    expect([drugEntries(), equipmentEntries(), getCoins()]).toEqual(after)
+    expect([drugEntries(), [...w.lootEquipment], getCoins()]).toEqual(after)
   })
 
   /**

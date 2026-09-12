@@ -37,6 +37,9 @@ import {
   shopWorldOf,
 } from './session'
 import type { RunningSession, SessionDeps } from './session'
+import { createBattleTicker } from '../battle/loop'
+import { EQUIPMENT_LISTS } from '../menu/equipment'
+import { slotOf, wonBattle } from './test/wonBattle'
 
 /**
  * **三扇门**（xl-yg6.11）：选「是」就去那一块、选「否」就留下。
@@ -478,5 +481,33 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
     const before = owned[slot][0]!
     clickShop(session, BUY_BOX)
     expect(owned[slot][0]).toBe(before + 1)
+  })
+
+  /**
+   * 打赢掉的装备，装备超市里看得见（xl-5jx）：出店 → 打一场赢的 → 回场景再按回车进同一家店，
+   * 店里那份背包是进门现读的菜单 `owned`。菜单那一半在 `session.test.ts`。
+   */
+  it('打赢掉的装备：再进装备超市，店里的背包多了那几件', () => {
+    const { session } = sessionThroughDoor(doorTraceOf(CARD_OF.get('equipmentShop')))
+    const back = clickShop(session, BACK_BOX)
+    expect(back.panel).toBe('scene')
+    const { world, loot } = wonBattle(['罹年居士/5', '物理阁护法/6', '大刀/7'], spriteSize)
+    const names = [...loot.keys()]
+    const countOf = (w: NonNullable<ReturnType<typeof shopWorldOf>>, n: string) => {
+      const slot = slotOf(n)
+      return w.pack.equipment[slot][EQUIPMENT_LISTS[slot].findIndex((e) => e.name === n)]!
+    }
+    const before = names.map((n) => countOf(shopWorldOf(session)!, n))
+
+    let s: RunningSession = { ...back, panel: 'battle', battle: createBattleTicker(world) }
+    for (let pumps = 0; s.panel === 'battle'; pumps++) {
+      if (pumps > 20000) throw new Error('打赢的一场 20000 拍还没回场景')
+      s = advanceSession(s, { scene: [], battle: [], menu: [] }, 100)
+    }
+    expect(s.panel, '没打赢 —— 战利品那一拍没走到').toBe('scene')
+    // 原版「是」那一支不清选择框：回车再进同一家店（上面「返回游戏」那条用例钉着）。
+    const again = advanceSession(s, { scene: [{ e: 'press', k: 'enter', ctrl: false }], battle: [], menu: [] }, 10)
+    expect(again.panel).toBe('shop')
+    expect(names.map((n) => countOf(shopWorldOf(again)!, n))).toEqual(before.map((c, i) => c + loot.get(names[i]!)!))
   })
 })

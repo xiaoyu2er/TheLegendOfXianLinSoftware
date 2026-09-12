@@ -39,6 +39,8 @@ import {
 } from './session'
 import type { RunningSession, SessionDeps } from './session'
 import { getAudioSettings, rememberAudioSettings, resetAudioSettings } from './audioSettings'
+import { slotOf, wonBattle } from './test/wonBattle'
+import { equipCount } from '../menu/equipPanel'
 import { NEXT_SCRIPT_ENEMIES } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 
@@ -913,5 +915,57 @@ describe('战斗里的药来自药包，用掉的写回药包（xl-byy）', () =
     const done = runBattleToExit(s)
     expect(done.session.panel, '没打赢 —— 战利品那一拍没走到').toBe('scene')
     expect(DRUGS.map((d) => drugCount(d.name))).toEqual(before.map((n, i) => n + (loot.get(DRUGS[i]!.name) ?? 0)))
+  })
+})
+
+/**
+ * 原版的 `EquipmentPack` 是**一份** static，`VictoryReminder` 发的装备、装备超市卖的、
+ * 菜单装备页列的是同一张表。这一层的落点是菜单装备页的 `owned`；战利品从前落进一个
+ * 没人读的假货（`fakes/equipmentPack`），打赢了、卷轴上也画着掉了什么，菜单里没有（xl-5jx）。
+ * 装备超市那一半在 `doors.test.ts`。
+ */
+describe('打赢掉的装备进全局装备背包（xl-5jx）', () => {
+  beforeEach(() => {
+    resetParty()
+    resetDrugPack()
+  })
+
+  it('打完回场景，开菜单装备页：每件战利品各多一件', () => {
+    // 三只都掉装备，三件分属不同的表（武器 / 头 / 盔甲）—— 只搬进一张表的写法也会红。
+    const { world, loot } = wonBattle(['罹年居士/5', '物理阁护法/6', '大刀/7'], spriteSize)
+    expect(new Set([...loot.keys()].map(slotOf)).size, '对照失效：掉的装备没有分属几张表').toBeGreaterThan(1)
+    const base = openSession(createWorld(getScene('迷宫1')), deps())
+    const before = base.menu.world.panels.equipPanel.equip!
+    const countsBefore = [...loot.keys()].map((n) => equipCount(before, slotOf(n), n))
+
+    const done = runBattleToExit({ ...base, panel: 'battle', battle: createBattleTicker(world) }).session
+    expect(done.panel, '没打赢 —— 战利品那一拍没走到').toBe('scene')
+    // 一次性请求，搬完就清：留着的话下一拍又搬一遍。
+    expect(world.lootEquipment).toEqual([])
+
+    const equip = menuWorldOf(openMenu(done))!.panels.equipPanel.equip!
+    expect([...loot.keys()].map((n) => equipCount(equip, slotOf(n), n))).toEqual(
+      countsBefore.map((c, i) => c + loot.get([...loot.keys()][i]!)!),
+    )
+  })
+
+  /**
+   * 原版自己名字对不上的那一件：`缘铭道者` 掉 `颀崟巨环/2`（`VictoryReminder` 那张怪表），
+   * 出厂表 `sources/Shop/武器.txt` 里写的是 `颀鉴巨环`。`addEqupment` 六张表扫一遍找不到，
+   * **什么都不做** —— 照抄，别"顺手修好"，也别抛（2026-09-12 现查：13 件装备战利品只有这一件
+   * 对不上）。
+   */
+  it('名字对不上出厂表的那一件（颀崟巨环）一声不响丢掉，六张表一格不动', () => {
+    const { world, loot } = wonBattle(['缘铭道者/5', null, null], spriteSize)
+    const [name] = [...loot.keys()]
+    expect(name, '对照失效：缘铭道者不掉装备了').toBeDefined()
+    expect(() => slotOf(name!), '对照失效：这件的名字已经对得上出厂表了').toThrow()
+    const base = openSession(createWorld(getScene('迷宫1')), deps())
+    const snapshot = () => structuredClone(base.menu.world.panels.equipPanel.equip!.owned)
+    const before = snapshot()
+
+    const done = runBattleToExit({ ...base, panel: 'battle', battle: createBattleTicker(world) }).session
+    expect(done.panel, '没打赢 —— 战利品那一拍没走到').toBe('scene')
+    expect(snapshot()).toEqual(before)
   })
 })
