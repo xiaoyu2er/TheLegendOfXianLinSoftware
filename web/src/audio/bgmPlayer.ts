@@ -131,7 +131,7 @@ export function createBgmPlayer(options: BgmPlayerOptions = {}): BgmPlayer {
     sync(bgm: string | null, fromStart = false): void {
       // 从头放靠的是 `start` 里那句重新赋 `src`：HTML 规范里给媒体元素的 src
       // 「设值或改值」都会跑一遍载入算法，播放位置回到开头 —— 同一个值也算。
-      if (bgm === current && !(fromStart && bgm !== null)) return
+      if (bgm === current && !fromStart) return
       current = bgm
       if (bgm === null) {
         sound?.pause()

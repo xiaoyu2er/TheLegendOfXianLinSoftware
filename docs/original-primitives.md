@@ -75,7 +75,7 @@
 | `src/start/Loader.java:72,82` | 文件 / 捕获 | 照做 | 缺档 → 空槽：`save/browserStore.ts`；`save/store.test.ts`「空槽那一支」。坏档那一支不走这个 catch，见 `fail-loud-where-original-swallows` |
 | `src/start/Mouse.java:22,25,26,28` | 光标 | 照做 | 标题与存读档：`.start-panel` / `.stage` 的 `cursor: none`；`app/stageCursor.test.ts` |
 | `src/start/Recorder.java:52,83` | 文件 / 捕获 | 已登记 `ADR-0001#saveload-notices` | 写失败吞掉、内存状态照旧 —— 这一半照做（`save/store.test.ts`「落盘失败：快照照样是新的」）；多出来的那行提示字归这一行登记 |
-| `src/start/StartPanel.java:149,153,154` | 线程 / 睡眠 / 捕获 | 已登记 `ADR-0001#panel-threads-run-while-hidden` | 离开标题就卸载、回来重建（`start/useStartPanel.ts`）—— xl-03x.20 补进那一行 |
+| `src/start/StartPanel.java:149,153,154` | 线程 / 睡眠 / 捕获 | 已登记 `ADR-0001#panel-threads-run-while-hidden` | 离开标题就卸载、计时器停；状态由 `App.tsx` 留着，回来接着那一份（`start/useStartPanel.ts`，xl-6zf）—— xl-03x.20 补进那一行 |
 | `src/start/StartPanel.java:234` | 退出 | 已登记 `ADR-0001#start-exit-disabled` | `start/buttons.ts` 的 `START_BUTTON_WIRING.end` |
 | `src/start/StartPanel.java:342` | 线程 | 已登记 `ADR-0001#load-extra-scene-loop` | 回标题再「起」多一条场景循环，同一行登记 |
 | `src/tools/Clock.java:67` | 睡眠 | 仪器 | `tools.Clock`（87cf64cb，2026-09-05），factor 1.0 时等于 `Thread.sleep` |

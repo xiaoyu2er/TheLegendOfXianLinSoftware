@@ -120,7 +120,7 @@ describe('App 与开始界面', () => {
  *
  * 读数（xl-6zf 现量，`panelState.ts` 走一遍「承」）：走完那一刻与开机那一帧的差别是
  * 云 y（-40 对 360）、「承」悬停、自绘鼠标的位置与帧。**卷轴两边都是 `scroll` 第 0 帧**
- * —— 原版 `settleScroll` 那句 `stopButtonAnimation()` 把它拨回了第 0 帧，票面
+ * —— 原版 `drawScroll()` 里那句 `scroll.stopButtonAnimation()`（web 侧 `settleScroll`）把它拨回了第 0 帧，票面
  * 「卷轴停在展开的最后一帧」不成立。所以这里拿云与悬停当判据，不拿卷轴。
  */
 describe('离开标题再回来', () => {
