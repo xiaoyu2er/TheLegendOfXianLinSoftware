@@ -47,6 +47,7 @@ import {
   isDeferredBattleAsset,
 } from '../src/assets/battleAssets'
 import {
+  MENU_ASSET_ALIASES,
   MENU_BUNDLED_DIR,
   MENU_DEFERRED_PUBLIC_DIR,
   MENU_ROOT,
@@ -794,17 +795,41 @@ function bakeMenuImages(manifest: Record<string, string>): {
   bundled: number
   bundledBytes: number
 } {
-  // 每次全量重来，与 ASSETS_OUT 同一个理由：留着上一轮的产物会让"删掉一个
-  // 素材"表现为"什么都没发生"。
-  const publicDeferred = resolve(PUBLIC_OUT, MENU_DEFERRED_PUBLIC_DIR)
-  rmSync(publicDeferred, { recursive: true, force: true })
-
   const relatives = listFiles(MENUS).sort()
   if (relatives.length === 0) {
     // "一个文件都没扫到"与"全烘完了"在产物上长得一模一样：两边都是零个差异。
     console.error(`${MENUS} 下一个文件都没有 —— 菜单素材的分母是从这里现扫的`)
     process.exit(1)
   }
+
+  // 别名（xl-9a6）的恒等判据**在清空产物目录之前**跑完：判据不成立时盘上还是
+  // 上一轮那套产物与名单，而不是「产物新、名单旧」的半截状态（`/code-review`
+  // Spec 轴点名）。攒够一整批再一次报全，理由同 `bakeStartAlias`。
+  //
+  // ⚠️ 两条「不在」**今天一条都红不了**（登记里四张图都在盘上），没有篡改验证
+  // 撑着；真正验过的是恒等判据那条（见 xl-9a6 的提交信息）。
+  const aliasProblems: string[] = []
+  for (const [alias, target] of Object.entries(MENU_ASSET_ALIASES)) {
+    if (!relatives.includes(alias)) aliasProblems.push(`${alias} 不在 ${MENUS} 下（登记过期了）`)
+    else if (!relatives.includes(target)) aliasProblems.push(`${alias} → ${target}：被指向的那一张不在`)
+    else if (!losslessIdentical(resolve(MENUS, alias), resolve(MENUS, target))) {
+      aliasProblems.push(`${alias} ≠ ${target}`)
+    }
+  }
+  if (aliasProblems.length > 0) {
+    console.error(`菜单素材别名有 ${aliasProblems.length} 条不成立：`)
+    for (const line of aliasProblems) console.error(`  ${line}`)
+    console.error(
+      '别名成立的前提是两张逐像素相同（见 src/assets/menuAssets.ts 的 MENU_ASSET_ALIASES）。' +
+        '这里不回退到"那就分别烘"：回退会让"素材换了一张"读起来像"一切正常"。',
+    )
+    process.exit(1)
+  }
+
+  // 每次全量重来，与 ASSETS_OUT 同一个理由：留着上一轮的产物会让"删掉一个
+  // 素材"表现为"什么都没发生"。
+  const publicDeferred = resolve(PUBLIC_OUT, MENU_DEFERRED_PUBLIC_DIR)
+  rmSync(publicDeferred, { recursive: true, force: true })
 
   const deferredFiles: Record<string, string> = {}
   // 按需产物没有内容指纹（`public/` 下的文件名 Vite 原样保留），所以自己算一个
@@ -829,11 +854,21 @@ function bakeMenuImages(manifest: Record<string, string>): {
   // 静静盖掉前一张**。今天 189 张全是 PNG，所以这条守卫不响；而"不响"和
   // "撞了却没查"长得一样。判撞车不能只看 `manifest`——按需那一半根本不进去。
   const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+  let aliased = 0
 
   for (const relative of relatives) {
     const id = menuAssetId(`${MENU_ROOT}/${relative}`)
     const product = menuProductPath(relative)
     const source = resolve(MENUS, relative)
+    if (MENU_ASSET_ALIASES[relative] !== undefined) {
+      // 别名不出产物，也不认领产物路径 —— 它跟被指向那一张**本来就**落在同一个
+      // 路径上，那正是撞车守卫要拦的形状，所以绕过它；而它不写盘，盖不掉谁。
+      // 恒等判据在清空产物目录之前已经跑过了。
+      if (isDeferredMenuAsset(relative)) deferredFiles[id] = product
+      else manifest[id] = product
+      aliased++
+      continue
+    }
     const owner = claimed.get(product)
     if (owner !== undefined) {
       console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
@@ -871,9 +906,32 @@ function bakeMenuImages(manifest: Record<string, string>): {
 
   console.log(
     `菜单素材 ${relatives.length} 张 → 骨架 ${bundled} 张进 ${MENU_BUNDLED_DIR}/（${kb(bundledBytes)}）` +
-      `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
+      `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）` +
+      `、${aliased} 张走别名不出产物`,
   )
   return { bundled, bundledBytes }
+}
+
+/**
+ * 两张源图是不是逐像素相同：各做一次**无损** WebP 编码，逐字节比。无损可逆，
+ * `encode(a) == encode(b) ⇒ a == b`；不拿源文件的 md5 比，是因为同一组像素
+ * 换个容器或滤波器 md5 就不同（`START_SEQUENCE_ALIASES` 头注里那对就是）。
+ * 只收 PNG：`toWebp` 对别的扩展名走有损，有损编码推不出源相同。
+ */
+function losslessIdentical(a: string, b: string): boolean {
+  for (const p of [a, b]) {
+    if (!p.endsWith('.png')) throw new Error(`无损比对只收 PNG，收到的是 ${p}`)
+  }
+  const temporary = mkdtempSync(resolve(tmpdir(), 'xl-menu-alias-'))
+  try {
+    const encodedA = resolve(temporary, 'a.webp')
+    const encodedB = resolve(temporary, 'b.webp')
+    toWebp(a, encodedA)
+    toWebp(b, encodedB)
+    return readFileSync(encodedA).equals(readFileSync(encodedB))
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
 }
 
 /**
@@ -1560,42 +1618,32 @@ function bakeStartAlias(
     fail(`lossy 声明不等：${name} 是 ${sequence.lossy}，${alias.of} 是 ${target.lossy}`)
   }
 
-  const temporary = mkdtempSync(resolve(tmpdir(), 'xl-start-alias-'))
   const mismatches: string[] = []
   let frames = 0
-  try {
-    for (let frame = 0; frame < sequence.count; frame++) {
-      const targetFrame = aliasSourceFrame(alias, frame, sequence.count)
-      const mine = startFrameSource(sequence.dir, frame)
-      const theirs = startFrameSource(target.dir, targetFrame)
-      const mineAbsolute = resolve(REPO, mine)
-      const theirsAbsolute = resolve(REPO, theirs)
-      // 源缺失走跟别处同一条路（攒进 `missing` 一次报全），不在这里退：
-      // "文件不在"与"两帧对不上"是两回事，混在一起报会让前者读成后者。
-      if (!existsSync(mineAbsolute)) {
-        missing.push(`开始界面动画 ${mine}`)
-        continue
-      }
-      if (!existsSync(theirsAbsolute)) {
-        missing.push(`开始界面动画 ${theirs}`)
-        continue
-      }
-      const relative = manifest[startFrameAssetId(alias.of, targetFrame)]
-      if (relative === undefined) fail(`${alias.of} 的第 ${targetFrame} 帧还没进映射表`)
-
-      // 恒等判据。`toWebp` 对 `.png` 且不传 `forceLossy` 走的正是 `-lossless`，
-      // 所以这两行拿到的是可逆编码：字节相同 ⇒ 像素相同。
-      const a = resolve(temporary, `${frame}-a.webp`)
-      const b = resolve(temporary, `${frame}-b.webp`)
-      toWebp(mineAbsolute, a)
-      toWebp(theirsAbsolute, b)
-      if (!readFileSync(a).equals(readFileSync(b))) mismatches.push(`${mine} ≠ ${theirs}`)
-
-      manifest[startFrameAssetId(name, frame)] = relative
-      frames++
+  for (let frame = 0; frame < sequence.count; frame++) {
+    const targetFrame = aliasSourceFrame(alias, frame, sequence.count)
+    const mine = startFrameSource(sequence.dir, frame)
+    const theirs = startFrameSource(target.dir, targetFrame)
+    const mineAbsolute = resolve(REPO, mine)
+    const theirsAbsolute = resolve(REPO, theirs)
+    // 源缺失走跟别处同一条路（攒进 `missing` 一次报全），不在这里退：
+    // "文件不在"与"两帧对不上"是两回事，混在一起报会让前者读成后者。
+    if (!existsSync(mineAbsolute)) {
+      missing.push(`开始界面动画 ${mine}`)
+      continue
     }
-  } finally {
-    rmSync(temporary, { recursive: true, force: true })
+    if (!existsSync(theirsAbsolute)) {
+      missing.push(`开始界面动画 ${theirs}`)
+      continue
+    }
+    const relative = manifest[startFrameAssetId(alias.of, targetFrame)]
+    if (relative === undefined) fail(`${alias.of} 的第 ${targetFrame} 帧还没进映射表`)
+
+    // 恒等判据（口径见 `losslessIdentical`，菜单别名 xl-9a6 共用这一处）。
+    if (!losslessIdentical(mineAbsolute, theirsAbsolute)) mismatches.push(`${mine} ≠ ${theirs}`)
+
+    manifest[startFrameAssetId(name, frame)] = relative
+    frames++
   }
 
   if (mismatches.length > 0) {

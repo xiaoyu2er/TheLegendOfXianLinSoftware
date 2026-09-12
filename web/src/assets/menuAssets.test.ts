@@ -8,6 +8,7 @@ import deferred from '../generated/menuContent.json'
 import { listFiles } from './listFiles'
 import { resetDeferredMenuCache, resolveDeferredMenuAsset } from './deferredMenu'
 import {
+  MENU_ASSET_ALIASES,
   MENU_BUNDLED_DIR,
   MENU_DEFERRED_PUBLIC_DIR,
   MENU_ROOT,
@@ -257,11 +258,15 @@ describe('打包边界', () => {
     // 与 `x.jpg` 会写到同一个 `x.webp` 上，**后写的静静盖掉前一张**。今天
     // 189 张全是 PNG，一对都没有，所以烘焙器里那条守卫平时不响 —— 而"不响"
     // 和"撞了却没查"长得一样。
+    //
+    // 别名（xl-9a6）按定义就跟被指向那一张同一个产物路径，所以它不算撞车 ——
+    // 但**只有**登记过的那几张不算：跳过的名单就是 `MENU_ASSET_ALIASES` 本身。
     const sources = menuFiles()
     expect(sources.length).toBeGreaterThan(0)
     const seen = new Map<string, string>()
     const clashes: string[] = []
     for (const relative of sources) {
+      if (MENU_ASSET_ALIASES[relative] !== undefined) continue
       const product = menuProductPath(relative)
       const owner = seen.get(product)
       if (owner !== undefined) clashes.push(`${owner} 与 ${relative} 都写到 ${product}`)
@@ -281,6 +286,52 @@ describe('打包边界', () => {
     expect(decodeURI(url.slice(2).split('?')[0] as string)).toBe(product)
     expect(existsSync(resolve(PUBLIC_ROOT, product))).toBe(true)
     expect(id.startsWith('menu:')).toBe(true)
+  })
+})
+
+describe('别名（同一张图躺在两处，xl-9a6）', () => {
+  it('登记就是手签的那两条', () => {
+    // 手写 —— 从磁盘按 md5 现推的话，这条就是让被守的东西自己签字，而且明天
+    // 两张碰巧相同的图标会被悄悄合并进来、这里照样绿。
+    expect(MENU_ASSET_ALIASES).toEqual({
+      '装备/天书.png': '天书/天书.png',
+      '装备/奇术.png': '奇术/奇术.png',
+    })
+  })
+
+  it('别名的 ID 指向被指向那一张的产物，而且它自己一个字节都没落盘', () => {
+    const aliases = Object.entries(MENU_ASSET_ALIASES)
+    expect(aliases.length).toBeGreaterThan(0)
+    const both = new Map([...bundledEntries(), ...Object.entries(DEFERRED.files)])
+    for (const [alias, target] of aliases) {
+      // 两张源素材都还在：别名不许靠删源素材来成立（CLAUDE.md：原版冻结）。
+      expect(existsSync(resolve(MENUS, alias)), alias).toBe(true)
+      expect(existsSync(resolve(MENUS, target)), target).toBe(true)
+      const aliasProduct = both.get(menuAssetId(`${MENU_ROOT}/${alias}`))
+      const targetProduct = both.get(menuAssetId(`${MENU_ROOT}/${target}`))
+      expect(targetProduct, target).toBeDefined()
+      expect(aliasProduct, alias).toBe(targetProduct)
+      // 省下来的那份字节真的没了：按别名自己的路径算，盘上不许有东西。
+      const own = alias.replace(/\.[^./]+$/, '.webp')
+      const root = isDeferredMenuAsset(alias)
+        ? resolve(PUBLIC_ROOT, MENU_DEFERRED_PUBLIC_DIR)
+        : resolve(BUNDLED_ROOT, MENU_BUNDLED_DIR)
+      expect(existsSync(resolve(root, own)), `${alias} 还有自己的产物`).toBe(false)
+    }
+  })
+
+  it('接力的别名与跨包的别名是抛，不是静静算出一个路径', () => {
+    // 今天那份登记两条都触发不了，拿造出来的登记表各红一次。
+    expect(() =>
+      menuProductPath('装备/天书.png', { '装备/天书.png': '天书/天书.png', '天书/天书.png': '奇术/奇术.png' }),
+    ).toThrowError(/不许接力/)
+    expect(() => menuProductPath('装备/天书.png', { '装备/天书.png': '物品/物品3.png' })).toThrowError(
+      /不在同一个包里/,
+    )
+    // 正例：同包、一跳。
+    expect(menuProductPath('装备/天书.png')).toBe(`${MENU_DEFERRED_PUBLIC_DIR}/天书/天书.webp`)
+    // 没登记的照旧走自己的路径 —— 包括看起来很像、其实不是副本的那一张。
+    expect(menuProductPath('装备/物品.png')).toBe(`${MENU_DEFERRED_PUBLIC_DIR}/装备/物品.webp`)
   })
 })
 
