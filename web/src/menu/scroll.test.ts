@@ -13,8 +13,10 @@ import {
   SCROLLBAR_WIDTH,
   WHEEL_ROWS,
   clampScroll,
+  dragScroll,
   inListBox,
   maxScroll,
+  pressScrollTrack,
   rowBandTop,
   rowBaseline,
   scrollbar,
@@ -22,6 +24,7 @@ import {
   visibleRange,
   wheelRows,
 } from './scroll'
+import type { Scrollable } from './scroll'
 import { EQUIP_LIST_VIEW, EQUIP_HIT_W, EQUIP_X_START, equipList, snapshotEquip } from './equipPanel'
 import { DRUG_HIT_W, DRUG_LIST_VIEW, DRUG_LIST_X, visibleDrugs } from './drugPanel'
 import { stepMenu } from './step'
@@ -750,6 +753,34 @@ describe('滚动条：拖拽滑块（xl-03x.9）', () => {
     expect(e2.drag, '按在别处之后还在拖').toBeNull()
     stepMenu(w2, [{ e: 'move', x: grab.x, y: grab.y + 1000 }])
     expect(e2.scroll).toBe(0)
+  })
+
+  /**
+   * 上面那条走的是 `stepMenu`，而 `menuMousePressed` 在派发之前**已经**把四页的
+   * 拖拽全结束了 —— 所以 `pressScrollTrack` 开头那句 `s.drag = null` 在那条路上
+   * 永远是空操作，注释掉它 `src/menu` 全绿（xl-1hk 实测）。这一条绕开 step、
+   * 直接调它：不发松手、连按两次、再移动。第二下分两种落点，两种都要把上一次
+   * 的拖拽清掉。
+   */
+  it('pressScrollTrack 自己也结束上一次拖拽：不松手连按两次，再移动不拖走列表（xl-1hk）', () => {
+    const rows = viewportRows(V)
+    const max = maxScroll(V, WEAPON_ROWS)
+    const bar = scrollbar(V, WEAPON_ROWS, 0)!
+    const grab = { x: bar.thumb.x + 1, y: bar.thumb.y + Math.floor(bar.thumb.height / 2) }
+    for (const [name, second, want] of [
+      ['按在别处', { x: V.box.left - 50, y: V.box.top + 10 }, 0],
+      ['按在槽里滑块下方', { x: bar.track.x + 1, y: bar.thumb.y + bar.thumb.height + 5 }, Math.min(rows, max)],
+    ] as const) {
+      const s: Scrollable = { scroll: 0, drag: null }
+      pressScrollTrack(V, s, WEAPON_ROWS, grab.x, grab.y)
+      expect(s.drag, '头一下没按在滑块上，这条判据是恒真的').toBeTruthy()
+      pressScrollTrack(V, s, WEAPON_ROWS, second.x, second.y)
+      expect(s.drag, `${name}之后还在拖`).toBeNull()
+      expect(s.scroll).toBe(want)
+      // 往与第二下相反的方向拖远：残留的锚点在，列表就会被拽到另一端。
+      dragScroll(V, s, WEAPON_ROWS, want === 0 ? grab.y + 1000 : grab.y - 1000)
+      expect(s.scroll, `${name}之后移动鼠标把列表拖走了`).toBe(want)
+    }
   })
 
   it('与滚轮不打架：拖到一半滚一格，滚出来的位置不被下一次移动吃掉', () => {
