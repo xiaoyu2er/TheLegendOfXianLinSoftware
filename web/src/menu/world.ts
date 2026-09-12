@@ -176,7 +176,7 @@ export function refreshMenuWorld(
   w: MenuWorld,
   config: Pick<MenuConfig, 'live' | 'audio'> & {
     /**
-     * 药包此刻的六个数，按 `DRUGS` 的次序（xl-bsv）。原版物品页读的就是 static 的
+     * 药包此刻每味药的件数，按 `DRUGS` 的次序（xl-bsv）。原版物品页读的就是 static 的
      * `DrugPack.drugList`，所以打开那一刻看到的是商店、宝箱、战斗、读档之后的数。
      * 不给就不动（回放真值那条路的药来自剧本 setup，建世界时就定了）。
      */
@@ -190,7 +190,7 @@ export function refreshMenuWorld(
   refreshMenuHeroes(w.heroes, config.live)
   if (config.drugs) {
     const drugs = config.drugs
-    // `createDrugPack` 按 `DRUGS` 的次序建满六条，所以下标对得上；对不上就是
+    // `createDrugPack` 按 `DRUGS` 的次序建满整张表，所以下标对得上；对不上就是
     // 两边读的药表分了家 —— 抛，不按名字去猜。**就地改件数**：物品页那个
     // `currentDrug` 认的是名字，条目对象换掉也不要紧，但就地改最省一次推理。
     if (drugs.length !== w.drugPack.length) {

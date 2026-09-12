@@ -11,7 +11,7 @@ import { DRUG_TYPE } from './step'
  * （连同已经有真值的两位）回到 GBK 源码上取：`DrugMenu.checkReleased` 里那六句
  * `checkDrugNumber(DrugPack.drugList.get(i), type)`。
  */
-describe('DrugMenu.checkReleased 的六个 type 对回原版源码', () => {
+describe('DrugMenu.checkReleased 的每个 type 对回原版源码', () => {
   const calls = [
     ...javaSource('src/battle/DrugMenu.java').matchAll(
       /checkDrugNumber\(DrugPack\.drugList\.get\((\d)\),\s*(\d)\)/g,

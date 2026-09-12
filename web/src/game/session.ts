@@ -1122,7 +1122,7 @@ function enterShop(
 }
 
 /**
- * 药包此刻的六个数，按 `DRUGS` 的次序（xl-byy / xl-bsv）。
+ * 药包此刻每味药的件数，按 `DRUGS` 的次序（xl-byy / xl-bsv）。
  *
  * 原版的 `DrugPack.drugList` 是**一份** static，商店、菜单物品页、战斗药品菜单
  * 读写的是同一张表。这一层三家各有自己的世界，落点只有 `fakes/drugPack.ts`
@@ -1231,7 +1231,7 @@ export function captureSession(session: RunningSession): SaveFile {
     party: getParty(),
     worn: equip.packs,
     owned: equip.owned,
-    drugs: DRUGS.map((d) => drugCount(d.name)),
+    drugs: heldDrugs(),
     coins: getCoins(),
   })
 }
