@@ -69,7 +69,7 @@
 | **标题** 开机进标题、放主题曲 | 能 | 随时 | — | `GameLauncher.java:76,144-155`；实跑 `appTitle.test.tsx` 4/4 |
 | 标题 悬停换图、高亮转；自绘鼠标 8 帧、云飘 | 能 | 随时 | — | 剧本 `start-about` / `start-newgame`（驱动器 `start`：状态层 `startTrace.test.ts` + 逐帧比对）；实跑 `StartPanel.test.tsx`、`animation.test.ts` |
 | 标题 点「起」：卷轴展开、载入 30 拍、进脚本1 | 能（队伍回出厂是 ADR-0001 登记过的例外 `ADR-0001#new-game-resets-party`） | 随时 | 重开把结局线程一起丢掉（跨面板）：xl-eqo（open） | `StartPanel.java:220-222,335-344`；实跑 `StartPanel.test.tsx`「卷轴放完再等 30 拍」 |
-| 标题 点「承」：进读档面板 | 能 | 随时 | — | 剧本 `saveload-start`（gap：只剩字形；缩略图 xl-cpo 拟合后逐像素相等） |
+| 标题 点「承」：进读档面板 | 能 | 随时 | — | 剧本 `saveload-start`（gap：只剩字形；缩略图逐像素相等） |
 | 标题 点「转」：「关于我们」逐段揭开，点「回」收起 | 能 | 随时 | — | `StartPanel.java:228-241,296-328`；剧本 `start-about`（展开 / 收起各 10 拍，`expect` 核拍数）；实跑 `panelState.test.ts` |
 | 标题 点「结」：退出进程 | **不能**：浏览器没有「退出进程」的对应物 —— 按钮画出来、禁用、带一句理由（`title`），悬停不换图（原版会换） | 随时 | `ADR-0001#start-exit-disabled`（xl-u23（closed）量过三条路后的定案；xl-03x.12（closed）两处统一） | `StartPanel.java:233-234`；实跑 `StartPanel.test.tsx` 17/17（「禁用的两颗各带一句理由」「禁用的那两颗点下去屏幕纹丝不动」） |
 | **存读档** 从天书进存档：点槽直接写盘、不问覆盖，当场重读三个槽的摘要 | 能（不问覆盖、拖出去松手也触发、监听器越挂越多、头像只置不清 —— 缺陷照抄） | 随时 | 原版缺陷登记：xl-1dv.23（open）、xl-1dv.25（open）、xl-1dv.24（open）、xl-1dv.31（open） | 剧本 `saveload-menu`；实跑 `saveloadTrace.test.ts` 23/23、`step.test.ts` 8/8 |
