@@ -679,7 +679,7 @@ const battleAssembly: Assembly = {
       return size
     })
 
-    await battleRenderer.load(battleTextureIds(world))
+    await battleRenderer.load(battleTextureIds(world), 'fresh')
     battleWorld = world
     battlePaint = createPaintState(world)
     battleTrace = parsed

@@ -16,6 +16,8 @@ import type { AssetId } from '../../assets/ids'
 import { resolveAsset } from '../../assets/resolve'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
 import { TEXT_FONT_STACK } from '../../textFont'
+import { createBufferPlan } from './bufferPlan'
+import type { BufferMode } from './bufferPlan'
 import type { DrawOp, Rect } from './drawList'
 import { blitRectsOnto, scaledBlitPasses } from './scaledBlit'
 
@@ -59,21 +61,31 @@ import { blitRectsOnto, scaledBlitPasses } from './scaledBlit'
  * 读数（battle-script3，提交 d35fc54a）：只做「背景忽略 alpha」时正好剩这两项，
  * 第 0 / 25 帧共 2680 个像素；持久缓冲之后状态栏之外 0 个。
  *
- * ⚠️ 两处与**真游戏**不同，都没有真值、没量（xl-pgq）：
- * - 原版上屏是 `g.drawImage(bufferedPic)` 以 SrcOver 画到 Swing 上，**并不扔
- *   alpha**；这里上屏扔 alpha，对的是真值（导出的缓冲 + 不看 alpha 的比对器）。
- *   两者只在缓冲 alpha 还没叠满的头几帧、半透明的边上不同。
- * - 缓冲在 `load()` 时重置成透明，对的是导出器每场新建一块 `BattlePanel`；
- *   原版游戏里一局之内几场战斗共用一块。
+ * **跨场复用（xl-pgq）**：原版整个进程只有一块 `BattlePanel`（`GameLauncher` 只在
+ * 构造函数里 new；`init()` 唯一的调用点 `StartPanel.java:336` 是注释掉的），所以
+ * 后一场半透明的边会透出上一场的末帧；导出器却每份剧本新建一块。于是 `load` 要
+ * 调用方表态：游戏 `'keep'`、取图页 `'fresh'`。读数（`BattleCarryProbe.java`，
+ * battle-victory 打完在同一块面板上接 battle-script3，对照组只差「开第二场前清缓冲」）：
+ * 第二场第 0 帧边上 2293 个像素超容差 8（最大差 46）、第 1 帧 49 个、第 2 帧起 0，
+ * 边以外 0 个。⚠️ Web 侧 `'keep'` 这一支没有跨端比对（没有两场连打的真值），未量。
+ *
+ * ⚠️ 与真游戏还差一处，没有真值、没量：原版上屏是 `g.drawImage(bufferedPic)` 以
+ * SrcOver 画到 Swing 上，**并不扔 alpha**；这里上屏扔 alpha，对的是真值（导出的
+ * 缓冲 + 不看 alpha 的比对器）。缓冲 alpha 叠满之后两者无别 —— 跨场复用之下，只有
+ * 进程里**头一场**就用半透明背景时才有叠不满的那几帧。
  *
  * 由此来的合同：**一拍只合成一次**（原版一拍 paint 一次）。`draw` 带拍号，
  * 同一拍再调直接返回；跳过的拍由调用方补画（取图页逐拍画，游戏侧掉帧到
- * 10 fps 以下时补不上，见 `useGame.ts`）。
+ * 10 fps 以下时补不上，见 `useGame.ts`）。清不清、合不合由 `bufferPlan.ts` 定。
  */
 
 export interface BattleRenderer {
-  /** 把这一场用得到的纹理一次载齐。**必须在第一次 `draw` 之前 await 完。** */
-  load(ids: readonly AssetId[]): Promise<void>
+  /**
+   * 新的一场：把用得到的纹理一次载齐。**必须在第一次 `draw` 之前 await 完。**
+   * `mode` 说这一场接着上一场的缓冲画（`'keep'`，游戏）还是从全透明起步
+   * （`'fresh'`，取图页）—— 见文件头「跨场复用」。
+   */
+  load(ids: readonly AssetId[], mode: BufferMode): Promise<void>
   /**
    * 画第 `tick` 拍：执行这份清单，合成进持久缓冲。**同一拍再调直接返回** ——
    * 缓冲不清屏，重复合成会让半透明的边比原版叠得快（见文件头第四处）。
@@ -111,8 +123,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   // 合成进 `buffer` 一次。上屏的只有 `present` 那一张。见文件头第四处。
   const stage = new Container()
   const buffer = RenderTexture.create({ width: STAGE_WIDTH, height: STAGE_HEIGHT })
-  /** 上一次合成的是第几拍；-1 = 新建或刚 `load()`，下一次合成先清成全透明。 */
-  let lastTick = -1
+  /** 这一拍清不清、合不合（`bufferPlan.ts`）。 */
+  const plan = createBufferPlan()
   const present = new Sprite(buffer)
   present.filters = [unpremultiplyFilter()]
   app.stage.addChild(present)
@@ -280,7 +292,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   }
 
   function draw(ops: readonly DrawOp[], tick: number): void {
-    if (tick === lastTick) return
+    const step = plan.next(tick)
+    if (step === 'skip') return
     let n = 0
     for (const op of ops) {
       const s = slot(n)
@@ -331,14 +344,13 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     // 这一帧没用到的精灵全部藏起来。**不藏的话**上一帧的伤害数字会留在屏幕
     // 上，而那看起来像"伤害数字停留得久了一点"，不像一个错。
     for (let i = n; i < pool.length; i++) pool[i]!.sprite.visible = false
-    // 合成进持久缓冲：**不清**（原版 `paint()` 从不清屏），只有新一场的头一次
+    // 合成进持久缓冲：**不清**（原版 `paint()` 从不清屏），只有新缓冲的头一次
     // 从全透明起步（`TYPE_INT_ARGB` 的初值）。
-    app.renderer.render({ container: stage, target: buffer, clear: lastTick < 0, clearColor: [0, 0, 0, 0] })
-    lastTick = tick
+    app.renderer.render({ container: stage, target: buffer, clear: step === 'clear', clearColor: [0, 0, 0, 0] })
   }
 
   return {
-    async load(ids: readonly AssetId[]): Promise<void> {
+    async load(ids: readonly AssetId[], mode: BufferMode): Promise<void> {
       const wanted = ids.filter((id) => !textures.has(id))
       const loaded = await Promise.all(
         wanted.map(async (id) => {
@@ -350,9 +362,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
         }),
       )
       wanted.forEach((id, i) => textures.set(id, loaded[i]!))
-      // 新的一场：导出器每场新建一块 `BattlePanel`，缓冲从全透明起步。
-      // 与真游戏的偏离见文件头第四处（xl-pgq）。
-      lastTick = -1
+      // 新的一场：接着画还是从全透明起步，由调用方说（文件头「跨场复用」）。
+      plan.load(mode)
     },
     draw,
     destroy(): void {
