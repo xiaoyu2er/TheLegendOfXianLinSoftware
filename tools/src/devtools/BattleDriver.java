@@ -1095,7 +1095,8 @@ public final class BattleDriver implements TraceDriver {
 
     // ================= 反射 =================
 
-    private static Object get(Object o, String name) {
+    /** 沿继承链读一个（多半是私有的）字段。包内可见：{@link BattleCarryProbe} 也用它。 */
+    static Object get(Object o, String name) {
         Class<?> c = o.getClass();
         while (c != null) {
             try {

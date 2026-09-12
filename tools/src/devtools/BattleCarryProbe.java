@@ -26,14 +26,29 @@ import main.GameLauncher;
  * {@code BattlePanel.run()} 线程）：
  *
  * <pre>
- *   carry &lt;第一场剧本&gt; &lt;第二场剧本&gt; &lt;帧数&gt; &lt;输出目录&gt;
+ *   carry &lt;第一场剧本&gt; &lt;第二场剧本&gt; &lt;帧数&gt; &lt;输出目录&gt; [--clear]
  *       第一场照剧本打完（剧本要一路打到原版自己切走面板），然后在**同一块面板**上
  *       照 FightEvent 的样子再 initial() 一次第二场，逐拍 paint，存前 N 帧。
+ *       --clear：对照组，其余一步不差，只在开第二场前把缓冲清回全透明。
  *   fresh &lt;第二场剧本&gt; &lt;帧数&gt; &lt;输出目录&gt;
  *       第二场单独打（= 导出器，= Web 渲染器对齐的那一侧），存前 N 帧。
  *   diff &lt;背景图&gt; &lt;carry 目录&gt; &lt;fresh 目录&gt; &lt;帧数&gt; &lt;容差&gt;
  *       逐帧逐像素比 RGB（不看 alpha，与比对器同），按背景图 alpha&lt;255 与否分两类数。
  * </pre>
+ *
+ * <h2>复现（仓库根目录，先 tools/build.sh）</h2>
+ *
+ * <pre>
+ *   J="java --add-opens java.base/java.lang=ALL-UNNAMED -Djava.awt.headless=false \
+ *      -cp tools/build/classes:jl1.0.jar:mp3spi1.9.4.jar:tritonus_share.jar devtools.BattleCarryProbe"
+ *   V=tools/traces/scripts/battle-victory.json; T=tools/traces/scripts/battle-script3.json
+ *   $J carry $V $T 40 /tmp/carry
+ *   $J carry $V $T 40 /tmp/clear --clear
+ *   $J diff image/背景图/校园小道.png /tmp/carry /tmp/clear 40 8
+ * </pre>
+ *
+ * 容差 8 取的是逐帧比对器的单通道容差（{@code tools/compare-frames.sh} 的报告头）。
+ * 读数（2026-09-12）：第 0 帧边上 2293 个、第 1 帧 49 个、第 2 帧起 0；边以外 0。
  *
  * 第二场开打前把随机数播回第二场剧本的种子，两侧的状态机于是从同一个起点走 ——
  * 否则第一场消耗掉的随机数会让两侧的第二场从头就分叉，差出来的像素说不清来源。
@@ -74,7 +89,7 @@ public final class BattleCarryProbe {
     }
 
     private static void usage() {
-        System.err.println("用法：carry <剧本1> <剧本2> <帧数> <目录> | fresh <剧本2> <帧数> <目录>"
+        System.err.println("用法：carry <剧本1> <剧本2> <帧数> <目录> [--clear] | fresh <剧本2> <帧数> <目录>"
                 + " | diff <背景图> <carry目录> <fresh目录> <帧数> <容差>");
         System.exit(2);
     }
@@ -88,7 +103,7 @@ public final class BattleCarryProbe {
         BattlePanel bp = d.panel();
         // 第一场必须是被原版自己收场的：没切走面板就接着开第二场，量的是一个真游戏
         // 里不存在的时刻。
-        Object heroes = field(bp, "heroes");
+        Object heroes = BattleDriver.get(bp, "heroes");
         if (!((java.util.List<?>) heroes).isEmpty()) {
             ExportTrace.die(first.getName() + " 打完之后 bp.heroes 还有 "
                     + ((java.util.List<?>) heroes).size() + " 人 —— 第一场没有走到原版收场那一句"
@@ -114,7 +129,7 @@ public final class BattleCarryProbe {
             // 对照组：其余一步不差，只把缓冲清回 TYPE_INT_ARGB 的初值（全透明）。
             // carry 与 carry --clear 之差于是**只**来自缓冲 —— 与 fresh 比的话还混着
             // 英雄等级、血量这些 static 带过来的差（见类注释末段）。
-            BufferedImage buf = (BufferedImage) field(bp, "bufferedPic");
+            BufferedImage buf = (BufferedImage) BattleDriver.get(bp, "bufferedPic");
             java.awt.Graphics2D g = buf.createGraphics();
             g.setComposite(java.awt.AlphaComposite.Clear);
             g.fillRect(0, 0, buf.getWidth(), buf.getHeight());
@@ -188,19 +203,5 @@ public final class BattleCarryProbe {
         int m = 0;
         for (int s = 0; s <= 16; s += 8) m = Math.max(m, Math.abs(((p >> s) & 0xff) - ((q >> s) & 0xff)));
         return m;
-    }
-
-    private static Object field(Object o, String name) throws ReflectiveOperationException {
-        Class<?> c = o.getClass();
-        while (c != null) {
-            try {
-                java.lang.reflect.Field f = c.getDeclaredField(name);
-                f.setAccessible(true);
-                return f.get(o);
-            } catch (NoSuchFieldException e) {
-                c = c.getSuperclass();
-            }
-        }
-        throw new NoSuchFieldException(name);
     }
 }

@@ -82,10 +82,10 @@ import { blitRectsOnto, scaledBlitPasses } from './scaledBlit'
 export interface BattleRenderer {
   /**
    * 新的一场：把用得到的纹理一次载齐。**必须在第一次 `draw` 之前 await 完。**
-   * `buffer` 说这一场接着上一场的缓冲画（`'keep'`，游戏）还是从全透明起步
+   * `mode` 说这一场接着上一场的缓冲画（`'keep'`，游戏）还是从全透明起步
    * （`'fresh'`，取图页）—— 见文件头「跨场复用」。
    */
-  load(ids: readonly AssetId[], buffer: BufferMode): Promise<void>
+  load(ids: readonly AssetId[], mode: BufferMode): Promise<void>
   /**
    * 画第 `tick` 拍：执行这份清单，合成进持久缓冲。**同一拍再调直接返回** ——
    * 缓冲不清屏，重复合成会让半透明的边比原版叠得快（见文件头第四处）。
