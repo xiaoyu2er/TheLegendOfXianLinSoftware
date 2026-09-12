@@ -9,3 +9,12 @@ node_modules/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# bd 的被动导出（`bd export -o .beads/issues.jsonl`）。xl-319 把它撤出了 git：
+# 没有任何东西在自动刷新它（export.auto 默认关），入库那份实测落后活库好几天，
+# 读它的人看到的是旧账。票的真值是活库；clone 下来拿票用 `bd bootstrap`
+# （按 config.yaml 的 sync.remote 从 origin 的 refs/dolt/data 拉，那份也只到
+# 最近一次 `bd dolt push`）。
+# 写在根上而不是 `.beads/.gitignore`：后者由 bd 维护（二进制里有「ensure
+# .beads/.gitignore」的逻辑；什么时候会重写它没实测）。
+.beads/issues.jsonl
