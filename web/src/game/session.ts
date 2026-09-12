@@ -45,6 +45,7 @@ import type { Ticker } from '../state/loop'
 import type { SceneSource } from '../state/step'
 import { BATTLE_INFO_COLUMNS, COL_BACKGROUND, COL_PARTY, enemySlots } from '../state/fight'
 import type { BattleInfo } from '../state/fight'
+import { NO_REQUESTS } from '../state/types'
 import type { InputEvent, World } from '../state/types'
 import { saveSlotsView } from '../save/store'
 import type { SaveSlotsView, SaveStore } from '../save/store'
@@ -292,7 +293,10 @@ export interface Session {
    * 这里是那几步各自的依次相接，交给 `audio/sfxPlayer.ts` 的 `play` 一拍一次
    * （{@link playSfx}）。空数组 = 这一拍没出声，**不是**「该静音了」。
    *
-   * 只有菜单与商店两处往里收：战斗与场景没有音效真值、状态层也还不产出，归 xl-b36。
+   * 四处往里收：场景（`World.sfxRequest`，开箱 / 答题那一声）、战斗（`BattleTicker.sfx`，
+   * xl-b36）、菜单、商店。
+   *
+   * ⚠️ 它证的是「该响的时候调了播放器、参数对」，证不了玩家真的听到了。
    */
   readonly sfx: readonly string[]
   readonly deps: SessionDeps
@@ -657,13 +661,23 @@ export function advanceSession(
     deps.scenes,
     deps.random,
   )
-  const request = scene.world.battleRequest
+  // ⚠️ **下面五类只亮一拍的请求，只在这一次真的推过场景时才接**（xl-b36）。
+  // 凑不满一拍时（`elapsedMs` 不到 10 ms —— `setInterval` 抖一下就是；存读档那条
+  // 路 `useGame` 明写着传 0）`advance` 把世界**原样交回**，上一拍亮着的请求还亮着。
+  // 不看这一条的话，那一次 pump 会把它再接一遍：金币再加一遍、那一声再交一遍、
+  // 已经在店里了又要进店（→ 下面那句抛）。sfxWiring.test.ts 的「拍间空转」喂法
+  // 头一次喂到它：三扇门的剧本全抛、开箱那一声变四声。
+  const stepped = scene.world !== before.world
+  const lit = stepped ? scene.world : NO_REQUESTS
+  const request = lit.battleRequest
 
   // 答对答错的加扣（xl-yg6.9）与开箱进背包（xl-yg6.10）。两者都只亮一拍，
   // `advance` 在亮的那一拍停批（`state/loop.ts`），所以读的就是这一拍的；**只在
-  // 这里记一次**：下一次 pump 的世界里它们已经落回 `null`。这一段与取图页共用
-  // （`sceneLedger.ts`，xl-03x.3）。
-  settleSceneRequests(scene.world)
+  // 这里记一次**：下一次 pump 的世界里它们已经落回 `null`（或者这一次没推，见上）。
+  // 这一段与取图页共用（`sceneLedger.ts`，xl-03x.3）。
+  if (stepped) settleSceneRequests(scene.world)
+  // 开箱 / 答题那一声（xl-b36）。同样只亮一拍、同样停批，读的就是这一拍的。
+  if (lit.sfxRequest !== null) heard.push(...lit.sfxRequest)
 
   if (request !== null && panel === 'scene') {
     battle = createBattleTicker(createBattle(configFor(request, deps)))
@@ -687,7 +701,7 @@ export function advanceSession(
   // 从店里「返回游戏」回来，场景还停在选择框上，再按一下回车又进店。照抄 ——
   // 这一层什么都不用做，那两个旗标本来就没人动。
   let shop = session.shop
-  const door = scene.world.selectPanelRequest
+  const door = lit.selectPanelRequest
   if (door !== null && panel === 'scene') {
     shop = enterShop(shop, SHOP_OF_DOOR[door], menu, deps)
     panel = 'shop'
@@ -701,7 +715,7 @@ export function advanceSession(
   // `advance` 在它亮的那一拍停批（`state/loop.ts`）。它只能从场景的按键分发里来，
   // 所以键不落在场景手里的时候亮起来就是接线错了 —— 抛，理由同上面那一场架。
   let end = session.end
-  if (scene.world.endRequest !== null) {
+  if (lit.endRequest !== null) {
     if (keyReceiver(panel) !== 'scene') {
       throw new Error(`${scene.world.scene} 在 ${panel} 面板上要切结局 —— 那一句只在场景的按键分发里`)
     }
@@ -714,6 +728,8 @@ export function advanceSession(
   if (panel === 'battle' && battle !== null) {
     const drugsBefore = [...battle.world.drugStock]
     battle = advanceBattle(battle, input.battle, elapsedMs)
+    // 这一次推进跑过的每一拍各自的音效，依次相接（xl-b36）。
+    heard.push(...battle.sfx)
     // 药**每一拍都写回**，理由与商店、菜单同一条：原版喝下去那一刻 static 的
     // `DrugPack` 就变了。等打完再写的话，打输回标题那条出口也得记得写。
     applyDrugDelta(drugsBefore, battle.world.drugStock)

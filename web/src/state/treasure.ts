@@ -196,10 +196,16 @@ export interface TreasureDraft {
   presentImageMove: MutableTimer
   wordsRun: MutableTimer
   boxes: { -readonly [K in keyof TreasureBoxState]: TreasureBoxState[K] }[] | null
+  /**
+   * 这一拍 `drawString` 请求过的音效（xl-b36）。**只活在草稿里**，不进
+   * `TreasureState`：`step()` 收尾时把它交给 `World.sfxRequest`，下一拍的草稿从空起。
+   */
+  sounds: string[]
 }
 
 export function toTreasureDraft(t: TreasureState): TreasureDraft {
   return {
+    sounds: [],
     presenting: t.presenting,
     x: t.x,
     wordNo: t.wordNo,
@@ -229,10 +235,10 @@ export function fromTreasureDraft(d: TreasureDraft): TreasureState {
  *
  * 五句照抄。**不停 `wordsRun`**：打字机正吐着的时候再弹一次，它接着按新的
  * `text` 从第 0 个字吐起（`count_word` 清零了），而滑动定时器同时从 -320
- * 重来 —— 两个一起跑，原版就是这样。`MusicReader.readmusic("Clip750.wav")`
- * 那句音效**还没做，不是故意不复刻**（所以不带 ADR-0001 的例外标记）：`SceneDriver`
- * 没接音效观察点，场景真值里没有音效列可对。连同真值归 xl-b36（xl-03x.7 只接了
- * 菜单与商店）。
+ * 重来 —— 两个一起跑，原版就是这样。
+ *
+ * 末句 `MusicReader.readmusic("Clip750.wav")` 是场景里**唯一**一处音效（xl-b36）：
+ * 开箱与答题（`SelectHost.present`）都走这里，所以两条路都响。
  */
 export function drawString(d: TreasureDraft, s: string, now: number): void {
   d.x = PRESENT_START_X
@@ -241,6 +247,7 @@ export function drawString(d: TreasureDraft, s: string, now: number): void {
   d.text = s
   d.presenting = true
   startTimer(d.presentImageMove, now, PRESENT_IMAGE_MS)
+  d.sounds.push('Clip750.wav')
 }
 
 /**

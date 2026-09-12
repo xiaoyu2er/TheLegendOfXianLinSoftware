@@ -144,6 +144,8 @@ export interface BattleSnapshot {
   reminder: ReminderSnapshot
   menus: MenusSnapshot
   audio: { bgm: string | null }
+  /** 这一拍请求过的音效，按先后（xl-b36）。导出器 `MusicTap` 的那一列，顶层。 */
+  music: string[]
 }
 
 /**
@@ -306,5 +308,6 @@ export function snapshotBattle(w: BattleWorld): BattleSnapshot {
     },
     menus: menusOf(w),
     audio: { bgm: w.bgm },
+    music: [...w.music],
   }
 }

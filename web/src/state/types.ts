@@ -351,6 +351,15 @@ export interface SceneRequests {
    * 的那一下空格才切。消费者是 `game/session.ts`（翻到 `end` 面板、起那条循环）。
    */
   readonly endRequest: true | null
+  /**
+   * **这一拍请求过的音效**（xl-b36）—— `EquipmentEvent.drawString` 末尾那句
+   * `readmusic("Clip750.wav")`，开箱与答题都走它。消费者是 `game/session.ts`
+   * （收进 `Session.sfx`）。做成请求是为了借「亮的那一拍停批」：一次 pump 补跑
+   * 几拍时，响的那一拍不会被后面的空拍覆盖掉。
+   *
+   * ⚠️ 它证的是「该响的那一拍请求了」，证不了玩家真的听到了。
+   */
+  readonly sfxRequest: readonly string[] | null
 }
 
 /**
@@ -364,6 +373,7 @@ export const NO_REQUESTS: { readonly [K in keyof SceneRequests]: null } = {
   presentRequest: null,
   treasureRequest: null,
   endRequest: null,
+  sfxRequest: null,
 }
 
 const REQUEST_KEYS = Object.keys(NO_REQUESTS) as readonly (keyof SceneRequests)[]

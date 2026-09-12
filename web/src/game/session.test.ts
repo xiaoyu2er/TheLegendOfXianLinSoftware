@@ -752,6 +752,25 @@ describe('答题 → 钱包', () => {
     expect(next.scene.world.presentRequest).toBeNull()
     expect(getCoins()).toBe(10000 - 750)
   })
+
+  /**
+   * 反方向（xl-b36）：**凑不满一拍的 pump 不许把上一拍的请求再接一遍**。那种 pump
+   * 里 `advance` 把世界原样交回，交卷那一拍的 `presentRequest` 还亮着。真实游戏里
+   * 够得着：`useGame` 存读档那条路明写 `advanceSession(…, 0)`，`setInterval` 抖到
+   * 不足 10 ms 也是。
+   */
+  it('凑不满一拍的 pump 不重复记账、不重复出声', () => {
+    const s = asking()
+    const answered = advanceSession(s, scene([press('enter')]), SCENE_PUMP_MS)
+    expect(answered.scene.world.presentRequest).not.toBeNull()
+    expect(answered.sfx).toEqual(['Clip750.wav'])
+    expect(getCoins()).toBe(10000 - 750)
+    // 余量清零再推 0 ms：确定一拍都不跑（不靠 carryMs 恰好是多少）。
+    const idle = advanceSession({ ...answered, scene: { ...answered.scene, carryMs: 0 } }, scene([]), 0)
+    expect(idle.scene.world.presentRequest, '零拍 pump 把世界原样交回 —— 夹具前提').not.toBeNull()
+    expect(getCoins(), '零拍 pump 又扣了一次钱').toBe(10000 - 750)
+    expect(idle.sfx, '零拍 pump 又交了一次那一声').toEqual([])
+  })
 })
 
 /**
