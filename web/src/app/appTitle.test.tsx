@@ -109,3 +109,46 @@ describe('App 与开始界面', () => {
     expect(document.querySelector('.toolbar-hint')!.textContent).toContain('重开一局')
   })
 })
+
+/**
+ * 离开标题再回来，**标题页接着离开时那一份**（xl-6zf）。
+ *
+ * 原版 `StartPanel` 是 `GameLauncher` 构造函数里 `new` 的一份，从开机活到关机
+ * （唯一会重建面板的 `init()` 没人调）。web 这边 `<StartPanel>` 离开标题就卸载，
+ * 状态原先在组件自己的 `useRef` 里，回来就是 `createStartPanelState()` 全新一份：
+ * 云跳回起点、「承」的悬停图没了。
+ *
+ * 读数（xl-6zf 现量，`panelState.ts` 走一遍「承」）：走完那一刻与开机那一帧的差别是
+ * 云 y（-40 对 360）、「承」悬停、自绘鼠标的位置与帧。**卷轴两边都是 `scroll` 第 0 帧**
+ * —— 原版 `drawScroll()` 里那句 `scroll.stopButtonAnimation()`（web 侧 `settleScroll`）把它拨回了第 0 帧，票面
+ * 「卷轴停在展开的最后一帧」不成立。所以这里拿云与悬停当判据，不拿卷轴。
+ */
+describe('离开标题再回来', () => {
+  it('从「承」进存读档、再回标题：云与悬停都接着离开时那一份', () => {
+    panel.current = 'start'
+    const { rerender } = render(<App />)
+    const load = () => screen.getByRole('button', { name: '读取存档' })
+    const cloudTop = () => (document.querySelector('.start-cloud') as HTMLElement).style.top
+    const freshCloud = cloudTop()
+    fireEvent.mouseEnter(load())
+    fireEvent.click(load())
+    act(() => {
+      vi.advanceTimersByTime((10 + LOAD_TICKS) * START_TICK_MS)
+    })
+    // 期望值在离开**之前**记下（事后拿两个被同一次动作同步过的量互比是恒真的）。
+    const leftCloud = cloudTop()
+    expect(leftCloud).not.toBe(freshCloud)
+    expect(load()).toHaveAttribute('data-hover', 'true')
+
+    panel.current = 'ls'
+    rerender(<App />)
+    expect(screen.queryByTestId('start-panel')).toBeNull()
+    panel.current = 'start'
+    rerender(<App />)
+
+    expect({ cloud: cloudTop(), hover: load().getAttribute('data-hover') }).toEqual({
+      cloud: leftCloud,
+      hover: 'true',
+    })
+  })
+})

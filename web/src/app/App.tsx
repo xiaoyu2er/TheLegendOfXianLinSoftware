@@ -19,6 +19,7 @@ import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
 import { useGame } from '../game/useGame'
 import type { SaveLoadNotice } from '../game/useGame'
 import { StartPanel } from '../start/StartPanel'
+import type { StartPanelState } from '../start/panelState'
 import { DialogueBox } from '../ui/DialogueBox'
 import { devToolsEnabled } from './devTools'
 
@@ -91,6 +92,12 @@ export function App() {
   const shopHostRef = useRef<HTMLDivElement>(null)
   const lsHostRef = useRef<HTMLDivElement>(null)
   const endHostRef = useRef<HTMLDivElement>(null)
+  /**
+   * 标题页的状态（xl-6zf）。放在这一层而不在 `<StartPanel>` 里：离开标题它就卸载，
+   * 而原版那块 `StartPanel` 从开机活到关机 —— 「承」进存读档再 Esc 回来，云、悬停、
+   * 自绘鼠标都接着离开时那一份。重开一局也**不**清它：原版「起」不重建面板。
+   */
+  const titleStateRef = useRef<StartPanelState | null>(null)
   const [scalingMode, setScalingMode] = useState<ScalingMode>(DEFAULT_SCALING_MODE)
   /** 菜单画布此刻挂的 `title` —— 指针停在禁用的「确认离开」上时是理由（xl-03x.12）。 */
   const [menuTitle, setMenuTitle] = useState<string | null>(null)
@@ -432,7 +439,9 @@ export function App() {
                 {status.kind === 'loading' ? `正在载入 ${shownScene}…` : status.message}
               </p>
             )}
-            {atTitle && !inShopPreview ? <StartPanel onNewGame={onNewGame} onLoad={view.openLoad} /> : null}
+            {atTitle && !inShopPreview ? (
+              <StartPanel onNewGame={onNewGame} onLoad={view.openLoad} keep={titleStateRef} />
+            ) : null}
             {inLs && !inShopPreview ? <SaveLoadNotices notice={view.saveLoad} loading={view.saveLoadLoading} /> : null}
             {(inShopPreview && shop.loading) || (!inShopPreview && inShop && view.shopLoading) ? (
               <p className="stage-notice stage-notice--loading" role="status">

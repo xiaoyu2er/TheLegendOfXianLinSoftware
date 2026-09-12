@@ -21,6 +21,7 @@ import {
   advanceSession,
   createSession,
   currentBgm,
+  titleEntered,
   enterScene,
   isRunning,
   loadGame,
@@ -522,6 +523,7 @@ export function useGame(
       // 与场景那条线程无关（`advanceSession` 起手先推它，然后照样原样交回）。
       if (!isRunning(session)) {
         last = now
+        const before = session
         if (session.panel === 'ls') {
           const saveload = lsInputRef.current
           lsInputRef.current = []
@@ -532,7 +534,8 @@ export function useGame(
           drawSaveLoad(next, now)
           session = next
         }
-        bgmRef.current?.sync(currentBgm(session))
+        // 存读档面板 Esc 回标题（xl-6zf）：主题曲从头放，见 `titleEntered`。
+        bgmRef.current?.sync(currentBgm(session), titleEntered(before, session))
         return
       }
       // **从这里往下都要渲染器**：场景正在换的那几十毫秒里，世界已经在新场景
@@ -588,7 +591,7 @@ export function useGame(
       openMenuRef.current = false
       const next = advanceSession(opening ? openMenu(session) : session, input, elapsed)
       sessionRef.current = next
-      bgmRef.current?.sync(currentBgm(next))
+      bgmRef.current?.sync(currentBgm(next), titleEntered(session, next))
       if (sfxRef.current) playSfx(sfxRef.current, next)
       syncPanel(next)
       drawBattle(next)
