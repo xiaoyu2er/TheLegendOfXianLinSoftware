@@ -18,6 +18,27 @@ import { useGame } from './useGame'
 import { resetEnemySprites } from './enemySprites'
 import { decodePng } from '../compare/png'
 import { repoPath } from '../test/repoPath'
+import { buttonCenter } from '../test/menuClicks'
+import { createMemorySaveStore } from '../save/memoryStore'
+import { sceneSourceOf } from '../state/trace'
+import type { MenuInput } from '../menu/step'
+import { NO_INPUT, advanceSession, createSession, enterScene, menuWorldOf, openMenu } from './session'
+import type { SessionDeps } from './session'
+
+/** 只拿来量菜单按钮坐标的那一份会话要的东西（存档仓库每次现建）。 */
+const PROBE_DEPS: Omit<SessionDeps, 'saves'> = {
+  scenes: sceneSourceOf(getScene),
+  sprite: () => ({ width: 1, height: 1 }),
+  random: () => 0.5,
+}
+
+/** 在 `[x, y]` 上点一下：按下、松开同一批送。 */
+function clickAt([x, y]: [number, number]): MenuInput[] {
+  return [
+    { e: 'press', x, y },
+    { e: 'release', x, y },
+  ]
+}
 
 // 这个文件只验接线（键盘 → 推进 → 面板），不验出声 —— 那归 `useGameBgm.test.tsx`。
 // 播放器换成哑的，是因为「战斗里按 J」那条要进 `脚本22`，而它的场景曲
@@ -150,6 +171,56 @@ describe('useGame 接线', () => {
       vi.advanceTimersByTime(10 * TICK_MS)
     })
     expect(result.current.panel).toBe('menu')
+  })
+
+  /**
+   * 跨帧的那一下松手（xl-z4f）。按下天书页「返回」那一拍菜单就关了，松手落在
+   * **下一拍**—— 浏览器里这是常态。原版按按下时那个组件派发松手（Swing 的 grab），
+   * 所以「返回」的 `isclicked` 被清掉；丢了的话再开菜单点「退出」，那串 if-else
+   * 先命中还粘着的「返回」，菜单当场又被弹回场景。
+   */
+  it('按下「返回」关了菜单，下一拍的松手照样送到菜单 —— 再开菜单点「退出」不会被弹回场景', async () => {
+    const { result } = await mount()
+    // 按钮坐标从一份同样建出来的菜单世界上取（几何是静态的），不写死数字。
+    let probe = openMenu(
+      enterScene(
+        createSession({ ...PROBE_DEPS, saves: createMemorySaveStore() }),
+        createWorld(getScene('宿舍')),
+      ),
+    )
+    const funcTab = buttonCenter(menuWorldOf(probe)!.tabs.func)
+    probe = advanceSession(probe, { ...NO_INPUT, menu: [...clickAt(funcTab)] }, 0)
+    const fb = menuWorldOf(probe)!.panels.funcPanel.funcButtons!
+    const back = buttonCenter(fb.main.returnButton)
+    const exit = buttonCenter(fb.main.exitButton)
+    const restart = buttonCenter(fb.sub.restart)
+
+    const tick = () =>
+      act(() => {
+        vi.advanceTimersByTime(TICK_MS)
+      })
+    const send = (...inputs: MenuInput[]) => {
+      for (const i of inputs) result.current.menuInput(i)
+      tick()
+    }
+
+    press('Escape')
+    tick()
+    expect(result.current.panel).toBe('menu')
+    send(...clickAt(funcTab))
+    send({ e: 'press', x: back[0], y: back[1] })
+    expect(result.current.panel, '按下「返回」那一拍菜单就该关').toBe('scene')
+    send({ e: 'release', x: back[0], y: back[1] })
+
+    press('Escape')
+    tick()
+    expect(result.current.panel).toBe('menu')
+    send(...clickAt(exit))
+    expect(result.current.panel, '一按「退出」菜单就被弹回场景 —— 那一下松手丢了').toBe('menu')
+    // 反向控制：这一下真的点着了「退出」—— 它展开的「重新开始」点得着、翻回标题。
+    // 不然「没被弹出去」与「什么都没点着」长得一样。
+    send(...clickAt(restart))
+    expect(result.current.panel, '「退出」根本没点着，上面那条恒真').toBe('start')
   })
 
   it('自动对话会走到 React 手里，空格能把它推下去', async () => {

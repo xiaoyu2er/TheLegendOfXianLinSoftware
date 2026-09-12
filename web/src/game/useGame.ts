@@ -215,6 +215,11 @@ export function useGame(
   const battleInputsRef = useRef<BattleInput[]>([])
   /** 菜单里的鼠标事件，攒到下一拍。**没有键盘那一种。** */
   const menuInputRef = useRef<MenuInput[]>([])
+  /**
+   * 鼠标在菜单上按下、还没松开（xl-z4f）—— 「按下时那个面板」。松手照它派，
+   * 不照当前面板：见 `menuInput`。
+   */
+  const menuGrabRef = useRef(false)
   /** 店里的鼠标事件，攒到下一拍（xl-yg6.11）。 */
   const shopInputRef = useRef<ShopInput[]>([])
   const [shopLoading, setShopLoading] = useState(false)
@@ -266,6 +271,7 @@ export function useGame(
     queueRef.current = []
     battleInputsRef.current = []
     menuInputRef.current = []
+    menuGrabRef.current = false
     openMenuRef.current = false
     signatureRef.current = null
     sceneRef.current = null
@@ -811,7 +817,17 @@ export function useGame(
    * 「按下」那一张贴图上（`isclicked` 也不清），而那看起来像"点了一下就卡住"。
    */
   const menuInput = (input: MenuInput): void => {
+    // 松手按 **grab** 派：在菜单上按下过，松手就归菜单，不看它此刻还显不显示
+    // （xl-z4f）。按下「返回」那一拍菜单就关了，松手落在下一拍 —— 按当前面板
+    // 过滤的话它整个丢掉，「返回」的 `isclicked` 永远粘着。原版是 Swing 的
+    // `LightweightDispatcher` 握着按下时那个组件（`session.ts` 里有读数）。
+    if (input.e === 'release' && menuGrabRef.current) {
+      menuGrabRef.current = false
+      menuInputRef.current.push(input)
+      return
+    }
     if (sessionRef.current?.panel !== 'menu') return
+    if (input.e === 'press') menuGrabRef.current = true
     menuInputRef.current.push(input)
   }
 
