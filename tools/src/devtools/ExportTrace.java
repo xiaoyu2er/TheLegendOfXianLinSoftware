@@ -271,9 +271,19 @@ public final class ExportTrace {
                 scriptJson = s.toJson();
                 return new EndDriver(s);
             }
+            case "start": {
+                StartScript s = StartScript.load(scriptFile);
+                scriptName = s.name;
+                scriptScene = "start";
+                // 标题页是 tick 驱动的：一拍 = 那条匿名线程的循环体一次，那一句是
+                // Clock.sleep(100)。剧本里的鼠标步不是拍，不推时间。
+                scriptTickMs = 100;
+                scriptJson = s.toJson();
+                return new StartDriver(s);
+            }
             default:
                 die(scriptFile.getPath() + " 的 driver 是 \"" + want
-                        + "\"，导出器只认 scene / battle / menu / shop / saveload / end");
+                        + "\"，导出器只认 scene / battle / menu / shop / saveload / end / start");
                 return null;
         }
     }

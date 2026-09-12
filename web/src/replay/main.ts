@@ -78,6 +78,10 @@ import { createEndRenderer } from '../end/render/endRenderer'
 import type { EndRenderer } from '../end/render/endRenderer'
 import { startEndReplay } from '../end/replay'
 import type { EndInput, EndReplay, EndSetup } from '../end/replay'
+import { StartPanelView } from '../start/StartPanel'
+import type { StartView } from '../start/panelState'
+import { startStartReplay } from '../start/replay'
+import type { StartInput, StartReplay } from '../start/replay'
 
 /**
  * 取图页：**只在跨端逐帧比对里用**，不进游戏产物（`vite build` 只打
@@ -503,6 +507,98 @@ const endAssembly: Assembly = {
   },
 }
 
+/* ===================== 标题页（xl-whk） ===================== */
+
+interface StartReplayTrace {
+  readonly driver: string
+  readonly script: { readonly name: string }
+  readonly tickCount: number
+  readonly ticks: readonly { readonly t: number; readonly input: readonly StartInput[] }[]
+}
+
+/**
+ * 标题页是**真 DOM**（`start/StartPanel.tsx`），不是画布 —— 所以这一套不建渲染器，把产品的
+ * `StartPanelView` 直接渲染进自己的宿主。另写一个 Pixi 版的话，比出来的是那一份像不像原版，
+ * 产品自己画错了照样绿。
+ */
+let startRoot: Root | null = null
+let startTrace: StartReplayTrace | null = null
+let startReplay: StartReplay | null = null
+let startNext = 0
+
+/**
+ * 把这一帧画成 DOM，并**等每一张图解码完**。
+ *
+ * 画布那几套等两次 rAF 就够，因为纹理在 `load` 里就载齐了；DOM 的 `<img>` 换了 `src` 之后
+ * 是异步取、异步解码的，只等 rAF 会截到上一张图或者一个空框 —— 而那看起来像「这一帧画错了」。
+ * 解不出来（404、格式坏）就抛，不许截一张缺图的帧。
+ *
+ * `--self-check` 的注入点：整帧一起挪（外面包一层 `translateX`），理由同商店 / 菜单那几份。
+ */
+async function drawStart(view: StartView, t: number): Promise<void> {
+  const host = hostFor('start')
+  host.style.position = 'relative'
+  host.style.overflow = 'hidden'
+  startRoot ??= createRoot(host)
+  const root = startRoot
+  const b = window.__xlBreak
+  const dx = b && t >= b.fromTick ? b.heroDx : 0
+  flushSync(() => {
+    root.render(
+      createElement(
+        'div',
+        { style: { position: 'absolute', inset: 0, transform: dx === 0 ? undefined : `translateX(${dx}px)` } },
+        createElement(StartPanelView, { view }),
+      ),
+    )
+  })
+  await Promise.all(
+    Array.from(host.querySelectorAll('img')).map((img) =>
+      img.decode().catch(() => {
+        throw new Error(`标题页素材解不出来：${img.src}`)
+      }),
+    ),
+  )
+}
+
+const startAssembly: Assembly = {
+  async load(traceJson: string) {
+    const parsed = JSON.parse(traceJson) as StartReplayTrace
+    activate('start')
+    // 起手与逐步推进与状态层判据是同一份（`start/replay.ts`）。
+    startReplay = startStartReplay(parsed.script.name)
+    startTrace = parsed
+    startNext = 0
+    // `scene` 这一栏对这个面板来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
+    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+  },
+
+  async seek(t: number) {
+    const trace = startTrace
+    const replay = startReplay
+    if (!trace || !replay) throw new Error('还没 load 就 seek')
+    if (t < startNext - 1) {
+      throw new Error(`取图只能往前：当前在第 ${startNext - 1} 步，要去第 ${t} 步`)
+    }
+    if (t >= trace.ticks.length) {
+      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
+    }
+    for (; startNext <= t; startNext++) {
+      const input = trace.ticks[startNext]!.input
+      if (input.length !== 1) throw new Error(`第 ${startNext} 步有 ${input.length} 个输入事件，一步应当恰好一个`)
+      replay.step(input[0]!)
+    }
+    // 只有 tick 步画（原版三个监听器一句 repaint 都没有），输入步之后位图停在上一拍 ——
+    // `replay.view` 已经是那一帧。
+    const view = replay.view
+    if (view === null) throw new Error(`到第 ${t} 步为止一拍都还没推 —— 原版一帧都还没画`)
+    await drawStart(view, t)
+    await twoFrames()
+    // 一步不全是一拍（还有三种鼠标步），报步号乘 100 ms 会假装它是时间。
+    return { t, timeMs: 0, x: replay.state.cursorX, y: replay.state.cursorY }
+  },
+}
+
 /* ===================== 战斗（xl-rh9.9） ===================== */
 
 let battleRenderer: BattleRenderer | null = null
@@ -817,6 +913,7 @@ const ASSEMBLIES: Readonly<Record<ImplementedDriver, Assembly>> = {
   shop: shopAssembly,
   saveload: saveloadAssembly,
   end: endAssembly,
+  start: startAssembly,
 }
 
 /** 当前这份真值挑中的那一套。`load` 挑，`seek` 用。 */

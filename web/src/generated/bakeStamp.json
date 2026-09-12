@@ -45,7 +45,7 @@
     "web/src/shop/shopAssets.ts": "3c9ff0d04dad91f40a0b89731791bae1704662ffecf3d137d2aa6258b7876bcf",
     "web/src/shop/shopReferences.ts": "d0338a2ca8692bc488ea9480490626da5f3798e89dc775c82f47b17ce0c3f5b3",
     "web/src/stage/constants.ts": "5e67338cf7b79f3e2a01b01403f2f6d1927f746e8357e33564c00228d928c481",
-    "web/src/start/assets.ts": "becfbff09fb1130a90ac6306b24a2aef8903d8b74b366d881525589e7737cd20",
+    "web/src/start/assets.ts": "81c6ad075db8cef8c1582f61ef41833f6ae2027a8e805e5a1000ddea4d7a0fe6",
     "web/src/state/dialogue.ts": "27a177eee0df479e65605afb380f17cfba0e33b1f0a126a133c6e2a80cef6c95",
     "web/src/state/exit.ts": "ea688ea78d3d4a3b8819ca9b9aa304e82b188fd0645ba650d083a6f1d0e0abbc",
     "web/src/state/fight.ts": "3863f5a19b2018fc080309d6429932141cddfaef640e19d5b427e27b6799b047",
@@ -3835,6 +3835,8 @@
     "tools/traces/out/shop-door.trace.json": "76d25a8204482825e29fbd6c1769ffcbc91613f8992ca548b3f58601490464cc",
     "tools/traces/out/shop-edges.trace.json": "365d93dd9cc09a626ddd4693071eb9a1ec2c023638146e8dec0540684d93781b",
     "tools/traces/out/shop-party.trace.json": "f8122c4eb3093b9336707c47136745945b5651e4ecb8c669592998d11830a6fd",
-    "tools/traces/out/shop-trade.trace.json": "ca763f2b14a423b133d0f4b552860514c863c503100f37925ea6bc249f8febe3"
+    "tools/traces/out/shop-trade.trace.json": "ca763f2b14a423b133d0f4b552860514c863c503100f37925ea6bc249f8febe3",
+    "tools/traces/out/start-about.trace.json": "82cfeb8eef6ee7150e1c91e998b72135138e744e01a8df5896cdb04cce0c999d",
+    "tools/traces/out/start-newgame.trace.json": "bd9ee0dc848f0b54bebde10a6eba293b22fa0ec15a8a78afd7c06b7a2981fe81"
   }
 }

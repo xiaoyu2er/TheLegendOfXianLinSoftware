@@ -24,6 +24,7 @@
 | `shop` | 一次输入事件 | `tools/traces/scripts/shop-*.json`（这一列同样别抄第二份 —— xl-knp.3 一次就加了两份） | `ShopDriver.java` |
 | `saveload` | 一次输入事件（进面板 / 槽位的按下与松开 / 退出键） | `tools/traces/scripts/saveload-*.json` | `SaveLoadDriver.java`（xl-i06.6） |
 | `end` | 一拍（`EndPanel.run()` 循环体一次 = 一次 `update()` + 一次 `paint()`）；进来 / 按键 / 叫醒线程各一步 | `tools/traces/scripts/end-*.json` | `EndDriver.java`（xl-czb.5） |
+| `start` | 一拍（叫醒标题页那条匿名线程走一圈**它自己的**循环体 + 一次 `paint()`）；鼠标的移动 / 按下 / 松开各一步 | `tools/traces/scripts/start-*.json` | `StartDriver.java`（xl-whk） |
 
 **「剧本」这一列里写出来的名字是 2026-09-07 的读数，不是名单。** 权威的名单在
 磁盘上，每份剧本自报 `driver`（缺省算 `scene`）；现数一遍：
@@ -1188,6 +1189,37 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
   `to` 是 `scene`，退出键那一步 `card = menuPanel`、`current = menu`。线程永不退出与画面定格
   这两样读下来成立（`loop.alive` 在叫醒之后仍为真；定格后 `repainted` 为假、`isDraw` 一直为真）。
 
+## 标题页剧本与标题页真值（`driver` = `start`）
+
+`start.StartPanel`，第七支（xl-whk）。正典在 `StartDriver` 与 `StartScript` 的类注释里，这里只记
+读的人最先要知道的几件。
+
+- **一拍走的是原版自己的循环体。** 那段循环体写在构造函数起的匿名 `Thread.run()` 里，没有能调的
+  方法；驱动器不誊抄它，而是冻住时钟、每拍 `interrupt()` 一次，等那条真线程打完栈、走完一圈、
+  `repaint()`、睡回去，再在导出线程上 `paint()` 一次。
+- **paint() 改状态**（卷轴收尾、`startButtonAction`、`startLoadAction` 都在 `drawScroll()` 里），
+  所以只在 tick 步上画、每拍恰好一次；鼠标步不画（原版三个监听器一句 `repaint()` 都没有），
+  位图停在上一拍。第一条指令因此必须是 `tick`。
+- **鼠标经原版挂的那两个适配器本身派发**，命中判定（往左上挪 (15,6) 的开区间）是原版的。
+
+| 指令 | 参数 | 语义 |
+|---|---|---|
+| `tick` | `times`、`expect`（可选：`unfold` / `fold` / `switch`） | 推 `times` 拍。写了 `expect` 时，`isUnfolded` 翻真 / 翻假 / 切走面板必须**恰好在最后一拍**发生 |
+| `move` / `press` / `release` | `x`、`y`（落在 1024×640 里） | 一次 `mouseMoved` / `mousePressed` / `mouseReleased` |
+
+每一步记 `current` / `card`、`onScreen`（原版 `buttons` 列表）、五颗按钮各自的 `image`（按对象同一性
+认 normal / hover / pressed）/ `clicked` / `glow`、`mouse`（坐标 + 8 帧）、四段动画、`cloud`、两个表、
+`isUnfolded`、`signal`。一段动画记 `frame`（`currentImage` 是第几张，按引用认）与 `next`（原版的 `i`）
+两样 —— `stopButtonAnimation()` 只拨回前者。
+
+读数里值得先知道的两件（2026-09-12）：
+
+- **按下之后按钮图读出来是 `hover`**：悬停图与按下图是同一个文件传了两遍，`Toolkit` 缓存给的是同一个对象。
+- **点完「回」之后 `back.clicked` 一直是真**：`setButton()` 先 `buttons.remove(back)`，后面那圈
+  `isRelesedButton` 碰不到它。下一次展开「关于我们」时点任何一颗按钮都会当场收起。web 照抄（xl-whk）。
+
+「承」的收尾要 `lsPanel`，驱动器没立 —— 走到那一支会在原版的 paint 里 NPE，线程死掉、导出硬失败。
+
 ## 现有的剧本
 
 | 剧本 | 场景 | 覆盖 |
@@ -1225,3 +1257,5 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `load-slot1` | 读档 → `脚本1.txt` | **跳过旁白**：同一个脚本、同一个 `isScript=true`，`dorm-intro` 开头是 810 拍旁白，这一份一拍都不起来，主角当场走得动 |
 | `load-slot2` | 读档 → `脚本20.txt` | 读进一个**没有 `Dialogue` 段**的脚本：`initiation` 走 `else if (sal.isLoad)` 那一支新建对话对象。脚本20 也没有 NPC 段（`npcs` 恒空，登记在 `EMPTY_COLUMNS`） |
 | `end-credits` | 结局（`driver` = `end`，起手站在 `脚本41.txt`） | 结局从进来播到定格（xl-czb.5）：字幕与侧栏每拍 5 像素、过场画一轮 24 拍，第 384 拍 `isStop`；定格后再 3 拍不动也不 repaint；回车落到场景面板、结局不动；叫醒原版线程两次仍活着；退出键 —— 场景把它当开菜单，`card = menuPanel` |
+| `start-about` | 标题页（`driver` = `start`） | 悬停起 / 承 / 转（进一颗、出其余每一颗，高亮起停）；点「转」卷轴 10 拍展开（`expect=unfold`）、「关于我们」按 `100*(9-timeLeft)` 逐段揭开、「回」加进列表；点「回」反向卷轴 10 拍收起（`expect=fold`）、逐段收回、`signal` 复位 −1；`back.clicked` 留着真 |
+| `start-newgame` | 标题页（`driver` = `start`） | 点「起」：卷轴 10 拍展开、两段载入动画开播、`loadTimer.start(30)`；第 30 拍 `switchTo("scene")`（`card = scenePanel`、`current = scene`，`expect=switch`） |

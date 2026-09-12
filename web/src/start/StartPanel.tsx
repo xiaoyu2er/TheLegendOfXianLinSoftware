@@ -21,7 +21,7 @@ import {
   SCROLL_X,
   SCROLL_Y,
 } from './layout'
-import type { StartButtonView, StartEffect } from './panelState'
+import type { StartButtonView, StartEffect, StartView } from './panelState'
 import { useStartPanel } from './useStartPanel'
 
 /**
@@ -82,8 +82,30 @@ export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
   }
 
   const panel = useStartPanel((effect) => actions[effect]?.())
-  const view = panel.view
+  return <StartPanelView view={panel.view} handlers={panel} />
+}
 
+/** 视图组件收的三种输入。取图页不给（它只画、不收输入）。 */
+export interface StartPanelHandlers {
+  readonly hover: (key: StartButtonKey | null) => void
+  readonly click: (key: StartButtonKey) => void
+  readonly moveCursor: (x: number, y: number) => void
+}
+
+export interface StartPanelViewProps {
+  /** 这一帧画什么，`panelState.ts` 算好的。 */
+  readonly view: StartView
+  /** 不给就是只画不收输入 —— 取图页（`replay/main.ts`）就是这么用的。 */
+  readonly handlers?: StartPanelHandlers
+}
+
+/**
+ * **把一帧画成 DOM，别的什么都不做**（xl-whk 从 `StartPanel` 里拆出来）。
+ *
+ * 拆出来是为了逐帧比对：取图页要画的是**产品这一份 DOM**，而不是照着它另写一个
+ * 渲染器 —— 另写一份，比出来的是那一份像不像原版，产品自己画错了照样绿。
+ */
+export function StartPanelView({ view, handlers }: StartPanelViewProps) {
   /**
    * 一次 `mousemove` → 舞台**逻辑坐标**（1024×640），给自绘鼠标用。
    *
@@ -92,9 +114,10 @@ export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
    * 完全正常。
    */
   const onMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!handlers) return
     const box = event.currentTarget.getBoundingClientRect()
     if (box.width === 0 || box.height === 0) return
-    panel.moveCursor(
+    handlers.moveCursor(
       Math.round(((event.clientX - box.left) / box.width) * STAGE_WIDTH),
       Math.round(((event.clientY - box.top) / box.height) * STAGE_HEIGHT),
     )
@@ -133,24 +156,17 @@ export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
         //
         // 命中判定仍然归 DOM（按钮元素占的就是那个命中框，见 `buttons.ts`），
         // 这里不自己算坐标。
-        onMouseMove={() => panel.hover(button.key)}
-        onMouseEnter={() => panel.hover(button.key)}
-        onMouseLeave={() => panel.hover(null)}
+        onMouseMove={() => handlers?.hover(button.key)}
+        onMouseEnter={() => handlers?.hover(button.key)}
+        onMouseLeave={() => handlers?.hover(null)}
         // @exception ADR-0001#start-focus-hover
         // 键盘走到这颗上等于"鼠标移进来"：原版没有这一条（它只认坐标），
         // 是这里补的无障碍。补它而不是只补一条 CSS，是为了让那圈高亮动画
         // 也跟着转 —— 只换图不转动画，Tab 过来的人看到的是一颗半死的按钮。
-        onFocus={() => panel.hover(button.key)}
-        onBlur={() => panel.hover(null)}
-        onClick={() => panel.click(button.key)}
+        onFocus={() => handlers?.hover(button.key)}
+        onBlur={() => handlers?.hover(null)}
+        onClick={() => handlers?.click(button.key)}
       >
-        {/*
-          按钮身边那圈 4 帧高亮。原版 `drawButton` 里 `animation.drawAnimation(g)`
-          是**无条件**画的（停着时画第 0 帧），所以这里也无条件画。
-          它画在按钮自己的 (x, y) 上，53×54，比 50×50 的按钮大一圈，
-          所以要能溢出。
-        */}
-        <img className="start-button-glow" style={face} src={frameSrc('buttonGlow', button.glowFrame)} alt="" />
         {/*
           常态图与悬停图**只画一张**，由状态机说画哪张 —— 原版
           `StartButton.buttonImage` 就是一个字段。不带宽高，跟原版
@@ -163,6 +179,14 @@ export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
           src={resolveAsset(startAssetId(button.hover ? `${button.key}Hover` : button.key))}
           alt=""
         />
+        {/*
+          按钮身边那圈 4 帧高亮，**排在按钮图之后** —— 原版 `drawButton` 是
+          `drawImage(buttonImage, x, y)` 在前、`animation.drawAnimation(g)` 在后，高亮盖在
+          按钮图上面。这里原先反过来写，逐帧比对（xl-whk）第 0 帧就在四颗按钮的左沿量到了差。
+          它无条件画（停着时画第 0 帧），画在按钮自己的 (x, y) 上，53×54，比 50×50 的按钮
+          大一圈，所以要能溢出。
+        */}
+        <img className="start-button-glow" style={face} src={frameSrc('buttonGlow', button.glowFrame)} alt="" />
       </button>
     )
   }

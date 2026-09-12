@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { startAssetId, startFrameAssetId } from '../assets/ids'
 import { resolveAsset } from '../assets/resolve'
+import { javaSource } from '../test/javaSource'
 import { StartPanel } from './StartPanel'
 import { START_SEQUENCES } from './assets'
 import {
@@ -103,10 +104,19 @@ describe('开始界面', () => {
     const images = [...el.querySelectorAll('img')] as HTMLImageElement[]
     // **只画一张脸**（原版 `buttonImage` 就是一个字段），加一圈高亮 = 两张。
     expect(images).toHaveLength(2)
-    expect(images.map((f) => f.getAttribute('src'))).toEqual([
-      resolveAsset(startFrameAssetId('buttonGlow', 0)),
-      resolveAsset(startAssetId('newGame')),
-    ])
+    // **次序照原版 `drawButton`：按钮图在前、高亮在后**（高亮盖在上面）。这里原先钉的是
+    // 反过来的次序，逐帧比对（xl-whk）第 0 帧在四颗按钮左沿量到了差才发现 —— 所以次序
+    // 从 GBK 源码现读，不再手写。
+    const src = javaSource('src/start/StartButton.java').replace(/\s+/g, '')
+    const body = src.slice(src.indexOf('publicvoiddrawButton(Graphicsg){'))
+    const faceAt = body.indexOf('g.drawImage(buttonImage,x,y,mp);')
+    const glowAt = body.indexOf('animation.drawAnimation(g);')
+    expect(faceAt, 'drawButton 里没找到画按钮图那一句').toBeGreaterThan(0)
+    expect(glowAt, 'drawButton 里没找到画高亮那一句').toBeGreaterThan(0)
+    const faceFirst = faceAt < glowAt
+    const glowSrc = resolveAsset(startFrameAssetId('buttonGlow', 0))
+    const faceSrc = resolveAsset(startAssetId('newGame'))
+    expect(images.map((f) => f.getAttribute('src'))).toEqual(faceFirst ? [faceSrc, glowSrc] : [glowSrc, faceSrc])
     // 命中框往左上挪了 (15,6)，这里推回去，于是图仍然画在原版的 (200,150)。
     for (const image of images) {
       expect({ left: image.style.left, top: image.style.top }).toEqual({
