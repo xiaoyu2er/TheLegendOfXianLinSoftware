@@ -257,10 +257,10 @@ export function App() {
    * 越多，而画面看起来完全正常。
    */
   const stagePoint = (event: ReactMouseEvent<HTMLDivElement>): { x: number; y: number } | null =>
-    pointIn(event.currentTarget.getBoundingClientRect(), event)
+    stagePointIn(event.currentTarget.getBoundingClientRect(), event)
 
   /** 客户端坐标 → 舞台逻辑坐标，按给定的外接矩形换算。矩形是空的（藏着）就 `null`。 */
-  const pointIn = (
+  const stagePointIn = (
     box: DOMRect,
     event: { readonly clientX: number; readonly clientY: number },
   ): { x: number; y: number } | null => {
@@ -286,7 +286,7 @@ export function App() {
   const onMenuMouse = (e: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!inMenu) return
     const box = event.currentTarget.getBoundingClientRect()
-    const at = pointIn(box, event)
+    const at = stagePointIn(box, event)
     if (!at) return
     view.menuInput({ e, x: at.x, y: at.y })
     // 画布上没有 `<button disabled title>` 可挂，禁用按钮的理由按坐标问出来、
@@ -304,7 +304,8 @@ export function App() {
    *
    * 原版的对应物是 Swing 的 mouse grab：松手派给按下时那个组件，不看它还显不
    * 显示；反过来，没在菜单上按下过的松手也不归菜单。`useGame.menuInput` 那一层
-   * 记着同一个 grab。
+   * 记着同一个 grab。只接了松手：拖动（Swing 也按 grab 派）不送，差异登记在
+   * `session.ts` 藏着的菜单那一段。
    */
   const menuReleaseRef = useRef<((event: MouseEvent) => void) | null>(null)
   const grabMenuRelease = (box: DOMRect) => {
@@ -312,7 +313,7 @@ export function App() {
     const onRelease = (event: MouseEvent) => {
       window.removeEventListener('mouseup', onRelease)
       menuReleaseRef.current = null
-      const at = pointIn(box, event)
+      const at = stagePointIn(box, event)
       if (at) view.menuInput({ e: 'release', x: at.x, y: at.y })
     }
     menuReleaseRef.current = onRelease

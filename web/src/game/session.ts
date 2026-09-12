@@ -2,10 +2,10 @@ import { advanceBattle, createBattleTicker } from '../battle/loop'
 import { advanceMenu, createMenuTicker } from '../menu/loop'
 import type { MenuTicker } from '../menu/loop'
 import {
+  applyMenuInput,
   clearMenuExit,
   clearMenuSaveLoad,
   clearMenuTitle,
-  applyMenuInput,
   menuSaveLoadRequest,
   menuWantsScene,
   menuWantsTitle,
@@ -795,11 +795,17 @@ export function advanceSession(
     // 派发，不看它还显不显示），`isclicked` 于是被清掉。
     //
     // **哪些事件归菜单，由送的人按 grab 定**（`useGame.menuInput`），这里不猜：
-    // 收到什么就交什么。只做原版 `mouseReleased` 那一截 —— 不补脉冲（藏着的菜单
-    // 不推，ADR-0001#panel-threads-run-while-hidden），也不画（藏着的面板
-    // `repaint()` 不真画），所以走 `applyMenuInput` 而不是 `advanceMenu`。
-    // 松手只动按钮贴图与 `isclicked`，不碰队伍、药包与那几个一次性信号，
-    // 所以上面那几句写回与出口这里都用不着。
+    // 收到什么就逐个 `applyMenuInput` 什么。今天送得进来的只有松手 —— 那是原版
+    // `mouseReleased` 那一截。不走 `advanceMenu`：不补脉冲（藏着的菜单不推，
+    // ADR-0001#panel-threads-run-while-hidden），也不画（藏着的面板 `repaint()`
+    // 不真画）。松手只动按钮贴图与 `isclicked`，不碰队伍、药包与那几个一次性
+    // 信号，所以上面那几句写回与出口这里都用不着。
+    //
+    // ⚠️ **拖动不送，是一处有意的差异**：Swing 把 MOUSE_DRAGGED 也按 grab 派，
+    // 原版按下「返回」到松手之间的拖动会跑 `command.checkMoveIn()` +
+    // `currentPanel.mouseDragged`（`MenuPanel.java` 的 `mouseDragged`）。这里一条
+    // 都不送 —— 它只改藏着的菜单上按钮的悬停贴图，松手重写 `currentX/Y`、再开
+    // 菜单头一下移动又全刷一遍，画面与玩法状态上都看不出来（xl-z4f 的 Spec 轴）。
     for (const i of input.menu) applyMenuInput(menu.world, i)
   }
 
