@@ -496,6 +496,7 @@ export function createBattle(config: BattleConfig): BattleWorld {
     ),
     drugMenu: makeDrugMenu(),
     drugStock: initialDrugStock(config.drugStock),
+    lootEquipment: [],
     // `new VictoryReminder(this)` —— 构造函数里就把 getInformation() 跑完了。
     victoryReminder: victoryInformation({ zhang: zxf, yu: yj, lu: lxq }, enemies),
     // `GameOver` 构造函数里那四个会动的坐标（另外十二个只被 paint 读）。

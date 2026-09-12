@@ -4,7 +4,6 @@ import { decodePng } from '../compare/png'
 import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
-import { equipmentCount, equipmentEntries, resetEquipmentPack } from '../fakes/equipmentPack'
 import { getCoins, resetWallet } from '../fakes/wallet'
 import { checkEnemyDead, stepBattle } from './step'
 import { replayBattle } from './replay'
@@ -32,7 +31,7 @@ import type { BattleWorld } from './types'
  * 2. **两条路端到端**：升级与不升级各跑一遍，断言切面板发生在哪一拍，而那个
  *    拍号是从**解析出来的阈值**算的闭式，不是手写的；两条路差的拍数必须正好
  *    等于 `endAt - levelCheckAt`。
- * 3. **发奖那一拍**：物品与钱落进三个假货里，早一拍空、当拍满、后一拍不再变
+ * 3. **发奖那一拍**：药与钱落进两个假货、装备递到 `lootEquipment` 上（xl-5jx），早一拍空、当拍满、后一拍不再变
  *    —— 三个方向都断言（`thing_sx1==4` 在整场里只出现一次）。
  * 4. **假货登记册的双向对撞**在 `fakes/registry.test.ts`（ADR-0005）。
  *
@@ -203,10 +202,10 @@ function exitTick(expToGet: number, timeCodeTarget: number): number {
 
 describe('打赢之后：结算走完，回地图', () => {
   beforeEach(() => {
-    // 三个假货都是模块级单例（原版是静态字段）。不清的话「上一条用例留下的
+    // 药包与钱包两个假货都是模块级单例（原版是静态字段）。装备不在这里：它递到
+    // `w.lootEquipment` 上，每场架一份新的（xl-5jx）。不清的话「上一条用例留下的
     // 药」与「这一场真的发了药」长得一样。
     resetDrugPack()
-    resetEquipmentPack()
     resetWallet()
   })
 
@@ -392,21 +391,21 @@ describe('打赢之后：结算走完，回地图', () => {
     const coinsBefore = getCoins()
 
     for (let t = 1; t < awardAt; t++) stepBattle(w)
-    // 早一拍：三个包都还是空的。
-    expect([drugEntries(), equipmentEntries(), getCoins()]).toEqual([[], [], coinsBefore])
+    // 早一拍：药包、钱包、递出去的装备都还是空的。
+    expect([drugEntries(), [...w.lootEquipment], getCoins()]).toEqual([[], [], coinsBefore])
 
     stepBattle(w)
-    // 当拍：药进背包、装备进装备包、钱进钱包，各一份。
+    // 当拍：药进药包、钱进钱包，装备递到 `lootEquipment` 上等会话来搬（xl-5jx），各一份。
     expect(drugCount('还魄丹'), '商塔弟子掉的药').toBe(1)
-    expect(equipmentCount('御衡镇日刀'), '罹年居士掉的装备').toBe(1)
+    expect([...w.lootEquipment], '罹年居士掉的装备').toEqual(['御衡镇日刀'])
     expect(getCoins()).toBe(coinsBefore + totalMoney)
     // 一样不多：`things` 里有几件就发几件。
-    expect(drugEntries().length + equipmentEntries().length).toBe(w.victoryReminder.things.length)
+    expect(drugEntries().length + w.lootEquipment.length).toBe(w.victoryReminder.things.length)
 
-    const after = [drugEntries(), equipmentEntries(), getCoins()]
+    const after = [drugEntries(), [...w.lootEquipment], getCoins()]
     for (let t = 0; t < 30; t++) stepBattle(w)
     // 晚一拍起不再发 —— `thing_sx1` 之后一直是 0，那一支只走一次。
-    expect([drugEntries(), equipmentEntries(), getCoins()]).toEqual(after)
+    expect([drugEntries(), [...w.lootEquipment], getCoins()]).toEqual(after)
   })
 
   /**

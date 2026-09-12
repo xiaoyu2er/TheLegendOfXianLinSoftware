@@ -1,5 +1,4 @@
 import { addDrug } from '../fakes/drugPack'
-import { addEqupment } from '../fakes/equipmentPack'
 import { addCoins } from '../fakes/wallet'
 import type { PartyKey } from './units'
 import type { BattleWorld, Hero, VictoryReminderState } from './types'
@@ -22,7 +21,7 @@ import type { BattleWorld, Hero, VictoryReminderState } from './types'
  *    Java 源码里有几个字面量（解析器空转是 0，那条断言先红）。
  * 2. **两条路各自端到端跑通**，而且两条路**差的拍数**等于原版那两个阈值之差
  *    （`endAt - levelCheckAt`）—— 这个差也是从解析出来的常量算的，不是手写的。
- * 3. **发出去的东西落在假货里**：发奖那一拍之前包是空的、之后正好多这几样，
+ * 3. **发出去的东西落到该落的地方**（药与钱进两个假货，装备递到 `lootEquipment`，xl-5jx）：发奖那一拍之前包是空的、之后正好多这几样，
  *    正反两个方向都断言（`thing_sx1==4` 只出现一拍，早一拍或晚一拍都会红）。
  * 4. **假货登记册的双向对撞**（`fakes/registry.test.ts`，ADR-0005）。
  *
@@ -156,14 +155,14 @@ function addValue(v: VictoryReminderState, start: number, hero: Hero): void {
 /**
  * `thing_sx1==4` 那一拍：物品与钱**在这里真的发出去**。
  *
- * 三个收件人今天全是假货（`web/src/fakes/`，登记在 ADR-0005 的册子里）：
- * 背包与装备包归 xl-6lo.1，钱包归 xl-knp.1。原版的 `addDrug` / `addEqupment`
- * 在出厂表里按名字找，**找不到什么都不做**。药包那一份已经照做（xl-03x.3）；装备包
- * 仍然来者不拒 —— 差别写在 `fakes/registry.ts` 那一行里。
+ * 药与钱直接进两个模块单例（`fakes/drugPack.ts` / `fakes/wallet.ts`）。装备的落点
+ * 是菜单装备页的 `owned`，战斗世界够不着，于是递到 `w.lootEquipment` 上、由会话在
+ * 这一拍之后搬进去（xl-5jx）。原版的 `addDrug` / `addEqupment` 在出厂表里按名字找，
+ * **找不到什么都不做** —— 药那边在 `addDrug` 里，装备那边在搬的时候（`addEquipment`）。
  *
  * 那个 `switch` 原版**没有 default**：`名字/3` 这种会被悄悄丢掉。照抄。
  */
-function awardLoot(v: VictoryReminderState): void {
+function awardLoot(w: BattleWorld, v: VictoryReminderState): void {
   for (const s of v.things) {
     const parts = s.split('/')
     switch (parts[1]) {
@@ -171,7 +170,7 @@ function awardLoot(v: VictoryReminderState): void {
         addDrug(parts[0]!, 1)
         break
       case '2':
-        addEqupment(parts[0]!, 1)
+        w.lootEquipment.push(parts[0]!)
         break
     }
   }
@@ -227,7 +226,7 @@ export function updateVictoryReminder(w: BattleWorld): void {
     v.thingSy1 -= VICTORY.thingStepY
     v.thingSy2 += VICTORY.thingStepY
   }
-  if (v.thingSx1 === VICTORY.thingAwardAt) awardLoot(v)
+  if (v.thingSx1 === VICTORY.thingAwardAt) awardLoot(w, v)
   if (v.thingSx1 === 0) {
     v.getThingIsDraw = true
     v.thirdString = true

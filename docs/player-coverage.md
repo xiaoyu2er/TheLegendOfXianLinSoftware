@@ -100,7 +100,7 @@
 | 菜单 点头像换人（陆 / 文在队才有）、看等级 | 能 | 随时 | — | `Scoll.java:121-184`；剧本 `menu-hero` |
 | 菜单 药品页：悬停选药、点「使用」回血回蓝 | 能 | 随时 | —（xl-bsv（closed）） | `DrugPanel.java:92-300`；`game/session.ts` 开菜单时从药包现读（`refreshMenuWorld` 的 `drugs`）、每一拍写回；实跑 `menuSession.test.ts`「物品页看得见药包里的药」与「喝一瓶药」那条的药包断言 |
 | 菜单 装备页：六个槽位切换、悬停看升降箭头、「使用」/「弃用」/ 不能用时「禁止」 | 能 | 随时 | — | `EquipPanel.java:297-320,520-950`；剧本 `menu-equip`；实跑 `equipPanel.test.ts` 9/9、`equipDraw.test.ts` 22/22 |
-| 菜单 装备页里看见战斗掉的装备 | **能，但不对**：战利品装备写进另一个背包，菜单与商店都读不到 | 随时 | xl-5jx（open） | `VictoryReminder.java:348-361`；读代码（本票复核）：`battle/victory.ts` 仍从 `fakes/equipmentPack` 引 `addEqupment`，菜单读 `owned` |
+| 菜单 装备页里看见战斗掉的装备 | 能（原版名字对不上出厂表的那一件 `颀崟巨环` 照原版丢掉） | 随时 | —（xl-5jx（closed）） | `VictoryReminder.java:348-361`；`game/session.ts` 在战斗那一拍之后把 `lootEquipment` 搬进菜单装备页的 `owned`；实跑 `session.test.ts`「打赢掉的装备进全局装备背包」两条、`doors.test.ts`「打赢掉的装备：再进装备超市……」 |
 | 菜单 长列表：够到框外的那几行 | 能（原版不裁剪、没有滚动条，框外照画照点；Web 画的那一半裁、加滚动条，`ADR-0001#list-clipped-with-scrollbar`。滑块拖得动（xl-03x.9（closed））） | 随时 | —（xl-03x.9（closed）、xl-4ev（closed）） | `EquipPanel.java:474-486,548-571`；剧本 `menu-scroll`；实跑 `scroll.test.ts` 25/25 |
 | 菜单 奇术页：点技能看动画、说明、听音效 | 能（音效由音效播放器真的交出去，见「声音」那两行） | 随时 | — | `MagicPanel.java:343-456`；剧本 `menu-magic`（47 帧动画逐像素相等）；实跑 `magic.test.ts` 22/22 |
 | 菜单 奇术页的技能格数随等级涨 | 能（升级 2 / 5 / 10 级各 +1；读档只抬不压） | 随时 | —（xl-03x.17（closed）、xl-i06.13（closed）、xl-8ym（closed）） | `ZhangXiaoFan.java:223-224,720-727`、`MagicPanel.java:285-335`；剧本 `menu-magic-levels`；实跑 `magic.test.ts` 22/22、`loadSession.test.ts` 11/11 |

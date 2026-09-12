@@ -464,6 +464,15 @@ export interface BattleWorld {
    * `battle-menus` 那条剧本点下去走提示图的前提。
    */
   drugStock: number[]
+  /**
+   * 打赢那一拍发出去的装备名（`EquipmentPack.addEqupment(名字, 1)`，一件一条），
+   * **一次性请求**：会话在这一拍之后把它们搬进全局装备背包、再清空（xl-5jx）。
+   *
+   * 原版那六张表是 static，`VictoryReminder` 直接写进去；这一层的落点是菜单装备页
+   * 的 `owned`，战斗世界够不着菜单，只能递出去。名字对不上出厂表的，搬的时候
+   * 一声不响丢掉 —— 与原版 `addEqupment` 同。
+   */
+  lootEquipment: string[]
   /** 打赢之后那一整段结算（`VictoryReminder`）—— 见 `victory.ts`。
    *  xl-rh9.5 用它整个取代了早先的 `victoryDrawn` / `victoryStopped`，
    *  对应关系是 `isDraw` / `isStop`。 */

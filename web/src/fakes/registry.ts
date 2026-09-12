@@ -37,14 +37,6 @@ export const REGISTERED_FAKES: Readonly<Record<FakeId, FakeEntry>> = {
       '（从前还「来者不拒」，xl-03x.3 的账本对撞撞出之后改成按 DRUGS 认名字、对不上什么都不做，与原版同。）',
     exports: ['addDrug', 'setDrugCount', 'drugCount', 'drugEntries', 'resetDrugPack'],
   },
-  equipmentPack: {
-    owner: 'xl-6lo.1',
-    original: 'shop.EquipmentPack',
-    fakeBecause:
-      '不分头 / 盔甲 / 武器 / 手 / 脚 / 饰品六类，不读 sources/，同样来者不拒；' +
-      '没有 Equipment 的属性加成与部位。',
-    exports: ['addEqupment', 'equipmentCount', 'equipmentEntries', 'resetEquipmentPack'],
-  },
   party: {
     owner: 'xl-6lo.1',
     original: 'battle.ZhangXiaoFan / YuJie / LuXueQi 那三组静态字段',
