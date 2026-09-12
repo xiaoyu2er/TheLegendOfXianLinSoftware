@@ -614,7 +614,7 @@ const battleAssembly: Assembly = {
       stepBattleWithPaint(world, paint, tick.input)
       // **每一拍都画**，不只画取样的那一拍（xl-84z）：原版一拍 paint 一次、
       // 缓冲从不清，取样那一帧的边上透着上一拍的残影。
-      renderer.draw(breakBattleOps(battleDrawList(world, paint), battleNext))
+      renderer.draw(breakBattleOps(battleDrawList(world, paint), battleNext), battleNext)
     }
     await twoFrames()
     // 战斗的虚拟时间就是拍号乘 tickMs（ADR-0003：固定步长，不跟画面刷新走）。

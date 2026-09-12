@@ -243,8 +243,6 @@ export function useGame(
   /** 已经载过贴图的那个战斗世界（按引用比）。换一场就要重载。 */
   const loadedBattleRef = useRef<BattleWorld | null>(null)
   const battleLoadingRef = useRef(false)
-  /** 战斗画布上一次画到第几拍 —— 一拍只画一次，见 `drawBattle`（xl-84z）。 */
-  const drawnBattleTickRef = useRef(-1)
   /** 已经载过贴图的那一份菜单名单（按内容比）。翻页要重载当前页的背景。 */
   const loadedMenuRef = useRef<string | null>(null)
   const menuLoadingRef = useRef(false)
@@ -272,7 +270,6 @@ export function useGame(
     signatureRef.current = null
     sceneRef.current = null
     loadedBattleRef.current = null
-    drawnBattleTickRef.current = -1
     battleLoadingRef.current = false
     setDialogue(null)
     setScene(null)
@@ -622,7 +619,6 @@ export function useGame(
       const world = next.battle.world
       if (loadedBattleRef.current !== world) {
         loadedBattleRef.current = world
-        drawnBattleTickRef.current = -1
         battleLoadingRef.current = true
         setBattleLoading(true)
         void battleRenderer.load(battleTextureIds(world)).then(() => {
@@ -633,13 +629,10 @@ export function useGame(
         return
       }
       if (battleLoadingRef.current) return
-      // **一拍只画一次**（xl-84z）：战斗渲染器画在不清屏的持久缓冲上，原版一拍
-      // paint 一次；同一拍每个 rAF 都重画的话，背景半透明的边上那层残影会比
-      // 原版收敛得快。⚠️ 一个 rAF 推了不止一拍时（掉帧到 10 fps 以下）中间那几拍
-      // 这里补不上 —— 那几拍的世界已经被推过去了。
-      if (world.tick === drawnBattleTickRef.current) return
-      drawnBattleTickRef.current = world.tick
-      battleRenderer.draw(battleDrawList(world, next.battle.paint))
+      // 带拍号：同一拍每个 rAF 都会调到这里，渲染器按拍号只合成一次（xl-84z）。
+      // ⚠️ 一个 rAF 推了不止一拍时（掉帧到 10 fps 以下）中间那几拍这里补不上 ——
+      // 那几拍的世界已经被推过去了，半透明的边上会少几层残影。
+      battleRenderer.draw(battleDrawList(world, next.battle.paint), world.tick)
     }
 
     /**

@@ -122,7 +122,20 @@ describe('原版离屏缓冲：非预乘 ARGB、从不清屏、默认 SrcOver', 
     expect(new Set(uses)).toEqual(new Set(['drawImage', 'setFont']))
   })
 
-  it('整个原版没有一处改合成规则或清屏（各层拿到的都是同一个 bufferedGraphics）', () => {
+  it('paint() 里 25 层拿到的都是这同一个 bufferedGraphics', () => {
+    // 各层是经 `drawXxx(bufferedGraphics)` 拿到它的，上一条只数直接调用、看
+    // 不见这些；它们对缓冲做了什么由下一条全原版扫描兜底。背景那一层是
+    // `bufferedGraphics.drawImage(background)`，末句 `g.drawImage(bufferedPic)`
+    // 是上屏，两句都不是 `drawXxx(参数)` 的形状。
+    const body = panel.slice(panel.indexOf('public void paint(Graphics g){'), panel.indexOf('public void run()'))
+    const args = [...body.matchAll(/\.(draw[A-Za-z]+)\s*\(\s*([A-Za-z0-9_]*)\s*\)/g)]
+      .filter((m) => m[1] !== 'drawImage')
+      .map((m) => m[2])
+    expect(args).toHaveLength(BATTLE_LAYERS.length - 1)
+    expect(new Set(args)).toEqual(new Set(['bufferedGraphics']))
+  })
+
+  it('整个原版没有一处改合成规则或清屏', () => {
     const files = (readdirSync(repoPath('src'), { recursive: true }) as string[]).filter((f) =>
       f.endsWith('.java'),
     )

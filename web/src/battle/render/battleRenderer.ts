@@ -4,7 +4,6 @@ import {
   Container,
   Filter,
   GlProgram,
-  GpuProgram,
   Rectangle,
   RenderTexture,
   Sprite,
@@ -48,26 +47,39 @@ import { scaledBlitPasses } from './scaledBlit'
  * ## 第四处：画在一张不清屏的 ARGB 缓冲上（xl-84z）
  *
  * 原版的 `bufferedPic` 是 `TYPE_INT_ARGB`（非预乘、起始全透明），`paint()`
- * **从不清屏**、合成规则是默认的 SrcOver（`drawList.test.ts` 回到源码上核这
- * 几件事），而上屏 / 导出时 alpha 被扔掉。于是背景图半透明的边在原版里跟
- * 不透明一样亮 —— 「校园小道」的三条边实测 Web 清黑再贴只有原版的约 0.6 倍。
+ * **从不清屏**、合成规则是默认的 SrcOver —— 这三件 `drawList.test.ts` 回到
+ * GBK 源码上核。真值取的是这张缓冲本身（`BattleDriver.snapshotImage`），比对器
+ * 不看 alpha，所以**真值里的颜色就是缓冲的非预乘 RGB**。于是背景图半透明的边
+ * 在真值里跟不透明一样亮 —— 「校园小道」三条边（alpha 最低 99），清黑再贴的
+ * Web 只有原版的约 0.6 倍（xl-84z 票面读数）。
  *
  * 这边照搬：每次 `draw` 往一张**持久的** `RenderTexture` 上合成一遍（不清），
- * 上屏时经 `unpremultiplyFilter` 把 RGB 除以 alpha、alpha 置 1。预乘 SrcOver
- * 与非预乘 SrcOver 在数学上是同一个东西，只差存法；所以连原版的两项副作用
- * 也一起复刻了：头一帧底下是透明的（开场云雾在 alpha<1 的底上合成），以及
- * 边上透出**上一帧**的残影。两项都在 battle-script3 的第 0 / 25 帧实测到过。
+ * 上屏时经 `unpremultiplyFilter` 把 RGB 除以 alpha、alpha 置 1。预乘与非预乘
+ * SrcOver 在实数上是同一个式子，所以原版的两项副作用也跟着来了：头一帧底下
+ * 是透明的（开场云雾合成在 alpha<1 的底上），以及边上透出**上一拍**的残影。
+ * 读数（battle-script3，提交 d35fc54a）：只做「背景忽略 alpha」时正好剩这两项，
+ * 第 0 / 25 帧共 2680 个像素；持久缓冲之后状态栏之外 0 个。
  *
- * 由此来的合同：**一拍只许 `draw` 一次**（原版一拍 paint 一次），跳过的拍也
- * 要补画 —— 否则边上的残影与原版对不上。缓冲在 `load()` 时重置成透明，对应
- * 导出器每场新建一块 `BattlePanel`。
+ * ⚠️ 两处与**真游戏**不同，都没有真值、没量（xl-pgq）：
+ * - 原版上屏是 `g.drawImage(bufferedPic)` 以 SrcOver 画到 Swing 上，**并不扔
+ *   alpha**；这里上屏扔 alpha，对的是真值（导出的缓冲 + 不看 alpha 的比对器）。
+ *   两者只在缓冲 alpha 还没叠满的头几帧、半透明的边上不同。
+ * - 缓冲在 `load()` 时重置成透明，对的是导出器每场新建一块 `BattlePanel`；
+ *   原版游戏里一局之内几场战斗共用一块。
+ *
+ * 由此来的合同：**一拍只合成一次**（原版一拍 paint 一次）。`draw` 带拍号，
+ * 同一拍再调直接返回；跳过的拍由调用方补画（取图页逐拍画，游戏侧掉帧到
+ * 10 fps 以下时补不上，见 `useGame.ts`）。
  */
 
 export interface BattleRenderer {
   /** 把这一场用得到的纹理一次载齐。**必须在第一次 `draw` 之前 await 完。** */
   load(ids: readonly AssetId[]): Promise<void>
-  /** 画一帧：执行这份清单。 */
-  draw(ops: readonly DrawOp[]): void
+  /**
+   * 画第 `tick` 拍：执行这份清单，合成进持久缓冲。**同一拍再调直接返回** ——
+   * 缓冲不清屏，重复合成会让半透明的边比原版叠得快（见文件头第四处）。
+   */
+  draw(ops: readonly DrawOp[], tick: number): void
   destroy(): void
 }
 
@@ -82,6 +94,9 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     autoDensity: false,
     resolution: 1,
     background: '#000000',
+    // 上屏滤镜只写了 GLSL（`unpremultiplyFilter`）。Pixi 8 默认也先挑 WebGL，
+    // 这里写死是为了不让 WebGPU 那条从没跑过的路径被悄悄选中。
+    preference: 'webgl',
   })
   if (app.canvas.width !== STAGE_WIDTH || app.canvas.height !== STAGE_HEIGHT) {
     app.destroy({ removeView: true }, { children: true })
@@ -97,8 +112,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   // 合成进 `buffer` 一次。上屏的只有 `present` 那一张。见文件头第四处。
   const stage = new Container()
   const buffer = RenderTexture.create({ width: STAGE_WIDTH, height: STAGE_HEIGHT })
-  /** 下一次合成之前要不要先清成全透明 —— 新建与每次 `load()` 之后为真。 */
-  let fresh = true
+  /** 上一次合成的是第几拍；-1 = 新建或刚 `load()`，下一次合成先清成全透明。 */
+  let lastTick = -1
   const present = new Sprite(buffer)
   present.filters = [unpremultiplyFilter()]
   app.stage.addChild(present)
@@ -289,7 +304,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     return made
   }
 
-  function draw(ops: readonly DrawOp[]): void {
+  function draw(ops: readonly DrawOp[], tick: number): void {
+    if (tick === lastTick) return
     let n = 0
     for (const op of ops) {
       const s = slot(n)
@@ -342,8 +358,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     for (let i = n; i < pool.length; i++) pool[i]!.sprite.visible = false
     // 合成进持久缓冲：**不清**（原版 `paint()` 从不清屏），只有新一场的头一次
     // 从全透明起步（`TYPE_INT_ARGB` 的初值）。
-    app.renderer.render({ container: stage, target: buffer, clear: fresh, clearColor: [0, 0, 0, 0] })
-    fresh = false
+    app.renderer.render({ container: stage, target: buffer, clear: lastTick < 0, clearColor: [0, 0, 0, 0] })
+    lastTick = tick
   }
 
   return {
@@ -360,10 +376,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
       )
       wanted.forEach((id, i) => textures.set(id, loaded[i]!))
       // 新的一场：导出器每场新建一块 `BattlePanel`，缓冲从全透明起步。
-      // ⚠️ 原版游戏里 `GameLauncher` 只在 `init()` 时才新建它，一局之内几场战斗
-      // 共用一块缓冲，后一场头几帧的边上会按 (1−α)ⁿ 透出上一场的末帧。这边
-      // 不复刻那一项 —— 没有真值走过两场连打，量不到。
-      fresh = true
+      // 与真游戏的偏离见文件头第四处（xl-pgq）。
+      lastTick = -1
     },
     draw,
     destroy(): void {
@@ -402,8 +416,11 @@ async function urlOf(id: AssetId): Promise<string> {
  * `rgb / a`。缓冲里从没被画过的地方 `a = 0`，原版那里是 `0x00000000`，
  * RGB 也是黑，这里照给黑。
  *
- * 8 位缓冲存的是预乘值，alpha 低处还原会放大舍入：背景图最低 alpha 99，
- * 误差在 255/(2·99) ≈ 1.3 级以内，比对容差是 8。
+ * 8 位缓冲存的是预乘值，alpha 低处还原会放大舍入；缓冲每拍都合成一次，舍入
+ * 还会逐拍累积，而原版存的是非预乘 8 位，两边舍入路径不同。**误差多大没有
+ * 单独量过**，能作证的只有 battle-script3 状态栏之外 0 个超容差像素（容差 8）。
+ *
+ * 只有 GLSL：渲染器写死 `preference: 'webgl'`，WebGPU 那一支没写也没跑过。
  */
 function unpremultiplyFilter(): Filter {
   const fragment = `
@@ -417,48 +434,8 @@ void main()
     finalColor = c.a > 0.0 ? vec4(c.rgb / c.a, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
 }
 `
-  const wgsl = `
-struct GlobalFilterUniforms {
-  uInputSize:vec4<f32>,
-  uInputPixel:vec4<f32>,
-  uInputClamp:vec4<f32>,
-  uOutputFrame:vec4<f32>,
-  uGlobalFrame:vec4<f32>,
-  uOutputTexture:vec4<f32>,
-};
-
-@group(0) @binding(0) var<uniform> gfu: GlobalFilterUniforms;
-@group(0) @binding(1) var uTexture: texture_2d<f32>;
-@group(0) @binding(2) var uSampler : sampler;
-
-struct VSOutput {
-  @builtin(position) position: vec4<f32>,
-  @location(0) uv : vec2<f32>
-};
-
-@vertex
-fn mainVertex(@location(0) aPosition : vec2<f32>) -> VSOutput {
-  var position = aPosition * gfu.uOutputFrame.zw + gfu.uOutputFrame.xy;
-  position.x = position.x * (2.0 / gfu.uOutputTexture.x) - 1.0;
-  position.y = position.y * (2.0 * gfu.uOutputTexture.z / gfu.uOutputTexture.y) - gfu.uOutputTexture.z;
-  return VSOutput(vec4(position, 0.0, 1.0), aPosition * (gfu.uOutputFrame.zw * gfu.uInputSize.zw));
-}
-
-@fragment
-fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-  let c = textureSample(uTexture, uSampler, uv);
-  if (c.a > 0.0) {
-    return vec4(c.rgb / c.a, 1.0);
-  }
-  return vec4(0.0, 0.0, 0.0, 1.0);
-}
-`
   return new Filter({
     glProgram: GlProgram.from({ vertex: defaultFilterVert, fragment, name: 'battle-unpremultiply' }),
-    gpuProgram: GpuProgram.from({
-      vertex: { source: wgsl, entryPoint: 'mainVertex' },
-      fragment: { source: wgsl, entryPoint: 'mainFragment' },
-    }),
     resources: {},
   })
 }
