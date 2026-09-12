@@ -1293,8 +1293,13 @@ const ATTACK_SOUND: Readonly<Record<Hero['spec']['key'], string>> = {
 }
 
 function checkHeroTurn(w: BattleWorld, h: Hero): void {
-  if (w.currentPattern === 1) {
+  // 七支各自以攻击声起头；下面三支互斥（普攻那支把 currentPattern 归零），所以
+  // 进来时是 1..7 就恰好响一声，收成这一句与逐支写等价。文敏技能1 多一声，排在后面。
+  if (w.currentPattern >= 1 && w.currentPattern <= 7) {
     w.music.push(ATTACK_SOUND[h.spec.key])
+    if (h.spec.key === 'yu' && w.currentPattern === 2) w.music.push('伏虎冲天.wav')
+  }
+  if (w.currentPattern === 1) {
     w.hurtValues.length = 0
     heroCalDamage(w, h)
     w.instruct.isDraw = false
@@ -1305,16 +1310,8 @@ function checkHeroTurn(w: BattleWorld, h: Hero): void {
   }
   // 原版这几支是**并列的 if**，不是 else-if；上面那一支把 currentPattern 归零，
   // 所以同一拍里不会两支都走。
-  if (w.currentPattern >= 2 && w.currentPattern <= 6) {
-    w.music.push(ATTACK_SOUND[h.spec.key])
-    // 文敏的技能1 伏虎冲天多一句，排在攻击声之后。
-    if (h.spec.key === 'yu' && w.currentPattern === 2) w.music.push('伏虎冲天.wav')
-    skillAttack(w, h)
-  }
-  if (w.currentPattern === 7) {
-    w.music.push(ATTACK_SOUND[h.spec.key])
-    heroMishu(w, h)
-  }
+  if (w.currentPattern >= 2 && w.currentPattern <= 6) skillAttack(w, h)
+  if (w.currentPattern === 7) heroMishu(w, h)
 
   const finish = (): void => {
     for (const hv of w.hurtValues) {

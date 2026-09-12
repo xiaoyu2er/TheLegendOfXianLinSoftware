@@ -668,8 +668,8 @@ export function advanceSession(
   // 已经在店里了又要进店（→ 下面那句抛）。sfxWiring.test.ts 的「拍间空转」喂法
   // 头一次喂到它：三扇门的剧本全抛、开箱那一声变四声。
   const stepped = scene.world !== before.world
-  const lit = stepped ? scene.world : NO_REQUESTS
-  const request = lit.battleRequest
+  const requestsThisPump = stepped ? scene.world : NO_REQUESTS
+  const request = requestsThisPump.battleRequest
 
   // 答对答错的加扣（xl-yg6.9）与开箱进背包（xl-yg6.10）。两者都只亮一拍，
   // `advance` 在亮的那一拍停批（`state/loop.ts`），所以读的就是这一拍的；**只在
@@ -677,7 +677,7 @@ export function advanceSession(
   // 这一段与取图页共用（`sceneLedger.ts`，xl-03x.3）。
   if (stepped) settleSceneRequests(scene.world)
   // 开箱 / 答题那一声（xl-b36）。同样只亮一拍、同样停批，读的就是这一拍的。
-  if (lit.sfxRequest !== null) heard.push(...lit.sfxRequest)
+  if (requestsThisPump.sfxRequest !== null) heard.push(...requestsThisPump.sfxRequest)
 
   if (request !== null && panel === 'scene') {
     battle = createBattleTicker(createBattle(configFor(request, deps)))
@@ -701,7 +701,7 @@ export function advanceSession(
   // 从店里「返回游戏」回来，场景还停在选择框上，再按一下回车又进店。照抄 ——
   // 这一层什么都不用做，那两个旗标本来就没人动。
   let shop = session.shop
-  const door = lit.selectPanelRequest
+  const door = requestsThisPump.selectPanelRequest
   if (door !== null && panel === 'scene') {
     shop = enterShop(shop, SHOP_OF_DOOR[door], menu, deps)
     panel = 'shop'
@@ -715,7 +715,7 @@ export function advanceSession(
   // `advance` 在它亮的那一拍停批（`state/loop.ts`）。它只能从场景的按键分发里来，
   // 所以键不落在场景手里的时候亮起来就是接线错了 —— 抛，理由同上面那一场架。
   let end = session.end
-  if (lit.endRequest !== null) {
+  if (requestsThisPump.endRequest !== null) {
     if (keyReceiver(panel) !== 'scene') {
       throw new Error(`${scene.world.scene} 在 ${panel} 面板上要切结局 —— 那一句只在场景的按键分发里`)
     }

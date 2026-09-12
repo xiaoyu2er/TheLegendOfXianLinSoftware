@@ -1041,13 +1041,13 @@ describe('回放行为真值', () => {
       const snaps = snapshotsOf(name)
       for (const group of Object.keys(ALIGNED)) {
         if (STRING_ARRAY_COLUMNS.includes(group)) {
+          // 只核真值那一侧的形状：观察函数那一侧由它的返回类型钉死，再核是恒真
+          // （/code-review Standards 轴提的）。不计进 `compared` —— 这不是子字段对撞。
           const isStrings = (v: unknown): boolean => Array.isArray(v) && v.every((x) => typeof x === 'string')
           expect(
             trace.ticks.every((tick) => isStrings(columnsOf(tick)[group])),
             `${name} 的 ${group} 在真值里不是字符串数组`,
           ).toBe(true)
-          expect(snaps.every((snap) => isStrings(snap[group])), `${name} 的 ${group} 观察函数没给字符串数组`).toBe(true)
-          compared++
           continue
         }
         const truth = unionSubKeys(trace.ticks.map((tick) => columnsOf(tick)[group]))
