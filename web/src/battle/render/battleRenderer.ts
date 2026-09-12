@@ -1,4 +1,16 @@
-import { Application, Assets, Container, Rectangle, Sprite, Texture } from 'pixi.js'
+import {
+  Application,
+  Assets,
+  Container,
+  Filter,
+  GlProgram,
+  GpuProgram,
+  Rectangle,
+  RenderTexture,
+  Sprite,
+  Texture,
+  defaultFilterVert,
+} from 'pixi.js'
 import { isDeferredBattleAsset } from '../../assets/battleAssets'
 import { resolveDeferredBattleAsset } from '../../assets/deferredBattle'
 import type { AssetId } from '../../assets/ids'
@@ -18,7 +30,7 @@ import { scaledBlitPasses } from './scaledBlit'
  * 缝只会得到一堆断言"我调用了 setTexture"的实现细节测试。真实像素由跨端剧本
  * 逐帧比对兜底（`docs/frame-compare.md`）。
  *
- * ## 三处必须照抄原版的绘制语义
+ * ## 四处必须照抄原版的绘制语义
  *
  * 1. **最近邻采样**。Java2D 的 `KEY_INTERPOLATION` 默认就是最近邻，Pixi 默认
  *    线性。战斗里 `Reminder` 那一层是真的在缩放（源 128×24 拉到目标 0..120 宽），
@@ -32,6 +44,23 @@ import { scaledBlitPasses } from './scaledBlit'
  * 3. **字画在基线上**。`g.drawString(s, x, y)` 的 y 是基线，不是行盒左上角。
  *    与 `scene/sceneRenderer.ts` 同一个理由，用 2D canvas 自己写字；ascent
  *    是量出来的，不是拍的常数（见 `textTexture`）。
+ *
+ * ## 第四处：画在一张不清屏的 ARGB 缓冲上（xl-84z）
+ *
+ * 原版的 `bufferedPic` 是 `TYPE_INT_ARGB`（非预乘、起始全透明），`paint()`
+ * **从不清屏**、合成规则是默认的 SrcOver（`drawList.test.ts` 回到源码上核这
+ * 几件事），而上屏 / 导出时 alpha 被扔掉。于是背景图半透明的边在原版里跟
+ * 不透明一样亮 —— 「校园小道」的三条边实测 Web 清黑再贴只有原版的约 0.6 倍。
+ *
+ * 这边照搬：每次 `draw` 往一张**持久的** `RenderTexture` 上合成一遍（不清），
+ * 上屏时经 `unpremultiplyFilter` 把 RGB 除以 alpha、alpha 置 1。预乘 SrcOver
+ * 与非预乘 SrcOver 在数学上是同一个东西，只差存法；所以连原版的两项副作用
+ * 也一起复刻了：头一帧底下是透明的（开场云雾在 alpha<1 的底上合成），以及
+ * 边上透出**上一帧**的残影。两项都在 battle-script3 的第 0 / 25 帧实测到过。
+ *
+ * 由此来的合同：**一拍只许 `draw` 一次**（原版一拍 paint 一次），跳过的拍也
+ * 要补画 —— 否则边上的残影与原版对不上。缓冲在 `load()` 时重置成透明，对应
+ * 导出器每场新建一块 `BattlePanel`。
  */
 
 export interface BattleRenderer {
@@ -64,8 +93,15 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   app.canvas.className = 'stage-canvas'
   host.appendChild(app.canvas)
 
+  // 精灵都挂在 `stage` 上，但它**不在** `app.stage` 里：它只被 `draw` 显式地
+  // 合成进 `buffer` 一次。上屏的只有 `present` 那一张。见文件头第四处。
   const stage = new Container()
-  app.stage.addChild(stage)
+  const buffer = RenderTexture.create({ width: STAGE_WIDTH, height: STAGE_HEIGHT })
+  /** 下一次合成之前要不要先清成全透明 —— 新建与每次 `load()` 之后为真。 */
+  let fresh = true
+  const present = new Sprite(buffer)
+  present.filters = [unpremultiplyFilter()]
+  app.stage.addChild(present)
 
   const textures = new Map<AssetId, Texture>()
 
@@ -253,36 +289,6 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     return made
   }
 
-  /**
-   * 同一张图、alpha 全部抹成 255 —— `DrawOp` 带 `opaque` 的那几条贴它
-   * （只有背景图，理由见 `drawList.ts` 的 `BACKGROUND_OPAQUE`，xl-84z）。
-   *
-   * 按素材缓存，一场一张。经 2D canvas 走一趟会先预乘再还原，alpha 越低
-   * 还原误差越大；背景图最低 alpha 99，误差在 255/99 ≈ 2.6 级以内，远在比对
-   * 容差 8 之下。
-   */
-  const opaqueCache = new Map<AssetId, Texture>()
-
-  function opaqueTexture(id: AssetId, tex: Texture): Texture {
-    const hit = opaqueCache.get(id)
-    if (hit) return hit
-    const resource = tex.source.resource as CanvasImageSource | undefined
-    if (!resource) throw new Error(`去 alpha 取不到 ${id} 的位图源`)
-    const canvas = document.createElement('canvas')
-    canvas.width = tex.width
-    canvas.height = tex.height
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
-    if (!ctx) throw new Error('取不到去 alpha 那张位图的 2D context')
-    ctx.drawImage(resource, tex.frame.x, tex.frame.y, tex.width, tex.height, 0, 0, tex.width, tex.height)
-    const img = ctx.getImageData(0, 0, tex.width, tex.height)
-    for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255
-    ctx.putImageData(img, 0, 0)
-    const made = Texture.from(canvas)
-    made.source.scaleMode = 'nearest'
-    opaqueCache.set(id, made)
-    return made
-  }
-
   function draw(ops: readonly DrawOp[]): void {
     let n = 0
     for (const op of ops) {
@@ -299,7 +305,7 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
       }
       const tex = textureOf(op.id)
       if (op.kind === 'image') {
-        s.sprite.texture = op.opaque ? opaqueTexture(op.id, tex) : tex
+        s.sprite.texture = tex
         s.sprite.position.set(op.x, op.y)
         s.sprite.setSize(tex.width, tex.height)
         s.sprite.visible = true
@@ -334,6 +340,10 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     // 这一帧没用到的精灵全部藏起来。**不藏的话**上一帧的伤害数字会留在屏幕
     // 上，而那看起来像"伤害数字停留得久了一点"，不像一个错。
     for (let i = n; i < pool.length; i++) pool[i]!.sprite.visible = false
+    // 合成进持久缓冲：**不清**（原版 `paint()` 从不清屏），只有新一场的头一次
+    // 从全透明起步（`TYPE_INT_ARGB` 的初值）。
+    app.renderer.render({ container: stage, target: buffer, clear: fresh, clearColor: [0, 0, 0, 0] })
+    fresh = false
   }
 
   return {
@@ -349,9 +359,15 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
         }),
       )
       wanted.forEach((id, i) => textures.set(id, loaded[i]!))
+      // 新的一场：导出器每场新建一块 `BattlePanel`，缓冲从全透明起步。
+      // ⚠️ 原版游戏里 `GameLauncher` 只在 `init()` 时才新建它，一局之内几场战斗
+      // 共用一块缓冲，后一场头几帧的边上会按 (1−α)ⁿ 透出上一场的末帧。这边
+      // 不复刻那一项 —— 没有真值走过两场连打，量不到。
+      fresh = true
     },
     draw,
     destroy(): void {
+      buffer.destroy(true)
       app.destroy({ removeView: true }, { children: true })
     },
   }
@@ -377,4 +393,72 @@ async function urlOf(id: AssetId): Promise<string> {
     throw new Error(`战斗渲染只认 battle: 与 ${DRUG_PREFIX} 前缀的逻辑 ID，收到 ${id}`)
   }
   return isDeferredBattleAsset(relative) ? resolveDeferredBattleAsset(id) : resolveAsset(id)
+}
+
+/**
+ * 上屏滤镜：把持久缓冲里的预乘颜色还原成原版位图的 RGB，alpha 扔掉。
+ *
+ * 原版的位图是非预乘的 ARGB，上屏与导出 PNG 之后比对器只看 RGB —— 也就是
+ * `rgb / a`。缓冲里从没被画过的地方 `a = 0`，原版那里是 `0x00000000`，
+ * RGB 也是黑，这里照给黑。
+ *
+ * 8 位缓冲存的是预乘值，alpha 低处还原会放大舍入：背景图最低 alpha 99，
+ * 误差在 255/(2·99) ≈ 1.3 级以内，比对容差是 8。
+ */
+function unpremultiplyFilter(): Filter {
+  const fragment = `
+in vec2 vTextureCoord;
+out vec4 finalColor;
+uniform sampler2D uTexture;
+
+void main()
+{
+    vec4 c = texture(uTexture, vTextureCoord);
+    finalColor = c.a > 0.0 ? vec4(c.rgb / c.a, 1.0) : vec4(0.0, 0.0, 0.0, 1.0);
+}
+`
+  const wgsl = `
+struct GlobalFilterUniforms {
+  uInputSize:vec4<f32>,
+  uInputPixel:vec4<f32>,
+  uInputClamp:vec4<f32>,
+  uOutputFrame:vec4<f32>,
+  uGlobalFrame:vec4<f32>,
+  uOutputTexture:vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> gfu: GlobalFilterUniforms;
+@group(0) @binding(1) var uTexture: texture_2d<f32>;
+@group(0) @binding(2) var uSampler : sampler;
+
+struct VSOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) uv : vec2<f32>
+};
+
+@vertex
+fn mainVertex(@location(0) aPosition : vec2<f32>) -> VSOutput {
+  var position = aPosition * gfu.uOutputFrame.zw + gfu.uOutputFrame.xy;
+  position.x = position.x * (2.0 / gfu.uOutputTexture.x) - 1.0;
+  position.y = position.y * (2.0 * gfu.uOutputTexture.z / gfu.uOutputTexture.y) - gfu.uOutputTexture.z;
+  return VSOutput(vec4(position, 0.0, 1.0), aPosition * (gfu.uOutputFrame.zw * gfu.uInputSize.zw));
+}
+
+@fragment
+fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+  let c = textureSample(uTexture, uSampler, uv);
+  if (c.a > 0.0) {
+    return vec4(c.rgb / c.a, 1.0);
+  }
+  return vec4(0.0, 0.0, 0.0, 1.0);
+}
+`
+  return new Filter({
+    glProgram: GlProgram.from({ vertex: defaultFilterVert, fragment, name: 'battle-unpremultiply' }),
+    gpuProgram: GpuProgram.from({
+      vertex: { source: wgsl, entryPoint: 'mainVertex' },
+      fragment: { source: wgsl, entryPoint: 'mainFragment' },
+    }),
+    resources: {},
+  })
 }

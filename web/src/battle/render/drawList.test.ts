@@ -103,12 +103,12 @@ describe('25 层的次序对回原版 paint()', () => {
 })
 
 /**
- * 背景那一条带 `opaque` 的理由，**回到源码上取**（xl-84z）。理由本身写在
- * `drawList.ts` 的 `BACKGROUND_OPAQUE` 上；这里核它依赖的那几件事还成立。
- * 没有一份真值能替它作证：比对器不看 alpha，而「原版为什么更亮」恰恰是
- * alpha 通道里的事。
+ * 战斗渲染器画在一张**不清屏的持久缓冲**上、上屏时扔掉 alpha —— 那样做的
+ * 理由**回到源码上取**（xl-84z）。理由本身写在 `battleRenderer.ts` 文件头
+ * 第四处；这里核它依赖的那几件事还成立。没有一份真值能替它作证：比对器不看
+ * alpha，而「原版为什么更亮」恰恰是 alpha 通道里的事。
  */
-describe('背景图不看 alpha —— 原版离屏缓冲的三件事', () => {
+describe('原版离屏缓冲：非预乘 ARGB、从不清屏、默认 SrcOver', () => {
   const panel = javaSource('src/battle/BattlePanel.java')
 
   it('离屏缓冲是 TYPE_INT_ARGB（非预乘，起始全透明）', () => {
@@ -172,14 +172,6 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
       // 背景永远是第一条 —— 它没被画的话整屏是黑的，而黑屏在差异图里看着
       // 像"两端都画错了"。
       expect(f.ops[0]!.layer).toBe('background')
-    }
-  })
-
-  it('带 opaque 的恰好是背景那一条，别的层一条都不带（xl-84z）', () => {
-    for (const f of frames) {
-      const opaque = f.ops.filter((op) => op.kind === 'image' && op.opaque)
-      expect(opaque, `第 ${f.t} 拍`).toEqual([f.ops[0]])
-      expect(opaque[0]!.layer).toBe('background')
     }
   })
 
