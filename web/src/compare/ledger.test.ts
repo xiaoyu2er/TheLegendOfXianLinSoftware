@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { judgeLedger } from './ledger'
+import { firstLedgerDivergence, judgeLedger } from './ledger'
 import type { LedgerEntry } from './ledger'
 
 const drugs = (n: number) => [
@@ -56,5 +56,34 @@ describe('judgeLedger', () => {
 
   it('一帧都没有是硬失败', () => {
     expect(() => judgeLedger([], [], [])).toThrow()
+  })
+})
+
+describe('firstLedgerDivergence（自检：改坏版与干净版是不是同一个世界，xl-2e0）', () => {
+  it('两轮逐帧相等 → null', () => {
+    expect(firstLedgerDivergence([0, 25], [webEntry(10000), webEntry(9135)], [webEntry(10000), webEntry(9135)])).toBeNull()
+  })
+
+  it('金币从某一帧起不同 → 指出那一帧与两边的数（xl-2e0 的原形：取图页没播种，两轮掷出不同的扣款额）', () => {
+    const d = firstLedgerDivergence(
+      [1175, 1200, 1225],
+      [webEntry(10000), webEntry(9135), webEntry(9135)],
+      [webEntry(10000), webEntry(9322), webEntry(9322)],
+    )
+    expect(d?.tick).toBe(1200)
+    expect(d?.detail).toContain('9135')
+    expect(d?.detail).toContain('9322')
+  })
+
+  it('药的件数不同也算', () => {
+    const d = firstLedgerDivergence([0, 25], [webEntry(10000), webEntry(10000, 2)], [webEntry(10000), webEntry(10000, 1)])
+    expect(d?.tick).toBe(25)
+    expect(d?.detail).toContain('金疮药')
+  })
+
+  it('某一轮少交一帧、或帧数对不上，是硬失败 —— 不是「没什么可比」', () => {
+    expect(() => firstLedgerDivergence([0, 25], [webEntry(10000), webEntry(10000)], [webEntry(10000), undefined])).toThrow(/第 25 帧/)
+    expect(() => firstLedgerDivergence([0, 25], [webEntry(10000)], [webEntry(10000), webEntry(10000)])).toThrow(/帧/)
+    expect(() => firstLedgerDivergence([], [], [])).toThrow()
   })
 })
