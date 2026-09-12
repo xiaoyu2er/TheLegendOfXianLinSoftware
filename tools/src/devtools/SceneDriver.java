@@ -199,6 +199,11 @@ public final class SceneDriver implements TraceDriver {
         // （ShopReader.readDrug 不写它），与 Web 那一侧的空药包同值。
         if (shop.DrugPack.drugList.isEmpty()) new shop.DrugPack();
         BattleDriver.plantMathRandom(script.seed);
+
+        // 音效观察点（xl-b36）。场景里出声的只有开宝箱 / 答题那一句
+        // EquipmentEvent.drawString 里的 readmusic("Clip750.wav")，走路、切场景、
+        // 对话都不出声（xl-1vu.11 实测），所以大多数场景剧本全程安静 —— 声明可以不响。
+        MusicTap.armAllowingSilence(script.name);
     }
 
     /**
@@ -987,6 +992,8 @@ public final class SceneDriver implements TraceDriver {
         b.append(",\"treasure\":").append(treasureState());
 
         b.append(",\"audio\":{\"bgm\":").append(Json.str(bgm())).append("}");
+        // 音效（xl-b36）：顶层 music 列，理由同 BattleDriver.snapshotState 那一行。
+        b.append(",\"music\":").append(MusicTap.json());
 
         b.append(",\"viewport\":{\"offsetX\":").append(getInt(oe, "offsetX"))
          .append(",\"offsetY\":").append(getInt(oe, "offsetY"))

@@ -293,6 +293,10 @@ public final class BattleDriver implements TraceDriver {
         Clock.setFactor(RUN_FACTOR);    // 之后的 sleep 只剩 1ms
 
         sink = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).getGraphics();
+
+        // 音效观察点（xl-b36）。战斗剧本每一份都有人出手，出手那一下原版必定
+        // readmusic（LaunchAttack 的每一支都以它起头），所以照菜单/商店的规矩：必须响过。
+        MusicTap.arm(script.name);
     }
 
     /**
@@ -873,6 +877,9 @@ public final class BattleDriver implements TraceDriver {
         b.append(",\"menus\":").append(menusJson());
 
         b.append(",\"audio\":{\"bgm\":").append(Json.str(bgm())).append("}");
+        // 音效（xl-b36）：这一步 readmusic 请求过的文件名，按先后。**顶层**，不进 audio ——
+        // web 侧 game/sfxWiring.test.ts 的分母只认顶层 music 列。
+        b.append(",\"music\":").append(MusicTap.json());
         return b.append("}").toString();
     }
 
