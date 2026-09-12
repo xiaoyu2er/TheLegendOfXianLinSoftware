@@ -54,7 +54,7 @@
 | `web/src/index.css:112` | 伪类 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏按钮悬停描边 |
 | `web/src/main.tsx:6` | 全局 | 工程 | 挂载根 |
 | `web/src/menu/render/menuRenderer.ts:129,148` | 全局 | 工程 | 量字 / 离屏画布 |
-| `web/src/replay/main.ts:184,187,189,199,204,231,418,602,661,697,893,907,928,929,933,934,936,937` | 全局 / 图片 / 定时 / 事件 | 工程 | 逐帧比对的取图页，不进游戏 |
+| `web/src/replay/main.ts:184,187,189,199,204,231,417,604,663,699,894,908,929,930,934,935,937,938` | 全局 / 图片 / 定时 / 事件 | 工程 | 逐帧比对的取图页，不进游戏 |
 | `web/src/save/browserStore.ts:112` | 存储 / 全局 | 对应 `src/start/Recorder.java:52` | 存档落盘换成 IndexedDB；读的那一半是 `Loader.java:72` |
 | `web/src/saveload/render/saveLoadRenderer.ts:50,62` | 全局 | 工程 | 量字 / 离屏画布 |
 | `web/src/scene/sceneRenderer.ts:156,213,247,250,270,284` | 全局 | 工程 | 离屏画布 |

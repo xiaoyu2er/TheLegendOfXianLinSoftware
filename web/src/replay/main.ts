@@ -323,7 +323,6 @@ function worldFromSave(parsed: ReplayTrace, warm: World | null): World {
   return applyReadBack(session, f.readBack).scene.world
 }
 
-
 /* ===================== 事件驱动的装配（xl-e8w） ===================== */
 
 /**
@@ -526,16 +525,19 @@ interface EndReplayTrace {
   readonly ticks: readonly { readonly t: number; readonly input: readonly EndInput[] }[]
 }
 
+let endLoaded = false
+
 const endAssembly = createEventDrivenAssembly({
   kind: 'end',
   unit: '步',
-  async createRenderer(host) {
-    const renderer = await createEndRenderer(host)
-    // 这个面板的素材一次载齐（二十几张），跟着渲染器走：载过就不再载。
-    await renderer.load(endTextureIds())
-    return renderer
-  },
+  createRenderer: createEndRenderer,
   async setup(parsed: EndReplayTrace, renderer: EndRenderer) {
+    // 这个面板的素材一次载齐（二十几张），载过就不再载。标志不挪进 `createRenderer`：
+    // 在那里载图一抛，渲染器没赋上值，下一条剧本会在同一个宿主里再建一张画布。
+    if (!endLoaded) {
+      await renderer.load(endTextureIds())
+      endLoaded = true
+    }
     // 起手那一块场景面板（`EndDriver.start()` 的 `initiation(setup.scene)`）。
     const want = stem(parsed.script.setup.scene)
     const scene = await take(want)
@@ -822,7 +824,6 @@ const shopAssembly = createEventDrivenAssembly({
     return { timeMs: 0, x: p.currentX, y: p.currentY }
   },
 })
-
 
 /**
  * 判别名 → 装配。**名单只有这一份**，`pickAssembly` 报"本页实现了哪些"时
