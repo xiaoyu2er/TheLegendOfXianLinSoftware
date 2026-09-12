@@ -6,7 +6,9 @@ import { loadScene } from '../data/scenes'
 import { getScene } from '../data/scenesEager'
 import type { MenuInput } from '../menu/step'
 import { createMemorySaveStore } from '../save/memoryStore'
+import type { SaveStore } from '../save/store'
 import type { SaveLoadInput } from '../saveload/step'
+import { draftSlots } from '../saveload/test/replayTrace'
 import { slotCenter } from '../saveload/world'
 import type { SceneRenderer } from '../scene/sceneRenderer'
 import { TICK_MS, createWorld } from '../state/step'
@@ -25,7 +27,7 @@ import { useGame } from './useGame'
  * 单独一个文件：`vi.mock` 按文件生效，`useGame` 的仓库又是模块级常量（开机就建），
  * 混进 `useGame.test.tsx` 会让那边每条用例共用这一份记账仓库。
  */
-const rec = vi.hoisted(() => ({ writes: [] as number[] }))
+const rec = vi.hoisted(() => ({ writes: [] as number[], store: null as SaveStore | null }))
 
 vi.mock('../save/browserStore', async () => {
   const { createMemorySaveStore: memory } = await import('../save/memoryStore')
@@ -33,6 +35,7 @@ vi.mock('../save/browserStore', async () => {
     indexedDbBackend: () => ({}),
     createBrowserSaveStore: () => {
       const store = memory()
+      rec.store = store
       return {
         status: () => store.status(),
         error: () => store.error(),
@@ -153,5 +156,49 @@ describe('useGame 的 mouse grab（xl-o9z）', () => {
     const after = rec.writes.slice(sticky.length)
     expect(after, '槽 2 没点着').toContain(2)
     expect(after, '槽 1 根本没粘住，上面那条恒真').toContain(1)
+  })
+
+  /**
+   * 没开局的那条路：标题「承」进来的存读档面板，按着槽位按退出键回标题，松手落在下一拍。
+   * 这时 pump 走的是「还没开局」那一段 —— 它原先只在面板是 `ls` 时推，藏着就一拍都不推，
+   * 那一下松手于是在队列里躺到下次进面板。原版这一下当场读档、`switchTo("scene")`。
+   */
+  it('没开局：标题「承」进来、按着槽位按退出键回标题，下一拍的松手照样读档进场景', async () => {
+    const sample = draftSlots([])[0]!
+    const { result } = renderHook(() => useGame(renderer, null))
+    rec.store!.write(0, sample)
+    const tick = () =>
+      act(() => {
+        vi.advanceTimersByTime(TICK_MS)
+      })
+    const ls = (...inputs: SaveLoadInput[]) => {
+      for (const i of inputs) result.current.lsInput(i)
+      tick()
+    }
+
+    act(() => result.current.openLoad())
+    tick()
+    expect(result.current.panel).toBe('ls')
+    ls({ e: 'press', ...slotCenter(0) })
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    tick()
+    tick()
+    expect(result.current.panel, '只按下就读了 —— 下面那条恒真').toBe('start')
+    expect(result.current.scene).toBeNull()
+
+    ls({ e: 'release', ...slotCenter(0) })
+    // 读档先把要进的场景取到手，取到的那一拍才 `loadGame`（`Session.loadRequest`）：
+    // 松手那一拍只记了槽号，下一拍 pump 才开始取，等它取完再推一拍。
+    // 看的是**场景名**而不是 `panel`：`loadGame` 之后 pump 还要等新场景的出口邻居到齐
+    // 才 `syncPanel`，而 `setScene` 在那道门之前 —— 它变了就是这一下读进去了。
+    const name = sample.scene.fileName.replace(/\.txt$/, '')
+    tick()
+    await act(async () => {
+      await loadScene(name)
+    })
+    tick()
+    expect(result.current.scene, '回到标题之后的松手没送回存读档面板 —— 原版这一下当场读档进场景').toBe(name)
   })
 })
