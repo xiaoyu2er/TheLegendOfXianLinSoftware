@@ -3,7 +3,7 @@
 `web/src` 生产代码里每一处浏览器平台 API 的调用点，各自是原版哪一处的对应物、还是原版根本没有的加法（xl-03x.22）。
 `docs/original-primitives.md`（xl-03x.20）的另一半：那一份从原版出发，这一份从 web 出发。
 
-读数（2026-09-12）：共 135 行命中、48 个单元（对应 37 · 已登记 36 · 工程 62 · 未核 0）
+读数（2026-09-12）：共 135 行命中、49 个单元（对应 37 · 已登记 36 · 工程 62 · 未核 0）
 
 **分母不在这里写**：哪几类算「浏览器平台 API」，是 `web/src/test/webPrimitives.test.ts` 里 `PRIMITIVES` 那张正则表定的
 （事件 / 键盘 / 指针 / 定时 / 时钟 / 存储 / 地址 / 全屏 / 视口 / 全局 / 音频 / 图片 / 元素 / 无障碍 / 伪类，外加今天应当零命中的「生命周期」），
@@ -43,7 +43,8 @@
 | `web/src/audio/bgmPlayer.ts:59,99` | 键盘 / 指针 / 事件 | 已登记 `ADR-0001#bgm-waits-for-gesture` | 自动播放被挡时等第一次手势（**xl-03x.22 补登**） |
 | `web/src/audio/bgmPlayer.ts:62` | 音频 | 对应 `src/media/MusicPlayer.java:71` | 背景音乐开播（`play()` 里 `sourceDataLine.start()`）；web 只有一个播放对象、换 `src` |
 | `web/src/audio/sfxPlayer.ts:79` | 音频 | 对应 `src/media/MusicPlayer.java:111` | 音效开播（`playmusic()` 里 `sourceDataLine.start()`）；后一声顶掉前一声 |
-| `web/src/battle/render/battleRenderer.ts:137,157,250` | 全局 | 工程 | 量字 / 离屏画布 |
+| `web/src/battle/render/battleRenderer.ts:136,156` | 全局 | 工程 | 量字 / 离屏画布 |
+| `web/src/battle/render/scaledBlit.ts:283` | 全局 | 工程 | 离屏画布（战斗与存读档共用的 `blitRectsOnto`，xl-cpo 从 `battleRenderer` 挪过来的） |
 | `web/src/game/enemySprites.ts:47` | 图片 | 工程 | 量怪物贴图的尺寸 |
 | `web/src/game/keyboard.ts:11,68,77` | 键盘 | 对应 `src/main/GameLauncher.java:186` | 按下 / 松开两路；逐键见下面「## 键位」 |
 | `web/src/game/useGame.ts:352,380,390,391,393,394` | 键盘 / 事件 / 全局 | 对应 `src/main/GameLauncher.java:186` | 窗口级键盘监听（原版 `this.addKeyListener(this)` 挂在 `JFrame` 上）。⚠️ 它对认下来的键一律 `preventDefault` —— **标题页上回车 / 空格按不动聚焦的按钮**，缺陷归 `xl-fqm`，见文末 |
@@ -55,7 +56,7 @@
 | `web/src/menu/render/menuRenderer.ts:129,148` | 全局 | 工程 | 量字 / 离屏画布 |
 | `web/src/replay/main.ts:189,192,194,204,209,236,366,456,544,621,655,739,841,971,985,1006,1007,1011,1012,1014,1015` | 全局 / 图片 / 定时 / 事件 | 工程 | 逐帧比对的取图页，不进游戏 |
 | `web/src/save/browserStore.ts:112` | 存储 / 全局 | 对应 `src/start/Recorder.java:52` | 存档落盘换成 IndexedDB；读的那一半是 `Loader.java:72` |
-| `web/src/saveload/render/saveLoadRenderer.ts:48,60` | 全局 | 工程 | 量字 / 离屏画布 |
+| `web/src/saveload/render/saveLoadRenderer.ts:50,62` | 全局 | 工程 | 量字 / 离屏画布 |
 | `web/src/scene/sceneRenderer.ts:156,213,247,250,270,284` | 全局 | 工程 | 离屏画布 |
 | `web/src/shop/render/shopRenderer.ts:110,128` | 全局 | 工程 | 量字 / 离屏画布 |
 | `web/src/shop/render/useShopPreview.ts:52,60,63` | 时钟 / 定时 | 工程 | 开发用商店预览（`?dev` 下的选择器才进得来） |
