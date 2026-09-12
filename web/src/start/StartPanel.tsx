@@ -168,13 +168,6 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
         onClick={() => handlers?.click(button.key)}
       >
         {/*
-          按钮身边那圈 4 帧高亮。原版 `drawButton` 里 `animation.drawAnimation(g)`
-          是**无条件**画的（停着时画第 0 帧），所以这里也无条件画。
-          它画在按钮自己的 (x, y) 上，53×54，比 50×50 的按钮大一圈，
-          所以要能溢出。
-        */}
-        <img className="start-button-glow" style={face} src={frameSrc('buttonGlow', button.glowFrame)} alt="" />
-        {/*
           常态图与悬停图**只画一张**，由状态机说画哪张 —— 原版
           `StartButton.buttonImage` 就是一个字段。不带宽高，跟原版
           `g.drawImage(buttonImage, x, y, mp)` 一样按原始尺寸画：悬停那张是
@@ -186,6 +179,14 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
           src={resolveAsset(startAssetId(button.hover ? `${button.key}Hover` : button.key))}
           alt=""
         />
+        {/*
+          按钮身边那圈 4 帧高亮，**排在按钮图之后** —— 原版 `drawButton` 是
+          `drawImage(buttonImage, x, y)` 在前、`animation.drawAnimation(g)` 在后，高亮盖在
+          按钮图上面。这里原先反过来写，逐帧比对（xl-whk）第 0 帧就在四颗按钮的左沿量到了差。
+          它无条件画（停着时画第 0 帧），画在按钮自己的 (x, y) 上，53×54，比 50×50 的按钮
+          大一圈，所以要能溢出。
+        */}
+        <img className="start-button-glow" style={face} src={frameSrc('buttonGlow', button.glowFrame)} alt="" />
       </button>
     )
   }
