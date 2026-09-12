@@ -8,7 +8,9 @@ import { SLOT_BUTTON_X, createSaveLoadWorld } from '../world'
 import { SAVE_SLOT_COUNT } from '../../save/store'
 import { START_SEQUENCES } from '../../start/assets'
 import type { SaveLoadWorld } from '../world'
-import { LS_FONT_SIZE, LS_LAYOUT, mapLabel, saveLoadDrawList, saveLoadTextureIds } from './drawList'
+import { readFileSync, readdirSync } from 'node:fs'
+import { repoPath } from '../../test/repoPath'
+import { LS_FONT_SIZE, LS_LAYOUT, THUMBNAIL_LOOP, mapLabel, saveLoadDrawList, saveLoadTextureIds } from './drawList'
 
 /**
  * 存读档面板的绘制清单（xl-i06.9）。坐标、字号、素材路径、帧数全从 GBK 源码现读，
@@ -55,6 +57,44 @@ describe('坐标与素材从原版现读', () => {
   })
 })
 
+/**
+ * 缩略图走哪条 blit 循环（xl-cpo）：{@link THUMBNAIL_LOOP} 是手签的登记，这里拿导出器
+ * **跑出来**的读数（每张真地图照原版那一句画一遍，看对上哪张表）逐张对撞。分母是数据层
+ * 真值里出现过的场景地图名（现扫），不是手抄的名单。
+ */
+describe('缩略图的 blit 循环：登记与跑出来的读数对撞', () => {
+  type ThumbMap = { name: string; loop: string; width: number; height: number }
+  type Pair = { x: number[]; y: number[] }
+  const golden = JSON.parse(readFileSync(repoPath('tools/scaled-blit-golden/java-scaled-blit.json'), 'utf8')) as {
+    thumbnail: { maps: ThumbMap[]; sizes: { width: number; height: number; transparent: Pair; opaque: Pair }[] }
+  }
+  const scene = new Set(
+    readdirSync(repoPath('tools/ground-truth'))
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => (JSON.parse(readFileSync(repoPath('tools/ground-truth', f), 'utf8')) as { mapName: string }).mapName),
+  )
+
+  it('每一张场景地图都有读数，且走的是登记的那条（或两条画出来一样）', () => {
+    expect(scene.size).toBeGreaterThan(0)
+    const byName = new Map(golden.thumbnail.maps.map((m) => [m.name, m]))
+    let decided = 0
+    for (const name of scene) {
+      const m = byName.get(name)
+      expect(m, `${name} 没有读数`).toBeDefined()
+      if (m!.loop === THUMBNAIL_LOOP) {
+        decided++
+        continue
+      }
+      // 分不出来的那种，只有在它的尺寸上两张表逐个相同才算没问题。
+      expect({ name, loop: m!.loop }).toEqual({ name, loop: 'either' })
+      const s = golden.thumbnail.sizes.find((x) => x.width === m!.width && x.height === m!.height)!
+      expect(s.transparent).toEqual(s.opaque)
+    }
+    // 全是 either 的话上面那句恒真 —— 登记至少要被多数读数直接证实。
+    expect(decided).toBeGreaterThan(scene.size / 2)
+  })
+})
+
 describe('一帧的绘制清单', () => {
   it('z 序：背景 → 三个槽（底板 / 人 / 缩略图 / 地图名 / 任务）→ 三颗按钮 → 鼠标', () => {
     const w = world()
@@ -81,6 +121,7 @@ describe('一帧的绘制清单', () => {
       [mapAssetId(w.maps[2]!), 500],
     ])
     expect(thumbs.every((o) => o.kind === 'image' && o.scaled?.width === 150 && o.scaled.height === 100)).toBe(true)
+    expect(thumbs.map((o) => o.kind === 'image' && o.scaled?.loop)).toEqual([THUMBNAIL_LOOP, THUMBNAIL_LOOP])
   })
 
   it('任务画不画看的是「这个槽非空」，不看文本（原版引用比较）—— 文本恰好是「无」也照画', () => {

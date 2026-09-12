@@ -1,6 +1,8 @@
 import { Application, Assets, Container, Sprite, Texture } from 'pixi.js'
 import { resolveAsset } from '../../assets/resolve'
 import type { AssetId } from '../../assets/ids'
+import { scaledBlitPasses } from '../../battle/render/scaledBlit'
+import type { BlitRect } from '../../battle/render/scaledBlit'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../stage/constants'
 import { TEXT_FONT_STACK } from '../../textFont'
 import { LS_FONT_SIZE, LS_TEXT_COLOR } from './drawList'
@@ -12,8 +14,9 @@ import type { SaveLoadDrawOp } from './drawList'
  * 这里只剩「把一张纹理贴到 (x,y)」这件在浏览器里才做得成的事，没有测试缝。
  *
  * 不与商店 / 菜单那几份抽公共件，理由同 `shop/render/shopRenderer.ts` 的头注。
- * 多出来的只有一支：缩略图按给定尺寸缩（`op.scaled`），交给 Pixi 采样 —— 那一块的
- * 像素是登记在案的缺口，见 `drawList.ts`。
+ * 多出来的只有一支：缩略图按给定尺寸缩（`op.scaled`）。**不交给 GPU 采样**（xl-cpo）：
+ * 搬哪些矩形由 `scaledBlitPasses` 按原版的采样表说了算，这里在 CPU 上两趟拼成 150×100
+ * 的位图再 1:1 贴 —— 与战斗提示图、旁白背景同一个做法（`battle/render/scaledBlit.ts`）。
  */
 export interface SaveLoadRenderer {
   load(ids: readonly AssetId[]): Promise<void>
@@ -90,6 +93,43 @@ export async function createSaveLoadRenderer(host: HTMLElement): Promise<SaveLoa
     return t
   }
 
+  /** 按一组矩形把 `source` 搬到一张新 canvas 上，关掉插值。 */
+  function blitOnto(source: CanvasImageSource, width: number, height: number, rects: readonly BlitRect[]): HTMLCanvasElement {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('取不到存读档缩略图的 2D context')
+    ctx.imageSmoothingEnabled = false
+    for (const r of rects) ctx.drawImage(source, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh)
+    return canvas
+  }
+
+  /**
+   * 缩略图：整张地图按原版的采样表拼成目标尺寸（xl-cpo）。一张图一个缓存 —— 地图最大
+   * 3200×2560，第一趟的中间位图是 150×2560，不值得每帧重拼。
+   */
+  const scaledCache = new Map<string, Texture>()
+  function scaledTexture(id: AssetId, tex: Texture, scaled: NonNullable<Extract<SaveLoadDrawOp, { kind: 'image' }>['scaled']>): Texture {
+    const key = `${id}|${scaled.width}x${scaled.height}|${scaled.loop}`
+    const hit = scaledCache.get(key)
+    if (hit) return hit
+    const resource = tex.source.resource as CanvasImageSource | undefined
+    if (!resource) throw new Error(`缩略图取不到 ${id} 的位图源`)
+    // 源矩形是整张图（原版 `drawImage(img, x, y, w, h)` 没有源矩形）；图集里的偏移在这里加。
+    const passes = scaledBlitPasses(
+      { x: tex.frame.x, y: tex.frame.y, width: tex.width, height: tex.height },
+      { width: scaled.width, height: scaled.height },
+      scaled.loop,
+    )
+    const mid = blitOnto(resource, scaled.width, tex.height, passes.horizontal)
+    const out = blitOnto(mid, scaled.width, scaled.height, passes.vertical)
+    const made = Texture.from(out)
+    made.source.scaleMode = 'nearest'
+    scaledCache.set(key, made)
+    return made
+  }
+
   function slot(i: number): Sprite {
     while (pool.length <= i) {
       const sprite = new Sprite()
@@ -106,9 +146,8 @@ export async function createSaveLoadRenderer(host: HTMLElement): Promise<SaveLoa
       sprite.scale.set(1)
       if (op.kind === 'image') {
         const texture = textureOf(op.id)
-        sprite.texture = texture
+        sprite.texture = op.scaled ? scaledTexture(op.id, texture, op.scaled) : texture
         sprite.position.set(op.x, op.y)
-        if (op.scaled) sprite.scale.set(op.scaled.width / texture.width, op.scaled.height / texture.height)
       } else {
         const { texture, ascent, left } = textTexture(op.text)
         sprite.texture = texture
