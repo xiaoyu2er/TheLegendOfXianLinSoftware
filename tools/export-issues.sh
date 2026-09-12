@@ -35,16 +35,21 @@ done
 command -v bd >/dev/null || { echo "找不到 bd，无法重导票据快照" >&2; exit 2; }
 
 OUT=tools/issue-snapshot/issues.json
+# 第二份：每张 open 票身上的身份标签（xl-03x.19）。与上一份**同一次**导出，所以两者说的是同一刻的库。
+# 判据在 web/src/mainline/test/issueIdentity.test.ts（每张 open 票恰好一个）；这里**照实写**，
+# 零个、两个都照写 —— 替人补一个就等于让导出器自己签字。
+IDENT=tools/issue-snapshot/identity.json
 raw="$(mktemp -t xl-issues-raw)"
 tmp="$(mktemp -t xl-issues)"
-trap 'rm -f "$raw" "$tmp"' EXIT
+tmpi="$(mktemp -t xl-identity)"
+trap 'rm -f "$raw" "$tmp" "$tmpi"' EXIT
 
 # --limit 0：bd list 默认只给 50 条，不带它快照会**静默**截断成 50 行。
 bd list --all --json --limit 0 > "$raw"
 
-python3 - "$raw" "$tmp" <<'EOF'
+python3 - "$raw" "$tmp" "$tmpi" <<'EOF'
 import json, re, sys
-src, dst = sys.argv[1], sys.argv[2]
+src, dst, dsti = sys.argv[1], sys.argv[2], sys.argv[3]
 rows = json.load(open(src, encoding='utf-8'))
 # bd 在空库上答 0 条而不报错 —— 空快照会让判据对任何票号都说「不存在」，
 # 看起来像表全错了；更糟的是反过来没人引用时它恒绿。这里当场拒绝。
@@ -72,18 +77,31 @@ with open(dst, 'w', encoding='utf-8') as f:
     f.write(',\n'.join(f'  {json.dumps(i)}: {json.dumps(out[i])}' for i in sorted(out, key=key)))
     f.write('\n}\n')
 print(f'  {len(out)} 张票（closed {sum(v == "closed" for v in out.values())} / open {sum(v == "open" for v in out.values())}）', file=sys.stderr)
+# 只给 open 票记身份；closed 票身上留着的身份标签不算数（关掉的票不欠什么）。
+ident = {r['id']: sorted(l for l in (r.get('labels') or []) if l.startswith('身份:'))
+         for r in rows if out[r['id']] == 'open'}
+with open(dsti, 'w', encoding='utf-8') as f:
+    f.write('{\n')
+    f.write(',\n'.join(f'  {json.dumps(i)}: {json.dumps(ident[i], ensure_ascii=False)}' for i in sorted(ident, key=key)))
+    f.write('\n}\n')
 EOF
 
 if [ "$check" = 1 ]; then
-  if cmp -s "$OUT" "$tmp"; then
-    echo "  快照与活库一致"
-  else
-    echo "  快照过期：重导结果与入库的 $OUT 不同" >&2
-    diff "$OUT" "$tmp" >&2 || true
-    exit 1
-  fi
+  stale=0
+  for pair in "$OUT:$tmp" "$IDENT:$tmpi"; do
+    committed="${pair%%:*}" fresh="${pair#*:}"
+    if cmp -s "$committed" "$fresh"; then
+      echo "  $committed 与活库一致"
+    else
+      echo "  快照过期：重导结果与入库的 $committed 不同" >&2
+      diff "$committed" "$fresh" >&2 || true
+      stale=1
+    fi
+  done
+  exit "$stale"
 else
   mkdir -p "$(dirname "$OUT")"
   cp "$tmp" "$OUT"
-  echo "  已写 $OUT"
+  cp "$tmpi" "$IDENT"
+  echo "  已写 $OUT 与 $IDENT"
 fi
