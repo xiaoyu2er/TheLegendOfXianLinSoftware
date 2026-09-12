@@ -1260,3 +1260,5 @@ x/y/width/height 反算落点，按下之后核对那个按钮**真的** `isclic
 | `end-credits` | 结局（`driver` = `end`，起手站在 `脚本41.txt`） | 结局从进来播到定格（xl-czb.5）：字幕与侧栏每拍 5 像素、过场画一轮 24 拍，第 384 拍 `isStop`；定格后再 3 拍不动也不 repaint；回车落到场景面板、结局不动；叫醒原版线程两次仍活着；退出键 —— 场景把它当开菜单，`card = menuPanel` |
 | `start-about` | 标题页（`driver` = `start`） | 悬停起 / 承 / 转（进一颗、出其余每一颗，高亮起停）；点「转」卷轴 10 拍展开（`expect=unfold`）、「关于我们」按 `100*(9-timeLeft)` 逐段揭开、「回」加进列表；点「回」反向卷轴 10 拍收起（`expect=fold`）、逐段收回、`signal` 复位 −1；`back.clicked` 留着真 |
 | `start-newgame` | 标题页（`driver` = `start`） | 点「起」：卷轴 10 拍展开、两段载入动画开播、`loadTimer.start(30)`；第 30 拍 `switchTo("scene")`（`card = scenePanel`、`current = scene`，`expect=switch`） |
+| `start-about-again` | 标题页（`driver` = `start`） | 转 → 回 → 转之后点「起」（xl-r0x）：「回」的 `clicked` 自第一次收起就一直是真，于是展开着在「起」上松手走的是 `setButton()` 里 `back.isIsclicked()` 那一支 —— 反向卷轴开播、`signal = 3`、不开载入动画，10 拍后收起（第二个 `expect=fold`） |
+| `start-hover-end` | 标题页（`driver` = `start`） | 起 → 结 → 空处（xl-r0x）：原版「结」悬停换图、高亮开转，移开停在第 0 帧。web 那颗禁用、悬停不换（`ADR-0001#start-exit-disabled`），这份是那处差的原版一侧 |
