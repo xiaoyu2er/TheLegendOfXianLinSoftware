@@ -1,0 +1,31 @@
+{
+  "name": "battle-script38-3",
+  "description": "xl-3hn：脚本38 的第 3 场剧情战（battle1 第 3 行）原样照搬 —— 背景、出战名单、三个槽位都是那一行 Fight 数据的原文。这一场是 物理阁堂主 的行为真值：没有它，这几只怪的出厂数据抄错了和抄对了长得一样。等级不是脚本里的（Fight 那一行不带等级），取的是主线走到这里大致的等级，够打赢即可。",
+  "driver": "battle",
+  "background": "image/背景图/比武场.png",
+  "party": [
+    "zhang",
+    "yu",
+    "lu"
+  ],
+  "level": {
+    "zhang": 18,
+    "yu": 18,
+    "lu": 18
+  },
+  "enemies": [
+    "物理阁堂主/5",
+    null,
+    null
+  ],
+  "seed": 20260920,
+  "tickMs": 100,
+  "maxTicks": 12000,
+  "steps": [
+    {
+      "op": "autoAttack",
+      "until": "victory",
+      "max": 10000
+    }
+  ]
+}

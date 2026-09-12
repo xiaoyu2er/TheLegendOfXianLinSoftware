@@ -1,0 +1,29 @@
+{
+  "name": "battle-script31",
+  "description": "xl-3hn：脚本31 的剧情战（battle1）原样照搬 —— 背景、出战名单、三个槽位都是那一行 Fight 数据的原文。这一场是 李洵 的行为真值：没有它，这几只怪的出厂数据抄错了和抄对了长得一样。等级不是脚本里的（Fight 那一行不带等级），取的是主线走到这里大致的等级，够打赢即可。",
+  "driver": "battle",
+  "background": "image/背景图/仙二教学楼.png",
+  "party": [
+    "zhang",
+    "yu"
+  ],
+  "level": {
+    "zhang": 16,
+    "yu": 16
+  },
+  "enemies": [
+    "李洵/5",
+    null,
+    null
+  ],
+  "seed": 20260918,
+  "tickMs": 100,
+  "maxTicks": 12000,
+  "steps": [
+    {
+      "op": "autoAttack",
+      "until": "victory",
+      "max": 10000
+    }
+  ]
+}

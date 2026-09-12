@@ -1,0 +1,15 @@
+{
+  "name": "battle-script3",
+  "description": "xl-3hn 试点：脚本3 那一场剧情战原样（校园小道，张小凡 + 陆雪琪，大刀/5 武林高手1/6 武林高手1/7）。",
+  "driver": "battle",
+  "background": "image/背景图/校园小道.png",
+  "party": ["zhang", "lu"],
+  "level": { "zhang": 3, "lu": 3 },
+  "enemies": ["大刀/5", "武林高手1/6", "武林高手1/7"],
+  "seed": 20260912,
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "steps": [
+    { "op": "autoAttack", "until": "victory", "max": 6000 }
+  ]
+}
