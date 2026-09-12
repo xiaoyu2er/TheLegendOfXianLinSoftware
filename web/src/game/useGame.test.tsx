@@ -549,6 +549,25 @@ describe('useGame 接线', () => {
     expect(after, '打赢了罹年居士（exp 9999），张小凡的等级或经验总得动一样').not.toEqual(before)
   }
 
+  /**
+   * xl-fqm 的另一半：标题页放开了回车 / 空格的默认动作，场景里**照旧拦** ——
+   * 否则空格把页面往下滚、方向键一边走一边滚。事件要 `cancelable: true`：
+   * 手造的 `KeyboardEvent` 默认不可取消，`preventDefault()` 在它上面什么都不做，
+   * 这条会恒红（标题页那一半则会恒绿）。
+   */
+  it('场景里认下来的键照旧 preventDefault（不滚页面）', async () => {
+    await mount()
+    for (const key of ['Enter', ' ', 'ArrowDown']) {
+      for (const type of ['keydown', 'keyup'] as const) {
+        const event = new KeyboardEvent(type, { key, cancelable: true })
+        act(() => {
+          window.dispatchEvent(event)
+        })
+        expect(event.defaultPrevented, `${type} ${JSON.stringify(key)}`).toBe(true)
+      }
+    }
+  })
+
   it('卸载之后不再推进，也不再收键', async () => {
     const { unmount } = await mount()
     unmount()
