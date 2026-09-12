@@ -174,6 +174,22 @@ and their evidence: `docs/MIGRATION-PLAN.md`. Task tracking: `bd ready`.
 （xl-23y）：烘焙器源码闭包与它读过的每一个输入都算进指纹，改了烘焙器不重烘
 就会红。
 
+⚠️ **「烘焙器的输入」比你以为的宽得多**（xl-haw，2026-09-12 现数 **3778 个输入 +
+56 个烘焙器源文件**；这两个数**现数，别写死**）。踩过的地方：
+
+- **`src/` 下每一个 `.java` 都是输入** —— 烘焙器要从原版源码里扫「哪几张素材有代码
+  引用」「战斗背景音乐读的是哪几首」。**改原版源码也要 `pnpm bake`。**
+- **`tools/traces/out/` 下的每一份行为真值也是输入** —— 走到过哪些场景决定烘哪几首
+  BGM。**改一份真值（哪怕只是剧本的 description 那一行）也要重烘。**
+- **`web/src/` 里有一批文件在烘焙器的源码闭包里**（menu/funcButtons.ts、menu/scroll.ts、
+  state/npc.ts、state/treasure.ts 之类，**名字上看不出来**）。**在这些文件里只改一句
+  注释，指纹也会红。**
+
+⚠️ 判法：**不要按文件名猜**，指纹里查不到路径时用烘焙器现爬的闭包比。
+⚠️ 每次重烘会让几十个 `*.m4a` 出现纯时间戳差异（判据是**差异偏移全部小于 300**，
+不是字节数），要逐个 `git checkout` 回去 —— 而那个循环撞上 `index.lock` 时会静默失败，
+**计数不看 checkout 的退出码，失败与成功同形**（xl-03x.10 实测）。
+
 ## Conventions & Patterns
 
 - **Source files are GBK-encoded with CRLF line endings.** Compile with
