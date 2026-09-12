@@ -3,8 +3,34 @@
 这是这个项目唯一一份**玩家视角的全貌**：原版里玩家能做的每一件事，Web 端今天做不做得到。
 每个里程碑收口时**现查着重写**，完工判据拿它当分母。
 
-**现查：2026-09-11，xl-03x.2（closed）。共 61 行（能 44 · 不能 8 · 能但不对 9）。**（xl-19z（closed）把「战斗 听战斗背景音乐」从「能，但不对」改成「能」；xl-03x.15（closed）把「场景 看旁白」从「能，但不对」改成「能」；xl-03x.13（closed）把「走进仙二205」从「不能」改成「能」。⚠️ 这两处与状态列一样，是主干在合并时按当时的现状改的，**不是重新现查**——收口那一轮要整表再查一遍。）
+**现查：2026-09-11，M8 收口那张票（本票）整表逐行重查。共 62 行（能 49 · 不能 6 · 能但不对 7）。**
 （这句读数由 `web/src/mainline/test/playerCoverage.test.ts` 对着下面那张表现数核对，改了表不改这句会红。）
+
+## M8 完工判据：当前读数（2026-09-11，M8 收口实跑）
+
+「完成」是什么意思、四条判据为什么是这四条、三种身份各指什么，是**判断**，写在
+`docs/adr/0007-what-done-means.md`。这里只放**读数** —— 两者过期的速度不一样，分开写。
+
+| 判据 | 读数 | 怎么红 |
+|---|---|---|
+| 1. 对照表每一行要么是「能」，要么在例外表里有一行签过字的登记，要么指向一张已立的票并写明它欠的是什么 | **成立**：62 行 = 能 49 + 靠签过字的例外 2（标题「结」、天书「确认离开」，`ADR-0001#start-exit-disabled`）+ 指向开着的票且写明欠什么 11 | `playerCoverage.test.ts`：「不能 / 不对」没写欠什么、只指向关掉的票、指向的例外还是待签、引的例外键或票号不存在 —— 都红 |
+| 2. 全量跨端逐帧比对 N/N 符合预期 | **成立：45/45 条剧本符合预期**（N = `tools/traces/scripts/` 现数 45；合计 1818 帧；退出码 0）。缺口区复核：报告里 144 条缺口区记账、49 个不同的区名，**没有一个区的最差帧是 0** —— 没有「账还完了而区还留着」的；比对器本身对「某区一帧都不差」双向红，所以这一条也是它守着的。每个区的成因写在 `web/src/compare/expected.ts` 那个区的 `why` / `issue` 上（类型强制，缺了编译不过）；这一轮之内被删掉的区只有旁白第 599 行那一个（xl-03x.15（closed））。账本对撞 18 条剧本逐帧相等。⚠️ 同一天第一次全量跑时，`maze-treasure` 取到第 4 帧后卡死 9 分钟（进程全部 0% CPU）；单独重跑那一条通过、第二次全量也通过 —— 记为偶发，没有查到原因 | `tools/compare-frames.sh` 退出码 |
+| 3. 对照表每一行各有一条会红的判据 | **按字面不成立**；机器核得到的那一半成立：判「能」的 49 行，每一行的依据列都引到了一份磁盘上存在的测试文件或剧本（机器核）；「不能 / 不对」的 13 行，会红的是认领关系本身（认领的票关了而这一行没改 → 判据 1 红）。⚠️ **「引到的那份测试在这一行坏掉时真的会红」没有逐行篡改验证过** —— 验过的只有 M8 各票自己篡改过的那些行 | `playerCoverage.test.ts`：「能」行没引到存在的测试或剧本、引的测试文件不存在 —— 都红 |
+| 4. 主线从起点到结局在状态层连跑一遍不抛 | **真实产品数据下不成立**：链 45 本 / 44 跳（win32），连跑断在**第 4 跳**（脚本3 的剧情战，「武林高手1」没有出厂数据，`enemySpec` 抛；已推 9949 拍）。断点登记在 `playthrough.test.ts` 的 `KNOWN_BREAK`（人签，归 xl-3hn（open））。**换上测试替身**之后 44 跳全部落地、走到结局（140911 拍）—— 那一份的绿**不等于**产品跑通了 | `playthrough.test.ts`：断点挪了（断在别处，或 xl-3hn（open）补完了怪而登记没删）—— 红 |
+| 每张 open 票恰好一个身份标签 | **成立**（关票后重导的快照）：open 64 张，每张恰好一个身份 —— 登记 35 · 下一轮 11 · 没人认领 18（没人认领里含 blocked 的 xl-u7b（open））。关票前快照 open 66 张、64 张有身份，**缺的两张恰好是本票与 M8 的 SPEC**，判据当场红在这两张上 —— 那是「少一个」在真快照上的读数。「多一个」的真快照读数：给 xl-y11（open）临时再贴一个身份、重导，判据红「贴了 2 个身份」；撕掉重导后快照逐字节回到原样 | `issueIdentity.test.ts`：少一个、多一个、认不出、与快照不是同一次导出 —— 都红 |
+
+⚠️ 跟着这四条一起写死的两句，一个字都不能少：
+
+- **它不等于没有 bug。** 这四条证的是「清单上的每件事都有人做了、且改坏了会响」，**不是「玩家玩一遍不会遇到问题」**。
+- **没有人在真的浏览器里从头玩到尾。** 那归跨面板端到端那张票，这一轮不碰。
+
+还有一条边界：**完工判据骑在对照表上，所以对照表看不见的东西它也看不见。**
+
+⚠️ **「完成」意味着「清单上的每件事要么做了、要么有人签字说不做、要么有一张写明欠什么的票」，不意味着玩家能从头玩到尾** —— 这一轮已经证明后者不成立（主线第 4 跳进战斗就抛）。
+
+「用这一轮立的标记扫一遍」的读数：`adrExceptions.test.ts` 双向对撞绿（标记 ⇄ 例外表）；另对 M8 这一轮新增的非测试代码行按措辞扫了一遍（词表同 ADR-0001「第二遍」那一段），**23 条命中逐条读过，没有一条是只写在注释里、没进例外表的新决定**（都落在已登记的行里，或明写「照抄」「还没做、不是故意不复刻」）。⚠️ 措辞扫描本身找不全，理由见 ADR-0001。
+
+「还欠什么」是一句查询：`bd list --label 身份:没人认领`（另两份：`身份:下一轮`、`身份:登记`）。
 
 ## 这张表怎么读、怎么守
 
@@ -12,27 +38,28 @@
   `StartPanel` 五颗按钮、`ScenePanel.keyPressed` / `step` 与 `scene/*Event`、菜单四页 + 天书
   （`FuncButtons`）、`LoadAndSavePanel`、两家店、战斗 `Command` / `SkillMenu` / `DrugMenu` /
   `EnemySlector` / `Check` / `GameOver`、`media/MusicPlayer`。**不是票数，也不从票据系统或上一版转抄。**
-- 第二列三种判定：`能` · `**不能**` · `**能，但不对**`（做得到，但与原版不一致）。「不能 / 能，但不对」
-  的行必须在第四列指向至少一张**还开着**的票。
+- 第二列三种判定：`能` · `**不能**：……` · `**能，但不对**：……`（做得到，但与原版不一致）。后两种**冒号后面必须写明欠的是什么**，
+  并在第四列指向至少一张**还开着**的票，或一行**签过字**的 ADR-0001 例外（`ADR-0001#键`；标着「待签」的不算）。
 - **「走主线碰不碰得到」用可达闭包，不用链长**（`web/src/mainline/test/chain.ts`，win32 语义）：
   **链上** = 主线链上某本脚本就有这一类段；**仅闭包** = 不在链上、挂在链上各本的出口上，玩家随时拐得进去；
   **随时** = 菜单 / 标题 / 存读档，不挂在哪本脚本上。
-- 依据列的标法：**实跑** = 本票现查时实际跑过（测试条数是那一次的读数）；**读代码** = 没跑过，是从源码读出来的。只列源码行号 / 剧本名、没有这两个字的：源码行号是读代码，剧本名取自 `web/src/compare/expected.ts` 的表态，本票**没有重跑逐帧比对**。
+- 依据列的标法：**实跑** = 本票现查时实际跑过（测试条数是那一次的读数）；**读代码** = 没跑过，是从源码读出来的。只列源码行号 / 剧本名、没有这两个字的：源码行号是读代码，剧本名取自 `web/src/compare/expected.ts` 的表态，由上面那轮全量逐帧比对覆盖。
+  **判「能」的行必须引到至少一份存在的测试文件或剧本**（完工判据第 3 条机器核得到的那一半）。
 - **判据只守引用、不守内容**：表里每个票号后面写着它的状态，判据拿它们对着入库的票据快照
-  `tools/issue-snapshot/issues.json` 撞（票号存在、状态一致、「不能 / 不对」有开着的票认领、上面那句读数与表对得上）。
+  `tools/issue-snapshot/issues.json` 撞（票号存在、状态一致、「不能 / 不对」有开着的票或签过的例外认领、例外键与测试文件名真有、上面那句读数与表对得上）。
   「能不能做」是人现查着写的，**判据一个字都不核，也绝对不许改成自动生成** —— 自动扫出来的表等于让被守的东西自己签字。
-- **快照不是 `.beads/issues.jsonl`**：那是 bd 的被动导出，现查时是过期的（2026-09-11 开工时读数：它 125 条、open 25；活库 251 条、非 closed 84 —— 读数，不是规格）。
-  快照由 `tools/export-issues.sh` 从活库导出，`tools/export-issues.sh --check`（或重导后 `git diff tools/issue-snapshot`）为空才算快照是活库现在的样子。
-  改完表的流程：`tools/export-issues.sh` → `cd web && pnpm exec vitest run src/mainline/test/playerCoverage.test.ts`。
+- **快照不是 `.beads/issues.jsonl`**：那是 bd 的被动导出，现查时是过期的（2026-09-11 开工时读数：它 125 条、open 25；活库 251 条、非 closed 84 —— 读数，不是规格；为什么过期归 xl-319（open））。
+  快照由 `tools/export-issues.sh` 从活库导出（同一次还导出每张 open 票的身份标签 `identity.json`），`tools/export-issues.sh --check`（或重导后 `git diff tools/issue-snapshot`）为空才算快照是活库现在的样子。
+  改完表的流程：`tools/export-issues.sh` → `cd web && pnpm exec vitest run src/mainline/test/playerCoverage.test.ts src/mainline/test/issueIdentity.test.ts`。
 
-### 可达闭包读数（实跑，`chain.ts` 现算）
+### 可达闭包读数（实跑，`chain.ts` 现算，M8 收口）
 
 全库 96 本 · 链 45 本 / 44 跳（出口 22 / 战斗 8 / 走自由场景 14），不断、走到结局 · 闭包 93 本 · 够不着 3 本
-（剧情1 / 大迷宫1 / 迷宫1）。对照 posix 语义：链断在第 36 跳（脚本32），闭包 84 本 —— Web 按 win32 解析文件名，
-见 ADR-0001 例外表第六行。
+（剧情1 / 大迷宫1 / 迷宫1）。对照 posix 语义：链断在第 36 跳（脚本32 → 食堂夜），闭包 84 本 —— Web 按 win32 解析文件名，
+见 ADR-0001 例外表 `win32-script-filename`。
 
-各类段落落在哪（数据层真值 `tools/ground-truth/*.json` 里对应字段非空的本数）：对话 链上 43 · 旁白 链上 7 ·
-剧情战 链上 11（其中 8 本推剧情）· 随机遭遇 链上 3 · 宝箱 链上 3 · 结局 `$` 链上 1（脚本41）·
+各类段落落在哪（数据层真值 `tools/ground-truth/*.json` 里对应字段非空的本数；xl-03x.2（closed）的读数，本票只复核了随机遭遇那一栏）：对话 链上 43 · 旁白 链上 7 ·
+剧情战 链上 11（其中 8 本推剧情）· 随机遭遇 链上 3（脚本6 / 10 / 20，各 3 行）· 宝箱 链上 3 · 结局 `$` 链上 1（脚本41）·
 选择战 / 药店 / 装备店 仅闭包各 2 · 答题 仅闭包 10。
 
 ## 对照表
@@ -41,111 +68,93 @@
 |---|---|---|---|---|
 | **标题** 开机进标题、放主题曲 | 能 | 随时 | — | `GameLauncher.java:76,144-155`；实跑 `appTitle.test.tsx` 4/4 |
 | 标题 悬停换图、高亮转；自绘鼠标 8 帧、云飘 | 能 | 随时 | 没有逐帧比对：xl-whk（open） | 实跑 `StartPanel.test.tsx` 17/17、`animation.test.ts` 14/14；标题页没有驱动器 |
-| 标题 点「起」：卷轴展开、载入 30 拍、进脚本1 | 能（队伍回出厂是 ADR-0001 登记过的例外） | 随时 | 重开把结局线程一起丢掉（跨面板）：xl-eqo（open） | `StartPanel.java:220-222,335-344`；实跑 `StartPanel.test.tsx`「卷轴放完再等 30 拍」 |
+| 标题 点「起」：卷轴展开、载入 30 拍、进脚本1 | 能（队伍回出厂是 ADR-0001 登记过的例外 `ADR-0001#new-game-resets-party`） | 随时 | 重开把结局线程一起丢掉（跨面板）：xl-eqo（open） | `StartPanel.java:220-222,335-344`；实跑 `StartPanel.test.tsx`「卷轴放完再等 30 拍」 |
 | 标题 点「承」：进读档面板 | 能 | 随时 | 缩略图缩放未拟合：xl-cpo（open） | 剧本 `saveload-start`（gap：缩略图 + 字形） |
 | 标题 点「转」：「关于我们」逐段揭开，点「回」收起 | 能 | 随时 | 没有逐帧比对：xl-whk（open） | `StartPanel.java:228-241,296-328`；实跑 `panelState.test.ts` 28/28 |
-| 标题 点「结」：退出进程 | **不能**：浏览器无对应物。现状是禁用按钮 + title（xl-u23（closed）的裁定），与 xl-03x.12（open）「画出来、点了什么都不发生」口径冲突，**待主干裁** | 随时 | xl-03x.12（open） | `StartPanel.java:233-234`；`web/src/start/buttons.ts` 的 `START_BUTTON_WIRING.end` |
+| 标题 点「结」：退出进程 | **不能**：浏览器没有「退出进程」的对应物 —— 按钮画出来、禁用、带一句理由（`title`），悬停不换图（原版会换） | 随时 | `ADR-0001#start-exit-disabled`（xl-u23（closed）量过三条路后的定案；xl-03x.12（closed）两处统一） | `StartPanel.java:233-234`；实跑 `StartPanel.test.tsx` 17/17（「禁用的两颗各带一句理由」「禁用的那两颗点下去屏幕纹丝不动」） |
 | **存读档** 从天书进存档：点槽直接写盘、不问覆盖，当场重读三个槽的摘要 | 能（不问覆盖、拖出去松手也触发、监听器越挂越多、头像只置不清 —— 缺陷照抄） | 随时 | 原版缺陷登记：xl-1dv.23（open）、xl-1dv.25（open）、xl-1dv.24（open）、xl-1dv.31（open） | 剧本 `saveload-menu`；实跑 `saveloadTrace.test.ts` 23/23、`step.test.ts` 8/8 |
-| 存读档 读档：点非空槽，读档并切到场景 | 能 | 随时 | 原版读档多起一条场景循环，不复刻（ADR-0001 已登记）：xl-1dv.28（open） | 剧本 `load-slot0/1/2`；实跑 `loadSession.test.ts` 11/11 |
+| 存读档 读档：点非空槽，读档并切到场景 | 能 | 随时 | 原版读档多起一条场景循环，不复刻（`ADR-0001#load-extra-scene-loop`）：xl-1dv.28（open） | 剧本 `load-slot0` / `load-slot1` / `load-slot2`；实跑 `loadSession.test.ts` 11/11 |
 | 存读档 读档时点空槽：什么都不发生 | 能 | 随时 | — | `LoadAndSavePanel.java:199`；剧本 `saveload-start` 第 2 步 |
-| 存读档 按 Esc 回到来处 | **能，但不对**：回标题时标题页状态被重置（原版卷轴停在展开那一帧）、主题曲不从头放 | 随时 | xl-6zf（open） | `LoadAndSavePanel.java:295-303`；读代码：`App.tsx` 离开标题即卸载 `<StartPanel>`，状态在组件内 `useRef` |
+| 存读档 按 Esc 回到来处 | **能，但不对**：回标题时标题页状态被重置（原版卷轴停在展开那一帧）、主题曲不从头放 | 随时 | xl-6zf（open） | `LoadAndSavePanel.java:295-303`；读代码：`App.tsx` 离开标题即卸载 `<StartPanel>`，状态在组件内 `useRef`（背景音乐开关回标题拨回「开」已由 xl-03x.21（closed）还上，`saveloadSession.test.ts`） |
 | **结局** 字幕滚动、过场画轮放、播完定格 | 能 | 链上（链尾 脚本41） | — | 剧本 `end-credits` 表态 match；实跑 `endTrace.test.ts` 21/21 |
 | 结局 按 Esc：被场景当成开菜单，结局被切走 | 能（照复刻，M7 主干裁定） | 链上 | — | `GameLauncher.java:161-164,186-191`；剧本 `end-credits` 末 3 步 |
-| **场景** 方向键走、Ctrl 跑、碰撞 | 能 | 链上 | — | `ScenePanel.java:187-196`；剧本 `dorm-walk` / `bigmap-walk`；实跑 `traceReplay.test.ts` 208/208 |
-| 场景 看旁白（逐字、换背景） | 能（背景第 599 行的取整账已还清，旁白背景逐像素相等） | 链上（7 本） | xl-03x.15（closed）、xl-t0h（open） | `Narratage.java:48`；剧本 `dorm-intro` / `milestone` 硬比区含旁白背景（缺口区只剩字形）；`narratageLayout.test.ts` 对黄金数据 |
-| 场景 看对话（自动 / 位置 / 找 NPC 推主线）、空格翻页 | 能（另多了回车跳过吐字，验收要求加的） | 链上（43 本） | — | `DialogueEvent.java:30-146`；剧本 `dorm-intro` / `milestone`；实跑 `dialogue.test.ts` |
-| 场景 NPC 闲聊；NPC 走动、靠近就停 | 能 | 链上 | — | `NPCEvent.java:17-133`；剧本 `bigmap-walk`；实跑 `npc.test.ts` 7/7 |
-| 场景 走出口换图（三条分支） | 能（按 win32 解析文件名，ADR-0001 第六行） | 链上 | 原版在 posix 上断链这件事本身：xl-1dv.11（open） | `ExitEvent.java:30-74`；实跑 `handoff.test.ts` 46/46、`doors.test.ts` 17/17 |
+| **场景** 方向键走、Ctrl 跑、碰撞 | 能 | 链上 | — | `ScenePanel.java:187-196`；剧本 `dorm-walk` / `bigmap-walk`；实跑 `traceReplay.test.ts` 219/219 |
+| 场景 看旁白（逐字、换背景） | 能（背景第 599 行的取整账已还清，旁白背景逐像素相等） | 链上（7 本） | —（xl-03x.15（closed）、xl-t0h（closed）） | `Narratage.java:48`；剧本 `dorm-intro` / `milestone` 硬比区含旁白背景（缺口区只剩字形）；`narratageLayout.test.ts` 对黄金数据 |
+| 场景 看对话（自动 / 位置 / 找 NPC 推主线）、空格翻页 | 能（另多了回车跳过吐字，`ADR-0001#dialogue-skip-printing`） | 链上（43 本） | — | `DialogueEvent.java:30-146`；剧本 `dorm-intro` / `milestone`；实跑 `dialogue.test.ts` |
+| 场景 NPC 闲聊；NPC 走动、靠近就停 | 能 | 链上 | — | `NPCEvent.java:17-133`；剧本 `bigmap-walk`；实跑 `npc.test.ts` 10/10 |
+| 场景 走出口换图（三条分支） | 能（按 win32 解析文件名，`ADR-0001#win32-script-filename`） | 链上 | 原版在 posix 上断链这件事本身：xl-1dv.11（open） | `ExitEvent.java:30-74`；实跑 `handoff.test.ts` 46/46、`doors.test.ts` 17/17 |
 | 场景 踩到占位名或缺文件的出口 | **能，但不对**：原版吞 `FileNotFoundException` 得一个全空的场景、首帧 `paint` 抛空指针；Web 在进场景时硬抛 —— 失败的样子不同 | 仅闭包（缺文件那处在剧情1，够不着） | xl-1dv.12（open）、xl-1dv.13（open） | `Reader.java:84-95`；实跑：原版探针（`initiation` 成功、`OtherEvent.addMap` 空指针）；`step.ts` 进场景那一支 |
 | 场景 开宝箱 | 能 | 链上（3 本：脚本6 / 10 / 20） | — | `TreasureBox.java:42-62`；剧本 `maze-treasure`；实跑 `treasure.test.ts` 13/13 |
-| 场景 随机遭遇（计步 30 或 50 格） | 能 | 链上（3 本） | — | `FightEvent.java:48-51,110-121`；实跑 `fight.test.ts` 8/8、`session.test.ts`（迷宫1 真走 30 格）；没有 scene 行为真值 |
-| 场景 对话里 `@` 触发剧情战、打推剧情的 boss 后剧情推进 | 能 | 链上（11 本，8 本推剧情） | — | `FightEvent.java:38-46,100-104`；实跑 `session.test.ts` 16/16、`handoff.test.ts` 8 个战斗跳 |
+| 场景 随机遭遇（计步 30 或 50 格） | **能，但不对**：脚本6（大活迷宫）的 3 行随机遭遇**全部**撞到没有出厂数据的怪（舞剑者 / 武林高手1），一遇敌就抛；脚本10 / 20 照原版 | 链上（3 本） | xl-3hn（open） | `FightEvent.java:48-51,110-121`；实跑 `fight.test.ts` 8/8、`session.test.ts`（迷宫1 真走 30 格）；实跑 `playthrough.test.ts` 的缺口读数（`monsterGap`：随机遭遇 3 行、全在脚本6）；本票现数 `tools/ground-truth/脚本6.json` 的 `battle0` 共 3 行 |
+| 场景 对话里 `@` 触发剧情战、打推剧情的 boss 后剧情推进 | **不能**：链上 9 场剧情战（分布在 8 本：脚本3 / 12 / 15 / 17 / 25 / 31 / 38 / 39）的怪没有出厂数据，一进战斗就抛 —— 主线连跑在第 4 跳（脚本3，「武林高手1」）就断了。机制本身（开仗、打完推剧情）换上测试替身能一路走到结局 | 链上（11 本，8 本推剧情） | xl-3hn（open） | `FightEvent.java:38-46,100-104`；实跑 `playthrough.test.ts` 4/4（真实产品断在第 4 跳，登记）、`playthrough.standin.test.ts` 5/5（替身走到结局）、`session.test.ts`、`handoff.test.ts` 46/46 |
 | 场景 选择框 → 约战 | 能 | 仅闭包（2 本） | — | `SelectEvent.java:191-202`；剧本 `battle-door` |
 | 场景 选择框 → 药店 | 能 | 仅闭包（2 本） | — | `SelectEvent.java:178-190`；剧本 `shop-door`；实跑 `select.test.ts` 11/11 |
 | 场景 选择框 → 装备店 | 能 | 仅闭包（2 本） | — | `SelectEvent.java:185-190`；剧本 `equipshop-door` |
 | 场景 答题（答对加钱、答错扣钱、答过的记住） | 能 | 仅闭包（10 本；剧情1 也有但够不着） | —（xl-03x.3（closed）已还：取图页与会话层共用记账，金币数值由账本逐帧对撞守着；像素上只剩字形） | `SelectEvent.java:203-216,371-421`；剧本 `question-answer` / `question-memory` |
-| 场景 走进「仙二205」 | 能（xl-03x.13（closed）：原版吞掉异常照进 —— 前 3 个 NPC 进列表、出口与音乐照读；Web 复刻成同样的「停下、场景照进」） | 仅闭包 | —（xl-03x.13（closed）、xl-d8u（closed）） | 实跑两侧：Web 抛「仙二205.txt npcList[3] 只有 7 个字段」；原版 `Reader` 得 npcs=3、exits=1，`initiation` + 一帧 `paint` 成功（`Reader.java:100,270-273` 吞的） |
-| 场景 对话里 `$` 进结局 | 能 | 链上（1 本：脚本41） | — | `Dialogue.java:111-113`；实跑 `end/trigger.test.ts` 7/7 |
-| 场景 按 Esc 开菜单（旁白中、对话吐字中不开） | **能，但不对**：旁白中、对话中也开 | 随时（场景内） | xl-03x.16（open）、xl-as2（open） | `ScenePanel.java:177-178,207-208`；实跑 Web：脚本1 第 1 拍旁白中、脚本10 第 1 拍对话中 `openMenu` 都进了菜单 |
+| 场景 走进「仙二205」 | 能（xl-03x.13（closed）：原版吞掉异常照进 —— 前 3 个 NPC 进列表、出口与音乐照读；Web 复刻成同样的「停下、场景照进」） | 仅闭包 | —（xl-03x.13（closed）、xl-d8u（closed）） | 剧本 `npc-defect`（行为真值 + 逐帧表态）；原版 `Reader` 得 npcs=3、exits=1（`Reader.java:100,270-273` 吞的）；实跑 `npc.test.ts` 10/10 |
+| 场景 对话里 `$` 进结局 | 能 | 链上（1 本：脚本41） | — | `Dialogue.java:111-113`；实跑 `trigger.test.ts` 7/7 |
+| 场景 按 Esc 开菜单（旁白中、对话吐字中不开） | 能（逐帧比对看不见这一条：取图页不画菜单，判据在会话层） | 随时（场景内） | —（xl-03x.16（closed）、xl-as2（closed）） | `ScenePanel.java:177-178,207-208`；实跑 `escGate.test.ts` 6/6 |
 | 场景 视口跟随、地图遮挡、右下角金币数 | 能（金币数的字形差异是逐帧比对里登记的缺口区） | 链上 | — | `OtherEvent.java:34-100`；实跑 `viewport.test.ts` 44/44、`mapOverlays.test.ts` 5/5 |
-| **菜单** 点物品 / 装备 / 奇术 / 天书四个标签切页 | 能 | 随时 | — | `menu/Command.java:91-119`；剧本 `menu-hero` / `menu-magic`；实跑 `menuTrace.test.ts` 51/51 |
-| 菜单 顶栏「当前任务」显示当前任务 | **不能**：游戏里恒为「无」 | 随时 | xl-03x.10（open）、xl-lna（open） | `menu/Command.java:130-141`、`Reader.java:267`；读代码：`useGame.ts` 调 `menuDrawList(world)` 不传任务 |
+| **菜单** 点物品 / 装备 / 奇术 / 天书四个标签切页 | 能 | 随时 | — | `menu/Command.java:91-119`；剧本 `menu-hero` / `menu-magic`；实跑 `menuTrace.test.ts` 76/76 |
+| 菜单 顶栏「当前任务」显示当前任务 | 能（「错一个字」逐帧比对看不见 —— 顶栏是字形缺口区；判据是逐字符串对真值） | 随时 | —（xl-03x.10（closed）、xl-lna（closed）） | `menu/Command.java:130-141`、`Reader.java:267`；剧本 `menu-task`；实跑 `taskTitle.test.ts` 8/8、`menuTask.test.ts` 5/5 |
 | 菜单 点头像换人（陆 / 文在队才有）、看等级 | 能 | 随时 | — | `Scoll.java:121-184`；剧本 `menu-hero` |
-| 菜单 药品页：悬停选药、点「使用」回血回蓝 | **能，但不对**：药品页永远看不到玩家持有的药，只会说「没药了」 | 随时 | xl-bsv（open） | `DrugPanel.java:92-300`；实跑 scratch：药包 3、菜单药品页 0；读代码：`refreshMenuWorld` 不同步药包 |
+| 菜单 药品页：悬停选药、点「使用」回血回蓝 | **能，但不对**：药品页永远看不到玩家持有的药，只会说「没药了」 | 随时 | xl-bsv（open） | `DrugPanel.java:92-300`；读代码（本票复核）：`game/session.ts` 两处 `refreshMenuWorld` 只传 `live` / `audio`，不同步药包 |
 | 菜单 装备页：六个槽位切换、悬停看升降箭头、「使用」/「弃用」/ 不能用时「禁止」 | 能 | 随时 | — | `EquipPanel.java:297-320,520-950`；剧本 `menu-equip`；实跑 `equipPanel.test.ts` 9/9、`equipDraw.test.ts` 22/22 |
-| 菜单 装备页里看见战斗掉的装备 | **能，但不对**：战利品装备写进另一个背包，菜单与商店都读不到 | 随时 | xl-5jx（open） | `VictoryReminder.java:348-361`；读代码：`battle/victory.ts` 写 `fakes/equipmentPack`，菜单读 `owned` |
-| 菜单 长列表：够到框外的那几行 | 能（原版不裁剪、没有滚动条，框外照画照点；Web 画的那一半裁、加滚动条，ADR-0001 已登记。滑块现在拖得动（xl-03x.9（closed））） | 随时 | 拖滑块：xl-03x.9（closed）、xl-4ev（closed） | `EquipPanel.java:474-486,548-571`；剧本 `menu-scroll`；实跑 `scroll.test.ts` 25/25 |
-| 菜单 奇术页：点技能看动画、说明、听音效 | 能（音效那一半见最后一行） | 随时 | — | `MagicPanel.java:343-456`；剧本 `menu-magic`（47 帧动画逐像素相等）；实跑 `magic.test.ts` 20/20 |
-| 菜单 奇术页的技能格数随等级涨 | **能，但不对**：冻结在 2 / 3 / 2，升级、读档之后都不变 | 随时 | xl-03x.17（open）、xl-i06.13（open）、xl-8ym（open） | `ZhangXiaoFan.java:223-224,720-727`、`MagicPanel.java:285-335`；读代码：`menu/magic.ts` 读常量 `SKILL_NUMBER` |
-| 菜单 天书「存档」/「提取」进存读档面板 | 能 | 随时 | — | `FuncButtons.java:192-213`；剧本 `saveload-menu`；实跑 `saveloadSession.test.ts` 8/8 |
+| 菜单 装备页里看见战斗掉的装备 | **能，但不对**：战利品装备写进另一个背包，菜单与商店都读不到 | 随时 | xl-5jx（open） | `VictoryReminder.java:348-361`；读代码（本票复核）：`battle/victory.ts` 仍从 `fakes/equipmentPack` 引 `addEqupment`，菜单读 `owned` |
+| 菜单 长列表：够到框外的那几行 | 能（原版不裁剪、没有滚动条，框外照画照点；Web 画的那一半裁、加滚动条，`ADR-0001#list-clipped-with-scrollbar`。滑块拖得动（xl-03x.9（closed））） | 随时 | —（xl-03x.9（closed）、xl-4ev（closed）） | `EquipPanel.java:474-486,548-571`；剧本 `menu-scroll`；实跑 `scroll.test.ts` 25/25 |
+| 菜单 奇术页：点技能看动画、说明、听音效 | 能（音效由音效播放器真的交出去，见「声音」那两行） | 随时 | — | `MagicPanel.java:343-456`；剧本 `menu-magic`（47 帧动画逐像素相等）；实跑 `magic.test.ts` 22/22 |
+| 菜单 奇术页的技能格数随等级涨 | 能（升级 2 / 5 / 10 级各 +1；读档只抬不压） | 随时 | —（xl-03x.17（closed）、xl-i06.13（closed）、xl-8ym（closed）） | `ZhangXiaoFan.java:223-224,720-727`、`MagicPanel.java:285-335`；剧本 `menu-magic-levels`；实跑 `magic.test.ts` 22/22、`loadSession.test.ts` 11/11 |
+| 菜单 天书「存档」/「提取」进存读档面板 | 能 | 随时 | — | `FuncButtons.java:192-213`；剧本 `saveload-menu`；实跑 `saveloadSession.test.ts` 10/10 |
 | 菜单 天书「设定」→ 背景音乐 开 / 关 | 能 | 随时 | — | `FuncButtons.java:288-319`；实跑 `menuAudio.test.ts` 5/5、`useGameBgm.test.tsx` 2/2 |
-| 菜单 天书「设定」→ 特殊音效 开 / 关 | **能，但不对**：开关拨得动，拨了不影响任何声音（没有音效播放器） | 随时 | xl-03x.8（open） | `FuncButtons.java:321-350`、`MusicPlayer.java:84,167`；`web/src/game/audioSettings.ts` 注释「sfx 写了没人读」 |
-| 菜单 天书「返回」回场景 | 能 | 随时 | 跨帧松手被丢掉：xl-z4f（open） | `FuncButtons.java:224-232`；实跑 `menuSession.test.ts` 17/17 |
-| 菜单 天书「退出」→「重新开始」回标题 | **不能**：只换了按钮组，没人读 `sub.restart` | 随时 | xl-03x.11（open）、xl-fbs（open） | `FuncButtons.java:353-368`；读代码：`menu/funcButtons.ts` |
-| 菜单 天书「退出」→「确认离开」退出进程 | **不能**：浏览器无对应物 | 随时 | xl-03x.12（open）、xl-fbs（open） | `FuncButtons.java:370-380` |
+| 菜单 天书「设定」→ 特殊音效 开 / 关 | 能（关掉之后菜单与商店的声音真的停；战斗 / 场景里的音效本来就还不响，那是「声音」最后一行的事，不是开关的） | 随时 | —（xl-03x.8（closed）、xl-ebw（closed）） | `FuncButtons.java:321-350`、`MusicPlayer.java:84,167`；实跑 `sfxSwitch.test.ts` 3/3、`useGameSfx.test.tsx` 2/2 |
+| 菜单 天书「返回」回场景 | 能 | 随时 | 跨帧松手被丢掉：xl-z4f（open） | `FuncButtons.java:224-232`；实跑 `menuSession.test.ts` 21/21 |
+| 菜单 天书「退出」→「重新开始」回标题 | 能（回标题把背景音乐开关拨回「开」，xl-03x.21（closed）） | 随时 | —（xl-03x.11（closed）、xl-fbs（closed）） | `FuncButtons.java:353-368`；实跑 `menuSession.test.ts` 21/21、`funcButtons.test.ts` 23/23 |
+| 菜单 天书「退出」→「确认离开」退出进程 | **不能**：浏览器没有「退出进程」的对应物 —— 照画、照原版展开收起，禁用：不响应悬停 / 按下 / 松开、不出声，理由挂在画布宿主的 `title` 上 | 随时 | `ADR-0001#start-exit-disabled`（xl-03x.12（closed）） | `FuncButtons.java:370-380`；实跑 `funcButtons.test.ts` 23/23、`menuSession.test.ts` 21/21、`appMenu.test.tsx` 5/5 |
 | **商店** 药店：悬停看恢复量与价位评语、±数量、买（按库存封顶，钱不够整笔回滚）、卖 | 能 | 仅闭包 | — | `ShopPanel.java:131-265`；剧本 `shop-trade` / `shop-edges`；实跑 `shopTrace.test.ts` 46/46、`drugShop.test.ts` 13/13 |
 | 商店 装备店：六类标签切换、悬停看属性与谁能用、±、买、卖 | 能 | 仅闭包 | — | `EquipmentShopPanel.java:86-437`；剧本 `shop-categories`；实跑 `equipShop.test.ts` 20/20 |
 | 商店 进门读当前的钱与药、每一步写回，「返回游戏」回进门那一格 | 能 | 仅闭包 | — | `ShopPanel.java:215-252`；实跑 `appShop.test.tsx` 10/10 |
-| **战斗** 「击」→ 点怪选敌 | 能 | 链上 | — | `battle/Command.java:81-88`；剧本 `battle-min` / `battle-victory`；实跑 `battleTrace.test.ts` 58/58 |
+| **战斗** 「击」→ 点怪选敌 | 能 | 链上 | — | `battle/Command.java:81-88`；剧本 `battle-min` / `battle-victory`；实跑 `battleTrace.test.ts` 57/57 |
 | 战斗 「技」→ 技能菜单 → 选招（单体选敌、全体直接放）、菜单里「返回」 | 能 | 链上 | — | `SkillMenu.java:202-287`；剧本 `battle-zhang-skills` / `battle-menus` 等 |
-| 战斗 「防」：怒气满放秘术，不满弹提示 | 能 | 链上 | — | `battle/Command.java:104-144`；剧本 `battle-mishu-zhang/yu/lu` |
-| 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | **能，但不对**：Web 战斗里的存货恒为 0，永远只弹「没药」 | 链上 | xl-byy（open） | `DrugMenu.java:52,110-130` 读的是与商店 / 菜单共用的 `DrugPack`；Web `battle/world.ts` 写死 `drugStock` 为 0 |
-| 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **不能** | 链上 | xl-qqw（open） | `BattlePanel.java:349-367`；读代码：战斗画布只挂 `onMouseDown` |
-| 战斗 按住按钮拖开再松手照样触发 | **不能** | 链上 | xl-qqw（open） | `GameButton.java:54-72`；读代码：Web 一次点击 = 同一点上的移入 + 按下 + 松开 |
-| 战斗 按 J 秒杀全部敌人（原版留的调试键） | **不能** | 链上 | xl-03x.14（open）、xl-2d5（open） | `BattlePanel.java:289-296`；实跑 `keyboard.test.ts` 6/6（`KEYS` 里没有 j） |
-| 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能 | 链上 | — | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`；实跑 `victory.test.ts` 10/10 |
+| 战斗 「防」：怒气满放秘术，不满弹提示 | 能 | 链上 | — | `battle/Command.java:104-144`；剧本 `battle-mishu-zhang` / `battle-mishu-yu` / `battle-mishu-lu` |
+| 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | **能，但不对**：Web 战斗里的存货恒为 0，永远只弹「没药」 | 链上 | xl-byy（open） | `DrugMenu.java:52,110-130` 读的是与商店 / 菜单共用的 `DrugPack`；读代码（本票复核）：Web `battle/world.ts` 仍写死 `drugStock: DRUGS.map(() => 0)` |
+| 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **不能**：战斗画布只收按下，悬停的四种反馈一样都没有 | 链上 | xl-qqw（open） | `BattlePanel.java:349-367`；读代码：战斗画布只挂 `onMouseDown` |
+| 战斗 按住按钮拖开再松手照样触发 | **不能**：Web 一次点击是同一点上的移入 + 按下 + 松开，做不出「按在这、松在那」 | 链上 | xl-qqw（open） | `GameButton.java:54-72`；读代码 |
+| 战斗 按 J 秒杀全部敌人（原版留的调试键） | 能（照复刻：清空敌人、直接落进「全部怪物被杀死」那一段；控制台与提示照原版盖在结算画面上） | 链上 | 代价：正常打死 → 结算 → 回场景在行为真值里零覆盖了：xl-5zw（open） | `BattlePanel.java:289-296`；剧本 `battle-victory`（加了一步 `debugKill`）；实跑 `battleTrace.test.ts` 57/57、`useGame.test.tsx` 13/13（进脚本22，按 J，经验得动） |
+| 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能（链上有 9 场剧情战根本进不去，见「剧情战」那一行） | 链上 | 真值里只剩按 J 那一条路：xl-5zw（open） | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`；实跑 `victory.test.ts` 11/11 |
 | 战斗 战利品：药和钱进背包 | 能（战斗里用不上、菜单里看不见是另两行的事） | 链上 | — | `VictoryReminder.java:348-361`；实跑 `victory.test.ts`「物品与钱在 thing_sx1==4 那一拍发出去」 |
-| 战斗 全灭：第一槽是罹年居士回地图，其余回标题 | 能 | 链上 | — | `GameOver.java:93-125`；剧本 `battle-defeat-scene` / `-start` / `-slot2`；实跑 `session.test.ts`「打输的两条分支」 |
+| 战斗 全灭：第一槽是罹年居士回地图，其余回标题 | 能 | 链上 | — | `GameOver.java:93-125`；剧本 `battle-defeat-scene` / `battle-defeat-start` / `battle-defeat-slot2`；实跑 `session.test.ts`「打输的两条分支」 |
 | 战斗 全灭时第一槽的怪已先被打死 | **能，但不对**：原版空指针冻住战斗线程；Web 故意抛，但主循环没人接 —— 失败的样子不同 | 链上 | xl-9go（open） | `GameOver.java:95`、`Check.java:19-23`；读代码 |
-| 战斗 听战斗背景音乐 | 能（修之前 10 首进战斗那一拍抛：实跑只抛一次，跳过那一拍绘制、上一首场景曲接着放） | 链上 | xl-19z（closed） | `BattlePanel.java:170-203`；实跑 `bgmPlayer.test.ts`「战斗背景音乐」：曲名从源码现读，逐首 `resolveBgmOrNull` 非 null、真播放器逐首 `sync` 不抛 |
-| **声音** 场景 / 标题的背景音乐，从别的面板回来恢复 | 能（延后转码名单上的 16 首故意静音） | 链上 | — | `ScenePanel.java:171,262-265`；剧本 `milestone`；实跑 `bgmPlayer.test.ts` 20/20 |
-| 声音 战斗 / 菜单 / 商店 / 场景里的音效 | **不能**：素材已进烘焙（xl-03x.5（closed））、播放器已有（xl-03x.6（closed）），但还没有一层把状态层报的音效交给它（xl-03x.7（open）） | 随时 | xl-03x.5（closed）、xl-03x.6（closed）、xl-03x.7（open） | 原版有效调用点 84（战斗 25 / 菜单 42 / 商店 16 / 场景 1，去注释现数）；`web/src/audio/` 只有 `bgmPlayer.ts` |
+| 战斗 听战斗背景音乐 | 能（修之前 10 首进战斗那一拍抛） | 链上 | —（xl-19z（closed）） | `BattlePanel.java:170-203`；实跑 `bgmPlayer.test.ts` 34/34（「战斗背景音乐」：曲名从源码现读，逐首 `resolveBgmOrNull` 非 null、真播放器逐首 `sync` 不抛） |
+| **声音** 场景 / 标题的背景音乐，从别的面板回来恢复 | 能（延后转码名单上的 16 首故意静音） | 链上 | — | `ScenePanel.java:171,262-265`；剧本 `milestone`；实跑 `bgmPlayer.test.ts` 34/34 |
+| 声音 菜单 / 商店里的音效 | 能（与背景音乐同时响；音效之间后一声顶掉前一声，照原版） | 随时 | —（xl-03x.5（closed）、xl-03x.6（closed）、xl-03x.7（closed）、xl-8l2（closed）） | `MusicPlayer.java`；实跑 `sfxWiring.test.ts` 25/25（有非空音效真值的 9 份剧本逐步对撞：真值 music == 经会话交给播放器的序列）、`sfxPlayer.test.ts`。⚠️ 证的是「该响的时候调了播放器、参数对」，**证不了玩家真的听到了** |
+| 声音 战斗 / 场景里的音效 | **不能**：一声都不响 —— 状态层不产出、也没有音效真值（原版有效调用点 战斗 25 / 场景 1，xl-03x.7（closed）现数） | 链上 | xl-b36（open） | 读代码：`battle/step.ts`、`state/treasure.ts` 两处注释指向 xl-b36（open）；`sfxWiring.test.ts` 的分母只有菜单与商店 |
 
 ## 这一轮现查改出来的（与上一版相比）
 
-上一版是 xl-czb.7（closed）现查、贴在 epic 评论里的 39 行。这一版没有从它转抄；对比只为记下「现查又改出了什么」：
+上一版是 xl-03x.2（closed）现查、之后由主干与各票在合并时逐行同步的那一份（⚠️ 那几次同步**不是重新现查**）。
+这一版整表逐行重查过；对比只为记下「这一轮做完之后，现查又改出了什么」：
 
-- **推翻一行**：「场景 / 战斗 BGM　能」。上一版的依据是「真值 audio 列」，那一列只证状态层声明了该放哪首，
-  证不了产品侧放得出来 —— 实跑 12 首战斗曲 10 首抛。拆成两行，战斗那一行改判「能，但不对」。
-- **一行不在原版的分母里**：「列表滚动：拖滑块　不能」。原版根本没有滚动条（ADR-0001 例外表），拖滑块是 Web 自加
-  控件的欠账。改写成「够到框外的那几行　能」。
-- **新行**：战斗里用药、药品页看不到药、战斗悬停、战斗拖开松手、全灭时第一槽已空、存读档 Esc 回标题、
-  踩到占位名 / 缺文件的出口、战斗背景音乐。
-- **细化**：「走进仙二205」的原版半边现在有实跑读数（前 3 个 NPC 进列表、出口与音乐照读）；xl-d8u（closed）里
-  「NPC 段之后都没读」的猜测与之不符。「结」这一行两张票口径冲突。
-
-## 新行按「写条剧本就能让逐帧比对看见」过线
-
-SPEC 的线：**写一条剧本就能让跨端逐帧比对看见的进这一轮，要跨面板才看得见的只立票。**
-
-- **进这一轮的：无。** 这一轮现查出来的新行没有一条过线。
-- **只立票的**（已立，都在上表第四列）：
-
-  | 票 | 为什么过不了线 |
-  |---|---|
-  | xl-19z（closed）战斗背景音乐 10 首抛 | 逐帧比对不放声音；判据该落在单元缝上 |
-  | xl-byy（open）战斗里用不了药 | 要跨面板（商店 / 宝箱 → 战斗），或者先给战斗驱动器加「预置存货」字段 |
-  | xl-bsv（open）药品页看不到药 | 要跨面板（商店 / 宝箱 / 读档 → 菜单） |
-  | xl-qqw（open）战斗悬停、拖开松手 | 单面板，但战斗驱动器只认点击，要先扩驱动器 |
-  | xl-9go（open）全灭时第一槽已空 | 原版那侧线程死掉之后导出器能不能取帧未验证 |
-  | xl-6zf（open）Esc 回标题 | 要跨面板，而且标题页没有驱动器 |
-  | xl-whk（open）标题页没有驱动器 | 判据层欠账，不影响玩家 |
+- **从「不能 / 不对」变成「能」**（各自的判据本票实跑过，条数写在依据列）：顶栏当前任务 · 天书「重新开始」· 场景 Esc 那两道门 ·
+  技能格数 · 调试秒杀键 J · 特殊音效开关 · 走进仙二205 · 旁白取整 · 战斗 BGM（后三行合并时已改）。
+- **「不能」但改由签过字的例外认领**：标题「结」与天书「确认离开」—— 浏览器没有「退出进程」的对应物，禁用 + title，
+  `ADR-0001#start-exit-disabled`（本票签，见 ADR-0001）。
+- **从「能」退下来**（被实跑推翻）：「剧情战」→ **不能**（xl-03x.18（closed）的主线连跑：真实产品断在第 4 跳）；
+  「随机遭遇」→ **能，但不对**（**本票现查新发现**：同一个缺口在脚本6 的 3 行随机遭遇上全中，一遇敌就抛 —— 主干交接的清单里没有这一行）。
+- **一行拆成两行**：「声音 … 里的音效」→ 菜单 / 商店那一半「能」、战斗 / 场景那一半「不能」（xl-b36（open））。
+- **认领关系变了**：xl-fbs（closed）/ xl-8l2（closed）/ xl-yg6.15（closed）三张被别的票实质做掉的重复票，本票按先例关掉（关闭理由里点名由谁做掉）。
 
 ## ⚠️ 交给主干拍的（这张票不自己决定）
 
-1. **闸门现数**：xl-03x（open）下选进来的实现票是 xl-03x.2（closed）到 xl-03x.18（open）共 17 张，恰好等于 SPEC 的上限 17；xl-03x.20（open）是 xl-03x.4（closed）做着做着逼出来的，按 SPEC 不占额度。这一趟新立的七张都没进这一轮，所以**没有超闸门**。
-2. **范围没有被撑大，但有一张可能要出去**：xl-03x.16（open）（Esc 那两道门）进这一轮的理由是「写条剧本就能看见」，
-   现查（读代码，未跑）门禁在会话层，而取图页只调 `step()`、不走会话层 —— 一条普通 scene 剧本按 Esc，两端都停在场景上。
-   已评论在票上。
-3. **xl-19z（closed）是这一轮现查出来最重的一条**：玩家进大多数战斗都会撞上。按线它不进这一轮，要不要破例由主干定。
-4. **「结」口径冲突**：xl-u23（closed）的裁定（禁用 + title）已落地，xl-03x.12（open）要的是「画出来、点了什么都不发生」。
-5. **重复票**（没动，列出来）：xl-2d5（open）≈ xl-03x.14（open）· xl-as2（open）≈ xl-03x.16（open）·
-   xl-t0h（open）≈ xl-03x.15（closed）· xl-lna（open）≈ xl-03x.10（open）· xl-4ev（closed）≈ xl-03x.9（closed）·
-   xl-8l2（open）≈ xl-03x.5（closed）、xl-03x.6（closed）、xl-03x.7（open） · xl-fbs（open）≈ xl-03x.11（open）+ xl-03x.12（open） · xl-8ym（open）≈ xl-i06.13（open）≈ xl-03x.17（open）。
+1. **完工判据第 4 条字面不成立**（真实产品断在第 4 跳）。第 1 条已按用户拍板改写，第 4 条没有。M8 算不算完成，
+   是这一条字面与「剧情战」那一行的第三种表述之间怎么对账 —— 读数并排摆在上面，**措辞不由本票改**。
+2. **ADR-0001 那些「待签」行本票签了**（主干交接时列为收口的活）。签法与每一行判据的篡改读数写在 ADR-0001 表下；
+   合并即认，不认就在合并前退回。
+3. **epic xl-03x（open）贴的是 `身份:下一轮`**：它剩下的两张子票（xl-03x.22（open）/ xl-03x.23（open））都是下一轮的。主干合并后关掉它时，身份快照要跟着重导一次。
 
 ## ⚠️ 这张表弱在哪
 
 - 它证的是「每一行有人现查过、欠账有人认领」，**不是「玩家玩一遍不会遇到问题」**。标「读代码」的那些行没有跑过。
-- 分母由人从 `src/` 读出来，**这一遍可能漏了行** —— 上一版漏了战斗用药与药品页，这一版不会是最后一次。
+- 分母由人从 `src/` 读出来，**这一遍可能漏了行** —— 上一版漏了战斗用药与药品页，这一版的「随机遭遇」也是现查才改的，这一版不会是最后一次。
 - 「能」只说明做得到，不说明与原版逐像素一致；像素一致由逐帧比对的分区表态守（`web/src/compare/expected.ts`）。
+- 判「能」的行「引到了一份存在的测试」**不等于**那份测试在这一行坏掉时会红（见完工判据第 3 条的读数）。
 - **没有人在真的浏览器里从头玩到尾**，那归跨面板端到端 xl-x0t（open）。
