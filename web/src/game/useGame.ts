@@ -399,8 +399,8 @@ export function useGame(
 
   // 音效（xl-03x.7）：与背景音乐是**两个播放器**（原版 `background` 与 `music` 两个
   // 实例），但喂法不同 —— 不是「同步当前值」，是每一拍把这一拍推出来的那几声交过去
-  // （`session.ts` 的 `Session.sfx` / `playSfx`，判据的边界写在那里）。设定页的开关
-  // 接到它是 xl-03x.8 的事。
+  // （`session.ts` 的 `Session.sfx` / `playSfx`，判据的边界写在那里）。设定页的
+  // 「特殊音效 开 / 关」也是 `playSfx` 每拍拨上去的（xl-03x.8）。
   const sfxRef = useRef<ReturnType<typeof createSfxPlayer> | null>(null)
   useEffect(() => {
     const player = createSfxPlayer()
