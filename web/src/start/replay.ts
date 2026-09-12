@@ -32,9 +32,9 @@ import type { StartEffect, StartPanelState, StartView } from './panelState'
  * 产品里命中判定归 DOM（`buttons.ts` 头注：按钮元素占的就是 `startButtonHitBox` 那个
  * 50×50 的盒子，含左、上两条边），这里回放的是**产品**，所以照 DOM 盒子的半开区间
  * `[x, x+w) × [y, y+h)` 判，只认此刻在屏幕上的那几颗（`state.buttons`）。与原版的开区间
- * 差左、上那一列 / 一行 —— `buttons.ts` 头注写了这个差与不补它的理由，⚠️ **但它没有
- * `@exception ADR-0001#…` 标记、ADR-0001 的例外表里也没有这一行**（xl-whk 评审查出的旧账，
- * 登不登记归主干裁定）。入库剧本的坐标都落在两者一致的内部，真落到那一像素上，状态层判据
+ * 差左、上那一列 / 一行 —— `buttons.ts` 头注写了这个差与不补它的理由。
+ * 这处偏离已由主干签进 ADR-0001 的例外表（键 `start-button-hitbox-dom`，2026-09-12，
+ * xl-whk 评审翻出来的旧账），标记就带在 `buttons.ts` 的头注上。入库剧本的坐标都落在两者一致的内部，真落到那一像素上，状态层判据
  * 会当场对不上。
  *
  * ## 两种产品里走不到的输入：当场抛
