@@ -5,6 +5,7 @@ import {
   clearMenuExit,
   clearMenuSaveLoad,
   clearMenuTitle,
+  applyMenuInput,
   menuSaveLoadRequest,
   menuWantsScene,
   menuWantsTitle,
@@ -746,8 +747,7 @@ export function advanceSession(
     //
     // ⚠️ 本票起先反着写（逐个投递、见到「返回」就 break，理由是"藏起来就收不到"）
     // ——那条前提是假的，/code-review 的 Spec 轴起了一个真 JVM 把它证伪的。
-    // 剩下的那一半差别在 `game/useGame.ts`：松手落在**下一帧**时它整个丢掉，
-    // 而原版照样送得到。单开一张票：**xl-z4f**。
+    // 松手落在**下一帧**的那一半见下面的 `else`（xl-z4f）。
     const menuDrugsBefore = menu.world.drugPack.map((s) => s.count)
     menu = advanceMenu(menu, input.menu, elapsedMs, heard)
     // 天书页那两颗「背景音乐 开 / 关」改的是菜单世界上的开关，而原版改的是
@@ -787,6 +787,20 @@ export function advanceSession(
       panel = entered.panel
       session = entered
     }
+  } else if (input.menu.length > 0) {
+    // ——— 菜单藏着，却收到了菜单输入：Swing 的 mouse grab（xl-z4f）———
+    //
+    // 按下「返回」那一拍菜单就关了，松手落在**下一拍**—— 浏览器里这是常态。原版
+    // 那一下照样送到 `MenuPanel`（上面那段注释的读数：grab 按**按下时**那个组件
+    // 派发，不看它还显不显示），`isclicked` 于是被清掉。
+    //
+    // **哪些事件归菜单，由送的人按 grab 定**（`useGame.menuInput`），这里不猜：
+    // 收到什么就交什么。只做原版 `mouseReleased` 那一截 —— 不补脉冲（藏着的菜单
+    // 不推，ADR-0001#panel-threads-run-while-hidden），也不画（藏着的面板
+    // `repaint()` 不真画），所以走 `applyMenuInput` 而不是 `advanceMenu`。
+    // 松手只动按钮贴图与 `isclicked`，不碰队伍、药包与那几个一次性信号，
+    // 所以上面那几句写回与出口这里都用不着。
+    for (const i of input.menu) applyMenuInput(menu.world, i)
   }
 
   // ——— 商店（xl-yg6.11）———

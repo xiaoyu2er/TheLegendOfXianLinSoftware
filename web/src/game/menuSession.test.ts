@@ -771,6 +771,32 @@ describe('菜单世界跨得过一次关菜单（xl-6lo.18）', () => {
     ).toBe(true)
   })
 
+  it('⚠️ 松手落在**下一帧**也送得到（xl-z4f）—— 菜单已经藏了，送来的那一下照样交给它', () => {
+    // 上一条是按下与松手**同一批**；浏览器里两者跨帧才是常态。原版按**按下时**
+    // 那个组件派发松手（Swing 的 grab），不看它还显不显示 —— 所以会话收到一批
+    // 菜单输入而菜单没显示着时，照样交给菜单那一份世界。
+    let s = tab(openMenu(inScene('宿舍')), 'func')
+    const fb = menuWorldOf(s)!.panels.funcPanel.funcButtons!
+    const [x, y] = buttonCenter(fb.main.returnButton)
+    s = advanceSession(s, { ...NO_INPUT, menu: [{ e: 'press', x, y }] }, 0)
+    expect(s.panel, '按下「返回」那一帧菜单就该关').toBe('scene')
+    // 反向控制：松手之前真的按着 —— 否则下面那条「清掉了」恒真。
+    expect(fb.main.returnButton.isclicked).toBe(true)
+
+    const tickBefore = s.menu.world.tick
+    s = advanceSession(s, { ...NO_INPUT, menu: [{ e: 'release', x, y }] }, 0)
+    expect(s.panel).toBe('scene')
+    expect(fb.main.returnButton.isclicked, '下一帧的松手没送到菜单 ——「返回」还按着').toBe(false)
+    // 交给藏着的菜单的只有那一下松手：不补脉冲、不画（原版藏着的面板 repaint 不真画）。
+    expect(s.menu.world.tick, '藏着的菜单被推了一步').toBe(tickBefore)
+
+    s = openMenu(s)
+    expect(menuWorldOf(s)!.panel).toBe('funcPanel')
+    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.main.exitButton)) }, 0)
+    expect(s.panel, '一按「退出」菜单就被弹回场景 ——「返回」的 isclicked 粘住了').toBe('menu')
+    expect(fb.sub.exitForSure.isDraw, '这一下根本没点着「退出」—— 上面那条于是恒真').toBe(true)
+  })
+
   it('再开菜单看到的是队伍此刻的属性 —— 关着的这段时间队伍变了也跟得上', () => {
     // 这一条守的是 `refreshMenuWorld` 那一半（另一半是"刷得太多"，上面第一条
     // 守着）。**关菜单期间**改队伍，走的正是战斗升级与商店将来那条路。

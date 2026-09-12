@@ -101,6 +101,46 @@ describe('App 与菜单', () => {
     ])
   })
 
+  /**
+   * 跨帧的那一下松手（xl-z4f）。按下「返回」那一拍菜单就关了，菜单宿主被 `hidden`
+   * 掉，松手于是落在**场景宿主**上 —— 挂在菜单宿主上的 `onMouseUp` 根本收不到，
+   * 而且藏起来的元素外接矩形全是 0，拿它换算坐标只会得到 null。
+   *
+   * 原版按**按下时**那个组件派发松手（Swing 的 grab）。这里的对应物：按下时把
+   * 松手挂到 window 上，坐标按按下那一刻的外接矩形换算。
+   */
+  it('按下之后菜单关了，松手落在场景宿主上也照样送给菜单，坐标按按下那一刻换算', () => {
+    const { rerender } = render(<App />)
+    const menuHost = screen.getByTestId('menu-host')
+    stubBox(menuHost, { left: 100, top: 50, width: 512, height: 320 })
+    fireEvent.mouseDown(menuHost, { clientX: 100 + 256, clientY: 50 + 160 })
+
+    panel.current = 'scene'
+    rerender(<App />)
+    expect(menuHost, '菜单关了宿主却没藏 —— 下面那条测的就不是跨帧').toHaveAttribute('hidden')
+    // 藏起来的元素在浏览器里外接矩形全是 0。
+    stubBox(menuHost, { left: 0, top: 0, width: 0, height: 0 })
+    fireEvent.mouseUp(screen.getByTestId('scene-host'), { clientX: 100 + 256, clientY: 50 + 160 })
+
+    expect(menuInput.mock.calls.map(([i]) => i)).toEqual([
+      { e: 'press', x: 512, y: 320 },
+      { e: 'release', x: 512, y: 320 },
+    ])
+  })
+
+  it('那一下松手只送一次；没在菜单上按下过的松手不送（grab 属于按下的那个）', () => {
+    render(<App />)
+    const host = screen.getByTestId('menu-host')
+    stubBox(host, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseUp(host, { clientX: 10, clientY: 10 })
+    expect(menuInput, '没按下过就送了松手').not.toHaveBeenCalled()
+
+    fireEvent.mouseDown(host, { clientX: 10, clientY: 10 })
+    fireEvent.mouseUp(host, { clientX: 10, clientY: 10 })
+    fireEvent.mouseUp(host, { clientX: 10, clientY: 10 })
+    expect(menuInput.mock.calls.map(([i]) => i.e)).toEqual(['press', 'release'])
+  })
+
   it('面板不是 menu 的时候一条都不送', () => {
     panel.current = 'scene'
     render(<App />)

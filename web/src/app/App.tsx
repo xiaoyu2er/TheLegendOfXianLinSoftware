@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, WheelEvent as ReactWheelEvent } from 'react'
 import { SCENE_NAMES, START_SCENE } from '../data/scenes'
 import { Stage } from '../stage/Stage'
@@ -256,8 +256,14 @@ export function App() {
    * `offsetX`：后者在有 CSS 缩放时给的是**缩放后**的像素，点得越靠右偏得
    * 越多，而画面看起来完全正常。
    */
-  const stagePoint = (event: ReactMouseEvent<HTMLDivElement>): { x: number; y: number } | null => {
-    const box = event.currentTarget.getBoundingClientRect()
+  const stagePoint = (event: ReactMouseEvent<HTMLDivElement>): { x: number; y: number } | null =>
+    pointIn(event.currentTarget.getBoundingClientRect(), event)
+
+  /** 客户端坐标 → 舞台逻辑坐标，按给定的外接矩形换算。矩形是空的（藏着）就 `null`。 */
+  const pointIn = (
+    box: DOMRect,
+    event: { readonly clientX: number; readonly clientY: number },
+  ): { x: number; y: number } | null => {
     if (box.width === 0 || box.height === 0) return null
     return {
       x: Math.round(((event.clientX - box.left) / box.width) * STAGE_WIDTH),
@@ -277,15 +283,47 @@ export function App() {
    * 只送按下的话按钮会永远停在「按下」那张贴图上（`isclicked` 也不清），
    * 而列表的选中整个走的是 `mouseMoved` —— 少送移动等于选不中任何东西。
    */
-  const onMenuMouse = (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
+  const onMenuMouse = (e: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!inMenu) return
-    const at = stagePoint(event)
+    const box = event.currentTarget.getBoundingClientRect()
+    const at = pointIn(box, event)
     if (!at) return
     view.menuInput({ e, x: at.x, y: at.y })
     // 画布上没有 `<button disabled title>` 可挂，禁用按钮的理由按坐标问出来、
     // 挂在宿主上 —— 与标题页「结」同一口径（xl-03x.12）。
     setMenuTitle(view.menuTitleAt(at.x, at.y))
+    if (e === 'press') grabMenuRelease(box)
   }
+
+  /**
+   * 松手**不挂在菜单宿主上**，而是按下那一刻挂到 window 上（xl-z4f）。
+   *
+   * 按下「返回」那一拍菜单就关了、宿主被 `hidden` 掉，松手于是落在场景宿主上 ——
+   * 宿主自己的 `onMouseUp` 收不到它，而藏着的元素外接矩形全是 0，拿它换算只会
+   * 得到 null。所以坐标按**按下那一刻**的矩形算（舞台在这一下里不会动）。
+   *
+   * 原版的对应物是 Swing 的 mouse grab：松手派给按下时那个组件，不看它还显不
+   * 显示；反过来，没在菜单上按下过的松手也不归菜单。`useGame.menuInput` 那一层
+   * 记着同一个 grab。
+   */
+  const menuReleaseRef = useRef<((event: MouseEvent) => void) | null>(null)
+  const grabMenuRelease = (box: DOMRect) => {
+    if (menuReleaseRef.current) window.removeEventListener('mouseup', menuReleaseRef.current)
+    const onRelease = (event: MouseEvent) => {
+      window.removeEventListener('mouseup', onRelease)
+      menuReleaseRef.current = null
+      const at = pointIn(box, event)
+      if (at) view.menuInput({ e: 'release', x: at.x, y: at.y })
+    }
+    menuReleaseRef.current = onRelease
+    window.addEventListener('mouseup', onRelease)
+  }
+  useEffect(
+    () => () => {
+      if (menuReleaseRef.current) window.removeEventListener('mouseup', menuReleaseRef.current)
+    },
+    [],
+  )
 
   /**
    * 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。
@@ -354,7 +392,6 @@ export function App() {
               ref={menuHostRef}
               hidden={!inMenu || inShopPreview}
               onMouseDown={onMenuMouse('press')}
-              onMouseUp={onMenuMouse('release')}
               onMouseMove={onMenuMouse('move')}
               onWheel={onMenuWheel}
               title={inMenu && menuTitle !== null ? menuTitle : undefined}
