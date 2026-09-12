@@ -1242,6 +1242,28 @@ export function titleEntered(before: Session, after: Session): boolean {
 }
 
 /**
+ * 这一拍场景是不是**放了一次 `readBGM(reader.getSceneMusic())`**（xl-4io）。
+ *
+ * 原版 `switchTo("scene")` 置 `SCENE_SIGNAL=1`，场景线程下一拍 `step()` 第 7 步之后
+ * 读到就 `readBGM` 再清零 —— 那一句不看同名，场景曲从头放。菜单「返回」、商店
+ * 「返回游戏」回来，{@link currentBgm} 前后是同一首，光比曲名看不见这一下；打赢
+ * 回场景那条曲子本来就换了，这一位看不出区别，但它也走这一句。
+ *
+ * 判的是**消费**，不是置位：会话在推进的末尾置信号（`signalScene`），下一次推进里
+ * `state/step.ts` 才读它、清它，所以「推进前有、推进后没了」恰好就是那一拍 ——
+ * 读档那一下（`worldAfterLoad` 置的）也一样。一次推进补跑几拍也不怕：信号只会被
+ * 头一拍清掉。
+ */
+export function sceneMusicReplayed(before: Session, after: Session): boolean {
+  return before.scene?.world.sceneSignal === true && after.scene?.world.sceneSignal === false
+}
+
+/** pump 交给 `BgmPlayer.sync` 的「同一首也从头放」：原版两句不看同名的 `readBGM`。 */
+export function bgmFromStart(before: Session, after: Session): boolean {
+  return titleEntered(before, after) || sceneMusicReplayed(before, after)
+}
+
+/**
  * 这一拍该放哪首曲子。
  *
  * `GameLauncher.switchTo("scene")` 里那句 `SCENE_SIGNAL=1` 与

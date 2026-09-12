@@ -1,6 +1,7 @@
 import { EQUIP_LIST_VIEW, EQUIP_ROW_H, EQUIP_X_START, equipList } from '../menu/equipPanel'
 import { clampScroll, rowBandTop } from '../menu/scroll'
 import { stepMenu } from '../menu/step'
+import type { MenuInput } from '../menu/step'
 import type { MenuButtonState, MenuWorld } from '../menu/types'
 
 /**
@@ -33,6 +34,14 @@ export function buttonCenter(b: MenuButtonState): [number, number] {
 }
 
 /** 点一颗按钮：按下一步、松开一步 —— 与真值里每条指令展开的那两步同形。 */
+/** 在 `[x, y]` 上点一下，按下与松开同一批 —— 走会话 / `useGame.menuInput` 的那一份输入。 */
+export function clickAt([x, y]: [number, number]): MenuInput[] {
+  return [
+    { e: 'press', x, y },
+    { e: 'release', x, y },
+  ]
+}
+
 export function clickButton(w: MenuWorld, b: MenuButtonState): void {
   const [x, y] = buttonCenter(b)
   stepMenu(w, [{ e: 'press', x, y }])

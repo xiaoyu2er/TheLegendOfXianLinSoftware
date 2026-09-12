@@ -4,7 +4,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BgmPlayer } from '../audio/bgmPlayer'
 import { TITLE_BGM } from '../start/assets'
 import type { SceneRenderer } from '../scene/sceneRenderer'
+import { prepareExits } from '../data/loadedScenes'
+import { loadScene } from '../data/scenes'
+import { getScene } from '../data/scenesEager'
+import { createMemorySaveStore } from '../save/memoryStore'
+import { TICK_MS, createWorld } from '../state/step'
+import { sceneSourceOf } from '../state/trace'
+import { buttonCenter, clickAt } from '../test/menuClicks'
+import { NO_INPUT, advanceSession, createSession, enterScene, menuWorldOf, openMenu } from './session'
+import type { SessionDeps } from './session'
 import { useGame } from './useGame'
+
+/** 只拿来量菜单按钮坐标的那一份会话要的东西。 */
+const PROBE_DEPS: Omit<SessionDeps, 'saves'> = {
+  scenes: sceneSourceOf(getScene),
+  sprite: () => ({ width: 1, height: 1 }),
+  random: () => 0.5,
+}
 
 /**
  * 标题那一屏**真的把主题曲放上去**（xl-q7f）。
@@ -108,5 +124,61 @@ describe('从存读档面板回标题的背景音乐', () => {
     })
     expect(result.current.panel).toBe('start')
     expect(sync.mock.calls.filter((c) => c[1] === true)).toEqual([[TITLE_BGM, true]])
+  })
+})
+
+/**
+ * 菜单「返回」回场景，**场景曲从头放**（xl-4io）。
+ *
+ * 原版 `switchTo("scene")` 置 `SCENE_SIGNAL=1`，场景那条线程下一拍
+ * （`ScenePanel.step()` 第 7 步之后）`readBGM(reader.getSceneMusic())` 再清零；
+ * `MusicPlayer.play` 不看同名。开菜单不碰曲子（`switchTo("menu")` 那一支没有
+ * `readBGM`），所以宿舍 → 菜单 → 宿舍，「该放哪首」一路都是宿舍那首 —— 光比曲名
+ * 永远看不见这一下。商店「返回游戏」与打赢回场景走的是同一句，边沿判据在会话层
+ * （`sceneMusicReplayed`），这里只验 pump 把它交给了播放器。
+ */
+describe('从菜单回场景的背景音乐', () => {
+  it('信号被场景消费的那一拍要求从头放，而且只在那一拍', async () => {
+    const scene = getScene('宿舍')
+    expect(scene.sceneMusic, '宿舍没有场景曲，这条分不出任何东西').not.toBeNull()
+    await prepareExits(createWorld(await loadScene('宿舍')))
+    const { result } = renderHook(() => useGame(renderer, '宿舍'))
+    await act(async () => {
+      await loadScene('宿舍')
+    })
+    const tick = () =>
+      act(() => {
+        vi.advanceTimersByTime(TICK_MS)
+      })
+    const fromStart = () => sync.mock.calls.filter((c) => c[1] === true)
+
+    // 按钮坐标从一份同样建出来的菜单世界上取（几何是静态的），不写死数字。
+    let probe = openMenu(
+      enterScene(createSession({ ...PROBE_DEPS, saves: createMemorySaveStore() }), createWorld(scene)),
+    )
+    const funcTab = buttonCenter(menuWorldOf(probe)!.tabs.func)
+    probe = advanceSession(probe, { ...NO_INPUT, menu: clickAt(funcTab) }, 0)
+    const back = buttonCenter(menuWorldOf(probe)!.panels.funcPanel.funcButtons!.main.returnButton)
+
+    tick()
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    tick()
+    expect(result.current.panel).toBe('menu')
+    for (const i of clickAt(funcTab)) result.current.menuInput(i)
+    tick()
+    // 进菜单与翻页都不要求从头放 —— 不然下面那条分不出来。
+    expect(fromStart()).toEqual([])
+    for (const i of clickAt(back)) result.current.menuInput(i)
+    tick()
+    expect(result.current.panel).toBe('scene')
+    // 点「返回」那一拍只是置信号；原版的 readBGM 在场景线程**下一拍**。
+    expect(fromStart()).toEqual([])
+    tick()
+    expect(fromStart()).toEqual([[scene.sceneMusic, true]])
+    tick()
+    tick()
+    expect(fromStart(), '信号消费之后还在要求从头放 —— 曲子会每拍重开').toHaveLength(1)
   })
 })
