@@ -1,0 +1,69 @@
+{
+  "name": "battle-script25",
+  "description": "xl-3hn：脚本25 的剧情战（battle1）原样照搬 —— 背景、出战名单、三个槽位都是那一行 Fight 数据的原文。这一场是 商塔堂主、武林高手2 的行为真值：没有它，这几只怪的出厂数据抄错了和抄对了长得一样。等级不是脚本里的（Fight 那一行不带等级），取的是主线走到这里大致的等级，够打赢即可。 剧本不能从头 autoAttack：导出器的 autoAttack 固定点第一只还站着的怪的图片中心，而商塔堂主的图大，它的中心 (198,338) 落进了第 3 槽的命中框（xl-1dv.8：EnemySlector 判 em3 用的是 height1），原版选中的是 7 —— 导出器当场硬失败。所以先显式打第 3 槽两下、第 2 槽两下（两只武林高手2 各自倒下的下数是实跑出来的），剩下商塔堂主一只时再 autoAttack。",
+  "driver": "battle",
+  "background": "image/背景图/校园内部.png",
+  "party": [
+    "zhang",
+    "yu"
+  ],
+  "level": {
+    "zhang": 14,
+    "yu": 14
+  },
+  "enemies": [
+    "商塔堂主/5",
+    "武林高手2/6",
+    "武林高手2/7"
+  ],
+  "seed": 20260917,
+  "tickMs": 100,
+  "maxTicks": 12000,
+  "steps": [
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 600
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 600
+    },
+    {
+      "op": "target",
+      "enemy": 3,
+      "budget": 50
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 600
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "command",
+      "button": "attack",
+      "budget": 600
+    },
+    {
+      "op": "target",
+      "enemy": 2,
+      "budget": 50
+    },
+    {
+      "op": "autoAttack",
+      "until": "victory",
+      "max": 10000
+    }
+  ]
+}

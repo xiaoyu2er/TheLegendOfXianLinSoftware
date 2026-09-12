@@ -1,0 +1,29 @@
+{
+  "name": "battle-script3",
+  "description": "xl-3hn：脚本3 的剧情战（battle1）原样照搬 —— 背景、出战名单、三个槽位都是那一行 Fight 数据的原文（校园小道，张小凡 + 陆雪琪，大刀/5 武林高手1/6 武林高手1/7）。这一场是 武林高手1 的行为真值，也是主线连跑当初断在第 4 跳的那一场。等级不是脚本里的（Fight 那一行不带等级），取的是主线走到这里大致的等级，够打赢即可。",
+  "driver": "battle",
+  "background": "image/背景图/校园小道.png",
+  "party": [
+    "zhang",
+    "lu"
+  ],
+  "level": {
+    "zhang": 3,
+    "lu": 3
+  },
+  "enemies": [
+    "大刀/5",
+    "武林高手1/6",
+    "武林高手1/7"
+  ],
+  "seed": 20260912,
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "steps": [
+    {
+      "op": "autoAttack",
+      "until": "victory",
+      "max": 6000
+    }
+  ]
+}

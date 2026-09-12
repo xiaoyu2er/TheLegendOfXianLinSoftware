@@ -1,0 +1,31 @@
+{
+  "name": "battle-script15",
+  "description": "xl-3hn：脚本15 的剧情战（battle1）原样照搬 —— 背景、出战名单、三个槽位都是那一行 Fight 数据的原文。这一场是 文学谷小boss、文学谷大弟子、文学谷护法 的行为真值：没有它，这几只怪的出厂数据抄错了和抄对了长得一样。等级不是脚本里的（Fight 那一行不带等级），取的是主线走到这里大致的等级，够打赢即可。",
+  "driver": "battle",
+  "background": "image/背景图/藏经阁一层.png",
+  "party": [
+    "zhang",
+    "yu",
+    "lu"
+  ],
+  "level": {
+    "zhang": 11,
+    "yu": 11,
+    "lu": 11
+  },
+  "enemies": [
+    "文学谷小boss/5",
+    "文学谷大弟子/6",
+    "文学谷护法/7"
+  ],
+  "seed": 20260915,
+  "tickMs": 100,
+  "maxTicks": 12000,
+  "steps": [
+    {
+      "op": "autoAttack",
+      "until": "victory",
+      "max": 10000
+    }
+  ]
+}

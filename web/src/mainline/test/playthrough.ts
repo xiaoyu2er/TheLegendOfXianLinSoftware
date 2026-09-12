@@ -150,8 +150,13 @@ export interface Fight {
   monsters: readonly string[]
 }
 
-/** 出厂数据的缺口：缺哪几只（全库现数）、链上哪几场撞到它们。 */
+/** 出厂数据的缺口：全库脚本用到哪几只（分母）、其中缺哪几只、链上哪几场撞到它们。 */
 export interface MonsterGap {
+  /**
+   * 全库脚本用到的怪（现数）。`missing` 为空时要靠它分开「一只不缺」与「一只都没收集到」——
+   * 后者的 `missing` 同样是空的（xl-3hn 的 /code-review 逮到的恒真断言）。
+   */
+  used: string[]
   missing: string[]
   fights: Fight[]
 }
@@ -192,7 +197,7 @@ export function monsterGap(
       }
     }
   }
-  return { missing, fights }
+  return { used: [...all].sort(), missing, fights }
 }
 
 /** 缺口的一行读数，打进测试输出（关票理由与新票的数从这里抄）。 */
@@ -208,8 +213,9 @@ export function describeGap(gap: MonsterGap): string {
 }
 
 /**
- * 一跳之内最多推几拍。定法：替身连跑（`playthrough.standin.test.ts`）实测每跳最多 19662 拍
- * （2026-09-11，第 13 跳），取三倍略多。**这是一次读数定的上界**，读数漂了要重量。
+ * 一跳之内最多推几拍。定法：当初是替身连跑（xl-03x.18，替身文件已随 xl-3hn 删掉）实测每跳最多
+ * 19662 拍（2026-09-11，第 13 跳），取三倍略多。xl-3hn 补齐怪之后真实产品连跑重量一次：每跳最多
+ * **20062** 拍（2026-09-12，仍是第 13 跳），60000 约为它的三倍。**这是读数定的上界**，读数漂了要重量。
  */
 export const HOP_BUDGET = 60_000
 

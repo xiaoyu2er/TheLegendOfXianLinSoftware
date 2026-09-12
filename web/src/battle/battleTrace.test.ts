@@ -66,6 +66,17 @@ const IMPLEMENTED: readonly string[] = [
   'battle-mishu-yu',
   'battle-mishu-lu',
   'battle-victory',
+  // xl-3hn：主线上那几场剧情战，原样照搬 Fight 那一行。
+  'battle-script3',
+  'battle-script6',
+  'battle-script12',
+  'battle-script15',
+  'battle-script17',
+  'battle-script25',
+  'battle-script31',
+  'battle-script38-2',
+  'battle-script38-3',
+  'battle-script39',
 ]
 
 /**
