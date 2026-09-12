@@ -1,4 +1,4 @@
-import { START_BUTTONS, startButtonHitBox } from './buttons'
+import { START_BUTTONS, START_BUTTON_WIRING, startButtonHitBox } from './buttons'
 import type { StartButtonKey } from './buttons'
 import {
   createStartPanelState,
@@ -37,11 +37,22 @@ import type { StartEffect, StartPanelState, StartView } from './panelState'
  * xl-whk 评审翻出来的旧账），标记就带在 `buttons.ts` 的头注上。入库剧本的坐标都落在两者一致的内部，真落到那一像素上，状态层判据
  * 会当场对不上。
  *
- * ## 两种产品里走不到的输入：当场抛
+ * ## 禁用的那颗：悬停不收，按下当场抛
+ *
+ * 同一个理由（回放的是产品）：「结」在产品里是 `<button disabled>`（`START_BUTTON_WIRING`），
+ * React 对它不派发 `mouseenter` / `mousemove`，从别的按钮移过去只剩那一颗的 `mouseleave`
+ * —— 等于移到了空处。所以移到禁用的按钮上按 `null` 推，原版 `isMoveIn` 只看坐标、会换图起高亮。
+ * 这一差由 `start-hover-end` 那份真值走到，状态层登成例外格（`startTrace.test.ts` 的
+ * `EXCEPTED`），逐帧比对登成「结」那一块的缺口（`compare/expected.ts`）。
+ * ⚠️ 「React 不派发」是 jsdom 里量的（`StartPanel.test.tsx`），真浏览器没量过。
+ *
+ * @exception ADR-0001#start-exit-disabled
+ *
+ * ## 三种产品里走不到的输入：当场抛
  *
  * 产品的点击是 DOM 按钮上的 `click`（按下 + 松开合成一次，`useStartPanel.ts`），所以
- * 「按在空处」与「在一颗上按、到另一颗上松」都没有对应物。回放遇到就抛 —— 照猜一个
- * 画出来的是另一件事。
+ * 「按在空处」「按在禁用的按钮上」与「在一颗上按、到另一颗上松」都没有对应物。回放遇到就抛
+ * —— 照猜一个画出来的是另一件事。
  */
 
 export type StartInput =
@@ -114,12 +125,15 @@ export function startStartReplay(name: string): StartReplay {
           }
           break
         }
-        case 'move':
-          state = hoverStartButton(moveStartCursor(state, input.x, input.y), buttonAt(state, input.x, input.y))
+        case 'move': {
+          const key = buttonAt(state, input.x, input.y)
+          state = hoverStartButton(moveStartCursor(state, input.x, input.y), key !== null && START_BUTTON_WIRING[key].enabled ? key : null)
           break
+        }
         case 'press': {
           const key = buttonAt(state, input.x, input.y)
           if (key === null) throw new Error(`${where}：按在了空处 —— 产品的点击只落在按钮上，没有对应物`)
+          if (!START_BUTTON_WIRING[key].enabled) throw new Error(`${where}：按在了禁用的 ${key} 上 —— 产品里那颗点不下去，没有对应物`)
           state = pressStartButton(moveStartCursor(state, input.x, input.y), key)
           pressed = key
           break

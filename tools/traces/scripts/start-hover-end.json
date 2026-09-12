@@ -1,0 +1,15 @@
+{
+  "driver": "start",
+  "name": "start-hover-end",
+  "description": "悬停「结」（xl-r0x）。原版 StartButton.isMoveIn 只看坐标，「结」与别的三颗一样：移上去换悬停图、那圈 4 帧高亮开转，移开换回常态、高亮停在第 0 帧。先移上「起」让它亮起来，再直接移到「结」上（进「结」、出「起」），停 5 拍，再移到空处。web 那颗按 ADR-0001 的 start-exit-disabled 画出来、禁用，React 对禁用的按钮不派发 mouseenter，于是悬停不换图、高亮不转 —— 这份真值就是那处登记过的差的原版一侧。单独成一条，不并进 start-about：并进去的话那条的 buttons 字段组整格都要登成例外，别的按钮的逐步对齐就一起丢了。不点「结」：原版松手当场 System.exit(0)，导出器接不住。",
+  "every": 1,
+  "steps": [
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 210, "y": 169 },
+    { "op": "tick", "times": 2 },
+    { "op": "move", "x": 210, "y": 469 },
+    { "op": "tick", "times": 5 },
+    { "op": "move", "x": 600, "y": 300 },
+    { "op": "tick", "times": 2 }
+  ]
+}

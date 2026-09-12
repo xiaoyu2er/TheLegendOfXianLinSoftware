@@ -1,0 +1,33 @@
+{
+  "driver": "start",
+  "name": "start-about-again",
+  "description": "第二次展开「关于我们」时点「起」—— 当场收起，而不是开卷轴进新游戏（xl-r0x）。前半段与 start-about 同形：点「转」展开 10 拍（expect=unfold）、点「回」收起 10 拍（expect=fold）。原版 setButton() 点「回」时先 buttons.remove(back)，后面那圈 isRelesedButton 碰不到它，于是 back.clicked 从此一直是真。再点「转」展开 10 拍（expect=unfold），「回」又被加回列表，clicked 仍是真。这时移上「起」、按下、松开：setButton() 走 isUnfolded 那一支，读到的是 back.isIsclicked() —— buttons.remove(back)、aboutTimer.start(10)、反向卷轴开播、signal=3，不开载入动画；「起」自己的 clicked 由后面那圈清掉。又是 10 拍，第 10 拍 isUnfolded 翻假、signal 复位 -1，expect=fold 核它恰好在这一拍收起。最后再推 2 拍。",
+  "every": 1,
+  "steps": [
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 210, "y": 369 },
+    { "op": "tick", "times": 2 },
+    { "op": "press", "x": 210, "y": 369 },
+    { "op": "release", "x": 210, "y": 369 },
+    { "op": "tick", "times": 10, "expect": "unfold" },
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 810, "y": 569 },
+    { "op": "tick", "times": 1 },
+    { "op": "press", "x": 810, "y": 569 },
+    { "op": "release", "x": 810, "y": 569 },
+    { "op": "tick", "times": 10, "expect": "fold" },
+    { "op": "tick", "times": 2 },
+    { "op": "move", "x": 210, "y": 369 },
+    { "op": "tick", "times": 1 },
+    { "op": "press", "x": 210, "y": 369 },
+    { "op": "release", "x": 210, "y": 369 },
+    { "op": "tick", "times": 10, "expect": "unfold" },
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 210, "y": 169 },
+    { "op": "tick", "times": 2 },
+    { "op": "press", "x": 210, "y": 169 },
+    { "op": "release", "x": 210, "y": 169 },
+    { "op": "tick", "times": 10, "expect": "fold" },
+    { "op": "tick", "times": 2 }
+  ]
+}
