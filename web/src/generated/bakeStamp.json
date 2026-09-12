@@ -16,7 +16,7 @@
     "web/src/battle/skills.ts": "0af061079a2466d3379dca6d8c139b80a9190129ae56fc6282e8fff4c0b2a96f",
     "web/src/battle/types.ts": "653eda3124ff27c126a138c7de694538764c1d95b2c38d60d5f104ffb8bbeeeb",
     "web/src/battle/units.ts": "995cbd76305627329b17dff34aa301200a7d06f26640905c157a563b81475f86",
-    "web/src/battle/victory.ts": "cb9c9cdcfacd19234bb393629e464cdace80e81b25ff6c65bb5b39012da0a110",
+    "web/src/battle/victory.ts": "f04e3c4977623d3d3dfe79be4814af9ca9cca731ad982ee853ff5869c34db0be",
     "web/src/battle/world.ts": "25413c8d22253181385c9e2fcff4abbc918833f2826799bef55f2ef250f294be",
     "web/src/data/bakeScript.ts": "7b9cd374085443de0a69092125992219466ad43959f7203b82d66176207b5911",
     "web/src/data/javaSplit.ts": "7ab857e7be637d3d89033009959d915ddbb5881c9c42e506b6919eb2f03472d5",

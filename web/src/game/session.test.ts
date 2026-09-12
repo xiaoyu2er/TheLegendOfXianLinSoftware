@@ -30,6 +30,7 @@ import {
   NO_INPUT,
   advanceSession,
   battleWorldOf,
+  captureSession,
   menuWorldOf,
   openMenu,
   configFor,
@@ -41,6 +42,7 @@ import type { RunningSession, SessionDeps } from './session'
 import { getAudioSettings, rememberAudioSettings, resetAudioSettings } from './audioSettings'
 import { slotOf, wonBattle } from './test/wonBattle'
 import { equipCount } from '../menu/equipPanel'
+import { EQUIPMENT_LISTS } from '../menu/equipment'
 import { NEXT_SCRIPT_ENEMIES } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 
@@ -935,18 +937,25 @@ describe('打赢掉的装备进全局装备背包（xl-5jx）', () => {
     const { world, loot } = wonBattle(['罹年居士/5', '物理阁护法/6', '大刀/7'], spriteSize)
     expect(new Set([...loot.keys()].map(slotOf)).size, '对照失效：掉的装备没有分属几张表').toBeGreaterThan(1)
     const base = openSession(createWorld(getScene('迷宫1')), deps())
+    const names = [...loot.keys()]
     const before = base.menu.world.panels.equipPanel.equip!
-    const countsBefore = [...loot.keys()].map((n) => equipCount(before, slotOf(n), n))
+    const countsBefore = names.map((n) => equipCount(before, slotOf(n), n))
 
     const done = runBattleToExit({ ...base, panel: 'battle', battle: createBattleTicker(world) }).session
     expect(done.panel, '没打赢 —— 战利品那一拍没走到').toBe('scene')
     // 一次性请求，搬完就清：留着的话下一拍又搬一遍。
     expect(world.lootEquipment).toEqual([])
+    const expected = countsBefore.map((c, i) => c + loot.get(names[i]!)!)
+
+    // 存档那一行（`saveEquipmentShopInfo` 读的也是全局 `EquipmentPack`）：原版写、读档不读回。
+    // 期望值是进战斗前记下的数加战利品 —— 不拿 `owned` 去比，存档本来就是从它抄的，那样恒真。
+    const stock = captureSession(done).neverReadBack.equipmentStock
+    expect(
+      names.map((n) => stock[slotOf(n)][EQUIPMENT_LISTS[slotOf(n)].findIndex((e) => e.name === n)]),
+    ).toEqual(expected)
 
     const equip = menuWorldOf(openMenu(done))!.panels.equipPanel.equip!
-    expect([...loot.keys()].map((n) => equipCount(equip, slotOf(n), n))).toEqual(
-      countsBefore.map((c, i) => c + loot.get([...loot.keys()][i]!)!),
-    )
+    expect(names.map((n) => equipCount(equip, slotOf(n), n))).toEqual(expected)
   })
 
   /**

@@ -31,7 +31,7 @@ import type { BattleWorld } from './types'
  * 2. **两条路端到端**：升级与不升级各跑一遍，断言切面板发生在哪一拍，而那个
  *    拍号是从**解析出来的阈值**算的闭式，不是手写的；两条路差的拍数必须正好
  *    等于 `endAt - levelCheckAt`。
- * 3. **发奖那一拍**：物品与钱落进三个假货里，早一拍空、当拍满、后一拍不再变
+ * 3. **发奖那一拍**：药与钱落进两个假货、装备递到 `lootEquipment` 上（xl-5jx），早一拍空、当拍满、后一拍不再变
  *    —— 三个方向都断言（`thing_sx1==4` 在整场里只出现一次）。
  * 4. **假货登记册的双向对撞**在 `fakes/registry.test.ts`（ADR-0005）。
  *
@@ -202,7 +202,8 @@ function exitTick(expToGet: number, timeCodeTarget: number): number {
 
 describe('打赢之后：结算走完，回地图', () => {
   beforeEach(() => {
-    // 三个假货都是模块级单例（原版是静态字段）。不清的话「上一条用例留下的
+    // 药包与钱包两个假货都是模块级单例（原版是静态字段）。装备不在这里：它递到
+    // `w.lootEquipment` 上，每场架一份新的（xl-5jx）。不清的话「上一条用例留下的
     // 药」与「这一场真的发了药」长得一样。
     resetDrugPack()
     resetWallet()

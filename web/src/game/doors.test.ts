@@ -495,7 +495,9 @@ describe('三扇门：会话真的去了那一块、选「否」留在场景里'
     const names = [...loot.keys()]
     const countOf = (w: NonNullable<ReturnType<typeof shopWorldOf>>, n: string) => {
       const slot = slotOf(n)
-      return w.pack.equipment[slot][EQUIPMENT_LISTS[slot].findIndex((e) => e.name === n)]!
+      const count = w.pack.equipment[slot][EQUIPMENT_LISTS[slot].findIndex((e) => e.name === n)]
+      if (count === undefined) throw new Error(`店里的 ${slot} 表没有「${n}」那一格`)
+      return count
     }
     const before = names.map((n) => countOf(shopWorldOf(session)!, n))
 
