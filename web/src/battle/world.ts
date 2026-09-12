@@ -394,6 +394,7 @@ export function createBattle(config: BattleConfig): BattleWorld {
   const barX = 300
   return {
     tick: 0,
+    music: [],
     exitPanel: null,
     random: new JavaRandom(config.seed),
     background,

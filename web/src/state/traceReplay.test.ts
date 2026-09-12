@@ -194,6 +194,11 @@ const OBSERVERS: Readonly<Record<string, (world: World) => unknown>> = {
     }
   },
   audio: (w) => ({ bgm: w.audio.bgm }),
+  /**
+   * 音效（xl-b36）：这一拍请求过的文件名。真值是每拍清空的瞬时量，世界上对应的是
+   * 只亮一拍的 `sfxRequest`，不亮（`null`）就是 `[]`。
+   */
+  music: (w) => [...(w.sfxRequest ?? [])],
 }
 
 /**
@@ -544,6 +549,28 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
     'mapshort-width',
     'npc-defect',
   ],
+  // 音效（xl-b36）。响过的只有 maze-treasure（开箱）与 question-answer /
+  // question-memory（答题），全是 Clip750.wav；其余十五条守的是「不许凭空出声」。
+  music: [
+    'battle-door',
+    'bigmap-walk',
+    'dorm-exit',
+    'dorm-intro',
+    'dorm-walk',
+    'equipshop-door',
+    'maze-treasure',
+    'milestone',
+    'question-answer',
+    'question-memory',
+    'shop-door',
+    'load-slot0',
+    'load-slot1',
+    'load-slot2',
+    'mapshort-both',
+    'mapshort-height',
+    'mapshort-width',
+    'npc-defect',
+  ],
   // ——— 读档专属那几组（xl-i06.10）。读数见 LOAD_ONLY_GROUPS 的注释。———
   // 剧情进度：对话结束旗标与编号、剧情三元组、两个战斗计数。
   progress: ['load-slot0', 'load-slot1', 'load-slot2'],
@@ -723,6 +750,14 @@ const EMPTY_COLUMNS: Readonly<Record<string, Readonly<Record<string, EmptyColumn
     },
   },
 }
+
+/**
+ * **元素是标量的数组列 —— 手写登记**（xl-b36）。`music` 是一串文件名，没有子字段
+ * 这回事：响过的剧本里 `subKeysOf` 给 `null`（像标量），没响过的给 `[]`（像空的
+ * 对象数组），两种都不是它的真实形状。所以子字段对撞对这几列改核「两边每个元素都是
+ * 字符串」—— 导出器哪天把它写成对象数组，这里红。值对不对归逐 tick 的 `toEqual`。
+ */
+const STRING_ARRAY_COLUMNS: readonly string[] = ['music']
 
 /** 同名只读一次 —— 下面每个格子都要把整条真值跑一遍。 */
 const traceCache = new Map<string, Trace>()
@@ -1005,6 +1040,16 @@ describe('回放行为真值', () => {
       const trace = traceOf(name)
       const snaps = snapshotsOf(name)
       for (const group of Object.keys(ALIGNED)) {
+        if (STRING_ARRAY_COLUMNS.includes(group)) {
+          // 只核真值那一侧的形状：观察函数那一侧由它的返回类型钉死，再核是恒真
+          // （/code-review Standards 轴提的）。不计进 `compared` —— 这不是子字段对撞。
+          const isStrings = (v: unknown): boolean => Array.isArray(v) && v.every((x) => typeof x === 'string')
+          expect(
+            trace.ticks.every((tick) => isStrings(columnsOf(tick)[group])),
+            `${name} 的 ${group} 在真值里不是字符串数组`,
+          ).toBe(true)
+          continue
+        }
         const truth = unionSubKeys(trace.ticks.map((tick) => columnsOf(tick)[group]))
         const got = unionSubKeys(snaps.map((snap) => snap[group]))
         if (truth === null) {

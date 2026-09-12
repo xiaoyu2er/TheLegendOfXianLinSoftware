@@ -61,11 +61,16 @@ describe('settleSceneRequests', () => {
  * 只由会话层记」那张清单的可执行形式，不照抄任何写下来的名单。
  */
 const PANEL_SWITCHES: readonly (keyof SceneRequests)[] = ['battleRequest', 'selectPanelRequest', 'endRequest']
+/**
+ * 第三类：音效（xl-b36）。既不记账也不切面板 —— 会话层把它收进 `Session.sfx`
+ * 交给播放器，取图页不出声、不接它。判据在 `sfxWiring.test.ts`。
+ */
+const SOUNDS: readonly (keyof SceneRequests)[] = ['sfxRequest']
 
 describe('场景请求的分工', () => {
-  it('每一类请求恰好归一边：记账（共用）或切面板（只有会话层）', () => {
+  it('每一类请求恰好归一边：记账（共用）、切面板或音效（后两类只有会话层）', () => {
     const all = Object.keys(NO_REQUESTS).sort()
     // 拼起来与分母逐项相等：漏归队（短一个）与两边都登记（多一个）都在这一句红。
-    expect([...LEDGER_REQUESTS, ...PANEL_SWITCHES].sort()).toEqual(all)
+    expect([...LEDGER_REQUESTS, ...PANEL_SWITCHES, ...SOUNDS].sort()).toEqual(all)
   })
 })

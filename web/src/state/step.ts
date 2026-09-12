@@ -293,7 +293,13 @@ export function step(
    * `d` 是 `Object.assign` 而不是重新赋值：它是 `const`，而下面每一处都在就地
    * 改它。
    */
+  /**
+   * 这一拍请求过的音效（xl-b36）。它们落在 `tre.sounds` 上，而 `resync` 会把 `tre`
+   * 整个换掉 —— 所以换之前先收到这里，收尾时再收一次。
+   */
+  const sounds: string[] = []
   const resync = (): void => {
+    sounds.push(...tre.sounds)
     Object.assign(d, toDraft(base.role))
     npcs = base.npcs.map(toNpcDraft)
     dlg = toDialogueDraft(base.dialogue)
@@ -425,6 +431,8 @@ export function step(
   if (base.sceneSignal) {
     base = { ...base, audio: { bgm: base.sceneMusic }, sceneSignal: false }
   }
+  sounds.push(...tre.sounds)
+  if (sounds.length > 0) req.sfxRequest = sounds
 
   return {
     ...base,

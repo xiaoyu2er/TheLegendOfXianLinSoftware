@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { SfxPlayer } from '../audio/sfxPlayer'
+import { BATTLE_TICK_MS, createBattleTicker } from '../battle/loop'
+import { replayBattle } from '../battle/replay'
+import { readBattleTrace } from '../battle/trace'
+import { decodePng } from '../compare/png'
 import { getScene } from '../data/scenesEager'
 import { resetDrugPack } from '../fakes/drugPack'
 import { resetParty } from '../fakes/party'
@@ -7,11 +12,14 @@ import { resetWallet } from '../fakes/wallet'
 import { MENU_TICK_MS, createMenuTicker } from '../menu/loop'
 import { readMenuTrace, replayMenu } from '../menu/trace'
 import { createMemorySaveStore } from '../save/memoryStore'
+import { loaderReadBack, readSample } from '../save/test/originalSave'
 import { readShopTrace, replayShop, shopInputsOf } from '../shop/trace'
-import { createWorld } from '../state/step'
-import { TRACE_NAMES, readTrace, sceneSourceOf, traceNamesOf } from '../state/trace'
+import { createWorld, initiate } from '../state/step'
+import { TRACE_NAMES, readTrace, replayWorld, sceneSourceOf, traceNamesOf } from '../state/trace'
+import type { Trace } from '../state/trace'
+import { repoPath } from '../test/repoPath'
 import { resetAudioSettings } from './audioSettings'
-import { NO_INPUT, advanceSession, createSession, enterScene, playSfx } from './session'
+import { NO_INPUT, advanceSession, applyReadBack, createSession, enterScene, playSfx } from './session'
 import type { RunningSession, SessionDeps, SessionInput } from './session'
 
 /**
@@ -49,13 +57,18 @@ import type { RunningSession, SessionDeps, SessionInput } from './session'
  *   它是「谁已经接上了」，改成从磁盘推就成了被守的东西给自己签字（dispatch.md
  *   纪律 3 的那条 ⚠️）。
  *
- * 两者对撞：分母里任何一份的驱动器不在登记里 → 红，点名它归哪张票（篡改读数：
+ * 两者对撞：分母里任何一份的驱动器不在登记里 → 红，点名它（篡改读数：
  * 把 `menu` 从登记里删掉，「每一份都已接线」与「集合 == 分母」两条红）。战斗与
- * 场景两支今天**没有音效真值**，所以不在分母里 —— 它们归 xl-b36。
+ * 场景两支是 xl-b36 接上的：它们的真值一导出音效列，这两条就点名红过。
  *
- * ⚠️ 分母只认**每一步顶层的 `music` 列**（`MusicTap` 的现成写法，menu / shop /
- * saveload / end 四支都是它）。xl-b36 要是把音效导到别处（比如 `audio` 底下），
- * 这里扫不到、会安静地保持绿 —— 那张票的票面写着要照 `MusicTap` 导。
+ * ⚠️ 分母只认**每一步顶层的 `music` 列**（`MusicTap` 的现成写法，六支驱动器都是它）。
+ * 哪天有人把音效导到别处（比如 `audio` 底下），这里扫不到、会安静地保持绿。
+ *
+ * ## 战斗与场景的「并拍」和菜单商店不一样
+ *
+ * 那两支每一步都是一段流逝的时间（战斗 100 ms、场景 10 ms），没有「纯事件步」可并。
+ * 它们的并拍是**后一步没有输入时，把两段时间并进同一次 pump**（`joinQuiet`）——
+ * 一次推进跑两拍，交出去的必须是两拍依次相接。读当前值的写法在这里只剩后一拍的。
  */
 
 const DEPS: SessionDeps = {
@@ -76,6 +89,50 @@ interface Replay {
   readonly steps: readonly Step[]
   /** 真值逐步的 `music` 列 —— 期望值，一个都不是手写的。 */
   readonly truth: readonly (readonly string[])[]
+  /**
+   * 相邻两步能不能并进一次 pump、并成什么；`null` = 不能。不给就用菜单商店那条
+   * （`joinEvents`：两步都是纯事件步）。
+   */
+  readonly join?: (a: Step, b: Step) => Step | null
+  /**
+   * 回放到哪一刻两边就不再是同一个世界、得停下（`true` = 停）。不给就跑完。
+   *
+   * 只有场景要它：`SceneDriver` 没有面板切换，选了「是」进门之后照样往场景里按键；
+   * 会话层这时已经切到战斗 / 商店，键不再交给场景（`keyReceiver`）。两边从那一刻起
+   * 分家，再往下喂只会撞上「战斗进行中又起了一场」。截断之后的真值**不许有一声**
+   * —— 那条判据在下面，免得截断把没对上的声音藏起来。
+   */
+  readonly until?: (s: RunningSession) => boolean
+}
+
+/** 菜单与商店：两步都不带时间（纯事件步）才并，输入依次相接。 */
+function joinEvents(a: Step, b: Step): Step | null {
+  if (a.elapsed !== 0 || b.elapsed !== 0) return null
+  return { input: mergeInputs(a.input, b.input), elapsed: 0 }
+}
+
+/** 战斗与场景：后一步没有输入时，两段时间并进一次推进（见头注）。 */
+function joinQuiet(a: Step, b: Step): Step | null {
+  const quiet = Object.values(b.input).every((events) => events === undefined || events.length === 0)
+  return quiet ? { input: a.input, elapsed: a.elapsed + b.elapsed } : null
+}
+
+/** 怪物出场图的像素尺寸，照 `battleTrace.test.ts` 的读法（从图里读，不从真值里读）。 */
+function spriteSize(name: string): { width: number; height: number } {
+  const png = decodePng(readFileSync(repoPath('image/怪物', name, '1.png')))
+  return { width: png.width, height: png.height }
+}
+
+/**
+ * 场景剧本的起手。读档剧本照 `state/traceReplay.test.ts` 的 `loadedSession`：有 `warmup`
+ * 先进一局，再走会话层真正的读档那一路。
+ */
+function sceneStart(trace: Trace): RunningSession {
+  if (trace.script.load === undefined) return enterScene(createSession(DEPS), replayWorld(trace, getScene))
+  let s = createSession(DEPS)
+  const { warmup, load } = trace.script
+  if (warmup !== null) s = enterScene(s, initiate(null, getScene(warmup.replace(/\.txt$/, ''))))
+  return applyReadBack(s, loaderReadBack(readSample(`存档${load}.txt`)))
 }
 
 /**
@@ -120,6 +177,28 @@ const WIRED: Readonly<Record<string, (name: string) => Replay>> = {
       start: { ...running(), panel: 'shop', shop: replayShop(trace) },
       steps: shopInputsOf(trace).map((shop) => ({ input: { ...NO_INPUT, shop }, elapsed: 0 })),
       truth: musicColumn(name, trace.ticks as unknown as Record<string, unknown>[]),
+    }
+  },
+  // xl-b36。战斗真值从面板建好之后开始（`BattleDriver`），所以同菜单商店：直接把
+  // 战斗换成照剧本回显建的那一场，不走场景起战斗那条路。一步 = 一拍 = 100 ms。
+  battle: (name) => {
+    const trace = readBattleTrace(name)
+    return {
+      start: { ...running(), panel: 'battle', battle: createBattleTicker(replayBattle(trace, spriteSize)) },
+      steps: trace.ticks.map((tick) => ({ input: { ...NO_INPUT, battle: tick.input }, elapsed: BATTLE_TICK_MS })),
+      truth: musicColumn(name, trace.ticks as unknown as Record<string, unknown>[]),
+      join: joinQuiet,
+    }
+  },
+  // xl-b36。场景真值从进场景起，一步 = 一个 tick（`tickMs`）。
+  scene: (name) => {
+    const trace = readTrace(name)
+    return {
+      start: sceneStart(trace),
+      steps: trace.ticks.map((tick) => ({ input: { ...NO_INPUT, scene: tick.input }, elapsed: trace.script.tickMs })),
+      truth: musicColumn(name, trace.ticks as unknown as Record<string, unknown>[]),
+      join: joinQuiet,
+      until: (s) => s.panel !== 'scene',
     }
   },
 }
@@ -174,26 +253,37 @@ const IDLE_PUMPS = 3
 function stepThenIdle(replay: Replay): string[][] {
   const { player, take } = recorder()
   let s = replay.start
-  return replay.steps.map((step) => {
+  const out: string[][] = []
+  for (const step of replay.steps) {
     s = pump(s, step, player)
     for (let i = 0; i < IDLE_PUMPS; i++) s = pump(s, IDLE, player)
-    return take()
-  })
+    out.push(take())
+    if (replay.until?.(s)) break
+  }
+  return out
+}
+
+/** 截断之后那一截真值（见 `Replay.until`）。 */
+function tailAfter(replay: Replay, replayed: number): readonly (readonly string[])[] {
+  return replay.truth.slice(replayed)
 }
 
 /**
- * 喂法二：相邻两个**纯事件**步（都不带脉冲）并进同一拍。返回 `[步号们, 交出去的]`。
+ * 喂法二：相邻两步并进同一拍（怎么并由各支的 `join` 说了算）。返回 `[步号们, 交出去的]`。
  * 期望是那几步真值的依次相接 —— 一拍里推了几步，就该交几步的。
  */
 function pairedPumps(replay: Replay): { steps: number[]; got: string[] }[] {
   const { player, take } = recorder()
+  const join = replay.join ?? joinEvents
   let s = replay.start
   const out: { steps: number[]; got: string[] }[] = []
   for (let i = 0; i < replay.steps.length; ) {
     const a = replay.steps[i]!
     const b = replay.steps[i + 1]
-    if (b && a.elapsed === 0 && b.elapsed === 0) {
-      s = pump(s, { input: mergeInputs(a.input, b.input), elapsed: 0 }, player)
+    const joined = b ? join(a, b) : null
+    if (replay.until?.(s)) break
+    if (joined !== null) {
+      s = pump(s, joined, player)
       out.push({ steps: [i, i + 1], got: take() })
       i += 2
     } else {
@@ -234,7 +324,7 @@ describe('音效接线 —— 分母与登记对撞', () => {
     )
     expect(
       unwired,
-      '这几份真值声明了音效，而它们的驱动器没人经由会话层回放（战斗 / 场景归 xl-b36）',
+      '这几份真值声明了音效，而它们的驱动器没人经由会话层回放',
     ).toEqual([])
   })
 
@@ -256,9 +346,12 @@ for (const driver of Object.keys(WIRED)) {
       it(`${name}：一步一拍、拍间空转 —— 每一步交给播放器的 == 真值那一步`, () => {
         const replay = WIRED[driver]!(name)
         const got = stepThenIdle(replay)
-        replay.truth.forEach((want, t) => {
-          expect(got[t], `${name}@${t}`).toEqual(want)
+        expect(got.length, `${name} 一步都没回放`).toBeGreaterThan(0)
+        got.forEach((heard, t) => {
+          expect(heard, `${name}@${t}`).toEqual(replay.truth[t])
         })
+        // 截断（`Replay.until`）之后的真值不许有一声 —— 否则截断就把没对上的声音藏起来了。
+        expect(tailAfter(replay, got.length).flat(), `${name} 截断在第 ${got.length} 步，而后面还有声音`).toEqual([])
       })
 
       it(`${name}：两步并一拍 —— 交出去的 == 那几步真值依次相接`, () => {
@@ -269,6 +362,8 @@ for (const driver of Object.keys(WIRED)) {
         for (const { steps, got } of pumps) {
           expect(got, `${name}@${steps.join('+')}`).toEqual(steps.flatMap((t) => replay.truth[t]!))
         }
+        const replayed = pumps.reduce((n, p) => n + p.steps.length, 0)
+        expect(tailAfter(replay, replayed).flat(), `${name} 截断在第 ${replayed} 步，而后面还有声音`).toEqual([])
       })
     }
   })

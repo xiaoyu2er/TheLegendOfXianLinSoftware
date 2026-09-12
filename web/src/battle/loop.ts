@@ -67,11 +67,19 @@ export interface BattleTicker {
   readonly pending: readonly BattleInput[]
   /** 时间加速倍率，`tools.Clock.factor` 的对应物。乘在**真实流逝的毫秒**上。 */
   readonly timeScale: number
+  /**
+   * **这一次** `advanceBattle` 跑过的每一拍请求的音效，依次相接（xl-b36）。
+   * `world.music` 每拍清空，一次推进常常跑好几拍（或者零拍），所以会话层要的
+   * 「这一次推进出了哪几声」只能在这里逐拍收，不能事后读世界。
+   */
+  readonly sfx: readonly string[]
 }
+
+const NO_SFX: readonly string[] = []
 
 export function createBattleTicker(world: BattleWorld, timeScale = 1): BattleTicker {
   if (!(timeScale > 0)) throw new Error(`时间倍率必须为正，收到 ${timeScale}`)
-  return { world, paint: createPaintState(world), carryMs: 0, pending: [], timeScale }
+  return { world, paint: createPaintState(world), carryMs: 0, pending: [], timeScale, sfx: NO_SFX }
 }
 
 /**
@@ -95,12 +103,14 @@ export function advanceBattle(
   const budget = ticker.carryMs + Math.max(0, elapsedMs) * ticker.timeScale
   const ticks = Math.floor(budget / BATTLE_TICK_MS)
   if (ticks === 0) {
-    return { ...ticker, carryMs: budget, pending: queue }
+    return { ...ticker, carryMs: budget, pending: queue, sfx: NO_SFX }
   }
+  const heard: string[] = []
   for (let i = 0; i < ticks; i++) {
     stepBattleWithPaint(ticker.world, ticker.paint, i === 0 ? queue : EMPTY)
+    heard.push(...ticker.world.music)
   }
-  return { ...ticker, carryMs: budget - ticks * BATTLE_TICK_MS, pending: [] }
+  return { ...ticker, carryMs: budget - ticks * BATTLE_TICK_MS, pending: [], sfx: heard }
 }
 
 const EMPTY: readonly BattleInput[] = []
@@ -131,13 +141,15 @@ export function stepBattleWithPaint(
   paint: PaintState,
   inputs: readonly BattleInput[] = EMPTY,
 ): void {
+  // 一拍的开头：音效从这里清（xl-b36），输入里出的声算进这一拍。
+  world.music.length = 0
   for (const input of inputs) {
     // 顺序照抄原版：事件处理器先跑（读这一条**之前**的 `command.isDraw`），
     // 跑完它自己就可能把 `isDraw` 改掉，下一条读到的是改过的。
     applyPaintInput(world, paint, input)
     applyBattleInput(world, input)
   }
-  // 输入已经在上面喂完了，这里不再传。
-  stepBattle(world)
+  // 输入已经在上面喂完了，这里不再传；也不再清音效（上面已经清过）。
+  stepBattle(world, EMPTY, false)
   advancePaintState(world, paint)
 }

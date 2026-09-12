@@ -396,6 +396,15 @@ export interface BattleWorld {
   /** 逻辑拍号，等价于导出器的 `t`；每调一次 `stepBattle` 加一。 */
   tick: number
   /**
+   * **这一拍**请求过的音效文件名，按先后（xl-b36）—— 原版 `MusicReader.readmusic`
+   * 的入参，与导出器 `MusicTap` 记的是同一样东西。每拍开头清空（`stepBattle` /
+   * `stepBattleWithPaint`），所以它是瞬时量，不是「当前该响什么」。
+   *
+   * ⚠️ 它证的是「该响的那一拍请求了哪几声」，证不了玩家真的听到了（自动播放策略、
+   * 解码、音量都不在这一层）。
+   */
+  music: string[]
+  /**
    * `GameLauncher.switchTo(...)` 把面板切到了哪一块 —— 还没切是 `null`。
    *
    * 打输的两条出口只靠 `GameOver.update()` 里一句字符串比较分岔，而**分岔的

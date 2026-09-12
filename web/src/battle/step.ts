@@ -55,7 +55,13 @@ export interface BattleDebugKey {
   readonly key: 'j'
 }
 
-export function stepBattle(w: BattleWorld, inputs: readonly BattleInput[] = []): BattleWorld {
+/**
+ * `freshTick` = 这一次调用是不是一拍的开头。是的话先清空 `w.music`（xl-b36）。
+ * `stepBattleWithPaint` 自己先喂了输入、再调这里，那种调用传 `false` —— 否则
+ * 输入里出的声（J 键秒杀 → 胜利那三声）会在这里被抹掉。
+ */
+export function stepBattle(w: BattleWorld, inputs: readonly BattleInput[] = [], freshTick = true): BattleWorld {
+  if (freshTick) w.music.length = 0
   for (const input of inputs) applyBattleInput(w, input)
 
   // ↓↓↓ 以下顺序逐行对应 BattlePanel.run() 的循环体 ↓↓↓
@@ -702,6 +708,11 @@ function updateBeAttacked(w: BattleWorld, a: BeAttackedAnim): void {
   }
   if (a.code !== a.length) return
   a.code = 0
+  // `BeAttackedAnimation.update()` 那句 `readmusic("刀声.wav")` 缩进得像是 `else`
+  // 里的，其实不是：`else currentTime++;` 没有花括号，只管一句。于是**每转完一圈
+  // 都响**，最后一圈（停下来那一次）也响（xl-b36）。这一支里别的都不出声，所以
+  // 放在这里与原版排在末尾同序。
+  w.music.push('刀声.wav')
   if (a.currentTime !== a.times) {
     a.currentTime++
     return
@@ -1270,7 +1281,24 @@ function launchAttackCheck(w: BattleWorld): void {
   }
 }
 
+/**
+ * `LaunchAttack.checkZhang/checkWen/checkLu` 每一支都以一句 `readmusic` 起头：
+ * 普攻、五个技能、秘术，三个人各七处，一处都不看灵力够不够 —— 声音在
+ * `skillAttack` **之前**，灵力不够那一招照样响（xl-b36）。
+ */
+const ATTACK_SOUND: Readonly<Record<Hero['spec']['key'], string>> = {
+  zhang: '张小凡攻击(2).wav',
+  yu: '文敏攻击(2).wav',
+  lu: '陆雪琪攻击(2).wav',
+}
+
 function checkHeroTurn(w: BattleWorld, h: Hero): void {
+  // 七支各自以攻击声起头；下面三支互斥（普攻那支把 currentPattern 归零），所以
+  // 进来时是 1..7 就恰好响一声，收成这一句与逐支写等价。文敏技能1 多一声，排在后面。
+  if (w.currentPattern >= 1 && w.currentPattern <= 7) {
+    w.music.push(ATTACK_SOUND[h.spec.key])
+    if (h.spec.key === 'yu' && w.currentPattern === 2) w.music.push('伏虎冲天.wav')
+  }
   if (w.currentPattern === 1) {
     w.hurtValues.length = 0
     heroCalDamage(w, h)
@@ -1891,6 +1919,9 @@ export function checkEnemyDead(w: BattleWorld): void {
   }
   for (const h of w.heroes) if (h.exp >= h.expToLevelUp) levelUp(h)
   for (const h of w.heroes) {
+    // `Check.checkEnemyDead` 里 `readmusic("战斗胜利.MP3")` 在**这个循环里面**：
+    // 出战几个人响几声（xl-b36）。MP3 走的也是音效那条通道，烘焙里有它。
+    w.music.push('战斗胜利.MP3')
     // VictoryAnimation.start()
     h.isDraw = false
     h.deadAnimation.isDraw = false
@@ -1944,11 +1975,9 @@ function checkHeroDead(w: BattleWorld): void {
     h.deadAnimation.isStop = false
   }
   if (!w.heroes.every((h) => h.isDead)) return
-  // 原版这里还有一句 `MusicReader.readmusic("战斗失败.wav")`。**还没做，不是
-  // 故意不复刻**（所以不带 ADR-0001 的例外标记）：`readmusic` 走的是另一个
-  // MusicPlayer，碰不到 `currentPlayingBGM` —— 导出器的 `audio.bgm` 取的正是后者；
-  // 音效有自己的观察点 tools.MusicLog，而 `BattleDriver` 没接它，所以战斗真值里
-  // 没有音效列可对。战斗的音效连同真值归 xl-b36（xl-03x.7 只接了菜单与商店）。
+  // `MusicReader.readmusic("战斗失败.wav")`（xl-b36）。它走的是音效那个
+  // MusicPlayer，碰不到 `currentPlayingBGM`，所以 `audio.bgm` 不跟着变。
+  w.music.push('战斗失败.wav')
   w.progressBar.isDraw = false
   w.gameOver.isDraw = true
   w.gameOver.isStop = false
