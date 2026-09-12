@@ -221,7 +221,7 @@ export function useGame(
   const menuInputRef = useRef<MenuInput[]>([])
   /**
    * 鼠标在哪个面板上按下、还没松开 —— 「按下时那个面板」（xl-z4f 菜单，xl-o9z 收拢到
-   * 三个鼠标面板）。松手照它派，不照当前面板：见 `pointer`。
+   * 三个鼠标面板）。松手照它派，不照当前面板：见 `routeByGrab`。
    */
   const grabRef = useRef<GrabOwner | null>(null)
   /** 店里的鼠标事件，攒到下一拍（xl-yg6.11）。 */
@@ -813,7 +813,7 @@ export function useGame(
    *
    * App 那一层只记按下那一刻的外接矩形（换算坐标用），**归谁只在这里定**。
    */
-  const pointer = <I extends { readonly e: string }>(owner: GrabOwner, input: I, queue: { current: I[] }): void => {
+  const routeByGrab = <I extends { readonly e: string }>(owner: GrabOwner, input: I, queue: { current: I[] }): void => {
     if (input.e === 'release') {
       if (grabRef.current !== owner) return
       grabRef.current = null
@@ -825,8 +825,8 @@ export function useGame(
     queue.current.push(input)
   }
 
-  /** 存读档面板上的一次鼠标事件。面板没开着就丢掉；松手见 `pointer`。 */
-  const lsInput = (input: SaveLoadInput): void => pointer('ls', input, lsInputRef)
+  /** 存读档面板上的一次鼠标事件。面板没开着就丢掉；松手见 `routeByGrab`。 */
+  const lsInput = (input: SaveLoadInput): void => routeByGrab('ls', input, lsInputRef)
 
   const openLoad = (): void => {
     openLoadRef.current = true
@@ -844,7 +844,7 @@ export function useGame(
    * 三种都要送：`press` / `release` / `move`。只送 `press` 的话按钮永远停在
    * 「按下」那一张贴图上（`isclicked` 也不清），而那看起来像"点了一下就卡住"。
    */
-  const menuInput = (input: MenuInput): void => pointer('menu', input, menuInputRef)
+  const menuInput = (input: MenuInput): void => routeByGrab('menu', input, menuInputRef)
 
   /** 菜单画布上这个坐标该挂的 `title`。读的是此刻的菜单世界，见 `GameView.menuTitleAt`。 */
   const menuTitleAt = (x: number, y: number): string | null => {
@@ -853,8 +853,8 @@ export function useGame(
     return world === null ? null : menuDisabledReasonAt(world, x, y)
   }
 
-  /** 店里的一次鼠标事件（舞台**逻辑坐标**）。店没开着就丢掉；松手见 `pointer`。 */
-  const shopInput = (input: ShopInput): void => pointer('shop', input, shopInputRef)
+  /** 店里的一次鼠标事件（舞台**逻辑坐标**）。店没开着就丢掉；松手见 `routeByGrab`。 */
+  const shopInput = (input: ShopInput): void => routeByGrab('shop', input, shopInputRef)
 
   const restart = (): void => {
     resetParty()
