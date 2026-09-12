@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { basename } from 'node:path'
+import { relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../../test/repoPath'
 import { tsFiles } from '../../test/scanRoots'
@@ -36,7 +36,7 @@ const ADR = [
 
 const CTX: Context = {
   exceptions: parseExceptions(ADR),
-  tests: new Set(['walk.test.ts', 'bg.test.tsx']),
+  tests: new Set(['web/src/a/walk.test.ts', 'web/src/x/bg.test.tsx']),
   scripts: new Set(['dorm-walk']),
 }
 
@@ -173,6 +173,25 @@ describe('problems', () => {
     )
   })
 
+  it('带目录的引用按路径核：目录写错、别处恰好有同名文件也不算', () => {
+    expect(problems(ok.replace('剧本 `dorm-walk`', '`web/src/wrong/bg.test.tsx`'), SNAP, CTX).join('\n')).toMatch(
+      /wrong\/bg\.test\.tsx.*不存在/,
+    )
+  })
+
+  it('`x.test.ts-old` 不许被截成 `x.test.ts`', () => {
+    expect(problems(ok.replace('剧本 `dorm-walk`', '`walk.test.ts-old`'), SNAP, CTX).join('\n')).toMatch(
+      /走路.*没引到任何一份存在的测试或剧本/,
+    )
+  })
+
+  it('判据自己的测试文件不算「能」行的依据（按构造成立）', () => {
+    const self = { ...CTX, tests: new Set([...CTX.tests, 'web/src/mainline/test/playerCoverage.test.ts']) }
+    expect(problems(ok.replace('剧本 `dorm-walk`', '`playerCoverage.test.ts`'), SNAP, self).join('\n')).toMatch(
+      /走路.*没引到任何一份存在的测试或剧本/,
+    )
+  })
+
   it('引的测试文件在磁盘上不存在 → 红（哪一行都一样）', () => {
     expect(problems(ok.replace('| 读代码 |', '| `gone.test.ts` |'), SNAP, CTX).join('\n')).toMatch(
       /gone\.test\.ts.*不存在/,
@@ -197,7 +216,7 @@ describe('parseExceptions', () => {
 function realContext(): Context {
   const tests = new Set(
     tsFiles({ tests: true })
-      .map((p) => basename(p))
+      .map((p) => relative(repoPath('.'), p))
       .filter((n) => /\.test\.tsx?$/.test(n)),
   )
   const scripts = new Set(

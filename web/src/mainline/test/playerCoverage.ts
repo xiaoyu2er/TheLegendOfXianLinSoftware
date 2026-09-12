@@ -81,8 +81,13 @@ const REF = /(xl-[0-9a-z]+(?:\.[0-9]+)*)(?![0-9a-z-])(?:（(open|closed)）)?/g
 const READING = /共 (\d+) 行（能 (\d+) · 不能 (\d+) · 能但不对 (\d+)）/
 /** 例外键的引用。尾部断言与 `adrExceptions.test.ts` 的 `STRICT` 同一个理由：`#a-b.bak` 不许被截成 `#a-b`。 */
 const EXC = /ADR-0001#([a-z0-9]+(?:-[a-z0-9]+)*)(?![\w.#-])/g
-/** 测试文件的引用：带不带目录、带不带反引号都认，按文件名比。 */
-const TEST = /([\w./-]*?)([\w.-]+\.test\.tsx?)(?![\w.])/g
+/**
+ * 测试文件的引用，带不带反引号都认。只写文件名的按文件名比；**带了目录的按路径比**（路径的尾巴要
+ * 对得上），否则目录写错而别处恰好有同名文件也会过。尾部断言让 `x.test.ts-old` 不被截成 `x.test.ts`。
+ */
+const TEST = /[\w./-]*\.test\.tsx?(?![\w.-])/g
+/** 判据自己的测试文件不算任何一行的依据 —— 引它按构造成立。 */
+const SELF = /(?:^|\/)(?:playerCoverage|issueIdentity)\.test\.ts$/
 const BACKTICKED = /`([^`]+)`/g
 /** 「不能 / 不对」判定后面必须跟一句欠的是什么：`**不能**：……`。 */
 const OWED = /^\*\*(?:不能|能，但不对)\*\*[：:]\s*\S/
@@ -95,7 +100,8 @@ export function parseExceptions(adr: string): Map<string, Exception> {
   const end = lines.findIndex((l, i) => i > start && l.startsWith('## '))
   const out = new Map<string, Exception>()
   for (const line of lines.slice(start + 1, end < 0 ? undefined : end)) {
-    const m = /^\|\s*`([a-z0-9-]+)`\s*\|/.exec(line)
+    // 键的形状与扫描器的 `KEY` 同一条（`adrExceptions.test.ts`）：两处分叉的话，同一行在一边是键、在另一边不是。
+    const m = /^\|\s*`([a-z0-9]+(?:-[a-z0-9]+)*)`\s*\|/.exec(line)
     if (m) out.set(m[1]!, { signed: !line.includes('待签') })
   }
   // 读出零行时，每个例外引用都「不存在」—— 会红，但红的理由会被读错。
@@ -104,7 +110,10 @@ export function parseExceptions(adr: string): Map<string, Exception> {
 }
 
 const exceptionsIn = (text: string): string[] => [...text.matchAll(EXC)].map((m) => m[1]!)
-const testsIn = (text: string): string[] => [...text.matchAll(TEST)].map((m) => m[2]!)
+const testsIn = (text: string): string[] => [...text.matchAll(TEST)].map((m) => m[0])
+/** `ctx.tests` 是仓库相对路径。 */
+const testExists = (ctx: Context, ref: string): boolean =>
+  [...ctx.tests].some((p) => (ref.includes('/') ? p === ref || p.endsWith(`/${ref}`) : p.split('/').pop() === ref))
 const backticked = (text: string): string[] => [...text.matchAll(BACKTICKED)].map((m) => m[1]!.trim())
 
 function refsIn(text: string, line: number): Ref[] {
@@ -170,7 +179,7 @@ export function problems(md: string, snapshot: Snapshot, ctx: Context): string[]
       if (!ctx.exceptions.has(key)) out.push(`第 ${i + 1} 行：ADR-0001#${key} 在 ADR-0001 的例外表里不存在`)
     }
     for (const name of testsIn(text)) {
-      if (!ctx.tests.has(name)) out.push(`第 ${i + 1} 行：${name} 在 web/ 的测试文件里不存在`)
+      if (!testExists(ctx, name)) out.push(`第 ${i + 1} 行：${name} 在 web/ 的测试文件里不存在`)
     }
   })
 
@@ -188,7 +197,8 @@ export function problems(md: string, snapshot: Snapshot, ctx: Context): string[]
       // 完工判据第 3 条能核到的那一半：引了一份**存在**的测试或剧本。它会不会真的红，这里核不到。
       const evidence = row.cells[4]!
       const cited =
-        testsIn(evidence).some((n) => ctx.tests.has(n)) || backticked(evidence).some((t) => ctx.scripts.has(t))
+        testsIn(evidence).some((n) => !SELF.test(n) && testExists(ctx, n)) ||
+        backticked(evidence).some((t) => ctx.scripts.has(t))
       if (!cited) out.push(`${what}：判「能」，但依据列没引到任何一份存在的测试或剧本`)
       continue
     }
