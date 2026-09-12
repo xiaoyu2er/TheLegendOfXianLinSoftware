@@ -637,7 +637,7 @@ export function useGame(
         loadedBattleRef.current = world
         battleLoadingRef.current = true
         setBattleLoading(true)
-        void battleRenderer.load(battleTextureIds(world)).then(() => {
+        void battleRenderer.load(battleTextureIds(world), 'keep').then(() => {
           if (loadedBattleRef.current !== world) return
           battleLoadingRef.current = false
           setBattleLoading(false)
