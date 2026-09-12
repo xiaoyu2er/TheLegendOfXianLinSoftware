@@ -87,8 +87,20 @@ export interface Rect {
 }
 
 export type DrawOp =
-  /** `g.drawImage(img, x, y, panel)` —— 按原尺寸贴。 */
-  | { readonly kind: 'image'; readonly layer: LayerName; readonly id: AssetId; readonly x: number; readonly y: number }
+  /**
+   * `g.drawImage(img, x, y, panel)` —— 按原尺寸贴。
+   *
+   * `opaque` 只有背景图那一条带：贴的时候**忽略素材的 alpha**，理由见
+   * `BACKGROUND_OPAQUE` 的注释（xl-84z）。
+   */
+  | {
+      readonly kind: 'image'
+      readonly layer: LayerName
+      readonly id: AssetId
+      readonly x: number
+      readonly y: number
+      readonly opaque?: true
+    }
   /** `g.drawImage(img, dx1,dy1,dx2,dy2, sx1,sy1,sx2,sy2, panel)` —— 目标矩形 + 源矩形。 */
   | { readonly kind: 'rect'; readonly layer: LayerName; readonly id: AssetId; readonly dest: Rect; readonly src: Rect }
   /** `g.drawString(s, x, y)` —— **x/y 是基线**，不是行盒左上角。 */
@@ -153,6 +165,33 @@ const SLOT: Readonly<Record<1 | 2 | 3, number>> = { 1: 0, 2: 1, 3: 2 }
 const GAME_OVER_HALF = 512
 
 /**
+ * **背景图贴的时候不看 alpha**（xl-84z）。这不是这边的发明，是原版离屏缓冲的
+ * 三件事叠出来的，每一件都在源码里：
+ *
+ * 1. `bufferedPic = new BufferedImage(W, H, TYPE_INT_ARGB)` —— **非预乘**的
+ *    ARGB，起始整张全透明；
+ * 2. `paint()` 头一句就是 `drawImage(background)`，而 `bufferedGraphics` 在
+ *    整个原版里**只被 `drawImage` 过**：没有 `fillRect` / `clearRect`、没有
+ *    `setComposite`，也就是默认的 SrcOver、**从不清屏**；
+ * 3. 非预乘 SrcOver 的颜色是 `(Cs·as + Cd·ad·(1−as)) / ao`。第一帧 `ad = 0`，
+ *    结果**正好是素材自己的 RGB**（alpha 另记）；此后每帧底下就是上一帧的
+ *    同一种颜色，结果仍是 `Cs`。于是半透明的边在原版的 RGB 里跟不透明一样亮；
+ *    alpha 只在缓冲自己的 alpha 通道里，而那个通道不上屏（导出的 PNG 带着它，
+ *    比对器照例不看 alpha）。
+ *
+ * 这边每帧先清成黑再贴，半透明的边就成了 `Cs·as` —— 「校园小道」那三条边
+ * 实测只有原版的约 0.6 倍亮（alpha 最低 99）。原图 14 张背景里只有它有
+ * alpha<255 的像素，所以别的战斗真值从没撞到。
+ *
+ * ⚠️ 忽略 alpha 是**近似**，不是逐位复刻：原版那一句的 `Cd` 是**上一帧**留下
+ * 的东西，上一帧有别的精灵盖在那条边上时，这一帧的边会按 `1−as` 透出它的残影
+ * （同一块 `BattlePanel` 在 `GameLauncher.init()` 之间跨场复用，所以一场的头几帧
+ * 还可能透出上一场的末帧）。这边不留上一帧，这一项就是零。battle-script3 实测
+ * 这一项在容差内看不见（见 `compare/expected.ts` 那条表态）。
+ */
+const BACKGROUND_OPAQUE = true
+
+/**
  * 画这一帧。**只读**世界与 `PaintState`，一个字段都不写回去。
  */
 export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
@@ -160,7 +199,14 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   const push = (op: DrawOp) => ops.push(op)
 
   // 1 背景图
-  push({ kind: 'image', layer: 'background', id: backgroundId(w.background), x: 0, y: 0 })
+  push({
+    kind: 'image',
+    layer: 'background',
+    id: backgroundId(w.background),
+    x: 0,
+    y: 0,
+    opaque: BACKGROUND_OPAQUE,
+  })
 
   // 2 背景动画
   backgroundAnimOps(w, push)

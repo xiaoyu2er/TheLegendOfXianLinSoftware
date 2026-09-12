@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { decodePng } from '../../compare/png'
 import { javaSource } from '../../test/javaSource'
@@ -101,6 +102,43 @@ describe('25 层的次序对回原版 paint()', () => {
   })
 })
 
+/**
+ * 背景那一条带 `opaque` 的理由，**回到源码上取**（xl-84z）。理由本身写在
+ * `drawList.ts` 的 `BACKGROUND_OPAQUE` 上；这里核它依赖的那几件事还成立。
+ * 没有一份真值能替它作证：比对器不看 alpha，而「原版为什么更亮」恰恰是
+ * alpha 通道里的事。
+ */
+describe('背景图不看 alpha —— 原版离屏缓冲的三件事', () => {
+  const panel = javaSource('src/battle/BattlePanel.java')
+
+  it('离屏缓冲是 TYPE_INT_ARGB（非预乘，起始全透明）', () => {
+    expect(panel).toContain('bufferedPic=new BufferedImage(WIDTH, HEIGHT,BufferedImage.TYPE_INT_ARGB);')
+  })
+
+  it('bufferedGraphics 只被 drawImage 与 setFont 调过 —— 从不清屏', () => {
+    const uses = [...panel.matchAll(/bufferedGraphics\.([A-Za-z]+)\s*\(/g)].map((m) => m[1])
+    // 正面数出来：一个都没抓到就是正则空转，不是「从不清屏」。
+    expect(uses.length).toBeGreaterThan(1)
+    expect(new Set(uses)).toEqual(new Set(['drawImage', 'setFont']))
+  })
+
+  it('整个原版没有一处改合成规则或清屏（各层拿到的都是同一个 bufferedGraphics）', () => {
+    const files = (readdirSync(repoPath('src'), { recursive: true }) as string[]).filter((f) =>
+      f.endsWith('.java'),
+    )
+    // 分母与阳性对照：扫到了文件、而且解码后真读得出 drawImage —— 否则
+    // 「一处都没找到」与「文件没读进来」长得一样。
+    expect(files.length).toBeGreaterThan(50)
+    const text = files.map((f) => javaSource(join('src', f)))
+    expect(text.filter((s) => s.includes('drawImage(')).length).toBeGreaterThan(20)
+    for (const [i, s] of text.entries()) {
+      for (const word of ['setComposite', 'AlphaComposite', 'clearRect']) {
+        expect(s.includes(word), `${files[i]} 里有 ${word}`).toBe(false)
+      }
+    }
+  })
+})
+
 describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
   /**
    * 回放一遍，每一拍收一次清单。**输入照真值喂，状态一个字段都不喂。**
@@ -134,6 +172,14 @@ describe('battle-min 的 404 拍逐拍生成绘制清单', () => {
       // 背景永远是第一条 —— 它没被画的话整屏是黑的，而黑屏在差异图里看着
       // 像"两端都画错了"。
       expect(f.ops[0]!.layer).toBe('background')
+    }
+  })
+
+  it('带 opaque 的恰好是背景那一条，别的层一条都不带（xl-84z）', () => {
+    for (const f of frames) {
+      const opaque = f.ops.filter((op) => op.kind === 'image' && op.opaque)
+      expect(opaque, `第 ${f.t} 拍`).toEqual([f.ops[0]])
+      expect(opaque[0]!.layer).toBe('background')
     }
   })
 

@@ -253,6 +253,36 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
     return made
   }
 
+  /**
+   * 同一张图、alpha 全部抹成 255 —— `DrawOp` 带 `opaque` 的那几条贴它
+   * （只有背景图，理由见 `drawList.ts` 的 `BACKGROUND_OPAQUE`，xl-84z）。
+   *
+   * 按素材缓存，一场一张。经 2D canvas 走一趟会先预乘再还原，alpha 越低
+   * 还原误差越大；背景图最低 alpha 99，误差在 255/99 ≈ 2.6 级以内，远在比对
+   * 容差 8 之下。
+   */
+  const opaqueCache = new Map<AssetId, Texture>()
+
+  function opaqueTexture(id: AssetId, tex: Texture): Texture {
+    const hit = opaqueCache.get(id)
+    if (hit) return hit
+    const resource = tex.source.resource as CanvasImageSource | undefined
+    if (!resource) throw new Error(`去 alpha 取不到 ${id} 的位图源`)
+    const canvas = document.createElement('canvas')
+    canvas.width = tex.width
+    canvas.height = tex.height
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) throw new Error('取不到去 alpha 那张位图的 2D context')
+    ctx.drawImage(resource, tex.frame.x, tex.frame.y, tex.width, tex.height, 0, 0, tex.width, tex.height)
+    const img = ctx.getImageData(0, 0, tex.width, tex.height)
+    for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255
+    ctx.putImageData(img, 0, 0)
+    const made = Texture.from(canvas)
+    made.source.scaleMode = 'nearest'
+    opaqueCache.set(id, made)
+    return made
+  }
+
   function draw(ops: readonly DrawOp[]): void {
     let n = 0
     for (const op of ops) {
@@ -269,7 +299,7 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
       }
       const tex = textureOf(op.id)
       if (op.kind === 'image') {
-        s.sprite.texture = tex
+        s.sprite.texture = op.opaque ? opaqueTexture(op.id, tex) : tex
         s.sprite.position.set(op.x, op.y)
         s.sprite.setSize(tex.width, tex.height)
         s.sprite.visible = true
