@@ -299,36 +299,39 @@ export function App() {
     // 画布上没有 `<button disabled title>` 可挂，禁用按钮的理由按坐标问出来、
     // 挂在宿主上 —— 与标题页「结」同一口径（xl-03x.12）。
     setMenuTitle(view.menuTitleAt(at.x, at.y))
-    if (e === 'press') grabMenuRelease(box)
+    if (e === 'press') grabRelease(box, (p) => view.menuInput({ e: 'release', ...p }))
   }
 
   /**
-   * 松手**不挂在菜单宿主上**，而是按下那一刻挂到 window 上（xl-z4f）。
+   * 松手**不挂在宿主上**，而是按下那一刻挂到 window 上 —— 菜单、店、存读档三块宿主
+   * 共用这一个（xl-z4f 做了菜单，xl-o9z 收拢）。
    *
-   * 按下「返回」那一拍菜单就关了、宿主被 `hidden` 掉，松手于是落在场景宿主上 ——
-   * 宿主自己的 `onMouseUp` 收不到它，而藏着的元素外接矩形全是 0，拿它换算只会
-   * 得到 null。所以坐标按**按下那一刻**的矩形算（舞台在这一下里不会动）。
+   * 按下「返回」那一拍菜单就关了、按着槽位按退出键存读档面板就切走了：宿主被 `hidden`
+   * 掉，松手于是落在别的宿主上 —— 宿主自己的 `onMouseUp` 收不到它，而藏着的元素外接
+   * 矩形全是 0，拿它换算只会得到 null。所以坐标按**按下那一刻**的矩形算（舞台在这一下
+   * 里不会动），送给**按下时那一块**的主人（`send` 在按下时就定了）。反过来，菜单上
+   * 按下「存档」那一拍存读档宿主就露出来了，松手落在它上面也不归它。
    *
-   * 原版的对应物是 Swing 的 mouse grab：松手派给按下时那个组件，不看它还显不
-   * 显示；反过来，没在菜单上按下过的松手也不归菜单。`useGame.menuInput` 那一层
-   * 记着同一个 grab。只接了松手：拖动（Swing 也按 grab 派）不送，差异登记在
-   * `session.ts` 藏着的菜单那一段。
+   * 原版的对应物是 Swing 的 mouse grab。这一层只管 DOM 那一截（事件落在谁身上、坐标
+   * 怎么换算）；**松手归哪个面板**由 `useGame` 的 `grabRef` 定 —— 按下被它丢掉（面板
+   * 对不上）的话，松手也一并丢掉。只接了松手：拖动（Swing 也按 grab 派）不送，差异
+   * 登记在 `session.ts` 藏着的菜单那一段。
    */
-  const menuReleaseRef = useRef<((event: MouseEvent) => void) | null>(null)
-  const grabMenuRelease = (box: DOMRect) => {
-    if (menuReleaseRef.current) window.removeEventListener('mouseup', menuReleaseRef.current)
+  const releaseRef = useRef<((event: MouseEvent) => void) | null>(null)
+  const grabRelease = (box: DOMRect, send: (at: { x: number; y: number }) => void) => {
+    if (releaseRef.current) window.removeEventListener('mouseup', releaseRef.current)
     const onRelease = (event: MouseEvent) => {
       window.removeEventListener('mouseup', onRelease)
-      menuReleaseRef.current = null
+      releaseRef.current = null
       const at = stagePointIn(box, event)
-      if (at) view.menuInput({ e: 'release', x: at.x, y: at.y })
+      if (at) send(at)
     }
-    menuReleaseRef.current = onRelease
+    releaseRef.current = onRelease
     window.addEventListener('mouseup', onRelease)
   }
   useEffect(
     () => () => {
-      if (menuReleaseRef.current) window.removeEventListener('mouseup', menuReleaseRef.current)
+      if (releaseRef.current) window.removeEventListener('mouseup', releaseRef.current)
     },
     [],
   )
@@ -339,27 +342,31 @@ export function App() {
    * 同一张画布两个主人：预览开着时送给预览，否则店真的开着（从选择框的门进来的）
    * 就送给游戏。两边都不在就丢掉。
    */
-  const onShopMouse =
-    (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (!inShopPreview && !inShop) return
-      const at = stagePoint(event)
-      if (!at) return
-      if (inShopPreview) shop.input({ e, x: at.x, y: at.y })
-      else view.shopInput({ e, x: at.x, y: at.y })
-    }
+  const onShopMouse = (e: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!inShopPreview && !inShop) return
+    const box = event.currentTarget.getBoundingClientRect()
+    const at = stagePointIn(box, event)
+    if (!at) return
+    // 松手的主人在按下时就定了：按下时是预览，松手也归预览（见 `grabRelease`）。
+    const send = inShopPreview ? shop.input : view.shopInput
+    send({ e, x: at.x, y: at.y })
+    if (e === 'press') grabRelease(box, (p) => send({ e: 'release', ...p }))
+  }
 
   /**
    * 存读档面板与菜单一样**纯鼠标**（外加退出键，走 `useGame` 的键盘那一路）：
    * 按下 / 松开 / 移动三种都要送 —— 按钮光效走的是 `mouseMoved`。
    */
-  const onLsMouse = (e: 'press' | 'release' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
+  const onLsMouse = (e: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!inLs) return
-    const at = stagePoint(event)
+    const box = event.currentTarget.getBoundingClientRect()
+    const at = stagePointIn(box, event)
     if (!at) return
     // 按住左键移动是 Swing 的 `mouseDragged`（只记坐标、不碰按钮），不是 `mouseMoved`
     // （`isMoveIn` 改光效）。浏览器两种都叫 mousemove，按 `buttons` 分开。
     const kind = e === 'move' && (event.buttons & 1) === 1 ? 'drag' : e
     view.lsInput({ e: kind, x: at.x, y: at.y })
+    if (e === 'press') grabRelease(box, (p) => view.lsInput({ e: 'release', ...p }))
   }
 
   /**
@@ -410,7 +417,6 @@ export function App() {
               ref={shopHostRef}
               hidden={!inShopPreview && !inShop}
               onMouseDown={onShopMouse('press')}
-              onMouseUp={onShopMouse('release')}
               onMouseMove={onShopMouse('move')}
               data-testid="shop-host"
             />
@@ -419,7 +425,6 @@ export function App() {
               ref={lsHostRef}
               hidden={!inLs || inShopPreview}
               onMouseDown={onLsMouse('press')}
-              onMouseUp={onLsMouse('release')}
               onMouseMove={onLsMouse('move')}
               data-testid="ls-host"
             />

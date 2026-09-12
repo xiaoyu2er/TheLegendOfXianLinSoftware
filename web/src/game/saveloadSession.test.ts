@@ -20,6 +20,7 @@ import {
   createSession,
   enterSaveLoad,
   enterScene,
+  loadGame,
   menuWorldOf,
   openMenu,
   saveLoadViewOf,
@@ -66,6 +67,24 @@ function viaMenu(s: RunningSession, which: 'saveButton' | 'readButton'): Running
   s = advanceSession(s, { ...NO_INPUT, menu: menuClick(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
   const b = menuWorldOf(s)!.panels.funcPanel.funcButtons!.main[which]
   return advanceSession(s, { ...NO_INPUT, menu: menuClick(...buttonCenter(b)) }, 0)
+}
+
+/** 照原样转给 `store`，另外按先后记下写过哪几个槽 —— 「连带多存了一个槽」只有这里看得见。 */
+function recording(store: SaveStore): { store: SaveStore; writes: number[] } {
+  const writes: number[] = []
+  return {
+    writes,
+    store: {
+      status: () => store.status(),
+      error: () => store.error(),
+      read: (i) => store.read(i),
+      write: (i, save) => {
+        writes.push(i)
+        store.write(i, save)
+      },
+      persistError: () => store.persistError(),
+    },
+  }
 }
 
 function ready(s: Session) {
@@ -239,5 +258,70 @@ describe('就绪标志：没读上来时不画三个空槽', () => {
     await store.flush()
     expect(ready(s).world.maps[1]).not.toBe('无')
     expect(ready(s).persistError?.message).toMatch(/QuotaExceeded/)
+  })
+})
+
+/**
+ * 按住一个槽不放、按退出键切走面板、再松手（xl-o9z，xl-z4f 的同形）。
+ *
+ * 原版的松手按 Swing 的 grab 派给**按下时**那个组件，不看它还显不显示（读数在
+ * `session.ts` 菜单那一段）。`LoadAndSavePanel.mouseReleased` 于是照样跑：先
+ * `setButton()`（存档就当场存、读档就当场读并 `switchTo("scene")`），再
+ * `isRelesedButton` 把 `isclicked` 清掉。丢了这一下，那颗槽的 `isclicked` 就粘着 ——
+ * 下次进面板随便在哪松一次手，`setButton()` 都会连带把它再存 / 读一遍。
+ *
+ * 会话层只管「收到了就交给那一份面板世界」；哪些事件归它，由送的人按 grab 定
+ * （`useGame` 的 `grabRef`），这里不猜。
+ */
+describe('按着槽位退出面板，松手落在面板藏起来之后（xl-o9z）', () => {
+  const press = (i: number): SaveLoadInput[] => [{ e: 'press', ...slot(i) }]
+  const release = (i: number): SaveLoadInput[] => [{ e: 'release', ...slot(i) }]
+
+  it('存档：松手照样交给藏着的面板 —— 当场存进去、isclicked 清掉；再进来点别的槽不连带', () => {
+    const { store, writes } = recording(createMemorySaveStore())
+    let s = viaMenu(inScene(store), 'saveButton')
+    s = ls(s, press(0))
+    s = ls(s, ESC)
+    expect(s.panel).toBe('menu')
+    // 反向控制：松手之前真的按着、而且还没存 —— 否则下面两条恒真。
+    expect(s.saveload!.buttons[0]!.isclicked, '按下没按着槽 0').toBe(true)
+    expect(writes, '只按下就存了').toEqual([])
+
+    s = ls(s, release(0))
+    expect(s.panel, '藏着的面板收了松手，面板却切了').toBe('menu')
+    expect(writes, '松手没交给藏着的存读档面板 —— 原版这一下当场存进槽 0').toEqual([0])
+    expect(s.saveload!.buttons[0]!.isclicked, '槽 0 的 isclicked 粘着').toBe(false)
+
+    s = advanceSession(
+      s,
+      { ...NO_INPUT, menu: menuClick(...buttonCenter(menuWorldOf(s)!.panels.funcPanel.funcButtons!.main.saveButton)) },
+      0,
+    )
+    expect(s.panel).toBe('ls')
+    s = ls(s, slotClick(1))
+    expect(writes, '点槽 1 连带又存了一遍槽 0').toEqual([0, 1])
+  })
+
+  it('读档：松手照样交给藏着的面板 —— 原版当场读档、switchTo("scene")', () => {
+    let s = viaMenu(inScene(createMemorySaveStore([SAMPLE])), 'readButton')
+    s = ls(s, press(0))
+    s = ls(s, ESC)
+    expect(s.panel).toBe('menu')
+    expect(s.loadRequest, '只按下就读了').toBeNull()
+
+    s = ls(s, release(0))
+    expect(s.loadRequest, '松手没交给藏着的存读档面板 —— 原版这一下当场读槽 0').toBe(0)
+    expect(loadGame(s).panel).toBe('scene')
+  })
+
+  it('标题「承」进来、退回标题之后松手 —— 还没开局也送得到', () => {
+    let s: Session = enterSaveLoad(createSession(deps(createMemorySaveStore([SAMPLE]))), 'load', 'start')
+    s = ls(s, press(0))
+    s = ls(s, ESC)
+    expect(s.panel).toBe('start')
+    expect(s.loadRequest).toBeNull()
+
+    s = ls(s, release(0))
+    expect(s.loadRequest, '没开局时藏着的存读档面板收不到松手').toBe(0)
   })
 })

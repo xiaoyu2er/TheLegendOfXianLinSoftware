@@ -11,7 +11,7 @@ import {
   menuWantsTitle,
 } from '../menu/step'
 import { applySaveLoadInput } from '../saveload/step'
-import type { SaveLoadInput } from '../saveload/step'
+import type { SaveLoadInput, SaveLoadPorts } from '../saveload/step'
 import { createSaveLoadWorld } from '../saveload/world'
 import type { SaveLoadFrom, SaveLoadMode, SaveLoadWorld } from '../saveload/world'
 import type { MenuInput } from '../menu/step'
@@ -601,6 +601,9 @@ export function advanceSession(
   // 场景那条线程照跑，就在下面。
   if (session.panel === 'ls' || session.lsEntry !== null) {
     session = stepSaveLoad(session, input.saveload ?? NO_SAVELOAD_INPUT)
+  } else if (input.saveload !== undefined && input.saveload.length > 0) {
+    // 面板藏着却收到了它的输入：按下时在它上面、松手落在切走之后（xl-o9z），见那里。
+    session = grabbedSaveLoad(session, input.saveload)
   }
   const { deps } = session
   // 还没开局（xl-q7f）：原版这时 `ScenePanel` 那条线程根本没起来，没有世界
@@ -928,6 +931,47 @@ function noCapture(): never {
   throw new Error('存读档面板在不该存档的地方要了一份档')
 }
 
+/** 存读档面板要的外部件。存档只从菜单进得来，菜单只从场景进得去 —— 真要存档时一定开了局。 */
+function saveLoadPorts(session: Session): SaveLoadPorts {
+  return {
+    store: session.deps.saves,
+    capture: () => {
+      if (!isRunning(session)) throw new Error('还没开局就要存档 —— 存档的入口在菜单上，菜单只从场景进得去')
+      return captureSession(session)
+    },
+  }
+}
+
+/**
+ * 存读档面板藏着，却收到了它的输入：Swing 的 mouse grab（xl-o9z，xl-z4f 的同形）。
+ *
+ * 在一个槽上按住、按退出键切走面板（`returnToLastPanel()`）、再松手 —— 原版那一下
+ * 松手照样送到 `LoadAndSavePanel`（grab 按**按下时**那个组件派发，读数在菜单那一段），
+ * `mouseReleased` 整段照跑：`setButton()` 存档就当场存、读档就当场 `load(i)` +
+ * `switchTo("scene")`，然后 `isRelesedButton` 清掉 `isclicked`。丢了这一下，那颗槽
+ * 就粘着，下次进面板随便在哪松一次手都连带把它再存 / 读一遍。
+ *
+ * **哪些事件归它，由送的人按 grab 定**（`useGame` 的 `grabRef`），这里不猜：收到什么
+ * 就逐个 `applySaveLoadInput` 什么，今天送得进来的只有松手。读档照 `stepSaveLoad`
+ * 的口径只记槽号（`loadRequest`），场景取到手那一拍 `loadGame` 才把面板换回场景。
+ * 换面板的另外两种（`menu` / `start`）只有退出键给得出，而键只归当前面板
+ * （{@link keyReceiver}），走不到这里。
+ *
+ * ⚠️ 拖动不送，与菜单同一处有意的差异：`mouseDragged` 在这个面板上只记坐标，
+ * 松手又重写一遍。
+ */
+function grabbedSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadInput[]): S {
+  const w = session.saveload
+  if (w === null) return session
+  const ports = saveLoadPorts(session)
+  let { loadRequest } = session
+  for (const input of inputs) {
+    const loaded = applySaveLoadInput(w, input, ports).loads.at(-1)
+    if (loaded !== undefined) loadRequest = loaded
+  }
+  return loadRequest === session.loadRequest ? session : { ...session, loadRequest }
+}
+
 /**
  * 推存读档面板一批输入。**一个事件一步**，与 saveload 真值同一个口径；面板那条
  * 10 Hz 的动画线程只推绘制量，不在这里（`saveload/world.ts` 头注）。
@@ -936,14 +980,7 @@ function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadIn
   const store = session.deps.saves
   let { saveload, lsEntry, loadRequest } = session
   let panel: Panel = session.panel
-  const ports = {
-    store,
-    // 存档只从菜单进得来，菜单只从场景进得去 —— 走到这里一定开了局。
-    capture: () => {
-      if (!isRunning(session)) throw new Error('还没开局就要存档 —— 存档的入口在菜单上，菜单只从场景进得去')
-      return captureSession(session)
-    },
-  }
+  const ports = saveLoadPorts(session)
   // 就绪的那一拍补上悬着的那一下 `enter`。
   if (lsEntry !== null && store.status() === 'ready') {
     saveload = saveload ?? createSaveLoadWorld(store)
