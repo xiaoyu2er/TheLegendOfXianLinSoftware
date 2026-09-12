@@ -55,7 +55,8 @@ export function createBrowserSaveStore(backend: SaveBackend): BrowserSaveStore {
           throw new Error(`存档槽位 ${i} 读不上来：${(e as Error).message}`, { cause: e })
         }
       })
-      // 全部解析过了才换进快照：半截快照与「那几个槽是空的」同样分不开。
+      // 全部解析过了才换进快照：半截快照与「那几个槽是空的」同样分不开。原版三个槽各读各的，
+      // 坏一个不连累别的 —— 这里坏一个整个仓库 failed。@exception ADR-0001#fail-loud-where-original-swallows
       parsed.forEach((save, i) => (slots[i] = save))
       status = 'ready'
     } catch (e) {

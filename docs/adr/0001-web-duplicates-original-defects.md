@@ -56,7 +56,7 @@
 | `scrolled-up-rows-unhittable` | **`offset > 0` 时卷到框上面去的那几行点不中**（原版没有 `offset`，所以原版没有对应行为可抄） | 命中只从第 `offset` 行起算 | 卷上去的那片区域住着六颗槽位按钮（命中框 y 129..149）。不设这条下界，翻过页之后点槽位按钮会**同时**选中一件装备 | `scroll.test.ts`「翻上去的那几行点不中」（装备页 / 物品页各一条） |
 | `load-extra-scene-loop` | **中途读档多起一条场景循环**（`LoadAndSavePanel` 构造时就建好 `Thread t=new Thread(scenePanel)`，读档分支 `if(!t.isAlive()) t.start()`；它与「起」那条不是同一个对象，而 `ScenePanel.run()` 是没有出口的 `while(true)`）。**玩家观测到的**：「起」之后中途读档，场景里走路、对话吐字、NPC 动画**全部快一倍**（JVM 读数：`step()` 85.5 → 169.5 次/秒，场景线程 1 → 2 条）；之后再读几次档**仍是两倍，不抛、不崩**（`isAlive` 恒真，第二次读档根本不调 `start()`）。同一机制还有一个不经过读档的入口：回标题再「起」每次多一条（读数 3 条、254.5 次/秒） | 不复刻：场景一拍一个 `advance`，读档不叠、重开也不叠 | 复刻它要求状态层先有「场景循环线程」这个概念，而状态层是同步纯函数、**没有线程模型** —— 搬过来的是原版的一个实现细节，不是行为（xl-i06.2 裁定，xl-i06.11 落地；「第二次读档会崩」是 grilling 时读源码的推断，JVM 上跑出来不成立，不写） | `web/src/game/loadResidue.test.ts`「读档之后场景不是双倍速」一组（读档一次、读档两次、读档 → 回标题 → 起，各推一秒只走 1000 ms）；原版那一半：`web/src/save/test/loadResidueOriginal.test.ts`「那条不复刻的例外」 |
 | `win32-script-filename` | **出口名带行尾空格的那三本打不开**（`xl-1dv.11`；`new Reader(name)` 把名字原样拼进 `"script//" + name`）。**这一条只在 posix 上成立**：macOS + openjdk 17 **实测** `new tools.Reader("仙二教学楼二楼夜.txt ")` 抛 `FileNotFoundException`，去掉行尾空格就打得开；Win32 的路径规范化会去掉末尾的空格与点，打得开（⚠️ Win32 文档行为，这台机器上没法跑）。其中 `脚本32` 那一本**在主线链上**（第 36 跳），断在它后面的是三分之一条链与整个结局 | **按 win32 语义解析脚本文件名**：`data/scenes.ts` 的 `sceneNameOfFile` 去掉末尾的空格与点 | 这批数据是在 Windows 上写、在 Windows 上玩的（`剧情1` / `迷宫1` 里那三条反斜杠路径为证，`assets/path.ts` 的 `normalizePath` 已经为同一个原因站在 Windows 那一边）。posix 下的断链是「把一个 Windows 游戏搬到别的文件系统上」的产物，不是游戏逻辑。**登在这里而不是当成 portability，是因为真值是在 macOS 上导的**：原版侧 `mainline/test/chain.ts` 把两种语义都算出来、posix 那一条明写着主线断在第 36 跳，Web 与它分道扬镳的地方只有这张表记得住（xl-czb.7 裁定，主干 7eaf2f4 签）。**数据不改**，`assets/knownMissing.ts` 那两条也不动 —— 那张表登记的是「字面路径在磁盘上不存在」，这件事仍然成立 | `web/src/mainline/test/handoff.test.ts`（主线第 36 跳；去掉那一步 trim，主干实测**恰好 10 条红**，第 36 跳起一路到第 44 跳）+ `web/src/data/loadedScenes.test.ts`「行尾带空格的出口名」 |
-| `panel-threads-run-while-hidden` | **（待签 · xl-03x.4 补登）****面板动画线程关着也在跑**：`GameLauncher` 构造函数里一口气 `new` 好菜单、两家店、存读档面板，各自构造时就起一条没有出口的 `while(true)`（菜单 `FatherPanel` 四条 100 ms；`ShopPanel` / `EquipmentShopPanel` 各一条 120 ms；`LoadAndSavePanel.startAnimationThread()` 一条 100 ms），从开机跑到关机，**不管面板显不显示**。它们推的是鼠标图、人物动画、奇术页技能动画的帧 —— 一个状态字段都不碰（菜单那几个 `Mouse` 计数器与奇术页动画进快照，但不进队伍、不进战斗） | **不推**：菜单只在显示着时推（`advanceSession` 的 `panel === 'menu'`）；店与存读档面板的帧号由渲染层从进面板那一刻现数 | 推它要求这一层有「面板级线程在背后跑」的模型，而状态层是同步纯函数、没有线程模型（与「读档多起一条场景循环」同一个理由）。菜单那几条要推还得先把 `update()` 与 `paint` 拆开（原版关着菜单一次 paint 都没有），见 `xl-6lo.19`。**只影响帧相位，不影响任何玩法状态**。M8 规格（xl-03x.1）裁定：**补签，不实现**；`xl-6lo.19` 留作登记 | **暂无会红的判据** —— 行为真值两条菜单剧本全程菜单开着，盖不到「关着」那一段；`xl-6lo.19` 的验收写着要自己造一条 |
+| `panel-threads-run-while-hidden` | **（待签 · xl-03x.4 补登）****面板动画线程关着也在跑**：`GameLauncher` 构造函数里一口气 `new` 好菜单、两家店、存读档面板，各自构造时就起一条没有出口的 `while(true)`（菜单 `FatherPanel` 四条 100 ms；`ShopPanel` / `EquipmentShopPanel` 各一条 120 ms；`LoadAndSavePanel.startAnimationThread()` 一条 100 ms；xl-03x.20 现扫 `new Thread` 补进第五处：标题 `StartPanel.startAnimationThread()` 一条 100 ms，推鼠标 / 按钮 / 卷轴的帧与**云的坐标**），从开机跑到关机，**不管面板显不显示**。它们推的是鼠标图、人物动画、奇术页技能动画的帧 —— 一个状态字段都不碰（菜单那几个 `Mouse` 计数器与奇术页动画进快照，但不进队伍、不进战斗） | **不推**：菜单只在显示着时推（`advanceSession` 的 `panel === 'menu'`）；店与存读档面板的帧号由渲染层从进面板那一刻现数；标题页离开即卸载（`App.tsx` 只在标题时挂它），回来 `createStartPanelState()` 全新一份 —— 云从起点重来、各段动画从第 0 帧起 | 推它要求这一层有「面板级线程在背后跑」的模型，而状态层是同步纯函数、没有线程模型（与「读档多起一条场景循环」同一个理由）。菜单那几条要推还得先把 `update()` 与 `paint` 拆开（原版关着菜单一次 paint 都没有），见 `xl-6lo.19`。**只影响帧相位，不影响任何玩法状态**。M8 规格（xl-03x.1）裁定：**补签，不实现**；`xl-6lo.19` 留作登记 | **暂无会红的判据** —— 行为真值两条菜单剧本全程菜单开着，盖不到「关着」那一段；`xl-6lo.19` 的验收写着要自己造一条 |
 | `title-bgm-sleep` | **（待签 · xl-03x.4 补登）**`switchTo("start")` 里 `readBGM("主题曲.mp3")` → **`Clock.sleep(1000)`** → `openBGM()`：夹在中间那一秒是 `MusicPlayer` 两个标志位之间的线程同步补丁 | 不睡：标题一进来就把主题曲交给 `audio/bgmPlayer.ts` | 浏览器那边没有那对标志位，换曲子由播放器自己收尾；照抄成一秒延迟，是把别人家的竞态补丁变成我们自己的一秒黑屏（理由全文在 `game/session.ts` 的 `createSession`） | `game/session.test.ts`「起手就停在标题上」（`currentBgm` 当拍就是主题曲） |
 | `narratage-sleeps` | **（待签 · xl-03x.4 补登）**旁白 `WordRun` 一句打完 `Clock.sleep(500)`、整段播完 `Clock.sleep(1000)` —— **在 EDT 上直接睡**，睡的是真实时间 | 不模拟：句与句之间没有那半秒停顿 | 真值跑在虚拟时钟上，那两段睡眠一个 tick 都不占（第 0 句从 vt=50 打到 vt=950，vt=1000 就换行）；模拟了反而与真值差 150 个 tick。要复刻它得先有一份能看见它的真值（`state/narratage.ts` 头注） | 场景真值的逐步回放（`state/traceReplay.test.ts`）—— ⚠️ 「模拟那半秒就会错拍」是从头注那条读数推的，本票没有篡改验证 |
 | `dialogue-skip-printing` | **（待签 · xl-03x.4 补登）****原版没有**「跳过逐字打印」：句子没打完时 `DialogueEvent.keyPressed` / `NPCEvent.keyPress` 什么也不做，只能等 | **加了**：回车把当前这一屏一次打满（`state/dialogue.ts` 的 `skipPrinting`），空格那一路与原版逐字同构 | xl-9bd.10 的验收标准要它。挂回车不挂空格，是为了让这条增量一次都踩不到真值（真值里的空格全在句子打完之后） | `state/dialogue.test.ts`「跳过逐字打印（原版没有的加法）」 |
@@ -67,6 +67,10 @@
 | `end-thread-not-duplicated` | **（待签 · xl-03x.4 补登）**每 `switchTo("end")` 一次，`EndPanel.start()` 就 `new Thread(this).start()` **多起一条**结局线程 | 第二次进结局只把旗标重置，不多起一条 | 与「读档多起一条场景循环」同一个理由：这一层没有线程模型。⚠️ **走不走得到第二次未验证**：`$` 只出现在脚本41 那一段对话里、按完就不再开（`end/trigger.test.ts`）；读一个停在那段对话之前的档再按一遍可能是一条路 —— 未量过 | **暂无会红的判据**（上面那条路走不走得到都还没量） |
 | `map-source-overflow-throws` | **（待签 · xl-03x.4 补登）**地图图片**比碰撞网格要的源矩形还小**时，`drawMap` 的源矩形越出图片，Java2D 画出来的是一种说不清的残缺（xl-czb.3 的探针：1022×640 那张少画两整列，1023×639 那张缺的像素最左一个在 x=0） | **硬失败**：`scene/mapSize.ts` 的 `checkMapSize` 抛 | 拉伸、补边、夹取都会画出「看起来对」的画面。今天**没有场景走得到**这条路（比源矩形小一两像素的那 6 张走的是另一支、已复刻） | `scene/mapSize.test.ts` |
 | `select-under-dialogue-overlay` | **（待签 · xl-03x.4 补登）**`ScenePanel.paint()` 先画对话框、再画选择框与「得到物品」提示框 —— 后两者压在对话框上面 | 次序**反了**：对话框在这一侧是 DOM overlay（`ui/DialogueBox.tsx`），永远压在画布上面 | 对话框做成 DOM 是整层的取舍（字形与排版归浏览器）。两者同时开着的那一帧**今天走不到**（选择框开着时 `checkSelectEvent` 会把口头语截胡） | **暂无会红的判据** —— 没有真值分辨得出来 |
+| `random-streams-per-battle-and-shop` | **（待签 · xl-03x.20 补登）**全局**一条无种子**的 `Math.random()` 流：战斗里伤害 / 出招 / 小精灵等 15 处、两家店开机掷存货 7 处，都直接调它 | 每场战斗、每家店（会话里头一次进门时）**各开一条** `JavaRandom`，种子由 `Math.random()` 现摇（31 位）。算式逐字照抄；遇敌、答题金币、宝箱仍直接调 `Math.random()`，与原版同 | 战斗与店的世界要能按剧本种子逐位复现真值（ADR-0004），同一个世界到了游戏里只能换一个现摇的种子。分布不变，玩家观测不到（⚠️ 读代码的结论，没跑过分布检验）。理由原文在 `game/session.ts` 的 `SessionDeps.random` —— 注释自称「明写出来的差别」，却没进这张表 | 算式那一半：`battle/battleTrace.test.ts`「逐步逐字段与真值相等」、`shop/world.test.ts`「62 次掷骰共用一条流，先药店后装备店」；「现摇种子」这一半**暂无会红的判据** |
+| `new-game-rerolls-shop-stock` | **（待签 · xl-03x.20 补登）**点「起」**不重建两家店**：`ShopPanel` / `EquipmentShopPanel` 开机 `new` 一次，存货（连上一局买掉的）活过新局 | 「起」整个重建会话，`Session.shop` 回到 `null`，新局头一次进门**重掷存货** | `new-game-resets-party` 那个取舍连带的（「起」回出厂状态靠整个重建会话）。`game/session.ts` 的 `NewGameCarry` 头注列了一张「不带、归 xl-9rv 裁」的名单，两家店不在上面 —— 名单漏了，不是裁过。⚠️ **读代码，未跑** | **暂无会红的判据** |
+| `stage-scales-to-window` | **（待签 · xl-03x.20 补登）**窗口 1024×640、`setResizable(false)`；**不居中**（`setMiddle()` 唯一的调用点 `GameLauncher.java:73` 被注释掉，位置归系统） | 逻辑画布恒 1024×640，**随窗口等比缩放、居中、两侧 letterbox、可全屏**（`stage/computeStageScale.ts`、`app/App.tsx` 的 `useFullscreen`） | 浏览器窗口的大小不归页面管。xl-9bd.1 脚手架时定的（「不做响应式视野 —— 视野范围与坐标都是按这个分辨率调过的，改了就不是移植」），**理由只写在那个提交信息里**，是 xl-03x.20 扫提交信息扫出来的。逐帧比对取的是 1024×640 逻辑画布，不受缩放影响 | 缩放那一半：`stage/computeStageScale.test.ts`；居中**暂无会红的判据** |
+| `fail-loud-where-original-swallows` | **（待签 · xl-03x.20 补登）**缺资源、坏数据、没判空时**不出声**：`MusicPlayer` 找不到曲子 / 音效就打栈、静音、照玩；战斗里没判空的地方一发 NPE，**那条线程死掉、画面冻住、进程还在**（`Hero.calDamage` 的 `case 5/6/7` 等）；坏档的内容在 `parseInt` 上抛、状态读进一半（⚠️ 读源码的推断，未实测） | **大声失败**：战斗里抛一句点名原版哪一句 NPE 的错误（`battle/step.ts` 若干处）；名单外的背景音乐与默认 resolve 查不到的音效当场抛；一个槽坏了整个存档仓库 `failed`，面板上说一声 | 静默会做出「看起来一切正常」的画面与真值：「打过了、可就是没人挨打」、「这一首暂时不管」与「烘焙漏了一首」分不开。照抄的是「它会炸」，炸法换成说得清的话（xl-rh9.7 的提交信息、`battle/step.ts` 的 `heroTargets` 注释）。⚠️ 代价：`game/useGame.ts` 的主循环没有 catch，**走得到的**那几处失败的样子与原版不同 —— 第一槽先死再全灭那一条就走得到（xl-9go） | `audio/sfxPlayer.test.ts`「映射表里没有的一声：默认 resolve 当场抛」、`assets/resolve.test.ts`「已知缺失的素材查出来是 null，别的查不到照旧抛」、`save/store.test.ts`「盘上有一份不认识版本号的档：failed」；战斗那几处**没有**逐条篡改验证 |
 
 还有一条：**原版自己就不一致。**「承」（读档）走的是三个人的
 `intialFromInfo()`，它把 `level` / `hp` / `mp` / `angryValue` / `exp` 逐个从
@@ -103,6 +107,41 @@ web 端选了其中说得通的那条。这一句也有判据，与上面同一�
 
 ⚠️ **这一遍可能找漏了。** 它是措辞 grep + 人读，也就是这张表原先漏掉一族的同一种办法；
 没带上面任何一个措辞的偏离、以及只写在票面或提交信息里而代码里没注释的偏离，都找不到。
+
+### 第二遍：从原版侧出发（xl-03x.20，2026-09-11）
+
+**找法一（判据）：原语台账。** 不从 web 的措辞出发，而从原版 `src/` 里「浏览器没有对应物」的
+那一类平台原语出发 —— 线程、睡眠、定时器、退出、随机数、音频、文件 IO、异常捕获、光标、窗口，
+十类，正则写在 `web/src/test/originalPrimitives.test.ts` 的 `PRIMITIVES`，**那张正则表就是分母的
+定义**。逐处在 `docs/original-primitives.md` 落一个判定（照做 / 已登记 / 欠账 / 仪器 / 未核），
+测试双向对撞：扫出来的每一行都得有判定、台账里的每一行号都得真是一处命中。读数写在台账开头。
+
+**找法二（便宜的补充，不是判据）：扫票与提交信息。** 已关票的 close reason、全部票的描述、
+全部非合并提交的信息，拿一批「不复刻 / 故意 / 原版没有 / 禁用……」的措辞 grep，再逐条读。
+⚠️ **它本身仍是措辞扫描**：当时就没写下来的决定、写下来却没用这批词的决定，它都看不见。
+它**不算**把「只写在票面或提交信息里」那一类盖住了。
+
+**读数**：新登 **4 行**（上表 `random-streams-per-battle-and-shop` / `new-game-rerolls-shop-stock` /
+`stage-scales-to-window` / `fail-loud-where-original-swallows`），扩写 **1 行**
+（`panel-threads-run-while-hidden` 补进标题那条线程），**直接改成照做 2 处**（页面标题差了「软件」两个字；
+舞台上露出系统光标、四块面板两只指针 —— 两处都没人裁过，默认是复刻，一行 CSS / 一个字符串就还上了，
+判据 `app/pageTitle.test.ts`、`app/stageCursor.test.ts`）。
+哪一种找法找到的：原语台账找到标题线程、随机流、店存货重掷、页面标题、光标、音效 / 背景音乐与
+坏档那半个「大声失败」；提交信息找到舞台缩放（理由只在 xl-9bd.1 的提交里）与战斗 NPE 那半个
+「大声失败」（xl-rh9.7 的提交里）—— **后两处原语台账结构性地看不见**（缩放在原版侧只是一句
+`setResizable(false)`，台账能指到它却说不出 web 做了什么；隐式 NPE 根本不是一处调用）。
+
+⚠️ **这一遍仍然可能找漏了**，而且漏在哪儿是说得出来的：
+
+- **原语清单之外**：键位（`KeyEvent.VK_*`）、隐式 NPE、绘制次序、字形、面板切换的时序 —— 都不在那十类里。
+  清单封闭是它比措辞 grep 强的地方，也正是它的边界；
+- **web 侧加了原版没有的东西**：原语台账从原版出发，只看得见「原版做了、web 做法不同」，看不见
+  「web 多做了一件原版根本没有的事」（例如工具栏、键盘焦点）。这一半要从 web 侧的浏览器 API 反过来扫，
+  另立了票；
+- **判定写错**：台账写「照做」而其实没照做，扫描器照样绿 —— 它只核引用完整，不核判定；
+- **未核**：战斗线程在战斗之外的那一段（`BattlePanel.run()` 开机起、关机停，战斗结束后仍在调
+  `launchAttack.check()` / `gameOver.update()` 等）改不改得到下一场的状态，读代码判断不了，
+  台账如实记成「未核」，另立了票。
 
 缺陷本身登记在 `xl-lly`。**这张表是登记不是分母**（见 `docs/agents/dispatch.md`
 纪律 3）：它必须由人来加，自动扫出来的"例外清单"等于让被守的东西自己签字。

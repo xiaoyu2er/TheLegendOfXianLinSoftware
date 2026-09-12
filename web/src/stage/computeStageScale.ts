@@ -19,6 +19,10 @@ export interface StageLayout {
 /**
  * 把 1024×640 等比塞进视口并居中，短边贴边、长边留 letterbox。
  *
+ * 原版窗口 `setResizable(false)`、不居中（`setMiddle()` 的唯一调用点被注释掉）；
+ * 这里随窗口缩放、居中、可全屏 —— xl-9bd.1 脚手架时定的，理由只写在那个提交里。
+ * @exception ADR-0001#stage-scales-to-window
+ *
  * 视口小于 1 像素（比如窗口最小化、元素还没测量）时退化为 scale 0，
  * 调用方据此不渲染，而不是拿 NaN 或负数去设 CSS。
  */

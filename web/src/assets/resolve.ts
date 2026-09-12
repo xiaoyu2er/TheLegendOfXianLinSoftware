@@ -78,7 +78,8 @@ const DEFERRED_BGM = new Set(deferredBgmIds as string[])
  *
  * 为什么不能"查不到就静音"：那样"这一票暂时不管"与"烘焙漏了一首"长得一模
  * 一样，而后者的表现只是某个场景没有音乐，没人看得出来。名单上的静音，
- * 名单外的照旧抛 —— 跟 `resolveAssetOrNull` 是同一个套路。
+ * 名单外的照旧抛 —— 跟 `resolveAssetOrNull` 是同一个套路。（原版 `MusicPlayer` 找不到
+ * 文件是打栈、静音、照玩。）@exception ADR-0001#fail-loud-where-original-swallows
  */
 export function resolveBgmOrNull(id: AssetId): string | null {
   if (DEFERRED_BGM.has(id)) return null

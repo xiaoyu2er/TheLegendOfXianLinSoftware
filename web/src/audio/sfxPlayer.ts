@@ -69,7 +69,8 @@ export interface SfxPlayerOptions {
    *
    * 默认走真的映射表，查不到就抛 —— 游戏里点过名的每一声都查得到
    * （`assets/sfxAssets.test.ts` 从 GBK 源码现读核对），查不到只能是烘焙漏了，
-   * 静音会把它藏起来。
+   * 静音会把它藏起来。（原版 `MusicPlayer` 在那里打栈吞掉。）
+   * @exception ADR-0001#fail-loud-where-original-swallows
    */
   resolve?: (name: string) => string | null
 }
