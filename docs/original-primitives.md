@@ -16,6 +16,11 @@
 - `仪器` —— 迁移时为导真值加进 `src/tools/` 的代码，不是原版行为；
 - `未核` —— 读了，没读明白，也没跑。如实记下，不塞进最像的那一格。
 
+与「照做了 / 已登记 / 两样都没有」三选一的对应：`照做` 与 `已登记` 就是前两种；
+`欠账` 是**两样都没有**（遗漏）里已经有票追着的那些；`仪器` 不在分母里（不是原版行为）；
+`未核` 是**可能属于两样都没有**、还说不清的那些。**遗漏 = 欠账 + 未核里查实的那部分。**
+这一遍找到的「两样都没有」都已经补登或改成照做，所以台账里不留一条没归属的遗漏。
+
 ⚠️ 扫描器只核**引用完整**（每一处都有归属、行号真是命中、键与票真存在），**不核判定对不对**。
 「照做」是不是真照做了，是证据那一格指过去的判据的事；其中写着「无单独判据」的，就是没有。
 
@@ -59,9 +64,9 @@
 | `src/shop/EquipmentShopPanel.java:140,149,150` | 线程 / 睡眠 / 捕获 | 已登记 `ADR-0001#panel-threads-run-while-hidden` | `game/useGame.ts` 的 `shopSinceRef` |
 | `src/shop/EquipmentShopPanel.java:163,166,169,172,175,178` | 随机数 | 已登记 `ADR-0001#random-streams-per-battle-and-shop` | 算式照抄 `scaledInt(10)`，次序从六段 `readEquipment` 解出；`shop/world.test.ts`。存货活不过「起」另见 `new-game-rerolls-shop-stock` |
 | `src/shop/EquipmentShopPanel.java:242,245,246,248` | 光标 | 照做 | `.stage { cursor: none }` + `shop/render/assets.ts` 的鼠标图；`app/stageCursor.test.ts` |
-| `src/shop/ShopPanel.java:102,110,111` | 线程 / 睡眠 / 捕获 | 已登记 `ADR-0001#panel-threads-run-while-hidden` | 同上 |
-| `src/shop/ShopPanel.java:125` | 随机数 | 已登记 `ADR-0001#random-streams-per-battle-and-shop` | 同上 |
-| `src/shop/ShopPanel.java:166,169,170,172` | 光标 | 照做 | 同上 |
+| `src/shop/ShopPanel.java:102,110,111` | 线程 / 睡眠 / 捕获 | 已登记 `ADR-0001#panel-threads-run-while-hidden` | `game/useGame.ts` 的 `shopSinceRef`（帧号从进门那一刻数起）；`shop/render/animation.test.ts`「八格一圈、每格 120ms」 |
+| `src/shop/ShopPanel.java:125` | 随机数 | 已登记 `ADR-0001#random-streams-per-battle-and-shop` | 算式照抄 `scaledInt(10)`；`shop/world.test.ts`「62 次掷骰共用一条流，先药店后装备店」 |
+| `src/shop/ShopPanel.java:166,169,170,172` | 光标 | 照做 | `.stage { cursor: none }` + `shop/render/assets.ts` 的鼠标图；`app/stageCursor.test.ts` |
 | `src/shop/ShopReader.java:19,37,45,67` | 文件 / 捕获 | 照做 | 平台搬家：数据抄进代码（`battle/drugs.ts`、`shop/world.ts`）、介绍图进烘焙；`battle/drugs.test.ts`「逐行逐列相等」。原版的失败路径（缺文件 → 空表）在 web 运行时走不到，数据坏了在测试或烘焙时红 |
 | `src/start/EndPanel.java:8,95,97` | 线程 / 睡眠 / 捕获 | 照做 | `end/world.ts` 100 ms，进过结局之后每拍都推；`end/endTrace.test.ts` |
 | `src/start/EndPanel.java:53` | 线程 | 已登记 `ADR-0001#end-thread-not-duplicated` | 每进一次结局多起一条 |
