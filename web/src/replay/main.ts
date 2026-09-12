@@ -13,14 +13,11 @@ import type { BattleRenderer } from '../battle/render/battleRenderer'
 import { battleDrawList } from '../battle/render/drawList'
 import type { DrawOp } from '../battle/render/drawList'
 import { createPaintState } from '../battle/render/paint'
-import type { PaintState } from '../battle/render/paint'
 import { replayBattle } from '../battle/replay'
 import { stepBattleWithPaint } from '../battle/loop'
 import type { BattleTrace } from '../battle/trace'
-import type { BattleWorld } from '../battle/types'
 import { menuTextureIds } from '../menu/render/assets'
 import { menuDrawList } from '../menu/render/drawList'
-import type { MenuDrawOp } from '../menu/render/drawList'
 import { createMenuRenderer } from '../menu/render/menuRenderer'
 import type { MenuRenderer } from '../menu/render/menuRenderer'
 import { replayMenuSetup, replayMenuTask } from '../menu/replay'
@@ -30,10 +27,8 @@ import { stepMenu } from '../menu/step'
 // 一侧的 `BattleTrace` 走的是同一条路）。手抄一份子集的话，真值加一列时这里
 // 不会响 —— 那正是"名单抄两份迟早分家"的类型版。
 import type { MenuTrace } from '../menu/trace'
-import type { MenuWorld } from '../menu/types'
 import { shopTextureIds } from '../shop/render/assets'
 import { shopDrawList } from '../shop/render/drawList'
-import type { ShopDrawOp } from '../shop/render/drawList'
 import { createShopRenderer } from '../shop/render/shopRenderer'
 import type { ShopRenderer } from '../shop/render/shopRenderer'
 import { replayShopSetup, shopInputsOfTicks } from '../shop/replay'
@@ -42,9 +37,9 @@ import type { ShopInput } from '../shop/step'
 // 同菜单那一条的理由：类型从 `shop/trace.ts` 取，不在这里手抄一份子集。
 // 那个模块转手 `node:fs`，而 `import type` 会被整个擦掉。
 import type { ShopTrace } from '../shop/trace'
-import type { ShopWorld } from '../shop/types'
 import { activePanel } from '../shop/world'
 import { resolveAsset } from '../assets/resolve'
+import type { AssetId } from '../assets/ids'
 import { pickAssembly } from './drivers'
 import type { ImplementedDriver } from './implemented'
 import type { SceneRenderer } from '../scene/sceneRenderer'
@@ -69,7 +64,7 @@ import type { SaveLoadDrawOp } from '../saveload/render/drawList'
 import { createSaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
 import type { SaveLoadRenderer } from '../saveload/render/saveLoadRenderer'
 import { startSaveLoadReplay } from '../saveload/replay'
-import type { SaveLoadReplay, SaveLoadSetup } from '../saveload/replay'
+import type { SaveLoadSetup } from '../saveload/replay'
 import type { SaveLoadInput } from '../saveload/step'
 import { endTextureIds } from '../end/assets'
 import { endDrawList } from '../end/render/drawList'
@@ -77,11 +72,11 @@ import type { EndDrawOp } from '../end/render/drawList'
 import { createEndRenderer } from '../end/render/endRenderer'
 import type { EndRenderer } from '../end/render/endRenderer'
 import { startEndReplay } from '../end/replay'
-import type { EndInput, EndReplay, EndSetup } from '../end/replay'
+import type { EndInput, EndSetup } from '../end/replay'
 import { StartPanelView } from '../start/StartPanel'
 import type { StartView } from '../start/panelState'
 import { startStartReplay } from '../start/replay'
-import type { StartInput, StartReplay } from '../start/replay'
+import type { StartInput } from '../start/replay'
 
 /**
  * 取图页：**只在跨端逐帧比对里用**，不进游戏产物（`vite build` 只打
@@ -328,6 +323,123 @@ function worldFromSave(parsed: ReplayTrace, warm: World | null): World {
   return applyReadBack(session, f.readBack).scene.world
 }
 
+
+/* ===================== 事件驱动的装配（xl-e8w） ===================== */
+
+/**
+ * 工厂只用得到的那点真值形状：数步数、按下标取一步。步里装的是什么由各套自己读。
+ * 场景那一套不走这里 —— 它逐 tick 推、要预取出口、要叠对话框那一层 DOM。
+ */
+interface StepTrace {
+  readonly tickCount: number
+  readonly ticks: readonly unknown[]
+}
+
+interface Frame {
+  readonly timeMs: number
+  readonly x: number
+  readonly y: number
+}
+
+interface EventDrivenSpec<T extends StepTrace, R, S> {
+  readonly kind: ImplementedDriver
+  /** 报错时一步叫什么：战斗的一步是一拍（`run()` 循环体一遍），其余几块面板是一次输入事件。 */
+  readonly unit: '步' | '拍'
+  /** 建这一套的渲染器。**一个页面只建一次**，同一轮里的几条剧本共用。 */
+  createRenderer(host: HTMLElement): Promise<R>
+  /** 照剧本头起手。`scene` 是报给比对器的那一栏 —— 它只把它打进日志。 */
+  setup(trace: T, renderer: R): Promise<{ readonly state: S; readonly scene: string }>
+  /** 推第 `i` 步。 */
+  step(state: S, tick: T['ticks'][number], i: number): void
+  /** 把推到第 `t` 步的世界画出来（`--self-check` 的注入点在这里挪），报位置与时间。 */
+  frame(state: S, t: number): Promise<Frame>
+}
+
+/**
+ * 事件驱动的一套装配：宿主、渲染器、「一条剧本一份」的状态，以及 `seek` 前的三道守卫。
+ *
+ * 这几样从前每套各抄一份（战斗 / 菜单 / 商店 / 存读档 / 结局 / 标题页六份），近乎逐字
+ * 同构，只差变量名前缀与报错里一步叫「步」还是「拍」。**一条剧本的状态整个放在
+ * `loaded` 里、换剧本整个换掉**：从前是四五个模块级变量各自清零，漏清一个的样子是
+ * 下一条剧本带着上一条的残留跑，而画面未必看得出来。
+ */
+function createEventDrivenAssembly<T extends StepTrace, R, S>(
+  spec: EventDrivenSpec<T, R, S>,
+): Assembly {
+  let renderer: R | null = null
+  let loaded: { readonly trace: T; readonly state: S } | null = null
+  let next = 0
+  return {
+    async load(traceJson: string) {
+      const trace = JSON.parse(traceJson) as T
+      // 起手半路抛了的话，不许留着上一条剧本的状态让 seek 接着画。
+      loaded = null
+      renderer ??= await spec.createRenderer(hostFor(spec.kind))
+      activate(spec.kind)
+      const { state, scene } = await spec.setup(trace, renderer)
+      loaded = { trace, state }
+      next = 0
+      return { scene, tickCount: trace.tickCount }
+    },
+
+    async seek(t: number) {
+      if (!loaded) throw new Error('还没 load 就 seek')
+      const { trace, state } = loaded
+      const u = spec.unit
+      if (t < next - 1) {
+        throw new Error(`取图只能往前：当前在第 ${next - 1} ${u}，要去第 ${t} ${u}`)
+      }
+      if (t >= trace.ticks.length) {
+        throw new Error(`第 ${t} ${u}超出了这份 trace 的 ${trace.ticks.length} ${u}`)
+      }
+      for (; next <= t; next++) spec.step(state, trace.ticks[next]!, next)
+      const frame = await spec.frame(state, t)
+      await twoFrames()
+      return { t, ...frame }
+    },
+  }
+}
+
+/** 存读档 / 结局 / 标题页的一步恰好是一个输入事件，多一个少一个都是真值接不上。 */
+function onlyInput<I>(input: readonly I[], i: number): I {
+  if (input.length !== 1) throw new Error(`第 ${i} 步有 ${input.length} 个输入事件，一步应当恰好一个`)
+  return input[0]!
+}
+
+/**
+ * **故意改坏一处渲染**（`--self-check` 的注入点），菜单 / 商店 / 存读档 / 结局共用。
+ *
+ * 与战斗那一侧（`breakBattleOps`）同一个理由：**整帧一起挪，不挑层**。这几块面板
+ * 每一帧的第一条绘制都是满屏 1024×640 的背景图（菜单的 `MENU_BACKGROUND`、商店的
+ * `shopback.png`……），挑任何一层往上挪都可能被它盖住，而那不成立的样子正是
+ * 「改坏了却没响」。
+ */
+function shiftOps<O extends { readonly x: number }>(ops: readonly O[], t: number): readonly O[] {
+  const b = window.__xlBreak
+  if (!b || t < b.fromTick) return ops
+  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
+}
+
+/**
+ * 把这一帧要用的贴图载齐，名单没变就不再载。**每一帧都问一次**，不是只在 load 时问一次。
+ *
+ * 名单是从世界现推的：菜单翻页换背景、选中一瓶药多一颗「使用」按钮、奇术页放起动画要
+ * 整条 37 帧；商店换一家店换整套招牌与店主动画、切一类装备换一整栏商品图。只在 `load()`
+ * 里载一次的表现是「漏载」只在某几条剧本上炸（`menu-magic` 第 8 步之后、`shop-categories`
+ * 一切类就抛，而停在同一页的剧本一点事都没有）。
+ *
+ * 一条剧本建一个：换剧本就从空名单起。
+ */
+function textureLoader(load: (ids: readonly AssetId[]) => Promise<void>): (ids: readonly AssetId[]) => Promise<void> {
+  let loaded: string | null = null
+  return async (ids) => {
+    const key = JSON.stringify(ids)
+    if (loaded === key) return
+    await load(ids)
+    loaded = key
+  }
+}
+
 /* ===================== 存读档面板（xl-i06.12） ===================== */
 
 interface SaveLoadReplayTrace {
@@ -338,20 +450,6 @@ interface SaveLoadReplayTrace {
   readonly fixture?: SaveFixture
 }
 
-let lsRenderer: SaveLoadRenderer | null = null
-let lsTrace: SaveLoadReplayTrace | null = null
-let lsReplay: SaveLoadReplay | null = null
-let lsNext = 0
-/**
- * 原版位图此刻停在的那一帧的绘制清单。**不是每一步都重画**：导出器只在当前面板还是
- * 存读档面板时才 `paint`（`SaveLoadDriver.stepUnguarded`），离开的那一步（退出键回
- * 菜单、读档切回场景）位图停在离开前最后一帧。这里照做 —— 离开那一步照状态重画的话，
- * 画的是一块原版此刻根本没在画的面板。
- */
-let lsOps: SaveLoadDrawOp[] | null = null
-/** 上一次真的画出去的那份清单（引用），省掉没变的重画。 */
-let lsDrawn: SaveLoadDrawOp[] | null = null
-
 /**
  * 逐帧比对里这个面板的动画停在**第 0 格**（鼠标、按钮光效、三个人）。
  *
@@ -361,16 +459,11 @@ let lsDrawn: SaveLoadDrawOp[] | null = null
  */
 const LS_FROZEN_FRAMES = FIRST_FRAMES
 
-/** **故意改坏一处渲染**（`--self-check` 的注入点），存读档版。整帧一起挪，理由同商店。 */
-function breakSaveLoadOps(ops: SaveLoadDrawOp[], t: number): SaveLoadDrawOp[] {
-  const b = window.__xlBreak
-  if (!b || t < b.fromTick) return ops
-  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
-}
-
-const saveloadAssembly: Assembly = {
-  async load(traceJson: string) {
-    const parsed = JSON.parse(traceJson) as SaveLoadReplayTrace
+const saveloadAssembly = createEventDrivenAssembly({
+  kind: 'saveload',
+  unit: '步',
+  createRenderer: createSaveLoadRenderer,
+  async setup(parsed: SaveLoadReplayTrace, renderer: SaveLoadRenderer) {
     const f = parsed.fixture
     if (f?.kind !== 'slots') {
       throw new Error(
@@ -378,8 +471,6 @@ const saveloadAssembly: Assembly = {
           `（收到 ${JSON.stringify(f?.kind ?? null)}）—— 见 compare/saveFixtures.ts`,
       )
     }
-    lsRenderer ??= await createSaveLoadRenderer(hostFor('saveload'))
-    activate('saveload')
     const { setup } = parsed.script
     const scenes = new Map<string, SceneScript>()
     for (const file of [setup.warmup, setup.scene]) {
@@ -391,43 +482,40 @@ const saveloadAssembly: Assembly = {
       return s
     }
     // 起手与逐步推进与状态层判据是同一份（`saveload/replay.ts`）。
-    lsReplay = startSaveLoadReplay(parsed.script.name, setup, f.slots, getScene, parsed.ticks[0]?.input[0])
-    lsTrace = parsed
-    lsNext = 0
-    lsOps = null
-    lsDrawn = null
-    // `scene` 这一栏对这个面板来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
-    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+    const replay = startSaveLoadReplay(parsed.script.name, setup, f.slots, getScene, parsed.ticks[0]?.input[0])
+    return {
+      state: {
+        renderer,
+        replay,
+        /**
+         * 原版位图此刻停在的那一帧的绘制清单。**不是每一步都重画**：导出器只在当前面板
+         * 还是存读档面板时才 `paint`（`SaveLoadDriver.stepUnguarded`），离开的那一步（退出
+         * 键回菜单、读档切回场景）位图停在离开前最后一帧。这里照做 —— 离开那一步照状态
+         * 重画的话，画的是一块原版此刻根本没在画的面板。
+         */
+        ops: null as SaveLoadDrawOp[] | null,
+        /** 上一次真的载过贴图的那份清单（引用），省掉没变的重载。 */
+        drawn: null as SaveLoadDrawOp[] | null,
+      },
+      scene: parsed.script.name,
+    }
   },
-
-  async seek(t: number) {
-    const trace = lsTrace
-    const replay = lsReplay
-    const renderer = lsRenderer
-    if (!trace || !replay || !renderer) throw new Error('还没 load 就 seek')
-    if (t < lsNext - 1) {
-      throw new Error(`取图只能往前：当前在第 ${lsNext - 1} 步，要去第 ${t} 步`)
+  step(s, tick, i) {
+    s.replay.step(onlyInput(tick.input, i))
+    if (s.replay.current === 'ls') s.ops = saveLoadDrawList(s.replay.world, LS_FROZEN_FRAMES)
+  },
+  async frame(s, t) {
+    const ops = s.ops
+    if (ops === null) throw new Error(`到第 ${t} 步为止当前面板一次都不是存读档面板 —— 原版一帧都还没画`)
+    if (ops !== s.drawn) {
+      await s.renderer.load(ops.flatMap((op) => (op.kind === 'image' ? [op.id] : [])))
+      s.drawn = ops
     }
-    if (t >= trace.ticks.length) {
-      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
-    }
-    for (; lsNext <= t; lsNext++) {
-      const input = trace.ticks[lsNext]!.input
-      if (input.length !== 1) throw new Error(`第 ${lsNext} 步有 ${input.length} 个输入事件，一步应当恰好一个`)
-      replay.step(input[0]!)
-      if (replay.current === 'ls') lsOps = saveLoadDrawList(replay.world, LS_FROZEN_FRAMES)
-    }
-    if (lsOps === null) throw new Error(`到第 ${t} 步为止当前面板一次都不是存读档面板 —— 原版一帧都还没画`)
-    if (lsOps !== lsDrawn) {
-      await renderer.load(lsOps.flatMap((op) => (op.kind === 'image' ? [op.id] : [])))
-      lsDrawn = lsOps
-    }
-    renderer.draw(breakSaveLoadOps(lsOps, t))
-    await twoFrames()
+    s.renderer.draw(shiftOps(ops, t))
     // 一步是一次输入事件，没有虚拟时间可言（`SaveLoadDriver` 不推时钟）。同菜单 / 商店。
-    return { t, timeMs: 0, x: replay.world.currentX, y: replay.world.currentY }
+    return { timeMs: 0, x: s.replay.world.currentX, y: s.replay.world.currentY }
   },
-}
+})
 
 /* ===================== 结局（xl-czb.6） ===================== */
 
@@ -438,74 +526,49 @@ interface EndReplayTrace {
   readonly ticks: readonly { readonly t: number; readonly input: readonly EndInput[] }[]
 }
 
-let endRenderer: EndRenderer | null = null
-let endTrace: EndReplayTrace | null = null
-let endReplay: EndReplay | null = null
-let endNext = 0
-/** 这个面板的素材一次载齐（二十几张），载过就不再载。 */
-let endLoaded = false
-/**
- * 原版位图此刻停在的那一帧的绘制清单。导出器只在结局还在屏幕上时 `paint`
- * （`EndDriver.step`），被退出键切走的那一步位图停在切走之前最后一帧 —— 这里照做，
- * 同存读档那一条（`lsOps`）。
- */
-let endOps: EndDrawOp[] | null = null
-
-/** **故意改坏一处渲染**（`--self-check` 的注入点），结局版。整帧一起挪，理由同商店。 */
-function breakEndOps(ops: EndDrawOp[], t: number): EndDrawOp[] {
-  const b = window.__xlBreak
-  if (!b || t < b.fromTick) return ops
-  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
-}
-
-const endAssembly: Assembly = {
-  async load(traceJson: string) {
-    const parsed = JSON.parse(traceJson) as EndReplayTrace
-    endRenderer ??= await createEndRenderer(hostFor('end'))
-    activate('end')
-    if (!endLoaded) {
-      await endRenderer.load(endTextureIds())
-      endLoaded = true
-    }
+const endAssembly = createEventDrivenAssembly({
+  kind: 'end',
+  unit: '步',
+  async createRenderer(host) {
+    const renderer = await createEndRenderer(host)
+    // 这个面板的素材一次载齐（二十几张），跟着渲染器走：载过就不再载。
+    await renderer.load(endTextureIds())
+    return renderer
+  },
+  async setup(parsed: EndReplayTrace, renderer: EndRenderer) {
     // 起手那一块场景面板（`EndDriver.start()` 的 `initiation(setup.scene)`）。
     const want = stem(parsed.script.setup.scene)
     const scene = await take(want)
     // 起手与逐步推进与状态层判据是同一份（`end/replay.ts`）。
-    endReplay = startEndReplay(parsed.script.name, parsed.script.setup, (name) => {
+    const replay = startEndReplay(parsed.script.name, parsed.script.setup, (name) => {
       if (name !== want) throw new Error(`结局起手只取了场景 ${want}，又要 ${name}`)
       return scene
     })
-    endTrace = parsed
-    endNext = 0
-    endOps = null
-    // `scene` 这一栏对这个面板来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
-    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+    return {
+      state: {
+        renderer,
+        replay,
+        /**
+         * 原版位图此刻停在的那一帧的绘制清单。导出器只在结局还在屏幕上时 `paint`
+         * （`EndDriver.step`），被退出键切走的那一步位图停在切走之前最后一帧 —— 这里照做，
+         * 同存读档那一条。
+         */
+        ops: null as EndDrawOp[] | null,
+      },
+      scene: parsed.script.name,
+    }
   },
-
-  async seek(t: number) {
-    const trace = endTrace
-    const replay = endReplay
-    const renderer = endRenderer
-    if (!trace || !replay || !renderer) throw new Error('还没 load 就 seek')
-    if (t < endNext - 1) {
-      throw new Error(`取图只能往前：当前在第 ${endNext - 1} 步，要去第 ${t} 步`)
-    }
-    if (t >= trace.ticks.length) {
-      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
-    }
-    for (; endNext <= t; endNext++) {
-      const input = trace.ticks[endNext]!.input
-      if (input.length !== 1) throw new Error(`第 ${endNext} 步有 ${input.length} 个输入事件，一步应当恰好一个`)
-      replay.step(input[0]!)
-      if (replay.session.panel === 'end' && replay.world !== null) endOps = endDrawList(replay.world)
-    }
-    if (endOps === null) throw new Error(`到第 ${t} 步为止结局一次都没显示过 —— 原版一帧都还没画`)
-    renderer.draw(breakEndOps(endOps, t))
-    await twoFrames()
+  step(s, tick, i) {
+    s.replay.step(onlyInput(tick.input, i))
+    if (s.replay.session.panel === 'end' && s.replay.world !== null) s.ops = endDrawList(s.replay.world)
+  },
+  async frame(s, t) {
+    if (s.ops === null) throw new Error(`到第 ${t} 步为止结局一次都没显示过 —— 原版一帧都还没画`)
+    s.renderer.draw(shiftOps(s.ops, t))
     // 一步不全是一拍（还有进来 / 按键 / 叫醒三种），报步号乘 100 ms 会假装它是时间。
-    return { t, timeMs: 0, x: 0, y: 0 }
+    return { timeMs: 0, x: 0, y: 0 }
   },
-}
+})
 
 /* ===================== 标题页（xl-whk） ===================== */
 
@@ -517,14 +580,14 @@ interface StartReplayTrace {
 }
 
 /**
- * 标题页是**真 DOM**（`start/StartPanel.tsx`），不是画布 —— 所以这一套不建渲染器，把产品的
- * `StartPanelView` 直接渲染进自己的宿主。另写一个 Pixi 版的话，比出来的是那一份像不像原版，
- * 产品自己画错了照样绿。
+ * 标题页是**真 DOM**（`start/StartPanel.tsx`），不是画布 —— 所以这一套的「渲染器」是一个
+ * React root，把产品的 `StartPanelView` 直接渲染进自己的宿主。另写一个 Pixi 版的话，比出来
+ * 的是那一份像不像原版，产品自己画错了照样绿。
  */
-let startRoot: Root | null = null
-let startTrace: StartReplayTrace | null = null
-let startReplay: StartReplay | null = null
-let startNext = 0
+interface StartDom {
+  readonly host: HTMLElement
+  readonly root: Root
+}
 
 /**
  * 把这一帧画成 DOM，并**等每一张图解码完**。
@@ -535,12 +598,7 @@ let startNext = 0
  *
  * `--self-check` 的注入点：整帧一起挪（外面包一层 `translateX`），理由同商店 / 菜单那几份。
  */
-async function drawStart(view: StartView, t: number): Promise<void> {
-  const host = hostFor('start')
-  host.style.position = 'relative'
-  host.style.overflow = 'hidden'
-  startRoot ??= createRoot(host)
-  const root = startRoot
+async function drawStart({ host, root }: StartDom, view: StartView, t: number): Promise<void> {
   const b = window.__xlBreak
   const dx = b && t >= b.fromTick ? b.heroDx : 0
   flushSync(() => {
@@ -561,51 +619,33 @@ async function drawStart(view: StartView, t: number): Promise<void> {
   )
 }
 
-const startAssembly: Assembly = {
-  async load(traceJson: string) {
-    const parsed = JSON.parse(traceJson) as StartReplayTrace
-    activate('start')
-    // 起手与逐步推进与状态层判据是同一份（`start/replay.ts`）。
-    startReplay = startStartReplay(parsed.script.name)
-    startTrace = parsed
-    startNext = 0
-    // `scene` 这一栏对这个面板来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
-    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+const startAssembly = createEventDrivenAssembly({
+  kind: 'start',
+  unit: '步',
+  async createRenderer(host): Promise<StartDom> {
+    host.style.position = 'relative'
+    host.style.overflow = 'hidden'
+    return { host, root: createRoot(host) }
   },
-
-  async seek(t: number) {
-    const trace = startTrace
-    const replay = startReplay
-    if (!trace || !replay) throw new Error('还没 load 就 seek')
-    if (t < startNext - 1) {
-      throw new Error(`取图只能往前：当前在第 ${startNext - 1} 步，要去第 ${t} 步`)
-    }
-    if (t >= trace.ticks.length) {
-      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
-    }
-    for (; startNext <= t; startNext++) {
-      const input = trace.ticks[startNext]!.input
-      if (input.length !== 1) throw new Error(`第 ${startNext} 步有 ${input.length} 个输入事件，一步应当恰好一个`)
-      replay.step(input[0]!)
-    }
+  async setup(parsed: StartReplayTrace, dom: StartDom) {
+    // 起手与逐步推进与状态层判据是同一份（`start/replay.ts`）。
+    return { state: { dom, replay: startStartReplay(parsed.script.name) }, scene: parsed.script.name }
+  },
+  step(s, tick, i) {
+    s.replay.step(onlyInput(tick.input, i))
+  },
+  async frame(s, t) {
     // 只有 tick 步画（原版三个监听器一句 repaint 都没有），输入步之后位图停在上一拍 ——
     // `replay.view` 已经是那一帧。
-    const view = replay.view
+    const view = s.replay.view
     if (view === null) throw new Error(`到第 ${t} 步为止一拍都还没推 —— 原版一帧都还没画`)
-    await drawStart(view, t)
-    await twoFrames()
+    await drawStart(s.dom, view, t)
     // 一步不全是一拍（还有三种鼠标步），报步号乘 100 ms 会假装它是时间。
-    return { t, timeMs: 0, x: replay.state.cursorX, y: replay.state.cursorY }
+    return { timeMs: 0, x: s.replay.state.cursorX, y: s.replay.state.cursorY }
   },
-}
+})
 
 /* ===================== 战斗（xl-rh9.9） ===================== */
-
-let battleRenderer: BattleRenderer | null = null
-let battleTrace: BattleTrace | null = null
-let battleWorld: BattleWorld | null = null
-let battlePaint: PaintState | null = null
-let battleNext = 0
 
 /**
  * 怪物出场图（`Images.get(0)`）的像素尺寸 —— `EnemySlector` 量的就是它。
@@ -650,6 +690,8 @@ async function enemySpriteSizes(names: readonly string[]): Promise<Map<string, {
  * 一次**，而它不成立的样子正是"改坏了却没响"。所以不再挑层 —— 整帧一起挪，
  * 那就没有哪一层能盖住另一层了。自检要断言的两件事（注入点之前逐帧不变、
  * 第一个变化帧正好是注入点）照旧成立，而且不再依赖任何一条剧本的战况。
+ *
+ * 与 `shiftOps` 分开写，只因为战斗多一种 `rect` 指令，坐标在 `dest` 里。
  */
 function breakBattleOps(ops: DrawOp[], t: number): DrawOp[] {
   const b = window.__xlBreak
@@ -661,12 +703,11 @@ function breakBattleOps(ops: DrawOp[], t: number): DrawOp[] {
   )
 }
 
-const battleAssembly: Assembly = {
-  async load(traceJson: string) {
-    const parsed = JSON.parse(traceJson) as BattleTrace
-    battleRenderer ??= await createBattleRenderer(hostFor('battle'))
-    activate('battle')
-
+const battleAssembly = createEventDrivenAssembly({
+  kind: 'battle',
+  unit: '拍',
+  createRenderer: createBattleRenderer,
+  async setup(parsed: BattleTrace, renderer: BattleRenderer) {
     // 先量怪物的图，才建得出世界（`EnemySlector` 的九个字段要它）。
     const names = parsed.script.enemies
       .filter((e): e is string => e !== null)
@@ -678,143 +719,59 @@ const battleAssembly: Assembly = {
       if (!size) throw new Error(`没量到怪物「${name}」的出场图尺寸`)
       return size
     })
-
-    await battleRenderer.load(battleTextureIds(world))
-    battleWorld = world
-    battlePaint = createPaintState(world)
-    battleTrace = parsed
-    battleNext = 0
+    await renderer.load(battleTextureIds(world))
     // **这里不画**（xl-84z）：战斗渲染器画在一张不清屏的持久缓冲上，多画这一帧
     // 就等于原版多 paint 了一次 —— 原版第 0 帧的边缘 alpha 实测正好是「背景
     // 只合成过一次」的值。第一次画在 seek(0) 里。
     // `scene` 这一栏对战斗来说是"打的哪一场"，报背景图，方便对着日志看。
-    return { scene: parsed.script.background, tickCount: parsed.tickCount }
+    return {
+      state: { renderer, world, paint: createPaintState(world), tickMs: parsed.script.tickMs },
+      scene: parsed.script.background,
+    }
   },
-
-  async seek(t: number) {
-    const trace = battleTrace
-    const world = battleWorld
-    const paint = battlePaint
-    const renderer = battleRenderer
-    if (!trace || !world || !paint || !renderer) throw new Error('还没 load 就 seek')
-    if (t < battleNext - 1) {
-      throw new Error(`取图只能往前：当前在第 ${battleNext - 1} 拍，要去第 ${t} 拍`)
-    }
-    if (t >= trace.ticks.length) {
-      throw new Error(`第 ${t} 拍超出了这份 trace 的 ${trace.ticks.length} 拍`)
-    }
-    for (; battleNext <= t; battleNext++) {
-      const tick = trace.ticks[battleNext]!
-      // **按钮贴图要在 stepBattle 之前推**：原版那三个鼠标监听器跑在循环体
-      // 之前，读的是这一拍开头的 `command.isDraw`（见 render/paint.ts）。
-      stepBattleWithPaint(world, paint, tick.input)
-      // **每一拍都画**，不只画取样的那一拍（xl-84z）：原版一拍 paint 一次、
-      // 缓冲从不清，取样那一帧的边上透着上一拍的残影。
-      renderer.draw(breakBattleOps(battleDrawList(world, paint), battleNext), battleNext)
-    }
-    await twoFrames()
+  step(s, tick, i) {
+    // **按钮贴图要在 stepBattle 之前推**：原版那三个鼠标监听器跑在循环体
+    // 之前，读的是这一拍开头的 `command.isDraw`（见 render/paint.ts）。
+    stepBattleWithPaint(s.world, s.paint, tick.input)
+    // **每一拍都画**，不只画取样的那一拍（xl-84z）：原版一拍 paint 一次、
+    // 缓冲从不清，取样那一帧的边上透着上一拍的残影。
+    s.renderer.draw(breakBattleOps(battleDrawList(s.world, s.paint), i), i)
+  },
+  async frame(s, t) {
     // 战斗的虚拟时间就是拍号乘 tickMs（ADR-0003：固定步长，不跟画面刷新走）。
-    return { t, timeMs: t * trace.script.tickMs, x: world.currentX, y: world.currentY }
+    return { timeMs: t * s.tickMs, x: s.world.currentX, y: s.world.currentY }
   },
-}
+})
 
 /* ===================== 菜单（xl-6lo.14） ===================== */
 
-let menuRenderer: MenuRenderer | null = null
-let menuTrace: MenuTrace | null = null
-let menuWorld: MenuWorld | null = null
-let menuNext = 0
-/** 上一次真的载过的那份贴图名单（`menuTextureIds` 的 join）。 */
-let menuLoaded: string | null = null
-
-/**
- * **故意改坏一处渲染**（`--self-check` 的注入点），菜单版。
- *
- * 与战斗那一侧逐字同构，理由也一样：**整帧一起挪，不挑层**。菜单更需要这一条
- * —— 它每一页的第一条绘制都是**满屏 1024×640 的背景图**（`MENU_BACKGROUND`），
- * 挑任何一层往上挪，都可能被下一页的背景整个盖住，而那不成立的样子正是
- * 「改坏了却没响」。
- */
-function breakMenuOps(ops: MenuDrawOp[], t: number): MenuDrawOp[] {
-  const b = window.__xlBreak
-  if (!b || t < b.fromTick) return ops
-  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
-}
-
-/**
- * 把这一帧要用的贴图载齐。**每一帧都问一次**，不是只在 load 时问一次。
- *
- * `menuTextureIds` 是从世界现推的：翻页换背景、选中一瓶药多一颗「使用」按钮、
- * 奇术页放起动画要整条 37 帧。只在 `load()` 时载一次的话，`menu-magic` 第 8 步
- * 之后那段动画会让 `textureOf` 当场抛 —— 而 `menu-equip` 那种从头到尾停在
- * 第一页的剧本一点事都没有，于是"漏载"会表现成只有某几条剧本坏掉。
- */
-async function loadMenuFrame(world: MenuWorld): Promise<void> {
-  const ids = menuTextureIds(world)
-  const key = ids.join('\u0000')
-  if (menuLoaded === key) return
-  await menuRenderer!.load(ids)
-  menuLoaded = key
-}
-
-const menuAssembly: Assembly = {
-  async load(traceJson: string) {
-    const parsed = JSON.parse(traceJson) as MenuTrace
-    menuRenderer ??= await createMenuRenderer(hostFor('menu'))
-    activate('menu')
+const menuAssembly = createEventDrivenAssembly({
+  kind: 'menu',
+  unit: '步',
+  createRenderer: createMenuRenderer,
+  async setup(parsed: MenuTrace, renderer: MenuRenderer) {
     const world = replayMenuSetup(parsed.script.setup)
-    menuWorld = world
-    menuTrace = parsed
-    menuNext = 0
-    menuLoaded = null
-    await loadMenuFrame(world)
-    menuRenderer.draw(menuDrawList(world, replayMenuTask(parsed.script.setup)))
-    // `scene` 这一栏对菜单来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
-    return { scene: parsed.script.name, tickCount: parsed.tickCount }
-  },
-
-  async seek(t: number) {
-    const trace = menuTrace
-    const world = menuWorld
-    const renderer = menuRenderer
-    if (!trace || !world || !renderer) throw new Error('还没 load 就 seek')
-    if (t < menuNext - 1) {
-      throw new Error(`取图只能往前：当前在第 ${menuNext - 1} 步，要去第 ${t} 步`)
-    }
-    if (t >= trace.ticks.length) {
-      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
-    }
-    for (; menuNext <= t; menuNext++) {
-      stepMenu(world, trace.ticks[menuNext]!.input)
-    }
-    await loadMenuFrame(world)
     // `task` 照剧本回显的 `setup.scene` 推（xl-03x.10）：给了它，`MenuDriver` 就先
     // `new Reader(scene)`，原版顶栏画的是那一本的 `Task` 段；没给就是「当前任务:无」。
-    renderer.draw(breakMenuOps(menuDrawList(world, replayMenuTask(trace.script.setup)), t))
-    await twoFrames()
+    const task = replayMenuTask(parsed.script.setup)
+    const loadFrame = textureLoader((ids) => renderer.load(ids))
+    await loadFrame(menuTextureIds(world))
+    renderer.draw(menuDrawList(world, task))
+    return { state: { renderer, world, task, loadFrame }, scene: parsed.script.name }
+  },
+  step(s, tick) {
+    stepMenu(s.world, tick.input)
+  },
+  async frame(s, t) {
+    await s.loadFrame(menuTextureIds(s.world))
+    s.renderer.draw(shiftOps(menuDrawList(s.world, s.task), t))
     // 菜单的一步是一次输入事件，没有虚拟时间可言（`MenuDriver` 不推时钟）。
     // `timeMs` 这一栏只进日志，报步号乘 `MENU_TICK_MS` 会假装它是时间。
-    return { t, timeMs: 0, x: world.currentX, y: world.currentY }
+    return { timeMs: 0, x: s.world.currentX, y: s.world.currentY }
   },
-}
+})
 
 /* ===================== 商店（xl-knp.10） ===================== */
-
-let shopRenderer: ShopRenderer | null = null
-let shopTrace: ShopTrace | null = null
-let shopWorld: ShopWorld | null = null
-let shopNext = 0
-/** 上一次真的载过的那份贴图名单（`shopTextureIds` 的 `JSON.stringify`）。 */
-let shopLoaded: string | null = null
-/**
- * 逐步的输入，**在 `load` 里一次算完**。
- *
- * 放在 `load` 而不是每次 `seek` 现算，有两个理由，第二个才是主要的：算一次
- * 是 O(n) 而不是 O(n²)；而 `shopInputsOfTicks` 会**两个方向都核**（空输入的
- * 那一步必须真是 `open`、非空的必须不是），放在 `load` 里意味着这份真值接不
- * 上的话**在取第一帧之前**就抛，而不是走到某一步中途才炸。
- */
-let shopInputs: readonly ShopInput[][] = []
 
 /**
  * 逐帧比对里商店动画停在**第 0 格**。
@@ -830,77 +787,42 @@ let shopInputs: readonly ShopInput[][] = []
  */
 const SHOP_FROZEN_FRAME = 0
 
-/**
- * **故意改坏一处渲染**（`--self-check` 的注入点），商店版。
- *
- * 与战斗 / 菜单两侧逐字同构，理由也一样：**整帧一起挪，不挑层**。商店每一帧
- * 的第一条绘制就是满屏 1024×640 的 `shopback.png`，挑任何一层往上挪都可能被
- * 它盖住，而那不成立的样子正是「改坏了却没响」。
- */
-function breakShopOps(ops: ShopDrawOp[], t: number): ShopDrawOp[] {
-  const b = window.__xlBreak
-  if (!b || t < b.fromTick) return ops
-  return ops.map((op) => ({ ...op, x: op.x + b.heroDx }))
-}
-
-/**
- * 把这一帧要用的贴图载齐。**每一步都问一次**，不是只在 load 时问一次 —— 换一
- * 家店换整套招牌与店主动画，切一类装备换一整栏商品图。只在 `load()` 里载一次
- * 的表现是「漏载」只在某几条剧本上炸（`shop-categories` 一切类就抛，而
- * `shop-trade` 那种停在同一栏的剧本一点事都没有）。
- */
-async function loadShopFrame(world: ShopWorld): Promise<void> {
-  const ids = shopTextureIds(world)
-  const key = JSON.stringify(ids)
-  if (shopLoaded === key) return
-  await shopRenderer!.load(ids)
-  shopLoaded = key
-}
-
-const shopAssembly: Assembly = {
-  async load(traceJson: string) {
-    const parsed = JSON.parse(traceJson) as ShopTrace
-    shopRenderer ??= await createShopRenderer(hostFor('shop'))
-    activate('shop')
+const shopAssembly = createEventDrivenAssembly({
+  kind: 'shop',
+  unit: '步',
+  createRenderer: createShopRenderer,
+  async setup(parsed: ShopTrace, renderer: ShopRenderer) {
     // 只读剧本回显的 `setup`，一个状态字段都不从真值里读（`shop/replay.ts`）。
     const world = replayShopSetup(parsed.script.setup)
-    shopWorld = world
-    shopTrace = parsed
-    shopNext = 0
-    shopLoaded = null
-    // 换店那一步的输入要从剧本的 `open` 指令还原 —— 真值里它是空数组（原版走
-    // 场景的选择事件，面板收不到鼠标事件）。与 `shopTrace.test.ts` 走的是同一
-    // 个函数。
-    shopInputs = shopInputsOfTicks(parsed.script.steps, parsed.ticks)
-    await loadShopFrame(world)
-    shopRenderer.draw(shopDrawList(world, SHOP_FROZEN_FRAME))
-    // `scene` 这一栏对商店来说没有场景可报，报剧本名 —— 比对器只把它打进日志。
-    return { scene: parsed.script.name, tickCount: parsed.tickCount }
+    /**
+     * 逐步的输入，**在起手时一次算完**。换店那一步的输入要从剧本的 `open` 指令还原 ——
+     * 真值里它是空数组（原版走场景的选择事件，面板收不到鼠标事件）。与 `shopTrace.test.ts`
+     * 走的是同一个函数。
+     *
+     * 放在起手而不是每次 `seek` 现算，有两个理由，第二个才是主要的：算一次是 O(n) 而不是
+     * O(n²)；而 `shopInputsOfTicks` 会**两个方向都核**（空输入的那一步必须真是 `open`、
+     * 非空的必须不是），放在这里意味着这份真值接不上的话**在取第一帧之前**就抛，而不是
+     * 走到某一步中途才炸。
+     */
+    const inputs: readonly ShopInput[][] = shopInputsOfTicks(parsed.script.steps, parsed.ticks)
+    const loadFrame = textureLoader((ids) => renderer.load(ids))
+    await loadFrame(shopTextureIds(world))
+    renderer.draw(shopDrawList(world, SHOP_FROZEN_FRAME))
+    return { state: { renderer, world, inputs, loadFrame }, scene: parsed.script.name }
   },
-
-  async seek(t: number) {
-    const trace = shopTrace
-    const world = shopWorld
-    const renderer = shopRenderer
-    if (!trace || !world || !renderer) throw new Error('还没 load 就 seek')
-    if (t < shopNext - 1) {
-      throw new Error(`取图只能往前：当前在第 ${shopNext - 1} 步，要去第 ${t} 步`)
-    }
-    if (t >= trace.ticks.length) {
-      throw new Error(`第 ${t} 步超出了这份 trace 的 ${trace.ticks.length} 步`)
-    }
-    for (; shopNext <= t; shopNext++) {
-      stepShop(world, shopInputs[shopNext]!)
-    }
-    await loadShopFrame(world)
-    renderer.draw(breakShopOps(shopDrawList(world, SHOP_FROZEN_FRAME), t))
-    await twoFrames()
+  step(s, _tick, i) {
+    stepShop(s.world, s.inputs[i]!)
+  },
+  async frame(s, t) {
+    await s.loadFrame(shopTextureIds(s.world))
+    s.renderer.draw(shiftOps(shopDrawList(s.world, SHOP_FROZEN_FRAME), t))
     // 商店的一步是一次输入事件，没有虚拟时间可言（`ShopDriver` 不推时钟）。
     // 与菜单同一个规矩：`timeMs` 只进日志，报 0 而不是编一个步号乘常数。
-    const p = activePanel(world)
-    return { t, timeMs: 0, x: p.currentX, y: p.currentY }
+    const p = activePanel(s.world)
+    return { timeMs: 0, x: p.currentX, y: p.currentY }
   },
-}
+})
+
 
 /**
  * 判别名 → 装配。**名单只有这一份**，`pickAssembly` 报"本页实现了哪些"时
