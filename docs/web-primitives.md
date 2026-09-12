@@ -3,7 +3,7 @@
 `web/src` 生产代码里每一处浏览器平台 API 的调用点，各自是原版哪一处的对应物、还是原版根本没有的加法（xl-03x.22）。
 `docs/original-primitives.md`（xl-03x.20）的另一半：那一份从原版出发，这一份从 web 出发。
 
-读数（2026-09-12）：共 135 行命中、49 个单元（对应 37 · 已登记 36 · 工程 62 · 未核 0）
+读数（2026-09-12）：共 132 行命中、49 个单元（对应 37 · 已登记 36 · 工程 59 · 未核 0）
 
 **分母不在这里写**：哪几类算「浏览器平台 API」，是 `web/src/test/webPrimitives.test.ts` 里 `PRIMITIVES` 那张正则表定的
 （事件 / 键盘 / 指针 / 定时 / 时钟 / 存储 / 地址 / 全屏 / 视口 / 全局 / 音频 / 图片 / 元素 / 无障碍 / 伪类，外加今天应当零命中的「生命周期」），
@@ -54,7 +54,7 @@
 | `web/src/index.css:112` | 伪类 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏按钮悬停描边 |
 | `web/src/main.tsx:6` | 全局 | 工程 | 挂载根 |
 | `web/src/menu/render/menuRenderer.ts:129,148` | 全局 | 工程 | 量字 / 离屏画布 |
-| `web/src/replay/main.ts:184,187,189,199,204,231,417,604,663,699,894,908,929,930,934,935,937,938` | 全局 / 图片 / 定时 / 事件 | 工程 | 逐帧比对的取图页，不进游戏 |
+| `web/src/replay/main.ts:184,187,189,199,204,231,417,604,663,699,895,909,930,931,935,936,938,939` | 全局 / 图片 / 定时 / 事件 | 工程 | 逐帧比对的取图页，不进游戏 |
 | `web/src/save/browserStore.ts:112` | 存储 / 全局 | 对应 `src/start/Recorder.java:52` | 存档落盘换成 IndexedDB；读的那一半是 `Loader.java:72` |
 | `web/src/saveload/render/saveLoadRenderer.ts:50,62` | 全局 | 工程 | 量字 / 离屏画布 |
 | `web/src/scene/sceneRenderer.ts:156,213,247,250,270,284` | 全局 | 工程 | 离屏画布 |

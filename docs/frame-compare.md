@@ -63,6 +63,25 @@ Web 侧是一个 dev-only 的取图页（`web/replay.html` + `src/replay/main.ts
   不是被移植的渲染代码。CDP 客户端是自己写的一百来行（`web/scripts/cdp.ts`），
   Node 内建的 `WebSocket` 与 `fetch` 就够，不引 puppeteer。
 
+### 一个页面连着装几条剧本：**排第一条的那条看不见"装配没切换"**（2026-09-12，xl-e8w 验收实测）
+
+取图页是**一个页面装完一整批剧本**，每条装配自己建一块 `host-<driver>` 的画布，
+`activate(kind)` 负责"只显示这一块、其余全藏起来"。于是：**批次里第一条事件驱动剧本
+对 `activate` 缺失免疫** —— 别的 host 还没建出来，不藏也只有它可见。
+
+实测（把 `createEventDrivenAssembly` 里的 `activate(spec.kind)` 删掉，两次只换顺序）：
+
+| 跑的顺序 | 结果 |
+| --- | --- |
+| `saveload-start battle-menus dorm-walk` | saveload-start **通过** · battle-menus 失败 99.7989% · dorm-walk 通过 |
+| `battle-menus saveload-start` | battle-menus **通过** · saveload-start 失败 99.7845% |
+
+角色随顺序对调，说明那条绿不是判据失灵，是**这一场观测不到**。`dorm-walk` 两次都通过是
+另一回事：场景装配自己调 `activate`，不走工厂那一行。
+
+⚠️ 由此得到一条用法：**`tools/compare-frames.sh <单条剧本>` 查不出跨装配的泄漏**。要查
+这一类，至少排两条、且让被疑的那条**不在第一位**。
+
 ## 判据：为什么不是哈希
 
 本项目已经为这件事付过一次学费：取景器截了 4800 帧战斗，用 MD5 判"唯一帧"，
