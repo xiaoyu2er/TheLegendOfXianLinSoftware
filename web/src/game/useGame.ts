@@ -187,6 +187,9 @@ const SESSION_DEPS: SessionDeps = {
   saves: createBrowserSaveStore(indexedDbBackend()),
 }
 
+/** 收鼠标、会握 grab 的三个面板。 */
+type GrabOwner = 'menu' | 'shop' | 'ls'
+
 export function useGame(
   renderer: SceneRenderer | null,
   /** 现在该在哪个场景。`null` = 还没开局，停在标题上（xl-q7f）。 */
@@ -217,10 +220,10 @@ export function useGame(
   /** 菜单里的鼠标事件，攒到下一拍。**没有键盘那一种。** */
   const menuInputRef = useRef<MenuInput[]>([])
   /**
-   * 鼠标在菜单上按下、还没松开（xl-z4f）—— 「按下时那个面板」。松手照它派，
-   * 不照当前面板：见 `menuInput`。
+   * 鼠标在哪个面板上按下、还没松开 —— 「按下时那个面板」（xl-z4f 菜单，xl-o9z 收拢到
+   * 三个鼠标面板）。松手照它派，不照当前面板：见 `pointer`。
    */
-  const menuGrabRef = useRef(false)
+  const grabRef = useRef<GrabOwner | null>(null)
   /** 店里的鼠标事件，攒到下一拍（xl-yg6.11）。 */
   const shopInputRef = useRef<ShopInput[]>([])
   const [shopLoading, setShopLoading] = useState(false)
@@ -272,7 +275,7 @@ export function useGame(
     queueRef.current = []
     battleInputsRef.current = []
     menuInputRef.current = []
-    menuGrabRef.current = false
+    grabRef.current = null
     openMenuRef.current = false
     signatureRef.current = null
     sceneRef.current = null
@@ -524,7 +527,9 @@ export function useGame(
       if (!isRunning(session)) {
         last = now
         const before = session
-        if (session.panel === 'ls') {
+        // 面板藏着也要推这一批：标题「承」进来、按着槽位按退出键回标题，松手落在
+        // 下一拍（xl-o9z）—— 那一下归存读档面板，见 `session.ts` 的 `grabbedSaveLoad`。
+        if (session.panel === 'ls' || lsInputRef.current.length > 0) {
           const saveload = lsInputRef.current
           lsInputRef.current = []
           const next = advanceSession(session, { ...NO_INPUT, saveload }, 0)
@@ -797,11 +802,31 @@ export function useGame(
     return () => window.clearInterval(id)
   }, [renderer, battleRenderer, menuRenderer, shopRenderer, saveLoadRenderer, endRenderer])
 
-  /** 存读档面板上的一次鼠标事件。面板没开着就丢掉。 */
-  const lsInput = (input: SaveLoadInput): void => {
-    if (sessionRef.current?.panel !== 'ls') return
-    lsInputRef.current.push(input)
+  /**
+   * 一次鼠标事件交给 `owner` 那个面板，**松手按 grab 派**（xl-z4f 菜单，xl-o9z 收拢）。
+   *
+   * 松手归按下时那个面板，不看它此刻还显不显示：按下「返回」那一拍菜单就关了、按着槽位
+   * 按退出键存读档面板就切走了，松手都落在下一拍 —— 按当前面板过滤的话整个丢掉，按钮的
+   * `isclicked` 粘着。反过来，没在这个面板上按下过的松手也不归它：菜单上按下「存档」
+   * 那一拍就进了存读档面板，松手是菜单的。原版是 Swing 的 `LightweightDispatcher` 握着
+   * 按下时那个组件（`session.ts` 菜单那一段有读数）。别的事件照当前面板过滤。
+   *
+   * App 那一层只记按下那一刻的外接矩形（换算坐标用），**归谁只在这里定**。
+   */
+  const pointer = <I extends { readonly e: string }>(owner: GrabOwner, input: I, queue: { current: I[] }): void => {
+    if (input.e === 'release') {
+      if (grabRef.current !== owner) return
+      grabRef.current = null
+      queue.current.push(input)
+      return
+    }
+    if (sessionRef.current?.panel !== owner) return
+    if (input.e === 'press') grabRef.current = owner
+    queue.current.push(input)
   }
+
+  /** 存读档面板上的一次鼠标事件。面板没开着就丢掉；松手见 `pointer`。 */
+  const lsInput = (input: SaveLoadInput): void => pointer('ls', input, lsInputRef)
 
   const openLoad = (): void => {
     openLoadRef.current = true
@@ -819,20 +844,7 @@ export function useGame(
    * 三种都要送：`press` / `release` / `move`。只送 `press` 的话按钮永远停在
    * 「按下」那一张贴图上（`isclicked` 也不清），而那看起来像"点了一下就卡住"。
    */
-  const menuInput = (input: MenuInput): void => {
-    // 松手按 **grab** 派：在菜单上按下过，松手就归菜单，不看它此刻还显不显示
-    // （xl-z4f）。按下「返回」那一拍菜单就关了，松手落在下一拍 —— 按当前面板
-    // 过滤的话它整个丢掉，「返回」的 `isclicked` 永远粘着。原版是 Swing 的
-    // `LightweightDispatcher` 握着按下时那个组件（`session.ts` 里有读数）。
-    if (input.e === 'release' && menuGrabRef.current) {
-      menuGrabRef.current = false
-      menuInputRef.current.push(input)
-      return
-    }
-    if (sessionRef.current?.panel !== 'menu') return
-    if (input.e === 'press') menuGrabRef.current = true
-    menuInputRef.current.push(input)
-  }
+  const menuInput = (input: MenuInput): void => pointer('menu', input, menuInputRef)
 
   /** 菜单画布上这个坐标该挂的 `title`。读的是此刻的菜单世界，见 `GameView.menuTitleAt`。 */
   const menuTitleAt = (x: number, y: number): string | null => {
@@ -841,11 +853,8 @@ export function useGame(
     return world === null ? null : menuDisabledReasonAt(world, x, y)
   }
 
-  /** 店里的一次鼠标事件（舞台**逻辑坐标**）。店没开着就丢掉。 */
-  const shopInput = (input: ShopInput): void => {
-    if (sessionRef.current?.panel !== 'shop') return
-    shopInputRef.current.push(input)
-  }
+  /** 店里的一次鼠标事件（舞台**逻辑坐标**）。店没开着就丢掉；松手见 `pointer`。 */
+  const shopInput = (input: ShopInput): void => pointer('shop', input, shopInputRef)
 
   const restart = (): void => {
     resetParty()
