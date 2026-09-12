@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { javaSource } from '../test/javaSource'
+import { repoPath } from '../test/repoPath'
 import { START_BUTTONS } from './buttons'
-import { buttonAt } from './replay'
+import { buttonAt, startStartReplay } from './replay'
 import { JAVA_BUTTON_NAME } from './snapshot'
 import { START_TRACE_NAMES, readStartTrace, replayStart } from './test/replayTrace'
 import type { ReplayedStart, StartTrace } from './test/replayTrace'
@@ -23,29 +25,47 @@ import { createStartPanelState } from './panelState'
 /** 真值一行里不属于状态的列：步号、剧本指令号、这一步的输入。 */
 const NON_STATE_COLUMNS = ['t', 'ip', 'input'] as const
 
-const BOTH = ['start-about', 'start-newgame']
+const ALL = ['start-about', 'start-newgame', 'start-about-again', 'start-hover-end']
 
-/** **已经对齐的格子 —— 手写登记。** */
+/** **已经对齐的格子 —— 手写登记。** `start-hover-end` 的 `buttons` 那一格在 {@link EXCEPTED} 里。 */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
-  music: BOTH,
-  current: BOTH,
-  card: BOTH,
-  onScreen: BOTH,
-  buttons: BOTH,
-  mouse: BOTH,
-  scroll: BOTH,
-  backScroll: BOTH,
-  loading: BOTH,
-  loading2: BOTH,
-  cloud: BOTH,
-  aboutTimer: BOTH,
-  loadTimer: BOTH,
-  isUnfolded: BOTH,
-  signal: BOTH,
+  music: ALL,
+  current: ALL,
+  card: ALL,
+  onScreen: ALL,
+  buttons: ['start-about', 'start-newgame', 'start-about-again'],
+  mouse: ALL,
+  scroll: ALL,
+  backScroll: ALL,
+  loading: ALL,
+  loading2: ALL,
+  cloud: ALL,
+  aboutTimer: ALL,
+  loadTimer: ALL,
+  isUnfolded: ALL,
+  signal: ALL,
 }
 
 /** **还欠着的格子 —— 手写登记，每一格写明归哪张票。** 今天一格都不欠。 */
 const PENDING: Readonly<Record<string, Readonly<Record<string, string>>>> = {}
+
+/**
+ * **签过字、不还的格子 —— 手写登记，每一格写明 ADR-0001 例外表里的键**（xl-r0x）。
+ *
+ * 与 {@link PENDING} 不是一回事：那边是欠着、有票要还；这边是例外表里签过字的故意不复刻，
+ * 回放照**产品**推（`replay.ts`），所以逐步 `toEqual` 必须不过。整格登出去会丢掉那一格里
+ * 别的按钮的逐步对齐，所以每一格另有一条专项判据把差钉死在它该在的地方（见下面「结」那条）。
+ */
+const EXCEPTED: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  buttons: { 'start-hover-end': 'start-exit-disabled' },
+}
+
+/** ADR-0001 例外表的键，现读（表格行的第一格 `` `键` ``）。 */
+const ADR_KEYS: ReadonlySet<string> = new Set(
+  [...readFileSync(repoPath('docs/adr/0001-web-duplicates-original-defects.md'), 'utf8').matchAll(/^\| `([a-z0-9-]+)` \|/gm)].map(
+    (m) => m[1]!,
+  ),
+)
 
 const TRACES = new Map<string, StartTrace>(START_TRACE_NAMES.map((n) => [n, readStartTrace(n)]))
 const REPLAYED = new Map<string, ReplayedStart>(START_TRACE_NAMES.map((n) => [n, replayStart(TRACES.get(n)!)]))
@@ -74,20 +94,29 @@ describe('标题页状态层对齐行为真值', () => {
     expect(START_TRACE_NAMES.length).toBeGreaterThan(0)
   })
 
-  it('每一个（字段组 × 剧本）的格子要么已对齐、要么记着归谁 —— 没有第三种', () => {
+  it('每一个（字段组 × 剧本）的格子要么已对齐、要么记着归谁、要么签过例外 —— 恰好一种', () => {
     const groups = groupsOnDisk()
     const unregistered: string[] = []
-    const both: string[] = []
+    const several: string[] = []
     for (const group of groups) {
       for (const name of START_TRACE_NAMES) {
         const aligned = (ALIGNED[group] ?? []).includes(name)
         const pending = name in (PENDING[group] ?? {})
-        if (!aligned && !pending) unregistered.push(`${group} × ${name}`)
-        if (aligned && pending) both.push(`${group} × ${name}`)
+        const excepted = name in (EXCEPTED[group] ?? {})
+        const count = Number(aligned) + Number(pending) + Number(excepted)
+        if (count === 0) unregistered.push(`${group} × ${name}`)
+        if (count > 1) several.push(`${group} × ${name}`)
       }
     }
-    expect(unregistered, '这几格两张登记表里都没有').toEqual([])
-    expect(both, '同一个格子同时登记在 ALIGNED 与 PENDING 里').toEqual([])
+    expect(unregistered, '这几格三张登记表里都没有').toEqual([])
+    expect(several, '同一个格子登记在不止一张表里').toEqual([])
+    for (const [group, byTrace] of Object.entries(EXCEPTED)) {
+      expect(groups, `EXCEPTED 里的 ${group} 不是真值的字段组`).toContain(group)
+      for (const [n, key] of Object.entries(byTrace)) {
+        expect(START_TRACE_NAMES, `EXCEPTED[${group}] 里的 ${n} 不在真值目录里`).toContain(n)
+        expect(ADR_KEYS.has(key), `EXCEPTED[${group}][${n}] 的 ${key} 不在 ADR-0001 例外表里`).toBe(true)
+      }
+    }
     for (const [group, names] of Object.entries(ALIGNED)) {
       expect(groups, `ALIGNED 里的 ${group} 不是真值的字段组`).toContain(group)
       for (const n of names) expect(START_TRACE_NAMES, `ALIGNED[${group}] 里的 ${n} 不在真值目录里`).toContain(n)
@@ -120,12 +149,14 @@ describe('标题页状态层对齐行为真值', () => {
     }
   }
 
-  it('反方向：登记成「还欠着」的格子必须真的还没对上', () => {
+  it('反方向：登记成「还欠着」或「签过例外」的格子必须真的还没对上', () => {
     const wrong: string[] = []
-    for (const [group, byTrace] of Object.entries(PENDING)) {
-      for (const name of Object.keys(byTrace)) if (cellMatches(group, name)) wrong.push(`${group} × ${name}`)
+    for (const table of [PENDING, EXCEPTED]) {
+      for (const [group, byTrace] of Object.entries(table)) {
+        for (const name of Object.keys(byTrace)) if (cellMatches(group, name)) wrong.push(`${group} × ${name}`)
+      }
     }
-    expect(wrong, '这几格已经逐步对上了，把它从 PENDING 挪进 ALIGNED').toEqual([])
+    expect(wrong, '这几格已经逐步对上了，把它从 PENDING / EXCEPTED 挪进 ALIGNED').toEqual([])
   })
 })
 
@@ -195,6 +226,71 @@ describe('逐帧比对要的那一帧：只有 tick 步画', () => {
       expect(ours.back!.clicked, `${name} 第 ${i} 步`).toBe(true)
     }
   })
+
+  it('「回」留着真的后果：展开着在别的按钮上松手，当场收起 —— 不开卷轴、不开载入（xl-r0x）', () => {
+    // 原版 setButton() 展开之后只看 back.isIsclicked()，不看松手的是哪一颗。选步的条件只写**起因**
+    // （上一步展开着、按住的不是「回」、而「回」的 clicked 是真），后果全部从真值读出来再断言 ——
+    // 一步都没选到是抛，找不到不许当成通过。
+    type Btns = Record<string, { clicked: boolean }>
+    const pressedOtherThanBack = (t: StartTrace['ticks'][number]) =>
+      Object.entries(t.buttons as Btns).filter(([k, b]) => k !== 'back' && b.clicked).map(([k]) => k)
+    const hits: { name: string; i: number }[] = []
+    for (const [name, trace] of TRACES) {
+      trace.ticks.forEach((t, i) => {
+        const prev = trace.ticks[i - 1]
+        if (t.input[0]!.e !== 'release' || prev === undefined || prev.isUnfolded !== true) return
+        if (pressedOtherThanBack(prev).length !== 1 || !(prev.buttons as Btns).back!.clicked) return
+        hits.push({ name, i })
+      })
+    }
+    expect(hits.length, '没有一份真值走到「展开着、在别的按钮上松手」').toBeGreaterThan(0)
+    const collapse = ['signal', 'onScreen', 'scroll', 'backScroll', 'loading', 'loadTimer', 'aboutTimer'] as const
+    for (const { name, i } of hits) {
+      const truth = TRACES.get(name)!.ticks[i]!
+      // 真值自己说的是「收起」：先把这件事从真值里读出来，免得判据在真值变了之后跟着空转。
+      expect(truth.signal, `${name} 第 ${i} 步：真值的 signal`).toBe(3)
+      expect((truth.backScroll as { isStop: boolean }).isStop, `${name} 第 ${i} 步：反向卷轴开播`).toBe(false)
+      expect((truth.scroll as { isStop: boolean }).isStop, `${name} 第 ${i} 步：卷轴没开`).toBe(true)
+      expect((truth.loading as { isStop: boolean }).isStop, `${name} 第 ${i} 步：载入动画没开`).toBe(true)
+      const ours = REPLAYED.get(name)!.rows[i]!
+      for (const group of collapse) expect(ours[group], `${name} 第 ${i} 步 · ${group}`).toEqual(truth[group])
+    }
+  })
+
+  it('「结」的悬停：与原版只差在「结」那一颗、只差在原版换了悬停图的那几步（ADR-0001 的 start-exit-disabled）', () => {
+    type Btn = { image: string; clicked: boolean; glow: { frame: number; isStop: boolean } }
+    type Btns = Record<string, Btn>
+    /** 画面上看得见的那几项：画哪张图、高亮第几帧、停没停。 */
+    const visible = (b: Btn) => ({ image: b.image, clicked: b.clicked, frame: b.glow.frame, isStop: b.glow.isStop })
+    const hits = stepsWhere((t) => (t.buttons as Btns).end!.image === 'hover')
+    const names = [...new Set(hits.map((h) => h.name))]
+    for (const name of names) {
+      expect(EXCEPTED.buttons?.[name], `${name} 悬停了「结」，它的 buttons 那一格该登在 EXCEPTED 里`).toBe('start-exit-disabled')
+      const truth = TRACES.get(name)!.ticks
+      const ours = REPLAYED.get(name)!.rows
+      let differs = 0
+      truth.forEach((t, i) => {
+        const { end: tEnd, ...tRest } = t.buttons as Btns
+        const { end: oEnd, ...oRest } = ours[i]!.buttons as Btns
+        expect(oRest, `${name} 第 ${i} 步：除「结」之外的按钮`).toEqual(tRest)
+        if (tEnd!.image === 'hover') {
+          // 原版换了图、高亮在转；产品那颗禁用的收不到悬停，常态图、高亮停着。
+          expect(tEnd!.glow.isStop, `${name} 第 ${i} 步：原版的高亮在转`).toBe(false)
+          expect(oEnd!.image, `${name} 第 ${i} 步`).toBe('normal')
+          expect(oEnd!.glow.isStop, `${name} 第 ${i} 步`).toBe(true)
+          differs++
+        } else if (differs === 0) {
+          expect(oEnd, `${name} 第 ${i} 步：悬停「结」之前，两边逐字一样`).toEqual(tEnd)
+        } else {
+          // 移开之后画面上两边一样（常态图、第 0 帧、停着），但原版那圈高亮转过一轮，
+          // `next` / `isLoop` 留着残余（实测 start-hover-end 第 12 步起 1 / true 对 0 / false）。
+          // 那是同一处例外在看不见的簿记里的尾巴 —— 产品里「结」本来就不会再亮起来去读它。
+          expect(visible(oEnd!), `${name} 第 ${i} 步：移开之后画面上的那几项两边一样`).toEqual(visible(tEnd!))
+        }
+      })
+      expect(differs).toBeGreaterThan(0)
+    }
+  })
 })
 
 describe('回放件里不从真值取、而从原版源码现读的约定', () => {
@@ -224,5 +320,12 @@ describe('回放件里不从真值取、而从原版源码现读的约定', () =
     expect(buttonAt(s, 184, 169)).toBeNull()
     // 「回」开机不在屏幕上，它的盒子里谁都不是。
     expect(buttonAt(s, 810, 569)).toBeNull()
+  })
+
+  it('回放在禁用的「结」上按下当场抛 —— 产品里那颗点不下去，没有对应物（xl-r0x）', () => {
+    const replay = startStartReplay('负面用例')
+    replay.step({ e: 'tick' })
+    // 「结」画在 (200,450)，命中框 [185,235) × [444,494)。
+    expect(() => replay.step({ e: 'press', x: 210, y: 469 })).toThrow(/禁用/)
   })
 })

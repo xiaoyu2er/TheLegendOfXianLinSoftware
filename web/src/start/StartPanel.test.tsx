@@ -150,6 +150,29 @@ describe('开始界面', () => {
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
   })
 
+  it('悬停禁用的「结」：不换图、高亮不转 —— 原版会换（ADR-0001 的 start-exit-disabled，xl-r0x）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const end = screen.getByRole('button', { name: '结束游戏' })
+    const face = (el: HTMLElement) => (el.querySelector('.start-button-face') as HTMLImageElement).src
+    const glow = (el: HTMLElement) => (el.querySelector('.start-button-glow') as HTMLImageElement).src
+
+    // 与上面「鼠标移进按钮」那条同一套事件、同样的拍数。
+    fireEvent.mouseEnter(end)
+    fireEvent.mouseMove(end)
+    tick(2)
+    expect(face(end)).toContain(resolveAsset(startAssetId('end')))
+    expect(face(end)).not.toContain(resolveAsset(startAssetId('endHover')))
+    expect(glow(end)).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
+
+    // 对照：同一套事件打在活着的「起」上会换。没有这一半的话，fireEvent 本身失效也是绿的。
+    const start = screen.getByRole('button', { name: '开始新游戏' })
+    fireEvent.mouseEnter(start)
+    fireEvent.mouseMove(start)
+    tick(2)
+    expect(face(start)).toContain(resolveAsset(startAssetId('newGameHover')))
+    expect(glow(start)).toContain(resolveAsset(startFrameAssetId('buttonGlow', 1)))
+  })
+
   it('⚠️ 点完之后鼠标在框里动一下，高亮续播 —— 组件挂了 onMouseMove', () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const el = screen.getByRole('button', { name: '关于我们' })
