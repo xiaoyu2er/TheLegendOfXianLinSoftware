@@ -107,12 +107,12 @@
 | 菜单 天书「存档」/「提取」进存读档面板 | 能 | 随时 | — | `FuncButtons.java:192-213`；剧本 `saveload-menu`；实跑 `saveloadSession.test.ts` 10/10 |
 | 菜单 天书「设定」→ 背景音乐 开 / 关 | 能 | 随时 | — | `FuncButtons.java:288-319`；实跑 `menuAudio.test.ts` 5/5、`useGameBgm.test.tsx` 2/2 |
 | 菜单 天书「设定」→ 特殊音效 开 / 关 | 能（关掉之后菜单与商店的声音真的停；战斗 / 场景里的音效本来就还不响，那是「声音」最后一行的事，不是开关的） | 随时 | —（xl-03x.8（closed）、xl-ebw（closed）） | `FuncButtons.java:321-350`、`MusicPlayer.java:84,167`；实跑 `sfxSwitch.test.ts` 3/3、`useGameSfx.test.tsx` 2/2 |
-| 菜单 天书「返回」回场景 | 能 | 随时 | 跨帧松手被丢掉：xl-z4f（closed） | `FuncButtons.java:224-232`；实跑 `menuSession.test.ts` 21/21 |
-| 菜单 天书「退出」→「重新开始」回标题 | 能（回标题把背景音乐开关拨回「开」，xl-03x.21（closed）） | 随时 | —（xl-03x.11（closed）、xl-fbs（closed）） | `FuncButtons.java:353-368`；实跑 `menuSession.test.ts` 21/21、`funcButtons.test.ts` 23/23 |
-| 菜单 天书「退出」→「确认离开」退出进程 | **不能**：浏览器没有「退出进程」的对应物 —— 照画、照原版展开收起，禁用：不响应悬停 / 按下 / 松开、不出声，理由挂在画布宿主的 `title` 上 | 随时 | `ADR-0001#start-exit-disabled`（xl-03x.12（closed）） | `FuncButtons.java:370-380`；实跑 `funcButtons.test.ts` 23/23、`menuSession.test.ts` 21/21、`appMenu.test.tsx` 5/5 |
+| 菜单 天书「返回」回场景 | 能 | 随时 | 跨帧松手被丢掉：xl-z4f（closed） | `FuncButtons.java:224-232`；实跑 `menuSession.test.ts` 24/24。回来下一拍场景曲从头放（`ScenePanel.java:262-265` 那句 `readBGM` 不看同名）：实跑 `useGameBgm.test.tsx` 4/4「从菜单回场景的背景音乐」 |
+| 菜单 天书「退出」→「重新开始」回标题 | 能（回标题把背景音乐开关拨回「开」，xl-03x.21（closed）） | 随时 | —（xl-03x.11（closed）、xl-fbs（closed）） | `FuncButtons.java:353-368`；实跑 `menuSession.test.ts` 24/24、`funcButtons.test.ts` 23/23 |
+| 菜单 天书「退出」→「确认离开」退出进程 | **不能**：浏览器没有「退出进程」的对应物 —— 照画、照原版展开收起，禁用：不响应悬停 / 按下 / 松开、不出声，理由挂在画布宿主的 `title` 上 | 随时 | `ADR-0001#start-exit-disabled`（xl-03x.12（closed）） | `FuncButtons.java:370-380`；实跑 `funcButtons.test.ts` 23/23、`menuSession.test.ts` 24/24、`appMenu.test.tsx` 5/5 |
 | **商店** 药店：悬停看恢复量与价位评语、±数量、买（按库存封顶，钱不够整笔回滚）、卖 | 能 | 仅闭包 | — | `ShopPanel.java:131-265`；剧本 `shop-trade` / `shop-edges`；实跑 `shopTrace.test.ts` 46/46、`drugShop.test.ts` 13/13 |
 | 商店 装备店：六类标签切换、悬停看属性与谁能用、±、买、卖 | 能 | 仅闭包 | — | `EquipmentShopPanel.java:86-437`；剧本 `shop-categories`；实跑 `equipShop.test.ts` 20/20 |
-| 商店 进门读当前的钱与药、每一步写回，「返回游戏」回进门那一格 | 能 | 仅闭包 | — | `ShopPanel.java:215-252`；实跑 `appShop.test.tsx` 10/10 |
+| 商店 进门读当前的钱与药、每一步写回，「返回游戏」回进门那一格 | 能 | 仅闭包 | — | `ShopPanel.java:215-252`；实跑 `appShop.test.tsx` 10/10；回来下一拍场景曲从头放（与菜单「返回」同一句 `readBGM`）：`doors.test.ts`「进店之后按「返回游戏」」 |
 | **战斗** 「击」→ 点怪选敌 | 能 | 链上 | — | `battle/Command.java:81-88`；剧本 `battle-min` / `battle-victory`；实跑 `battleTrace.test.ts` 57/57 |
 | 战斗 「技」→ 技能菜单 → 选招（单体选敌、全体直接放）、菜单里「返回」 | 能 | 链上 | — | `SkillMenu.java:202-287`；剧本 `battle-zhang-skills` / `battle-menus` 等 |
 | 战斗 「防」：怒气满放秘术，不满弹提示 | 能 | 链上 | — | `battle/Command.java:104-144`；剧本 `battle-mishu-zhang` / `battle-mishu-yu` / `battle-mishu-lu` |
