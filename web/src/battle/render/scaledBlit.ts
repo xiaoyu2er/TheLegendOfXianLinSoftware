@@ -87,6 +87,10 @@ const MEASURED_BLITS: readonly { readonly src: BlitExtent; readonly dest: BlitEx
       [3200, 2560],
     ] as const
   ).map(([width, height]) => ({ src: { width, height }, dest: { width: 150, height: 100 } })),
+  // 导出器单列量的那一对（`thumbnail.checks`）。没有调用方画它；登记是为了让带护栏的产品函数
+  // 在这里也被黄金数据核到 —— 带透明那条退回旧的常数 16 位时，产品能走到的输入里只有它会红
+  // （xl-cpo 实测：不登记它，那条篡改 83 条测试全绿）。
+  { src: { width: 2865, height: 699 }, dest: { width: 233, height: 253 } },
 ]
 
 /** 存读档缩略图量过的源尺寸（{@link MEASURED_BLITS} 里目标是 150×100 的那几条）。给测试对撞用。 */

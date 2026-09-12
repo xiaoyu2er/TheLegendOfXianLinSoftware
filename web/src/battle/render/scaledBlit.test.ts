@@ -235,6 +235,10 @@ describe('存读档缩略图：缩小区间', () => {
       for (const loop of ['transparent', 'opaque'] as const) {
         expect(model(loop, c.width, c.destWidth, c)).toEqual(c[loop].x)
         expect(model(loop, c.height, c.destHeight, c)).toEqual(c[loop].y)
+        // 带护栏的产品函数也要对上（这几对登记在 MEASURED_BLITS 里）：测试侧那份模型只在两轴
+        // 扫描上与产品对齐过，而两轴扫描看不出「带透明退回 16 位」。
+        expect(indexes(loop, c.width, c.destWidth, c)).toEqual(c[loop].x)
+        expect(indexes(loop, c.height, c.destHeight, c)).toEqual(c[loop].y)
       }
     }
   })
