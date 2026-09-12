@@ -144,15 +144,45 @@ describe('逐帧比对要的那一帧：只有 tick 步画', () => {
       expect(views[0], `${name} 第 0 步是 tick，得画出一帧`).not.toBeNull()
       let inputs = 0
       trace.ticks.forEach((tick, i) => {
-        if (i === 0) return
-        if (tick.input[0]!.e === 'tick') expect(views[i], `${name} 第 ${i} 步`).not.toBe(views[i - 1])
-        else {
+        if (tick.input[0]!.e === 'tick') {
+          // 这一拍画的鼠标帧，拿**真值**这一步的鼠标帧去对（原版 paint 读的是循环体推过之后
+          // 的那一帧）。不写 `not.toBe(views[i-1])`：tickStartPanel 每拍都造新对象，那一条
+          // 按构造成立（xl-whk 评审）。
+          const truthFrame = (tick.mouse as { anim: { frame: number } }).anim.frame
+          expect(views[i]!.cursorFrame, `${name} 第 ${i} 步画的鼠标帧`).toBe(truthFrame)
+        } else if (i > 0) {
           expect(views[i], `${name} 第 ${i} 步是输入步，位图应停在上一拍`).toBe(views[i - 1])
           inputs++
         }
       })
       expect(inputs, `${name} 一个输入步都没有 —— 这条判据空转`).toBeGreaterThan(0)
     }
+  })
+
+  it('「关于我们」这一拍画多宽：照原版 drawScroll 的三支，从真值现算', () => {
+    // 逐帧比对那两条是整屏上界（卷轴的有损 WebP），**看不见揭开宽度错一两段**（xl-whk 评审）。
+    // 所以宽度在这里从真值算：drawScroll 读的是过场**之前**的 isUnfolded / signal —— 即上一步
+    // 那一行 —— 与这一拍更新段推过之后的 aboutTimer（paint 不动它，就是这一行的值）。
+    const src = javaSource('src/start/StartPanel.java').replace(/\s+/g, '')
+    expect(src).toContain('100*(9-aboutTimer.getTimeLeft())')
+    expect(src).toContain('100*(aboutTimer.getTimeLeft())')
+    let drawn = 0
+    for (const [name, trace] of TRACES) {
+      const { views } = REPLAYED.get(name)!
+      trace.ticks.forEach((tick, i) => {
+        if (i === 0 || tick.input[0]!.e !== 'tick') return
+        const prev = trace.ticks[i - 1]!
+        const unfolded = prev.isUnfolded as boolean
+        const signal = prev.signal as number
+        const left = (tick.aboutTimer as { timeLeft: number }).timeLeft
+        const want = !unfolded
+          ? signal === 2 ? 100 * (9 - left) : null
+          : signal === 3 ? 100 * left : signal === 2 ? 1024 : null
+        expect(views[i]!.aboutWidth, `${name} 第 ${i} 步`).toBe(want)
+        if (want !== null) drawn++
+      })
+    }
+    expect(drawn, '一拍「关于我们」都没画 —— 这条判据空转').toBeGreaterThan(0)
   })
 
   it('「回」的那一颗：点完之后 back.clicked 留着真（原版 setButton 先把它移出列表）', () => {

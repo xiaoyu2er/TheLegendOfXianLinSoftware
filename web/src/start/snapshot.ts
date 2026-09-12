@@ -1,4 +1,5 @@
 import type { CountdownTimer, FrameAnimation } from './animation'
+import { START_BUTTONS } from './buttons'
 import type { StartButtonKey } from './buttons'
 import type { StartPanelState } from './panelState'
 
@@ -23,8 +24,11 @@ export const JAVA_BUTTON_NAME: Readonly<Record<StartButtonKey, string>> = {
   goBack: 'back',
 }
 
-/** 真值里 `buttons` 那一格的键序：原版 `initialButtons()` 的顺序，也就是 `START_BUTTONS` 的顺序。 */
-const KEYS: readonly StartButtonKey[] = ['newGame', 'load', 'about', 'end', 'goBack']
+/**
+ * 真值里 `buttons` 那一格的键序，也是 `glow[i]` 的下标：原版 `initialButtons()` 的顺序。
+ * 从 `START_BUTTONS` 推，不手抄 —— `panelState.ts` 的 `glow` 就是按它建的。
+ */
+const KEYS: readonly StartButtonKey[] = START_BUTTONS.map((b) => b.key)
 
 export interface AnimSnapshot {
   frame: number

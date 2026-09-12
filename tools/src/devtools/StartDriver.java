@@ -405,7 +405,8 @@ public final class StartDriver implements TraceDriver {
     /**
      * 这颗按钮此刻画的是三个构造参数里的哪一张，按引用认。**悬停与按下传的是同一个文件**
      * （{@code 起2.png} 传了两遍），而 {@code readImage} 走 {@code Toolkit.getImage} 的按文件名缓存，
-     * 两者多半是同一个对象 —— 那样按下之后读出来是 {@code hover}，按先比到的算。
+     * 两者是同一个对象 —— 实测（2026-09-12，openjdk 17，start-about / start-newgame）按下之后
+     * 读出来一律是 {@code hover}，{@code pressed} 一次都没出现过；按先比到的算。
      */
     private String buttonImage(Object btn) {
         Object img = field(btn, "buttonImage");
