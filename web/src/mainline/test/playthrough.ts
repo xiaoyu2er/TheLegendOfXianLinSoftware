@@ -150,8 +150,13 @@ export interface Fight {
   monsters: readonly string[]
 }
 
-/** 出厂数据的缺口：缺哪几只（全库现数）、链上哪几场撞到它们。 */
+/** 出厂数据的缺口：全库脚本用到哪几只（分母）、其中缺哪几只、链上哪几场撞到它们。 */
 export interface MonsterGap {
+  /**
+   * 全库脚本用到的怪（现数）。`missing` 为空时要靠它分开「一只不缺」与「一只都没收集到」——
+   * 后者的 `missing` 同样是空的（xl-3hn 的 /code-review 逮到的恒真断言）。
+   */
+  used: string[]
   missing: string[]
   fights: Fight[]
 }
@@ -192,7 +197,7 @@ export function monsterGap(
       }
     }
   }
-  return { missing, fights }
+  return { used: [...all].sort(), missing, fights }
 }
 
 /** 缺口的一行读数，打进测试输出（关票理由与新票的数从这里抄）。 */

@@ -55,6 +55,8 @@ describe('主线连跑（真实产品数据）', () => {
    */
   it('全库脚本用到的怪，出厂表里一只不缺', () => {
     const gap = monsterGap(truths, chain, productHas)
+    // 分母先行：一只都没收集到时 `missing` 也是空的，下一句就恒真了。
+    expect(gap.used.length, '全库脚本里一只怪都没收集到 —— monsterGap 空转了').toBeGreaterThan(0)
     expect(gap.missing, describeGap(gap)).toEqual([])
   })
 })
