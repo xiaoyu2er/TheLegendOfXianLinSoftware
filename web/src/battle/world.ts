@@ -77,6 +77,15 @@ export interface BattleConfig {
    */
   skillNumbers?: Readonly<Partial<Record<PartyKey, number>>> | undefined
   /**
+   * 六种药此刻各有几件，按 `DRUGS` 的次序（`DrugPack.drugList`，xl-byy）。
+   *
+   * 原版没有这个参数：药品菜单读的就是那一份 static。这一层每场新建世界，于是
+   * 变成一次显式的搬运 —— 游戏本体从 `fakes/drugPack.ts` 现读（`configFor`），
+   * 打完由会话写回；回放真值从剧本的 `drugs` 回显来。**不传就是六种全 0**，
+   * 也就是一个干净进程的样子，老真值一个字节都不变。
+   */
+  drugStock?: readonly number[] | undefined
+  /**
    * **上一场留下的那几样**（xl-rh9.17）。不给就是"这是开机以来的第一场"，
    * 也就是每一份行为真值的处境 —— 所以**不传它时这个函数一个字节都不变**。
    *
@@ -124,6 +133,19 @@ function applyCarry(h: Hero, c: HeroCarry): void {
     h.isDead = false
     if (h.hp === 0) h.hp = Math.trunc(h.hpMax * REVIVE_HP_RATIO)
   }
+}
+
+/**
+ * 这一场药品菜单读的存货（`BattleConfig.drugStock`）。**长度必须等于 `DRUGS`**：
+ * 原版是同一张 `DrugPack.drugList`，短一截的话菜单画到那一行当场越界（绘制层
+ * 那一处也抛），这里在建世界时就拦下，不等到点「物」。
+ */
+function initialDrugStock(stock: readonly number[] | undefined): number[] {
+  if (stock === undefined) return DRUGS.map(() => 0)
+  if (stock.length !== DRUGS.length) {
+    throw new Error(`药品存货有 ${stock.length} 条，而药品有 ${DRUGS.length} 种（DrugPack.drugList）`)
+  }
+  return [...stock]
 }
 
 /** `(int)(hero.getHpMax()*0.1)` —— 上一场死掉的人这一场从这里起。 */
@@ -473,8 +495,7 @@ export function createBattle(config: BattleConfig): BattleWorld {
       { zhang: zxf?.skillNumber, yu: yj?.skillNumber, lu: lxq?.skillNumber },
     ),
     drugMenu: makeDrugMenu(),
-    // `ShopReader.readDrug()` 不给 `numberGOT` 赋值，数据文件里也没有那一列。
-    drugStock: DRUGS.map(() => 0),
+    drugStock: initialDrugStock(config.drugStock),
     // `new VictoryReminder(this)` —— 构造函数里就把 getInformation() 跑完了。
     victoryReminder: victoryInformation({ zhang: zxf, yu: yj, lu: lxq }, enemies),
     // `GameOver` 构造函数里那四个会动的坐标（另外十二个只被 paint 读）。

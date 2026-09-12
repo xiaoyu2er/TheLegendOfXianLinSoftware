@@ -388,16 +388,12 @@ function drugMenuMoveIn(w: BattleWorld, x: number, y: number): void {
 /**
  * `DrugMenu.checkReleased()`。
  *
- * 原版那六个 `if` 各自还带一个 **type**（1 回血 / 2 回蓝，顺序 1,2,1,2,1,2），
- * 那个数**只被「真的用药」那一路读**（决定加 hp 还是加 mp），而那一路今天
- * 一次都走不到（存货恒为 0）。所以这里不把它抄进来：一张抄了却没人读的表
- * 抄错一位和抄对了长得一模一样，而它下面那个 `throw` 已经把这件事归给
- * xl-rh9.14 了。
+ * 原版那六个 `if` 各自带一个 **type**（1 回血 / 2 回蓝），见 {@link DRUG_TYPE}。
  */
 function drugMenuReleased(w: BattleWorld, x: number, y: number): void {
   const m = w.drugMenu
   for (let i = 0; i < DRUGS.length; i++) {
-    if (m.buttons[i]!.isclicked) checkDrugNumber(w, i)
+    if (m.buttons[i]!.isclicked) checkDrugNumber(w, i, DRUG_TYPE[i]!)
   }
   // 返回是第七颗。
   if (m.buttons[DRUGS.length]!.isclicked) {
@@ -408,23 +404,72 @@ function drugMenuReleased(w: BattleWorld, x: number, y: number): void {
 }
 
 /**
+ * `checkReleased` 那六个 `if` 各自传给 `checkDrugNumber` 的 type：1 回血、2 回蓝。
+ *
+ * **是按钮位置写死的，不是从药性推的** —— 原版就是六个字面量 `1,2,1,2,1,2`。
+ * 今天的药表恰好是「回血、回蓝」交替（`drug.txt`），两种写法推出来一样；
+ * 药表哪天换了次序，原版照样按位置加，这里跟着原版。判据在 `drugUse.test.ts`
+ * 那条从 GBK 源码现读六个字面量的用例。
+ */
+export const DRUG_TYPE: readonly (1 | 2)[] = [1, 2, 1, 2, 1, 2]
+
+/**
  * `DrugMenu.checkDrugNumber(drug, type)`。
  *
- * **存货那一路今天走不到**：`ShopReader.readDrug()` 不给 `numberGOT` 赋值，
- * 数据文件里也没有那一列，所以一份没读过存档的进程里六种药全是 0，
- * `battle-menus` 点下去走的是 else 那一支。用得起药那一路要连
- * `progressGo()` 与回血/回蓝一起做，而它一次都没有真值 —— 抛并点名。
+ * 有货（xl-byy）：先清掉正在飘的数字、在**用药那个人**头上加一个回复数字
+ * （type 2 = 回复图），回血或回蓝**夹到上限**，然后立刻 `start()`、扣一件、
+ * `progressGo()`。数字上写的是药性的全额，不是夹完之后真加上去的量。
+ *
+ * 没货：`Reminder.show(19)`，菜单留着。
+ *
+ * 用药的人是点「物」那一刻 `checkHero()` 定下来的（`drugMenu.currentHero`），
+ * 不是此刻的 `currentRound` —— 两者在今天的流程里恒等，但原版读的是前者。
  */
-function checkDrugNumber(w: BattleWorld, index: number): void {
-  if (w.drugStock[index]! > 0) {
-    throw new Error(
-      `药品菜单上第 ${index + 1} 种药还剩 ${w.drugStock[index]} 个 —— 真的用药那一路` +
-        '还没实现：回血还是回蓝（原版那六个 if 各带一个 type，顺序 1,2,1,2,1,2）、' +
-        '伤害数字、扣存货、progressGo，一样都没有。战斗真值里存货全是 0，' +
-        '这一路一次都没走到。归 xl-rh9.14。',
-    )
+function checkDrugNumber(w: BattleWorld, index: number, type: 1 | 2): void {
+  if (w.drugStock[index]! <= 0) {
+    showReminder(w, 19)
+    return
   }
-  showReminder(w, 19)
+  const drug = DRUGS[index]!
+  const hero = drugMenuHero(w)
+  w.hurtValues.length = 0
+  if (type === 1) {
+    pushHurt(w, drug.addHp, 2, hero.showX, hero.showY)
+    hero.hp = Math.min(hero.hp + drug.addHp, hero.hpMax)
+  } else {
+    pushHurt(w, drug.addMp, 2, hero.showX, hero.showY)
+    hero.mp = Math.min(hero.mp + drug.addMp, hero.mpMax)
+  }
+  for (const hv of w.hurtValues) {
+    hv.isDraw = true
+    hv.isStop = false
+  }
+  w.drugStock[index]! -= 1
+  drugProgressGo(w)
+}
+
+/** `DrugMenu.checkHero()` 定下来的那个人。没定、或那个人没出战，原版是 NPE —— 抛。 */
+function drugMenuHero(w: BattleWorld): Hero {
+  const who = w.drugMenu.currentHero
+  const hero = who === 1 ? w.zxf : who === 2 ? w.yj : who === 3 ? w.lxq : null
+  if (hero === null) {
+    throw new Error(`用药的人是 currentHero=${who}，这一场没有这个人 —— 原版这里 NPE`)
+  }
+  return hero
+}
+
+/**
+ * `DrugMenu.progressGo()`。与 {@link resume} **不是同一个动作**：它只把用药那个人的
+ * 行动条拉回起点、`currentRound` 归零、关菜单、放开行动条，**不碰**
+ * `currentBeAttacked` / `currentPattern`。
+ */
+function drugProgressGo(w: BattleWorld): void {
+  if (w.currentRound === 1) w.progressBar.zhangX = w.progressBar.barX
+  if (w.currentRound === 2) w.progressBar.yuX = w.progressBar.barX
+  if (w.currentRound === 3) w.progressBar.luX = w.progressBar.barX
+  w.currentRound = 0
+  w.drugMenu.isDraw = false
+  w.progressBar.isStop = false
 }
 
 /**

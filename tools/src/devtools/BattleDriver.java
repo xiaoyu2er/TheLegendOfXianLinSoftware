@@ -273,6 +273,21 @@ public final class BattleDriver implements TraceDriver {
         }
         bp.initial(script.background, zxf, yj, lxq, slots[0], slots[1], slots[2]);
 
+        // 背包里的药（xl-byy）。`DrugMenu` 的构造函数在 drugList 为空时 `new DrugPack()`
+        // 读出六种药（件数全 0），所以这里药表已经在了。**名字对不上是硬失败**：
+        // 原版 addDrug 一声不响丢掉，丢掉之后这一场与「没写」长得一样。加完核一遍件数。
+        for (Map.Entry<String, Integer> e : script.drugs.entrySet()) {
+            shop.Drug found = null;
+            for (shop.Drug d : shop.DrugPack.drugList) if (d.getName().equals(e.getKey())) found = d;
+            if (found == null) fail("drugs 里的 " + e.getKey() + " 不在 sources/Shop/drug.txt 的药表里");
+            int before = found.getNumberGOT();
+            shop.DrugPack.addDrug(e.getKey(), e.getValue());
+            if (found.getNumberGOT() != before + e.getValue()) {
+                fail("DrugPack.addDrug(" + e.getKey() + ", " + e.getValue() + ") 之后件数是 "
+                        + found.getNumberGOT() + "，应当是 " + (before + e.getValue()));
+            }
+        }
+
         loop = findLoopThread();
         bp.gate = loop;                 // 闸门此刻才生效：构造期间 Swing 自己也会调 repaint()
         Clock.setFactor(RUN_FACTOR);    // 之后的 sleep 只剩 1ms

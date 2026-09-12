@@ -1,3 +1,4 @@
+import { DRUGS } from './drugs'
 import { createBattle } from './world'
 import type { BattleConfig } from './world'
 import type { BattleWorld } from './types'
@@ -25,5 +26,19 @@ export function replayBattle(trace: BattleTrace, sprite: BattleConfig['sprite'])
     sprite,
     // 剧本整个不写 skillNumber 时这里是 undefined，`createBattle` 用原版初值。
     skillNumbers: s.skillNumber,
+    drugStock: s.drugs === undefined ? undefined : drugStockOf(s.drugs),
   })
+}
+
+/**
+ * 剧本的 `drugs`（名字 → 件数）排成 `DRUGS` 次序的存货。名字对不上是**抛**：
+ * 导出器那边同样是硬失败，走到这里说明两边读的药表分了家。
+ */
+function drugStockOf(drugs: Readonly<Record<string, number>>): number[] {
+  for (const name of Object.keys(drugs)) {
+    if (!DRUGS.some((d) => d.name === name)) {
+      throw new Error(`剧本 drugs 里的 ${name} 不在 DRUGS（sources/Shop/drug.txt）里`)
+    }
+  }
+  return DRUGS.map((d) => drugs[d.name] ?? 0)
 }

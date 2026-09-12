@@ -9,7 +9,8 @@ import { getScene } from '../data/scenesEager'
 import { getParty, rememberParty, resetParty } from '../fakes/party'
 import { createMemorySaveStore } from '../save/memoryStore'
 import { getCoins, resetWallet } from '../fakes/wallet'
-import { drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
+import { addDrug, drugCount, drugEntries, resetDrugPack } from '../fakes/drugPack'
+import { DRUGS } from '../battle/drugs'
 import { HEROES, derive, expToLevelUp } from '../battle/units'
 import { MENU_HERO_ORDER } from '../menu/heroes'
 import type { PartyKey } from '../battle/units'
@@ -831,5 +832,86 @@ describe('开箱 → 背包', () => {
     const next = advanceSession(burst, scene([]), SCENE_PUMP_MS)
     expect(next.scene.world.treasureRequest).toBeNull()
     expect(drugCount('还魄丹')).toBe(2)
+  })
+})
+
+/**
+ * 战斗药品菜单读的是药包那一份（xl-byy）。
+ *
+ * 原版 `DrugMenu` 读 static 的 `DrugPack.drugList`：商店买的、宝箱开的、战利品掉的，
+ * 战斗里都用得上。从前这一层 `drugStock` 写死全 0，玩家点任何药都只弹「没药」。
+ * 真的用药那一路（回血回蓝、回复数字、progressGo）由 `battle-drugs` 那份真值逐字段
+ * 钉住；这里钉的是**会话的接线**：进门现读、用掉当拍写回。
+ */
+describe('战斗里的药来自药包，用掉的写回药包（xl-byy）', () => {
+  beforeEach(() => {
+    resetParty()
+    resetDrugPack()
+  })
+
+  /** 一颗按钮的命中框中心（`hit` 左偏 15、上偏 6），并核对它真的判成了 `target`。 */
+  function clickOn(w: BattleWorld, b: { x: number; y: number; width: number; height: number }, target: string) {
+    const c = centerOf({ x: b.x - 15, y: b.y - 6, width: b.width, height: b.height })
+    const input = battleClick(w, c.x, c.y)
+    if (input.target !== target) throw new Error(`点 (${c.x},${c.y}) 判成了 ${input.target}，要的是 ${target}`)
+    return [input]
+  }
+
+  it('起的那一场，药品菜单的存货就是药包此刻的数', () => {
+    addDrug(DRUGS[0]!.name, 2)
+    addDrug(DRUGS[3]!.name, 1)
+    const expected = DRUGS.map((d) => drugCount(d.name))
+    expect(expected.some((n) => n > 0), '对照失效：药包是空的').toBe(true)
+    const walked = walkUntilBattle(openSession(createWorld(getScene('迷宫1')), deps()))
+    expect(battleWorldOf(walked.session)!.drugStock).toEqual(expected)
+  })
+
+  it('点「物」→ 金创药：扣一件，药包当拍跟上；没点的那几味不动', () => {
+    levelParty(20)
+    const drug = DRUGS[0]!
+    addDrug(drug.name, 2)
+    const before = DRUGS.map((d) => drugCount(d.name))
+    let s = walkUntilBattle(openSession(createWorld(getScene('迷宫1')), deps())).session
+    for (let pumps = 0; pumps < 5000; pumps++) {
+      const w = battleWorldOf(s)
+      if (w === null) throw new Error('还没用上药战斗就结束了')
+      const input = w.drugMenu.isDraw
+        ? clickOn(w, w.drugMenu.buttons[0]!, 'drugMenu:0')
+        : w.command.isDraw
+          ? clickOn(w, commandButtons(w)[3]!, 'command:thing')
+          : []
+      s = advanceSession(s, { scene: [], menu: [], battle: input }, BATTLE_PUMP_MS)
+      const after = battleWorldOf(s)
+      if (after !== null && after.drugStock[0] !== before[0]) {
+        expect(after.drugStock[0], '一次扣了不止一件').toBe(before[0]! - 1)
+        expect(after.reminder.isDraw, '走的是「没药」那一支').toBe(false)
+        // 正本判据：**同一拍**药包就少了那一件，别的几味一个不动。
+        expect(DRUGS.map((d) => drugCount(d.name))).toEqual(before.map((n, i) => (i === 0 ? n - 1 : n)))
+        return
+      }
+    }
+    throw new Error('5000 拍里一次药都没用上')
+  })
+
+  /**
+   * 战利品的药是在战斗那一拍**里面**直接 `addDrug` 进药包的（`victory.ts` 的
+   * `awardLoot`），不经过战斗世界的 `drugStock`。写回要是拿「世界里的数 − 药包里的数」
+   * 去补，这一拍掉的药当场就被减回去 —— 打赢了、画面上也画着掉了什么，背包里没有。
+   */
+  it('打赢掉的药进了药包，战斗每一拍的写回不许把它抹掉', () => {
+    levelParty(20)
+    const before = DRUGS.map((d) => drugCount(d.name))
+    const s = walkUntilBattle(openSession(createWorld(getScene('迷宫1')), deps())).session
+    // 这一场掉什么从怪现读（`thing` 那一列，`名字/1` 是药），不手写。
+    const loot = new Map<string, number>()
+    for (const e of battleWorldOf(s)!.enemies) {
+      const [name, kind] = e.spec.thing.split('/')
+      if (kind === '1' && DRUGS.some((d) => d.name === name)) loot.set(name!, (loot.get(name!) ?? 0) + 1)
+    }
+    expect(loot.size, '对照失效：这一场一味药都不掉').toBeGreaterThan(0)
+
+    const done = runBattleToExit(s)
+    expect(done.session.panel, '没打赢 —— 战利品那一拍没走到').toBe('scene')
+    expect(DRUGS.map((d) => drugCount(d.name))).toEqual(before.map((n, i) => n + (loot.get(DRUGS[i]!.name) ?? 0)))
   })
 })

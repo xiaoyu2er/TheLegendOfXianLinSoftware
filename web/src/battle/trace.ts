@@ -55,6 +55,11 @@ export interface BattleTraceScript {
    * 于是老真值逐字节不变 —— 所以这里是可选的，缺席就是「用原版初值」。
    */
   readonly skillNumber?: Readonly<Partial<Record<'zhang' | 'yu' | 'lu', number>>>
+  /**
+   * 开打前背包里的药，名字 → 件数（xl-byy，`DrugPack.addDrug`）。与 `skillNumber`
+   * 同一个规矩：**剧本整个不写时不回显**，缺席就是「六种药全是 0」。
+   */
+  readonly drugs?: Readonly<Record<string, number>>
   readonly enemies: readonly (string | null)[]
   readonly seed: number
   readonly tickMs: number

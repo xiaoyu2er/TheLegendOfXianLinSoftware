@@ -77,6 +77,8 @@ const IMPLEMENTED: readonly string[] = [
   'battle-script38-2',
   'battle-script38-3',
   'battle-script39',
+  // xl-byy：战斗里真的用药（剧本的 `drugs` 预置存货）。
+  'battle-drugs',
 ]
 
 /**
