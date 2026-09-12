@@ -44,10 +44,11 @@ interface Primitive {
   /** 只扫这几种文件。 */
   readonly ext: RegExp
   /**
-   * 一句**必须**被 `re` 匹配的样例。它守的是「正则还活着」：
-   * 对 `absent` 的那几类，零命中本来就是预期，死正则与「真没有」只能靠它分开。
+   * 样例：`re` 按顶层 `|` 拆开的**每一支**，都得被一行扫到的代码或这里的一句样例命中
+   * （「每一支都有见证」那条用例）。只要求整条正则命中一句样例是不够的 —— xl-03x.22 实测：
+   * 把「生命周期」的 `navigator\.` 那一支写坏，样例 `beforeunload` 走的是另一支，照样绿。
    */
-  readonly sample: string
+  readonly samples: readonly string[]
   /** 今天 web/src 里一处都不该有的那几类（有了也不红，只是从此每一处都要判定）。 */
   readonly absent?: true
 }
@@ -63,38 +64,38 @@ const CSS = /\.css$/
  * （滚动窗口），它不是浏览器全局。
  */
 const PRIMITIVES = {
-  事件: { re: /\baddEventListener\(|(?<![\w$])on[A-Z][A-Za-z]*=\{/, ext: TS, sample: 'onMouseDown={f}' },
-  键盘: { re: /\bKeyboardEvent\b|'key(?:down|up|press)'/, ext: TS, sample: "addEventListener('keydown', f)" },
-  指针: { re: /'(?:pointer|touch)(?:down|up|move|start|end)'|\bon(?:Pointer|Touch)[A-Z]/, ext: TS, sample: "['pointerdown']" },
+  事件: { re: /\baddEventListener\(|(?<![\w$])on[A-Z][A-Za-z]*=\{/, ext: TS, samples: [] },
+  键盘: { re: /\bKeyboardEvent\b|'key(?:down|up|press)'/, ext: TS, samples: ["'keypress'"] },
+  指针: { re: /'(?:pointer|touch)(?:down|up|move|start|end)'|\bon(?:Pointer|Touch)[A-Z]/, ext: TS, samples: ["'pointerup'", 'onPointerDown={f}'] },
   定时: {
     re: /\b(?:setTimeout|setInterval|requestAnimationFrame|requestIdleCallback)\(/,
     ext: TS,
-    sample: 'setInterval(f, 10)',
+    samples: ['setTimeout(f)', 'requestIdleCallback(f)'],
   },
-  时钟: { re: /\bperformance\.now\(|\bDate\.now\(|\bnew Date\(/, ext: TS, sample: 'performance.now()' },
-  存储: { re: /\b(?:localStorage|sessionStorage|indexedDB)\b|\bcaches\./, ext: TS, sample: 'globalThis.indexedDB' },
+  时钟: { re: /\bperformance\.now\(|\bDate\.now\(|\bnew Date\(/, ext: TS, samples: ['new Date()'] },
+  存储: { re: /\b(?:localStorage|sessionStorage|indexedDB)\b|\bcaches\./, ext: TS, samples: ['localStorage', 'caches.open'] },
   地址: {
     // `location` 只认它的那几个成员：`state/dialogue.ts` 里有个局部变量就叫 `location`（一对坐标串）。
     re: /\bfetch\(|\bXMLHttpRequest\b|\bWebSocket\b|\blocation\.(?:href|search|hash|pathname|reload|assign|replace)\b|\bhistory\.(?:push|replace)State\b/,
     ext: TS,
-    sample: 'window.location.search',
+    samples: ['fetch(u)', 'new XMLHttpRequest()', 'new WebSocket(u)', 'history.pushState'],
   },
-  全屏: { re: /\b(?:request|exit)Fullscreen\b|\bfullscreen(?:Element|Enabled|change)\b/, ext: TS, sample: 'el.requestFullscreen()' },
-  视口: { re: /\bResizeObserver\b|\bmatchMedia\(|\bdevicePixelRatio\b|'resize'/, ext: TS, sample: 'new ResizeObserver(f)' },
-  全局: { re: /(?<![\w$.])(?:document|globalThis)\.|(?<![\w$.])window\.(?!from\b|to\b)/, ext: TS, sample: 'document.body' },
-  音频: { re: /\bnew Audio\(|\bAudioContext\b/, ext: TS, sample: 'new Audio()' },
-  图片: { re: /\bnew Image\(/, ext: TS, sample: 'new Image()' },
-  元素: { re: /(?<![\w$.])<[a-z][a-z0-9]*(?=[\s>/])/, ext: TSX, sample: '<button type="button">' },
+  全屏: { re: /\b(?:request|exit)Fullscreen\b|\bfullscreen(?:Element|Enabled|change)\b/, ext: TS, samples: [] },
+  视口: { re: /\bResizeObserver\b|\bmatchMedia\(|\bdevicePixelRatio\b|'resize'/, ext: TS, samples: ['matchMedia(q)', 'devicePixelRatio'] },
+  全局: { re: /(?<![\w$.])(?:document|globalThis)\.|(?<![\w$.])window\.(?!from\b|to\b)/, ext: TS, samples: [] },
+  音频: { re: /\bnew Audio\(|\bAudioContext\b/, ext: TS, samples: ['new AudioContext()'] },
+  图片: { re: /\bnew Image\(/, ext: TS, samples: [] },
+  元素: { re: /(?<![\w$.])<[a-z][a-z0-9]*(?=[\s>/])/, ext: TSX, samples: [] },
   无障碍: {
     re: /(?<![\w$-])(?:aria-[a-z]+|role|title|tabIndex|alt)=|\bautoFocus\b|\.focus\(\)/,
     ext: TSX,
-    sample: 'aria-live="polite"',
+    samples: ['autoFocus', 'el.focus()'],
   },
-  伪类: { re: /:(?:hover|focus(?:-visible|-within)?|active)\b/, ext: CSS, sample: '.a:hover {' },
+  伪类: { re: /:(?:hover|focus(?:-visible|-within)?|active)\b/, ext: CSS, samples: [] },
   生命周期: {
     re: /\bnavigator\.|\bNotification\b|\b(?:beforeunload|visibilitychange|pagehide|contextmenu)\b|\bonContextMenu\b|\brequestPointerLock\b|\bgetGamepads\b/,
     ext: TS,
-    sample: "addEventListener('beforeunload', f)",
+    samples: ['navigator.clipboard', 'new Notification(t)', "'beforeunload'", 'onContextMenu={f}', 'el.requestPointerLock()', 'navigator.getGamepads()'],
     absent: true,
   },
 } as const satisfies Record<string, Primitive>
@@ -131,6 +132,9 @@ interface Hit {
 }
 
 /** `web/src/x/y.ts:12` → 这一行命中的类。 */
+/** 每一类命中的那几行原文，给「每一支都有见证」用。 */
+const HIT_LINES = new Map<Kind, string[]>()
+
 const HITS: ReadonlyMap<string, Hit> = (() => {
   const hits = new Map<string, Hit>()
   for (const file of FILES) {
@@ -140,10 +144,43 @@ const HITS: ReadonlyMap<string, Hit> = (() => {
       if (!isCss && TS_COMMENT.test(line)) return
       const kinds = KINDS.filter((k) => PRIMITIVES[k].ext.test(file) && PRIMITIVES[k].re.test(line))
       if (kinds.length > 0) hits.set(`${file}:${i + 1}`, { kinds })
+      for (const k of kinds) HIT_LINES.set(k, [...(HIT_LINES.get(k) ?? []), line])
     })
   }
   return hits
 })()
+
+/**
+ * 把一条正则按**顶层** `|` 拆成几支（括号里、字符类里的 `|` 不拆），每支带上原来的 flags。
+ * 拆坏了会让某一支编译失败或永远不命中 —— 两种都在「每一支都有见证」里红，不会安静地过。
+ */
+function branches(re: RegExp): RegExp[] {
+  const src = re.source
+  const parts: string[] = []
+  let depth = 0
+  let inClass = false
+  let start = 0
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]
+    if (c === '\\') {
+      i++
+      continue
+    }
+    if (inClass) {
+      if (c === ']') inClass = false
+      continue
+    }
+    if (c === '[') inClass = true
+    else if (c === '(') depth++
+    else if (c === ')') depth--
+    else if (c === '|' && depth === 0) {
+      parts.push(src.slice(start, i))
+      start = i + 1
+    }
+  }
+  parts.push(src.slice(start))
+  return parts.map((p) => new RegExp(p, re.flags))
+}
 
 // ——— 键位的两边 ———
 
@@ -328,12 +365,18 @@ describe('web 侧浏览器平台 API ⇄ 台账（docs/web-primitives.md）', ()
     expect(ADR_KEYS.size).toBeGreaterThan(0)
   })
 
-  it('每一类的正则都还活着：样例必须命中，非 absent 的类在 web/src 里至少命中一处', () => {
-    const deadSample = KINDS.filter((k) => !PRIMITIVES[k].re.test(PRIMITIVES[k].sample))
+  it('每一类的正则都还活着：每一支都有见证（代码或样例），非 absent 的类在 web/src 里至少命中一处', () => {
+    const unwitnessed = KINDS.flatMap((k) => {
+      const p: Primitive = PRIMITIVES[k]
+      const lines = HIT_LINES.get(k) ?? []
+      return branches(p.re)
+        .filter((b) => !lines.some((l) => b.test(l)) && !p.samples.some((s) => b.test(s)))
+        .map((b) => `${k}: ${b.source}`)
+    })
     const deadInCode = KINDS.filter(
       (k) => !('absent' in PRIMITIVES[k]) && ![...HITS.values()].some((h) => h.kinds.includes(k)),
     )
-    expect(deadSample, '样例都匹配不上的正则').toEqual([])
+    expect(unwitnessed, '没有一行代码、也没有一句样例命中的分支 —— 它死了也没人知道').toEqual([])
     expect(deadInCode, '在 web/src 里零命中的类 —— 正则死了，或者该标 absent').toEqual([])
   })
 
