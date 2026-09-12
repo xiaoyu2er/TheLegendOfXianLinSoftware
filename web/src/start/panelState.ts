@@ -189,6 +189,11 @@ export function pressStartButton(state: StartPanelState, key: StartButtonKey): S
 /**
  * 原版 `mouseReleased`：**先** `setButton()`（读的是 `isclicked`），**再**那圈
  * `isRelesedButton` 把 `isclicked` 清掉。顺序反过来就什么都不会发生。
+ *
+ * ⚠️ 那圈循环走的是 `setButton()` **之后**的列表。点「回」时 `setButton()` 先
+ * `buttons.remove(back)`，于是「回」的 `isclicked` 没人清，**一直留着真**（xl-whk 的
+ * start-about 真值第 37 步起读得到）。后果是下一次展开「关于我们」时，点任何一颗按钮
+ * 松手都会走 `setButton()` 那句 `back.isIsclicked()` —— 当场收起。照抄。
  */
 export function releaseStartButton(
   state: StartPanelState,
@@ -198,7 +203,7 @@ export function releaseStartButton(
   const hover = { ...acted.state.hover }
   const clicked = { ...acted.state.clicked }
   for (const active of acted.state.buttons) hover[active] = active === key
-  clicked[key] = false
+  if (acted.state.buttons.includes(key)) clicked[key] = false
   return { state: { ...acted.state, hover, clicked }, effect: acted.effect }
 }
 
