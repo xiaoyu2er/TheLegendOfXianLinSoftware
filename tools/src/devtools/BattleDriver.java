@@ -181,6 +181,19 @@ public final class BattleDriver implements TraceDriver {
         return false;
     }
 
+    /** 这一场的面板。只给 {@link BattleCarryProbe}：它要在同一块面板上接着打第二场。 */
+    BattlePanel panel() { return bp; }
+
+    /**
+     * 不走剧本、只推一步：放行一次循环体再 paint 一次（与 {@link #step()} 的后半段
+     * 同序）。只给 {@link BattleCarryProbe} —— 第二场是它自己 {@code initial()} 的，
+     * 本驱动器的剧本状态对那一场不成立。
+     */
+    void pumpAndPaint() {
+        pump();
+        bp.paint(sink);
+    }
+
     /** 放行一次 {@code run()} 的循环体，并等它跑到闸门上。 */
     private void pump() {
         if (pumped) {
