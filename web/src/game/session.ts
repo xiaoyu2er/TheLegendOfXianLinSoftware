@@ -37,7 +37,7 @@ import { createShopWorld } from '../shop/world'
 import type { ShopKind } from '../shop/layout'
 import type { ShopWorld } from '../shop/types'
 import type { LiveParty } from '../menu/heroes'
-import { getAudioSettings, rememberAudioSettings } from './audioSettings'
+import { getAudioSettings, openBgm, rememberAudioSettings } from './audioSettings'
 import { settleSceneRequests } from './sceneLedger'
 import { TITLE_BGM } from '../start/assets'
 import { advance, createTicker } from '../state/loop'
@@ -708,7 +708,7 @@ export function advanceSession(
       // 三个人的结果记回队伍。**记的是 `party` 不是 `heroes`**：两条打输的
       // 出口末尾都有一句 `heroes.clear()`，拿它记等于一个人都没记。
       rememberParty(battle.world.party)
-      panel = exit === 'scenePanel' ? 'scene' : 'start'
+      panel = exit === 'scenePanel' ? 'scene' : enterTitle()
       // `switchTo("scene")` 里那句 `SCENE_SIGNAL=1`：下一拍场景把自己的曲子
       // 放回去（进战斗那一下 BGM 被 `initial()` 换成了战斗曲，xl-yg6.11）。
       if (panel === 'scene') scene = signalScene(scene)
@@ -759,7 +759,7 @@ export function advanceSession(
     // 场景那一侧**不给信号**：原版 `switchTo("start")` 那一支没有 `SCENE_SIGNAL=1`。
     if (menuWantsTitle(menu.world)) {
       clearMenuTitle(menu.world)
-      panel = 'start'
+      panel = enterTitle()
     }
     // 「存档」/「提取」（xl-i06.9）：`setLastPanel("menu")` + `changeStateTo` +
     // `switchTo("ls")`。同一个理由的一次性信号。
@@ -916,7 +916,26 @@ function stepSaveLoad<S extends Session>(session: S, inputs: readonly SaveLoadIn
   if (panel === 'menu' && session.panel !== 'menu') {
     refreshMenuWorld(session.menu.world, { live: liveParty(getParty()), audio: getAudioSettings() })
   }
+  // 退出键回标题：`switchTo(lastPanel)` 落在 `"start"` 那一支。上面就绪、没就绪两段
+  // 都翻得到这里，所以拨开关放在出口，不放进哪一段里。
+  if (panel === 'start' && session.panel !== 'start') openBgm()
   return { ...session, panel, saveload, lsEntry, loadRequest }
+}
+
+/**
+ * 会话翻到标题 —— `switchTo("start")` 那一支。除了换面板，它末尾还有一句
+ * `MusicReader.openBGM()`：**回标题会把背景音乐开关强制拨回「开」**（xl-03x.21）。
+ * 天书页关掉背景音乐再「重新开始」，原版标题上主题曲照响。
+ *
+ * 原版读数（2026-09-11，JVM 实跑天书页「关」→「重新开始」）：`CAN_PLAY_BGM`
+ * 1 → 2 → 1，切到 `startPanel`。那一支前面的 `readBGM("主题曲.mp3")` 与
+ * `Clock.sleep(1000)` 由 `currentBgm` 现算代掉，这一层没有那一秒的停顿。
+ *
+ * 存读档面板的退出键那一支在 `stepSaveLoad` 的出口上拨，理由见那里。
+ */
+function enterTitle(): 'start' {
+  openBgm()
+  return 'start'
 }
 
 /**

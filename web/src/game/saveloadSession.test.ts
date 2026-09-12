@@ -13,6 +13,7 @@ import { createWorld } from '../state/step'
 import { sceneSourceOf } from '../state/trace'
 import { buttonCenter } from '../test/menuClicks'
 import type { MenuInput } from '../menu/step'
+import { getAudioSettings, rememberAudioSettings, resetAudioSettings } from './audioSettings'
 import {
   NO_INPUT,
   advanceSession,
@@ -167,6 +168,46 @@ describe('就绪标志：没读上来时不画三个空槽', () => {
     s = ls(s, ESC)
     expect(s.panel).toBe('start')
     expect(s.lsEntry).toBeNull()
+  })
+
+  /**
+   * 退出键回标题走的是 `returnToLastPanel()` → `switchTo(lastPanel)`，`lastPanel` 是
+   * `"start"` 时就是那一支 —— 末尾那句 `MusicReader.openBGM()` 照样执行（xl-03x.21）。
+   *
+   * ⚠️ 玩家今天走不到「标题上开关是关着的」：回标题的每一条路都会把它拨开。这里直接
+   * 改开关，守的是**这一支也是 `switchTo("start")`**，不是一条玩家走得到的路。
+   * 就绪与没就绪两支各走一遍 —— 它们在 `stepSaveLoad` 里是两段代码。
+   */
+  it('退出键回标题也把背景音乐开关拨回「开」（就绪、没就绪两支）', () => {
+    const seen: Record<string, unknown> = {}
+    try {
+      for (const [name, store] of [
+        ['ready', createMemorySaveStore([SAMPLE])],
+        ['loading', gated([]).store],
+      ] as const) {
+        rememberAudioSettings({ bgm: false, sfx: false })
+        let s: Session = enterSaveLoad(createSession(deps(store)), 'load', 'start')
+        s = ls(s, ESC)
+        seen[name] = { panel: s.panel, audio: getAudioSettings() }
+      }
+    } finally {
+      resetAudioSettings()
+    }
+    const back = { panel: 'start', audio: { bgm: true, sfx: false } }
+    expect(seen).toEqual({ ready: back, loading: back })
+  })
+
+  it('从菜单进来、退出键回菜单：不拨背景音乐开关（`switchTo("menu")` 没有那一句）', () => {
+    try {
+      const store = createMemorySaveStore()
+      let s = viaMenu(inScene(store), 'readButton')
+      rememberAudioSettings({ bgm: false, sfx: true })
+      s = ls(s, ESC)
+      expect(s.panel).toBe('menu')
+      expect(getAudioSettings()).toEqual({ bgm: false, sfx: true })
+    } finally {
+      resetAudioSettings()
+    }
   })
 
   it('读不上来（failed）：视图说 failed 并带着原因，点击不抛、不算，退出键回得去', async () => {

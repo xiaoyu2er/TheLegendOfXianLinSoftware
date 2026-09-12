@@ -37,6 +37,7 @@ import {
   enterScene,
 } from './session'
 import type { RunningSession, SessionDeps } from './session'
+import { getAudioSettings, rememberAudioSettings, resetAudioSettings } from './audioSettings'
 import { NEXT_SCRIPT_ENEMIES } from '../state/fight'
 import type { InputEvent, World } from '../state/types'
 
@@ -382,6 +383,38 @@ describe('场景 → 战斗 → 场景', () => {
     const url = resolveBgmOrNull(bgmAssetId(TITLE_BGM))
     expect(url).not.toBeNull()
     expect(decodeURIComponent(url!)).toContain('bgm/主题曲.m4a')
+  })
+
+  /**
+   * 打输回标题会把背景音乐开关拨回「开」（xl-03x.21）：`switchTo("start")` 那一支
+   * 末尾是 `MusicReader.openBGM()`，而它是 `play(currentPlayingBGM)` +
+   * `CAN_PLAY_BGM = YES`。原版读数（2026-09-11，JVM 实跑天书页「关」→「重新开始」，
+   * 走的是同一个 case）：1 → 2 → 1。
+   *
+   * 两支一起跑：罹年居士那支走 `switchTo("scene")`，**不**拨开关 —— 分不开的话
+   * 「凡是打输都拨回开」也是绿的。特殊音效那一位 `openBGM()` 不碰，也一并钉住。
+   */
+  it('打输回标题把背景音乐开关拨回「开」；回地图那支不拨，特殊音效那位也不碰', () => {
+    const seen: Record<string, unknown> = {}
+    try {
+      for (const name of ['battle-defeat-scene', 'battle-defeat-start'] as const) {
+        resetParty()
+        rememberAudioSettings({ bgm: false, sfx: false })
+        const trace = readBattleTrace(name)
+        const base = openSession(createWorld(getScene('迷宫1')), deps())
+        const s: RunningSession = { ...base, panel: 'battle', battle: createBattleTicker(replayBattle(trace, spriteSize)) }
+        // 反向控制：关着的时候战斗那一屏是无声的，下面那条「有声」才是开关拨回来的。
+        expect(currentBgm(s), `${name}：关掉背景音乐之后战斗里还有声`).toBeNull()
+        const done = runBattleToExit(s).session
+        seen[name] = { panel: done.panel, audio: getAudioSettings(), bgm: currentBgm(done) }
+      }
+    } finally {
+      resetAudioSettings()
+    }
+    expect(seen).toEqual({
+      'battle-defeat-scene': { panel: 'scene', audio: { bgm: false, sfx: false }, bgm: null },
+      'battle-defeat-start': { panel: 'start', audio: { bgm: true, sfx: false }, bgm: TITLE_BGM },
+    })
   })
 
   it('打赢：结算跑完回场景，经验记进队伍', () => {

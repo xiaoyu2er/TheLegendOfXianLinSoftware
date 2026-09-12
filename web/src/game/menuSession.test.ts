@@ -26,7 +26,7 @@ import {
 import { rowBandTop } from '../menu/scroll'
 import { buttonCenter, clickButton, selectEquipRow } from '../test/menuClicks'
 import { TITLE_BGM } from '../start/assets'
-import { rememberAudioSettings, resetAudioSettings } from './audioSettings'
+import { getAudioSettings, rememberAudioSettings, resetAudioSettings } from './audioSettings'
 import {
   NO_INPUT,
   advanceSession,
@@ -150,6 +150,46 @@ describe('场景 ↔ 菜单这条环路', () => {
     s = openMenu(enterScene(s, createWorld(getScene('宿舍'))))
     s = advanceSession(s, NO_INPUT, 5 * MENU_TICK_MS)
     expect(s.panel, '再开菜单当场又被翻回标题').toBe('menu')
+  })
+
+  /**
+   * 「重新开始」把背景音乐开关拨回「开」（xl-03x.21）—— `switchTo("start")` 末尾那句
+   * `MusicReader.openBGM()`。原版读数（2026-09-11，JVM 实跑，同样是先点天书页的「关」
+   * 再点「重新开始」）：`CAN_PLAY_BGM` 1 → 2 → 1，切到 `startPanel`。
+   *
+   * 关也走天书页那颗按钮，不直接改开关：那样才是玩家碰得到的那条路。
+   */
+  it('天书页关掉背景音乐 →「重新开始」：标题上主题曲照响，开关回到开，特殊音效那位不碰', () => {
+    resetAudioSettings()
+    try {
+      let s = openMenu(inScene('宿舍'))
+      const press = (b: Parameters<typeof buttonCenter>[0]) => {
+        s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(b)) }, 0)
+      }
+      press(menuWorldOf(s)!.tabs.func)
+      const fb = menuWorldOf(s)!.panels.funcPanel.funcButtons!
+      press(fb.main.setButton)
+      press(fb.sub.setClick)
+      press(fb.sub.off_click)
+      press(fb.main.setButton)
+      press(fb.sub.setBGM)
+      press(fb.sub.off_BGM)
+      // 反向控制：两个开关真的被天书页关掉了，此刻无声。
+      expect(getAudioSettings()).toEqual({ bgm: false, sfx: false })
+      expect(currentBgm(s)).toBeNull()
+
+      press(fb.main.exitButton)
+      press(fb.sub.restart)
+      expect(s.panel).toBe('start')
+      expect(getAudioSettings()).toEqual({ bgm: true, sfx: false })
+      expect(currentBgm(s)).toBe(TITLE_BGM)
+
+      // 「承」回场景再开菜单：天书页那两颗看到的也是开着的（`openMenu` 现读开关）。
+      s = openMenu(enterScene(s, createWorld(getScene('宿舍'))))
+      expect(menuWorldOf(s)!.audio).toEqual({ bgm: true, sfx: false })
+    } finally {
+      resetAudioSettings()
+    }
   })
 
   it('⚠️ 菜单开着的时候主角站住 —— 「场景停步」对的是这一半', () => {

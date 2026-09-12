@@ -42,6 +42,19 @@ export function rememberAudioSettings(settings: Readonly<MenuAudioSettings>): vo
   current = { bgm: settings.bgm, sfx: settings.sfx }
 }
 
+/**
+ * `MusicReader.openBGM()` 里 `CAN_PLAY_BGM = YES` 那一句：只拨背景音乐那一位，
+ * 特殊音效那位不碰。前一句 `play(currentPlayingBGM)` 这一层不用抄 —— 该放哪首
+ * 是 `currentBgm` 现算的，开关一开它自己就不再是 `null`。
+ *
+ * 调用点（2026-09-11 的读数，不是分母）：`session.ts` 的 `enterTitle()`（打输回标题、
+ * 天书页「重新开始」）与 `stepSaveLoad` 的出口（退出键回标题）—— 原版 `switchTo("start")`
+ * 那一支末尾就是这一句（xl-03x.21）。**新加一条回标题的路而不经过这两处，没有判据会红。**
+ */
+export function openBgm(): void {
+  current = { ...current, bgm: true }
+}
+
 /** 回到出厂值。**测试用** —— 用例之间不隔离的话，前一条的关会漏进后一条。 */
 export function resetAudioSettings(): void {
   current = { ...DEFAULT_AUDIO_SETTINGS }
