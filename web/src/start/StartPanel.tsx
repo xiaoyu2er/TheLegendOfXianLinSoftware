@@ -23,6 +23,7 @@ import {
 } from './layout'
 import type { StartButtonView, StartEffect, StartView } from './panelState'
 import { useStartPanel } from './useStartPanel'
+import type { StartPanelKeep } from './useStartPanel'
 
 /**
  * 开始界面（xl-kaa 起，xl-4si 补齐）—— `src/start/StartPanel.java` 那一屏。
@@ -56,6 +57,11 @@ export interface StartPanelProps {
   readonly onNewGame: () => void
   /** 「承」：`setLastPanel("start")` + `changeStateTo(LOAD)` + `switchTo("ls")`（xl-i06.9）。 */
   readonly onLoad: () => void
+  /**
+   * 标题状态放在哪（xl-6zf）。给了就活过组件的卸载 —— 原版那块面板从开机活到关机，
+   * 见 `useStartPanel.ts`。不给就随组件生灭。
+   */
+  readonly keep?: StartPanelKeep
 }
 
 /** 逻辑名 → 那颗按钮的摆位。`START_BUTTONS` 是模块常量，这张表也就不必每渲染重建。 */
@@ -65,7 +71,7 @@ const SPECS = new Map<StartButtonKey, StartButtonSpec>(START_BUTTONS.map((b) => 
 const frameSrc = (name: StartSequenceName, frame: number): string =>
   resolveAsset(startFrameAssetId(name, frame))
 
-export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
+export function StartPanel({ onNewGame, onLoad, keep }: StartPanelProps) {
   /**
    * 状态机推出来的三种动作，各自接到什么上。
    *
@@ -81,7 +87,7 @@ export function StartPanel({ onNewGame, onLoad }: StartPanelProps) {
     exit: null,
   }
 
-  const panel = useStartPanel((effect) => actions[effect]?.())
+  const panel = useStartPanel((effect) => actions[effect]?.(), keep)
   return <StartPanelView view={panel.view} handlers={panel} />
 }
 

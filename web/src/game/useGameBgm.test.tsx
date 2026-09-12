@@ -80,3 +80,33 @@ describe('还没开局时的背景音乐', () => {
     expect([...new Set(sync.mock.calls.map((c) => c[0]))]).toEqual([TITLE_BGM])
   })
 })
+
+/**
+ * 存读档面板按 Esc 回标题，**主题曲从头放**（xl-6zf）。
+ *
+ * 标题 →「承」→ 存读档 → 标题，`currentBgm` 一路都是主题曲（进存读档面板那一支
+ * `switchTo("ls")` 不碰曲子，原版也一路放着），所以光看「该放哪首」这件事从来没变过。
+ * 变的是原版回标题那一句 `readBGM("主题曲.mp3")` —— `MusicPlayer.play` 不看同名，
+ * 停掉重开。这里要验的就是 pump 在翻回标题的那一拍把「从头放」交给了播放器。
+ */
+describe('从存读档面板回标题的背景音乐', () => {
+  it('Esc 回标题那一拍要求从头放，而且只在那一拍', () => {
+    const { result } = renderHook(() => useGame(null, null))
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    act(() => {
+      result.current.openLoad()
+      vi.advanceTimersByTime(100)
+    })
+    expect(result.current.panel).toBe('ls')
+    // 进存读档面板之前与之时一次都没要求过从头放 —— 不然下面那条就分不出来。
+    expect(sync.mock.calls.filter((c) => c[1] === true)).toEqual([])
+    act(() => {
+      result.current.lsInput({ e: 'key', key: 'escape' })
+      vi.advanceTimersByTime(100)
+    })
+    expect(result.current.panel).toBe('start')
+    expect(sync.mock.calls.filter((c) => c[1] === true)).toEqual([[TITLE_BGM, true]])
+  })
+})

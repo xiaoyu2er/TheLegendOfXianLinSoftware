@@ -26,8 +26,13 @@ export interface BgmPlayer {
   /**
    * 把播放同步到世界声明的这个值（`world.audio.bgm`，如 `舒缓.mp3`）。
    * **同一个值反复调是空操作**——它每 tick 都会被调一次。
+   *
+   * `fromStart` = 就算是同一首也从头放（xl-6zf）：原版 `MusicPlayer.play(name)`
+   * 不看同名，停掉播放线程、把文件从头打开。回标题那一句 `readBGM("主题曲.mp3")`
+   * 在标题 → 存读档 → 标题这条路上换的就是同一首。它只管「同一首」那一种情况：
+   * 换了曲子本来就从头放，声明值是 `null` 本来就只停。
    */
-  sync(bgm: string | null): void
+  sync(bgm: string | null, fromStart?: boolean): void
   /** 此刻实际在放的那个声明值。`null` = 什么都没放。 */
   playing(): string | null
   /** 浏览器把自动播放挡下来了、正等一次用户手势。诊断用。 */
@@ -123,8 +128,10 @@ export function createBgmPlayer(options: BgmPlayerOptions = {}): BgmPlayer {
   }
 
   return {
-    sync(bgm: string | null): void {
-      if (bgm === current) return
+    sync(bgm: string | null, fromStart = false): void {
+      // 从头放靠的是 `start` 里那句重新赋 `src`：HTML 规范里给媒体元素的 src
+      // 「设值或改值」都会跑一遍载入算法，播放位置回到开头 —— 同一个值也算。
+      if (bgm === current && !(fromStart && bgm !== null)) return
       current = bgm
       if (bgm === null) {
         sound?.pause()

@@ -33,12 +33,17 @@ import type { StartEffect, StartPanelState, StartView } from './panelState'
  * 是 `switchTo("scene")`，面板当场就换走了。接着跑等于在一个已经不在屏幕上的
  * 面板上继续推进，而那在画面上完全看不出来。
  *
- * ## 离开标题就停、回来从头来
+ * ## 离开标题就停、回来接着那一份
  *
- * 原版 `StartPanel.startAnimationThread()` 那条线程开机起、关机停，**不管标题显不显示**：
- * 鼠标 / 按钮 / 卷轴的帧、云的坐标一路往前走，回到标题时接着之前的相位。这里的计时器
- * 随组件卸载（`App.tsx` 只在标题时挂它），回来时 `createStartPanelState()` 全新一份。
- * 与菜单那几条线程同一个取舍（xl-03x.20 现扫 `new Thread` 补登）。
+ * 原版的 `StartPanel` 是 `GameLauncher` 构造函数里 `new` 的**一份**，从开机活到关机
+ * （唯一会重建面板的 `init()` 没人调）。所以状态**不放在这个钩子里**：调用方给一个
+ * `keep`，组件卸载了它还在，回来接着用（xl-6zf，`App.tsx` 就是这么给的）。不给就是
+ * 钩子自己的一份，随组件生灭 —— 单独挂 `<StartPanel>` 的测试走的是这一路。
+ *
+ * 活着不等于在走：原版 `startAnimationThread()` 那条线程**不管标题显不显示**都在跑，
+ * 云一路往下飘。这里的计时器随组件卸载，离开的那段时间一拍都不推 —— 回来时云停在离开
+ * 那一刻的坐标上，不是原版那个飘过了的坐标。与菜单那几条线程同一个取舍（xl-03x.20
+ * 现扫 `new Thread` 补登）。
  * @exception ADR-0001#panel-threads-run-while-hidden
  */
 export interface StartPanelHandle {
@@ -52,8 +57,17 @@ export interface StartPanelHandle {
   readonly moveCursor: (x: number, y: number) => void
 }
 
-export function useStartPanel(onEffect: (effect: StartEffect) => void): StartPanelHandle {
-  const stateRef = useRef<StartPanelState | null>(null)
+/** 标题状态的存放处。组件卸载了它还在，见上面「离开标题就停、回来接着那一份」。 */
+export interface StartPanelKeep {
+  current: StartPanelState | null
+}
+
+export function useStartPanel(
+  onEffect: (effect: StartEffect) => void,
+  keep?: StartPanelKeep,
+): StartPanelHandle {
+  const ownRef = useRef<StartPanelState | null>(null)
+  const stateRef = keep ?? ownRef
   if (stateRef.current === null) stateRef.current = createStartPanelState()
   const [view, setView] = useState<StartView>(() => startView(stateRef.current!))
 

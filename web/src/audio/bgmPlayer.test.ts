@@ -260,3 +260,44 @@ describe('战斗背景音乐', () => {
     expect(log.filter((l) => l === 'play')).toHaveLength(battleBgm.length)
   })
 })
+
+/**
+ * 回标题那一下**同一首也从头放**（xl-6zf）。原版 `switchTo("start")` 每次都
+ * `readBGM("主题曲.mp3")`，而 `MusicPlayer.play(name)` 不看是不是同一首：先停掉
+ * 播放线程、再把文件从头打开。标题 →「承」→ 存读档 → Esc 回标题，曲子一直是
+ * 主题曲，于是「同值是空操作」那条规矩会把这一下吞掉。
+ */
+describe('背景音乐播放器 · 从头放', () => {
+  function make(log: string[]) {
+    return createBgmPlayer({ create: () => fakeSound(log), resolve: (bgm) => `/${bgm}.m4a`, gestures: null })
+  }
+
+  it('同一首、要求从头放：重新赋 src 再 play（HTML 规范里赋 src 就是重新载入、回到开头）', () => {
+    const log: string[] = []
+    const player = make(log)
+    player.sync(TITLE_BGM)
+    log.length = 0
+    player.sync(TITLE_BGM, true)
+    expect(log).toEqual([`src=/${TITLE_BGM}.m4a`, 'play'])
+    expect(player.playing()).toBe(TITLE_BGM)
+  })
+
+  it('同一首、不要求从头放：仍是空操作（每一拍都会被调一次）', () => {
+    const log: string[] = []
+    const player = make(log)
+    player.sync(TITLE_BGM)
+    log.length = 0
+    player.sync(TITLE_BGM)
+    player.sync(TITLE_BGM, false)
+    expect(log).toEqual([])
+  })
+
+  it('要求从头放、但声明值是 null：照样只停，不重放', () => {
+    const log: string[] = []
+    const player = make(log)
+    player.sync(TITLE_BGM)
+    log.length = 0
+    player.sync(null, true)
+    expect(log).toEqual(['pause'])
+  })
+})

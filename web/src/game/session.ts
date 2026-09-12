@@ -1183,6 +1183,20 @@ export function shopWorldOf(session: Session): ShopWorld | null {
 }
 
 /**
+ * 这一拍是不是**刚翻到标题** —— `switchTo("start")` 那一支执行了一次（xl-6zf）。
+ *
+ * 那一支里的 `readBGM("主题曲.mp3")` 不看同名：`MusicPlayer.play` 先停再从头打开。
+ * 全灭与「重新开始」两条路上曲子本来就换了（场景 / 战斗曲 → 主题曲），这一位看不出
+ * 区别；**只有标题 →「承」→ 存读档 → Esc 回标题这条路上它才有用** —— 那条路上
+ * {@link currentBgm} 一路都是主题曲，光比「该放哪首」永远看不见这一下。
+ *
+ * 是个边沿，所以要两份会话：pump 手上正好有推进之前与之后那两份。
+ */
+export function titleEntered(before: Session, after: Session): boolean {
+  return after.panel === 'start' && before.panel !== 'start'
+}
+
+/**
  * 这一拍该放哪首曲子。
  *
  * `GameLauncher.switchTo("scene")` 里那句 `SCENE_SIGNAL=1` 与
