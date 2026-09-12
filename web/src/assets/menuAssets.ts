@@ -59,6 +59,9 @@ import { normalizePath } from './path'
  *   ——— 内容 142 张，合计 4,974,274 B（4.74 MiB）———
  *   总计         189 12,674,189   6,228,792     49.1%
  *
+ * ⚠️ 上表是 xl-6lo.4 那一趟的读数。xl-9a6 之后 `装备/` 里有两张走别名、不出
+ * 产物（见 `MENU_ASSET_ALIASES`），那一行的产物字节少了 1,456,534 B。
+ *
  * **压缩率与战斗那批不是一回事**：战斗那批 753 张背景动画是 JPG 走有损 q95，
  * 这里 189 张全是 PNG，`toWebp` 的 `-lossless` 分支，所以「49.1%」是无损重编码
  * 的读数，跟 xl-rh9.2 的任何一个百分比都不可比。
@@ -161,10 +164,56 @@ export function isDeferredMenuAsset(relative: string): boolean {
 }
 
 /**
- * 一个菜单素材的**产物相对路径**（相对各自的根：进主包的相对
- * `src/generated/assets/`，按需的相对 `public/`）。
+ * **同一张图躺在两处：谁指向谁（xl-9a6）。** 键与值都是相对 `sources/菜单/`
+ * 的路径；键（别名）不出自己的产物，映射表里它的 ID 直接指向值那一张的产物。
+ *
+ * `装备/` 下这两张 1024×640 整屏背景是 `天书/`、`奇术/` 那两页背景的副本
+ * （2026-09-09 实测 md5 相同，烘出来的 WebP 也逐字节相同），而原版
+ * `src/menu/` 一处都不引用它们。分别烘就是 `public/menu-content/` 里白放
+ * 1,456,534 B 的重复字节，入库产物同样多这么多。源素材**不删**：原版是冻结的
+ * 规格（CLAUDE.md），看起来像脏数据的东西可能正是判据的夹具。
+ *
+ * ⚠️ `装备/物品.png` 看起来是同一种东西，但它**不是**任何一张的副本（与首页
+ * 背景 `物品/物品3.png` 的 md5 不同），所以不在这里 —— 它照常烘一套产物。
+ *
+ * 这是一份**登记**，不是分母（dispatch.md 纪律 3）：按 md5 自动推「哪两张
+ * 一样」等于让被守的东西自己签字，而且明天两张碰巧相同的小图标会被悄悄合并。
+ * 形状照抄开始界面的 `START_SEQUENCE_ALIASES`（xl-l6h），重量同样在烘焙器那条
+ * **落盘前的恒等判据**上：两边的源各做一次无损 WebP 编码逐字节比，不同就硬失败
+ * —— 美术哪天只换掉其中一张，表现是「那一页的背景静静指到另一张图」，别的检查
+ * 一条都拦不住。
  */
-export function menuProductPath(relative: string): string {
+export const MENU_ASSET_ALIASES: Readonly<Record<string, string>> = {
+  '装备/天书.png': '天书/天书.png',
+  '装备/奇术.png': '奇术/奇术.png',
+}
+
+/**
+ * 一个菜单素材的**产物相对路径**（相对各自的根：进主包的相对
+ * `src/generated/assets/`，按需的相对 `public/`）。别名取被指向那一张的产物。
+ *
+ * 登记表做成参数（默认就是那份手签的），是为了让下面两条硬失败能拿造出来的
+ * 登记表真红一次 —— 今天那份登记两条都不会触发。
+ *
+ * - **不许接力**（a → b → c）：b 的产物是不是 c 的，取决于读登记的人记不记得
+ *   再查一跳，排错的那一头看到的是「查不到」。
+ * - **不许跨包**：取图时进主包还是按需是按**别名自己的**路径判的
+ *   （`isDeferredMenuAsset`），跨了包，ID 就落进另一边的名单，运行时查不到。
+ */
+export function menuProductPath(
+  relative: string,
+  aliases: Readonly<Record<string, string>> = MENU_ASSET_ALIASES,
+): string {
+  const target = aliases[relative]
+  if (target !== undefined) {
+    if (aliases[target] !== undefined) {
+      throw new Error(`菜单素材别名 ${relative} → ${target}：${target} 自己也是别名，不许接力`)
+    }
+    if (isDeferredMenuAsset(relative) !== isDeferredMenuAsset(target)) {
+      throw new Error(`菜单素材别名 ${relative} → ${target}：两张不在同一个包里`)
+    }
+    return menuProductPath(target, aliases)
+  }
   const webp = relative.replace(/\.[^./]+$/, '.webp')
   return isDeferredMenuAsset(relative)
     ? `${MENU_DEFERRED_PUBLIC_DIR}/${webp}`

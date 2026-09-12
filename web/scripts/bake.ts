@@ -47,6 +47,7 @@ import {
   isDeferredBattleAsset,
 } from '../src/assets/battleAssets'
 import {
+  MENU_ASSET_ALIASES,
   MENU_BUNDLED_DIR,
   MENU_DEFERRED_PUBLIC_DIR,
   MENU_ROOT,
@@ -829,11 +830,30 @@ function bakeMenuImages(manifest: Record<string, string>): {
   // 静静盖掉前一张**。今天 189 张全是 PNG，所以这条守卫不响；而"不响"和
   // "撞了却没查"长得一样。判撞车不能只看 `manifest`——按需那一半根本不进去。
   const claimed = new Map<string, string>(Object.entries(manifest).map(([id, p]) => [p, id]))
+  // 别名（xl-9a6）的恒等判据攒够一整批再一次报全，理由同 `bakeStartAlias`。
+  const aliasMismatches: string[] = []
+  let aliased = 0
 
   for (const relative of relatives) {
     const id = menuAssetId(`${MENU_ROOT}/${relative}`)
     const product = menuProductPath(relative)
     const source = resolve(MENUS, relative)
+    const target = MENU_ASSET_ALIASES[relative]
+    if (target !== undefined) {
+      // 别名不出产物，也不认领产物路径 —— 它跟被指向那一张**本来就**落在同一个
+      // 路径上，那正是撞车守卫要拦的形状，所以绕过它；而它不写盘，盖不掉谁。
+      if (!relatives.includes(target)) {
+        console.error(`菜单素材别名 ${relative} → ${target}：被指向的那一张不在 ${MENUS} 下`)
+        process.exit(1)
+      }
+      if (!losslessIdentical(source, resolve(MENUS, target))) {
+        aliasMismatches.push(`${relative} ≠ ${target}`)
+      }
+      if (isDeferredMenuAsset(relative)) deferredFiles[id] = product
+      else manifest[id] = product
+      aliased++
+      continue
+    }
     const owner = claimed.get(product)
     if (owner !== undefined) {
       console.error(`资产 ${id} 与 ${owner} 都要写到 ${product}`)
@@ -851,6 +871,16 @@ function bakeMenuImages(manifest: Record<string, string>): {
     manifest[id] = product
     bundledBytes += toWebp(source, resolve(ASSETS_OUT, product))
     bundled++
+  }
+
+  if (aliasMismatches.length > 0) {
+    console.error(`菜单素材别名的恒等判据不成立，${aliased} 条里有 ${aliasMismatches.length} 条对不上：`)
+    for (const line of aliasMismatches) console.error(`  ${line}`)
+    console.error(
+      '别名成立的前提是两张逐像素相同（见 src/assets/menuAssets.ts 的 MENU_ASSET_ALIASES）。' +
+        '这里不回退到"那就分别烘"：回退会让"素材换了一张"读起来像"一切正常"。',
+    )
+    process.exit(1)
   }
 
   // 两边都得非空。全切出去（或一张都不切）在产物上和"边界生效了"分不开，
@@ -871,9 +901,32 @@ function bakeMenuImages(manifest: Record<string, string>): {
 
   console.log(
     `菜单素材 ${relatives.length} 张 → 骨架 ${bundled} 张进 ${MENU_BUNDLED_DIR}/（${kb(bundledBytes)}）` +
-      `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）`,
+      `、其余 ${deferred} 张按需加载进 public/${MENU_DEFERRED_PUBLIC_DIR}/（${kb(deferredBytes)}）` +
+      `、${aliased} 张走别名不出产物`,
   )
   return { bundled, bundledBytes }
+}
+
+/**
+ * 两张源图是不是逐像素相同：各做一次**无损** WebP 编码，逐字节比。无损可逆，
+ * `encode(a) == encode(b) ⇒ a == b`；不拿源文件的 md5 比，是因为同一组像素
+ * 换个容器或滤波器 md5 就不同（`START_SEQUENCE_ALIASES` 头注里那对就是）。
+ * 只收 PNG：`toWebp` 对别的扩展名走有损，有损编码推不出源相同。
+ */
+function losslessIdentical(a: string, b: string): boolean {
+  for (const p of [a, b]) {
+    if (!p.endsWith('.png')) throw new Error(`无损比对只收 PNG，收到的是 ${p}`)
+  }
+  const temporary = mkdtempSync(resolve(tmpdir(), 'xl-menu-alias-'))
+  try {
+    const encodedA = resolve(temporary, 'a.webp')
+    const encodedB = resolve(temporary, 'b.webp')
+    toWebp(a, encodedA)
+    toWebp(b, encodedB)
+    return readFileSync(encodedA).equals(readFileSync(encodedB))
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
 }
 
 /**
