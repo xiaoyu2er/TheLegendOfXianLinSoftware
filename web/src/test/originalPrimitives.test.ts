@@ -35,7 +35,7 @@ const ISSUES = 'tools/issue-snapshot/issues.json'
  * 「浏览器里没有对应物」的原语，按类。**封闭、可现数**：改这张表就是改分母，
  * 台账那边立刻要跟（每一行新命中都得有判定）。
  */
-export const PRIMITIVES = {
+const PRIMITIVES = {
   线程: /new Thread\b|implements Runnable|synchronized/,
   睡眠: /\b(?:Clock|Thread)\.sleep\(/,
   定时器: /\bnew Timer\b|javax\.swing\.Timer/,
@@ -140,14 +140,20 @@ const ROWS: readonly Row[] = (() => {
   return rows
 })()
 
-/** ADR-0001「## 例外」一节里每一行的键。 */
+/**
+ * ADR-0001「## 例外」一节里每一行的键。与 `adrExceptions.test.ts` 的解析同形而没有共用：
+ * 从一个测试文件 import 另一个会把它的 describe 在这里再注册一遍。那边另外核重复键与
+ * 格式，这里只要「键存在」。
+ */
 const ADR_KEYS: ReadonlySet<string> = (() => {
   const lines = readFileSync(repoPath(ADR), 'utf8').split('\n')
   const start = lines.findIndex((l) => l.startsWith('## 例外'))
+  // 找不到就从第 0 行扫，会把别的表的第一格也读成键 —— 读错了节与读对了长得一样。
+  if (start < 0) throw new Error(`${ADR} 里找不到「## 例外」一节 —— 标题改了？`)
   const end = lines.findIndex((l, i) => i > start && l.startsWith('## '))
   const keys = new Set<string>()
   for (const l of lines.slice(start + 1, end < 0 ? undefined : end)) {
-    const m = /^\|\s*`([a-z0-9-]+)`\s*\|/.exec(l)
+    const m = /^\|\s*`([a-z0-9]+(?:-[a-z0-9]+)*)`\s*\|/.exec(l)
     if (m) keys.add(m[1]!)
   }
   return keys

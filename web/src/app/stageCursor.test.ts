@@ -13,6 +13,9 @@ import { repoPath } from '../test/repoPath'
  * jsdom 不加载样式表，所以这里读 `index.css` 的文本：`.stage` 那一条写着 `none`，而且
  * **别的规则里凡是把光标写回可见值的，只许是舞台外面那条工具栏**。后一半是这条判据的
  * 分辨力所在：给舞台里某个元素写一句 `cursor: pointer`，光标就在那一块上回来了。
+ *
+ * ⚠️ 看不见的：组件里的内联 `style={{ cursor }}`（今天 `.ts` / `.tsx` 里一处都没有），
+ * 以及真浏览器里的实际样子 —— 这里核的是样式表文本，不是渲染结果。
  */
 
 const CSS = readFileSync(repoPath('web/src/index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
