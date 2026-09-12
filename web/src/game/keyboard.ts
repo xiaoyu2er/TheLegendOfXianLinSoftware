@@ -15,7 +15,7 @@ export interface RawKey {
   readonly shiftKey: boolean
 }
 
-const ARROWS: Readonly<Record<string, string>> = {
+export const ARROWS: Readonly<Record<string, string>> = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
   ArrowUp: 'up',
@@ -36,7 +36,7 @@ const ARROWS: Readonly<Record<string, string>> = {
  * 管着的行为，而它改的恰恰是别人都在对齐的那个游标。详见 `state/dialogue.ts`
  * 的 `skipPrinting`。
  */
-const KEYS: Readonly<Record<string, string>> = {
+export const KEYS: Readonly<Record<string, string>> = {
   ' ': 'space',
   Spacebar: 'space',
   // 回车有两个身份，**分辨它们的是选择框开没开着**（`state/step.ts` 的
@@ -54,6 +54,8 @@ const KEYS: Readonly<Record<string, string>> = {
  * Ctrl+←/→ 是系统级的切换桌面**，事件根本到不了页面，只认 Ctrl 就等于在 Mac
  * 上跑不起来。所以这里 Shift 也算——多认一个键不改变任何游戏逻辑，
  * 状态层收到的仍然只是 `ctrl: true`。
+ *
+ * @exception ADR-0001#shift-also-runs
  */
 function isRunModifier(raw: RawKey): boolean {
   return raw.ctrlKey || raw.shiftKey

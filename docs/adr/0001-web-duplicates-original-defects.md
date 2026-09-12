@@ -74,6 +74,11 @@
 | `new-game-rerolls-shop-stock` | **（xl-03x.20 补登 · xl-03x.19 收口签）**点「起」**不重建两家店**：`ShopPanel` / `EquipmentShopPanel` 开机 `new` 一次，存货（连上一局买掉的）活过新局 | 「起」整个重建会话，`Session.shop` 回到 `null`，新局头一次进门**重掷存货** | `new-game-resets-party` 那个取舍连带的（「起」回出厂状态靠整个重建会话）。`game/session.ts` 的 `NewGameCarry` 头注列了一张「不带、归 xl-9rv 裁」的名单，两家店不在上面 —— 名单漏了，不是裁过。⚠️ **读代码，未跑** | **暂无会红的判据** |
 | `stage-scales-to-window` | **（xl-03x.20 补登 · xl-03x.19 收口签）**窗口 1024×640、`setResizable(false)`；**不居中**（`setMiddle()` 唯一的调用点 `GameLauncher.java:73` 被注释掉，位置归系统） | 逻辑画布恒 1024×640，**随窗口等比缩放、居中、两侧 letterbox、可全屏**（`stage/computeStageScale.ts`、`app/App.tsx` 的 `useFullscreen`） | 浏览器窗口的大小不归页面管。xl-9bd.1 脚手架时定的（「不做响应式视野 —— 视野范围与坐标都是按这个分辨率调过的，改了就不是移植」），**理由只写在那个提交信息里**，是 xl-03x.20 扫提交信息扫出来的。逐帧比对取的是 1024×640 逻辑画布，不受缩放影响 | 缩放那一半：`stage/computeStageScale.test.ts`；居中**暂无会红的判据** |
 | `fail-loud-where-original-swallows` | **（xl-03x.20 补登 · xl-03x.19 收口签）**缺资源、坏数据、没判空时**不出声**：`MusicPlayer` 找不到曲子 / 音效就打栈、静音、照玩；战斗里没判空的地方一发 NPE，**那条线程死掉、画面冻住、进程还在**（`Hero.calDamage` 的 `case 5/6/7` 等）；坏档的内容在 `parseInt` 上抛、状态读进一半（⚠️ 读源码的推断，未实测） | **大声失败**：战斗里抛一句点名原版哪一句 NPE 的错误（`battle/step.ts` 若干处）；名单外的背景音乐与默认 resolve 查不到的音效当场抛；一个槽坏了整个存档仓库 `failed`，面板上说一声 | 静默会做出「看起来一切正常」的画面与真值：「打过了、可就是没人挨打」、「这一首暂时不管」与「烘焙漏了一首」分不开。照抄的是「它会炸」，炸法换成说得清的话（xl-rh9.7 的提交信息、`battle/step.ts` 的 `heroTargets` 注释）。⚠️ 代价：`game/useGame.ts` 的主循环没有 catch，**走得到的**那几处失败的样子与原版不同 —— 第一槽先死再全灭那一条就走得到（xl-9go） | `audio/sfxPlayer.test.ts`「映射表里没有的一声：默认 resolve 当场抛」、`assets/resolve.test.ts`「已知缺失的素材查出来是 null，别的查不到照旧抛」、`save/store.test.ts`「盘上有一份不认识版本号的档：failed」；战斗那几处**没有**逐条篡改验证 |
+| `shift-also-runs` | **（xl-03x.22 补登 · 待签）**跑步键只有 Ctrl：`GameLauncher.keyPressed` 把 `e.isControlDown()` 传给 `ScenePanel.keyPressed`，那是原版读的唯一一个修饰键 | **Shift 也算跑**：`game/keyboard.ts` 的 `isRunModifier` 是 `ctrlKey \|\| shiftKey`，状态层收到的仍然只是 `ctrl: true` | macOS 上 Ctrl+方向键是系统级的切换桌面，事件到不了页面，只认 Ctrl 等于在 Mac 上跑不起来。理由一直写在 `keyboard.ts` 的注释里，**没进过这张表**；是 xl-03x.22 从 web 侧反扫键位（`docs/web-primitives.md`「## 键位」，原版没有 `isShiftDown`）扫出来的 | `game/keyboard.test.ts`「Ctrl 与 Shift 都算跑步键」、`game/useGame.test.tsx`「按住 Shift 是跑」 |
+| `toolbar-under-stage` | **（xl-03x.22 补登 · 待签）**原版窗口里**只有游戏画面**，没有任何提示字与设置 | 舞台右下角一条工具栏：**按面板变的操作提示**（`toolbar-hint`，「方向键走动……ESC 开菜单」之类）、**放大方式**切换（锐利 / 平滑，`stage/scaling.ts`）、全屏按钮（全屏那一半归 `stage-scales-to-window`）。场景 / 商店两个选择器只在开发模式或 `?dev` 下出现，不算玩家看得到的加法 | 原版的键位全靠说明书，网页没有说明书（`index.css` 的 `.toolbar-hint` 注释：「迁移期起码得让人知道怎么走」）；放大方式是缩放带出来的选择（xl-h1f 裁定默认锐利）。**理由只在注释与 xl-h1f 里**，xl-03x.22 从 web 侧反扫 DOM 元素扫出来 | `app/App.test.tsx`「默认用锐利放大，点一下切到平滑」、`app/appTitle.test.tsx` 读 `.toolbar-hint`；提示字**逐面板的内容无判据** |
+| `loading-notices` | **（xl-03x.22 补登 · 待签）**原版切场景 / 进战斗 / 开菜单 / 进店 / 进结局都是**同步读盘**，没有「载入中」这一种状态，也就没有任何提示 | 素材与场景 JSON 按需异步取，取的这几十毫秒里舞台正中叠一行 `role="status"` 的「正在载入 脚本1… / 商店… / 菜单… / 战斗… / 结局…」；渲染器起不来时同一处写失败原因（`app/App.tsx`） | 异步是浏览器的；不说一声，这段时间就是一块不知道为什么的黑屏。与 `saveload-notices` 同一个理由、同一种画法（DOM overlay，不进画布、不进逐帧比对），那一行只登了存读档面板上的几行，这几行一直没登 —— xl-03x.22 从 web 侧反扫 `role=` 扫出来 | `app/appShop.test.tsx`「正在载入商店…」；场景 / 菜单 / 战斗 / 结局那几行**无单独判据** |
+| `bgm-waits-for-gesture` | **（xl-03x.22 补登 · 待签）**开机就放主题曲：`switchTo("start")` → `readBGM("主题曲.mp3")`，一打开就响 | 浏览器的自动播放策略挡下 `play()` 时，**等页面上第一次 `pointerdown` / `keydown` / `touchstart` 再放**（`audio/bgmPlayer.ts` 的 `arm`）；在那之前没有声音 | 浏览器在用户与页面交互之前不许出声，这是平台策略、页面绕不过去；能做的只是「第一下就接住」（`game/useGame.ts` 让 pump 不等渲染器，就是为了不浪费那第一下）。xl-03x.22 从 web 侧反扫 `'pointerdown'` 扫出来 —— 原版侧台账把 `MusicPlayer` 判成「照做」，看不见这一半 | `audio/bgmPlayer.test.ts`「自动播放被浏览器挡下来时，等一次用户手势再试」；⚠️ **真浏览器里策略挡不挡、第一下接不接得住，没有自动判据**（headless Chrome 实测会挡，见 `bgmPlayer.ts` 注释） |
+| `screen-reader-text` | **（xl-03x.22 补登 · 待签）**原版一切文字都画进画布，读屏什么都读不到 | 给读屏的文字：对话框里一段视觉上隐藏的整句（`ui/DialogueBox.tsx` 的 `.dialogue-transcript`，外层 `aria-live="polite"`，**一句话出来读屏就念**）、标题按钮的 `aria-label`（开始新游戏 / 读取存档……）、「关于我们」那张图的 `alt` | 无障碍，与 `start-focus-hover` 同一个方向。视觉上一个像素都不变（逐帧比对照样对得上），**只有读屏用户看得到它**，所以它最容易被当成「不算加法」—— 但读屏用户也是玩家。xl-03x.22 从 web 侧反扫 `aria-` / `alt=` 扫出来 | **无判据**：`dialogue-transcript` 在测试里零处引用（xl-03x.22 现数） |
 
 还有一条：**原版自己就不一致。**「承」（读档）走的是三个人的
 `intialFromInfo()`，它把 `level` / `hp` / `mp` / `angryValue` / `exp` 逐个从
@@ -154,6 +159,42 @@ web 端选了其中说得通的那条。这一句也有判据，与上面同一�
 - **未核**：战斗线程在战斗之外的那一段（`BattlePanel.run()` 开机起、关机停，战斗结束后仍在调
   `launchAttack.check()` / `gameOver.update()` 等）改不改得到下一场的状态，读代码判断不了，
   台账如实记成「未核」，另立了票 `xl-03x.23`（先跑读数再定去留）。
+
+### 第三遍：从 web 侧出发（xl-03x.22，2026-09-12）
+
+**找法（判据）：web 侧浏览器 API 台账。** 第二遍从原版出发，只看得见「原版做了、web 做法不同」；这一遍反过来，
+把 `web/src` 生产代码里浏览器平台 API 的每一处调用点现扫出来（事件、键盘、指针、定时、时钟、存储、地址、全屏、视口、
+全局对象、音频、图片、DOM 元素、无障碍属性、CSS 伪类，外加今天应当零命中的「生命周期」一类；正则写在
+`web/src/test/webPrimitives.test.ts` 的 `PRIMITIVES`），逐处在 `docs/web-primitives.md` 落一个判定：对应（指到原版哪一行）/
+已登记 / 工程 / 未核。同一个文件里还有一张**键位表**：原版 `KeyEvent.VK_*` 与 `isXxxDown()` 现扫一边、web 认的键现读一边，
+每个键恰好落一行 —— 第二遍的原语清单没有键位。
+
+**读数**写在台账开头那一句（由测试核对，这里不抄 —— 抄过来的数没人守，合并时就过期）。**新登 5 行**（上表 `shift-also-runs` /
+`toolbar-under-stage` / `loading-notices` / `bgm-waits-for-gesture` / `screen-reader-text`，都标着「待签」）：
+五样都是玩家看得到（或读屏用户听得到）的加法，理由原本都写在代码注释或提交里，**一样都没进过这张表**。
+其中 `shift-also-runs` 是键位表找到的（原版读的修饰键只有 `isControlDown`）；`bgm-waits-for-gesture` 在原版侧台账里
+被判成「照做」（`MusicPlayer` 那一行）—— 那一行说的是「只有一个播放对象」，看不见「第一声要等一次手势」。
+
+**顺带找到一个缺陷，不是例外**：标题页按钮在真浏览器里**键盘按不动**。`game/useGame.ts` 在 `window` 上的键盘监听对回车 /
+空格一律 `preventDefault()`，吞掉了按钮的默认激活 —— 真 Chrome 实测回车、空格各一次 click 0 次，对照 `.click()` 1 次。
+而 `start-focus-hover` 与 `start-button-hitbox-dom` 两行的理由里都算着「回车按得动」。jsdom 不执行默认动作，所以
+现有测试看不出来。归 `xl-fqm`；这两行的文字没改，等那张票定了再说。
+
+**篡改读数**（每条 cp 备份 → 断言恰好 1 处 → 只跑 `webPrimitives.test.ts` → cp 还原 → cmp）：漏登一行 2 红、过期行号 3 红、
+错键（原版 / web 各一）各 1 红、死正则（有命中的类）4 红、错引原版行 1 红、源码多认一个键 3 红、源码多一处 `localStorage`
+4 红、一边空着的键行判「照做」1 红。**死正则（absent 类的一个分支）头一轮是绿的** —— 一句样例只守得住整条正则，
+写坏的那一支被别的分支顶替了；改成「每条正则按顶层 `|` 拆开、每一支都要有代码或样例见证」之后 1 红。
+
+⚠️ **这一遍结构性地看不见的**：
+
+- **不经过任何浏览器 API 的加法。** 状态层里多一条纯函数分支（例如「跳过逐字打印」在 `state/dialogue.ts` 的那一半）
+  一个平台 API 都不调，这里只看得见它挂在键盘上的那一头；CSS 只收伪类，**属性**不在分母里 —— 颜色、布局、`pointer-events`、
+  `cursor`（`cursor: none` 归原版侧台账的「光标」，工具栏上的 `cursor: pointer` 这里看不见）；
+- **`web/src` 之外**：`web/index.html`（页面标题归原版侧台账）、`web/scripts`（烘焙器，玩家看不见）；
+- **正则之外的写法**：键位表只认 `keyboard.ts` 的两张映射表、`event.key` / `event.code` 与字面量的比较、`event` / `raw`
+  上的修饰键 —— 换个变量名读 `.key`，键位表看不见，只剩站点表里「键盘」「事件」两类兜住那个监听器本身；
+- **判定写错**：写「对应」而其实顺手多做了一件事，扫描器照样绿。上面那个键盘按不动，就是「对应」那一行里读出来的；
+- **行为本身对不对**：台账说「这一处是什么」，不说「它做得对不对」—— 键盘按不动是去真浏览器里跑才知道的。
 
 ### 收口签字与篡改读数（xl-03x.19，2026-09-11）
 

@@ -85,6 +85,8 @@ export function createBgmPlayer(options: BgmPlayerOptions = {}): BgmPlayer {
   }
 
   /**
+   * @exception ADR-0001#bgm-waits-for-gesture
+   *
    * 自动播放被挡下来了。浏览器在用户跟页面交互之前不让出声，`play()` 返回的
    * Promise 会 reject —— 这不是错误，是策略。等一次手势再试一次。
    *

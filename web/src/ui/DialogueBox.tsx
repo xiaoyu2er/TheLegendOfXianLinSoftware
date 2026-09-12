@@ -48,6 +48,7 @@ export function DialogueBox({ dialogue }: DialogueBoxProps) {
 
   return (
     <div className="dialogue" data-testid="dialogue" aria-live="polite">
+      {/* @exception ADR-0001#screen-reader-text —— 原版的字全在画布里，读屏读不到。 */}
       {/* 读屏与测试要的是整句话，不是 80 个绝对定位的字。 */}
       <p className="dialogue-transcript">
         {dialogue.name === null || dialogue.type !== 1 ? null : `${dialogue.name} `}

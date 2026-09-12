@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { ADR_0001 as ADR, adrExceptionKeys } from './adrExceptionKeys'
 import { javaSource } from './javaSource'
 import { repoPath } from './repoPath'
 
@@ -28,7 +29,6 @@ import { repoPath } from './repoPath'
  */
 
 const LEDGER = 'docs/original-primitives.md'
-const ADR = 'docs/adr/0001-web-duplicates-original-defects.md'
 const ISSUES = 'tools/issue-snapshot/issues.json'
 
 /**
@@ -140,24 +140,7 @@ const ROWS: readonly Row[] = (() => {
   return rows
 })()
 
-/**
- * ADR-0001「## 例外」一节里每一行的键。与 `adrExceptions.test.ts` 的解析同形而没有共用：
- * 从一个测试文件 import 另一个会把它的 describe 在这里再注册一遍。那边另外核重复键与
- * 格式，这里只要「键存在」。
- */
-const ADR_KEYS: ReadonlySet<string> = (() => {
-  const lines = readFileSync(repoPath(ADR), 'utf8').split('\n')
-  const start = lines.findIndex((l) => l.startsWith('## 例外'))
-  // 找不到就从第 0 行扫，会把别的表的第一格也读成键 —— 读错了节与读对了长得一样。
-  if (start < 0) throw new Error(`${ADR} 里找不到「## 例外」一节 —— 标题改了？`)
-  const end = lines.findIndex((l, i) => i > start && l.startsWith('## '))
-  const keys = new Set<string>()
-  for (const l of lines.slice(start + 1, end < 0 ? undefined : end)) {
-    const m = /^\|\s*`([a-z0-9]+(?:-[a-z0-9]+)*)`\s*\|/.exec(l)
-    if (m) keys.add(m[1]!)
-  }
-  return keys
-})()
+const ADR_KEYS = adrExceptionKeys()
 
 const SNAPSHOT: Readonly<Record<string, string>> = JSON.parse(readFileSync(repoPath(ISSUES), 'utf8'))
 
