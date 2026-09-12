@@ -17,7 +17,7 @@
 | 2. 全量跨端逐帧比对 N/N 符合预期 | **成立：45/45 条剧本符合预期**（N = `tools/traces/scripts/` 现数 45；合计 1818 帧；退出码 0）。缺口区复核：报告里 144 条缺口区记账、49 个不同的区名，**没有一个区的最差帧是 0** —— 没有「账还完了而区还留着」的；比对器本身对「某区一帧都不差」双向红，所以这一条也是它守着的。每个区的成因写在 `web/src/compare/expected.ts` 那个区的 `why` / `issue` 上（类型强制，缺了编译不过）；这一轮之内被删掉的区只有旁白第 599 行那一个（xl-03x.15（closed））。账本对撞 18 条剧本逐帧相等。⚠️ 同一天第一次全量跑时，`maze-treasure` 取到第 4 帧后卡死 9 分钟（进程全部 0% CPU）；单独重跑那一条通过、第二次全量也通过 —— 记为偶发，没有查到原因 | `tools/compare-frames.sh` 退出码 |
 | 3. 对照表每一行各有一条会红的判据 | **按字面不成立**；机器核得到的那一半成立：判「能」的 53 行（xl-byy（closed）/ xl-bsv（closed）之后现数），每一行的依据列都引到了一份磁盘上存在的测试文件或剧本（机器核）；「不能 / 不对」的 9 行，会红的是认领关系本身（认领的票关了而这一行没改 → 判据 1 红）。⚠️ **「引到的那份测试在这一行坏掉时真的会红」没有逐行篡改验证过** —— 验过的只有 M8 各票自己篡改过的那些行 | `playerCoverage.test.ts`：「能」行没引到存在的测试或剧本、引的测试文件不存在 —— 都红 |
 | 4. 主线从起点到结局在状态层连跑一遍不抛 | **成立**（xl-3hn（closed）之后）：真实产品数据下链 45 本 / 44 跳（win32）全部落地、走到结局（148481 拍，每跳最多 20062 拍，第 13 跳）；全库脚本用到的怪在出厂表里一只不缺（`monsterGap` 现数 0）。此前断在第 4 跳（脚本3，「武林高手1」没有出厂数据）的登记 `KNOWN_BREAK` 与测试替身那份连跑已随之删除 | `playthrough.test.ts`：连跑断在任何一跳、或全库脚本冒出一只出厂表里没有的怪 —— 红 |
-| 每张 open 票恰好一个身份标签 | **成立**（关票后重导的快照）：open 64 张，每张恰好一个身份 —— 登记 35 · 下一轮 11 · 没人认领 18（没人认领里含 blocked 的 xl-u7b（open））。关票前快照 open 66 张、64 张有身份，**缺的两张恰好是本票与 M8 的 SPEC**，判据当场红在这两张上 —— 那是「少一个」在真快照上的读数。「多一个」的真快照读数：给 xl-y11（open）临时再贴一个身份、重导，判据红「贴了 2 个身份」；撕掉重导后快照逐字节回到原样 | `issueIdentity.test.ts`：少一个、多一个、认不出、与快照不是同一次导出 —— 都红 |
+| 每张 open 票恰好一个身份标签 | **成立**（关票后重导的快照）：open 64 张，每张恰好一个身份 —— 登记 35 · 下一轮 11 · 没人认领 18（没人认领里含 blocked 的 xl-u7b（open））。关票前快照 open 66 张、64 张有身份，**缺的两张恰好是本票与 M8 的 SPEC**，判据当场红在这两张上 —— 那是「少一个」在真快照上的读数。「多一个」的真快照读数：给 xl-y11（closed）临时再贴一个身份、重导，判据红「贴了 2 个身份」；撕掉重导后快照逐字节回到原样 | `issueIdentity.test.ts`：少一个、多一个、认不出、与快照不是同一次导出 —— 都红 |
 
 ⚠️ 跟着这四条一起写死的两句，一个字都不能少：
 
@@ -98,7 +98,7 @@
 | **菜单** 点物品 / 装备 / 奇术 / 天书四个标签切页 | 能 | 随时 | — | `menu/Command.java:91-119`；剧本 `menu-hero` / `menu-magic`；实跑 `menuTrace.test.ts` 76/76 |
 | 菜单 顶栏「当前任务」显示当前任务 | 能（「错一个字」逐帧比对看不见 —— 顶栏是字形缺口区；判据是逐字符串对真值） | 随时 | —（xl-03x.10（closed）、xl-lna（closed）） | `menu/Command.java:130-141`、`Reader.java:267`；剧本 `menu-task`；实跑 `taskTitle.test.ts` 8/8、`menuTask.test.ts` 5/5 |
 | 菜单 点头像换人（陆 / 文在队才有）、看等级 | 能 | 随时 | — | `Scoll.java:121-184`；剧本 `menu-hero` |
-| 菜单 药品页：悬停选药、点「使用」回血回蓝 | 能 | 随时 | —（xl-bsv（closed）） | `DrugPanel.java:92-300`；`game/session.ts` 开菜单时从药包现读（`refreshMenuWorld` 的 `drugs`）、每一拍写回；实跑 `menuSession.test.ts`「物品页看得见药包里的药（xl-bsv）」与「喝一瓶药」那条的药包断言 |
+| 菜单 药品页：悬停选药、点「使用」回血回蓝 | 能 | 随时 | —（xl-bsv（closed）） | `DrugPanel.java:92-300`；`game/session.ts` 开菜单时从药包现读（`refreshMenuWorld` 的 `drugs`）、每一拍写回；实跑 `menuSession.test.ts`「物品页看得见药包里的药」与「喝一瓶药」那条的药包断言 |
 | 菜单 装备页：六个槽位切换、悬停看升降箭头、「使用」/「弃用」/ 不能用时「禁止」 | 能 | 随时 | — | `EquipPanel.java:297-320,520-950`；剧本 `menu-equip`；实跑 `equipPanel.test.ts` 9/9、`equipDraw.test.ts` 22/22 |
 | 菜单 装备页里看见战斗掉的装备 | **能，但不对**：战利品装备写进另一个背包，菜单与商店都读不到 | 随时 | xl-5jx（open） | `VictoryReminder.java:348-361`；读代码（本票复核）：`battle/victory.ts` 仍从 `fakes/equipmentPack` 引 `addEqupment`，菜单读 `owned` |
 | 菜单 长列表：够到框外的那几行 | 能（原版不裁剪、没有滚动条，框外照画照点；Web 画的那一半裁、加滚动条，`ADR-0001#list-clipped-with-scrollbar`。滑块拖得动（xl-03x.9（closed））） | 随时 | —（xl-03x.9（closed）、xl-4ev（closed）） | `EquipPanel.java:474-486,548-571`；剧本 `menu-scroll`；实跑 `scroll.test.ts` 25/25 |
@@ -116,7 +116,7 @@
 | **战斗** 「击」→ 点怪选敌 | 能 | 链上 | — | `battle/Command.java:81-88`；剧本 `battle-min` / `battle-victory`；实跑 `battleTrace.test.ts` 57/57 |
 | 战斗 「技」→ 技能菜单 → 选招（单体选敌、全体直接放）、菜单里「返回」 | 能 | 链上 | — | `SkillMenu.java:202-287`；剧本 `battle-zhang-skills` / `battle-menus` 等 |
 | 战斗 「防」：怒气满放秘术，不满弹提示 | 能 | 链上 | — | `battle/Command.java:104-144`；剧本 `battle-mishu-zhang` / `battle-mishu-yu` / `battle-mishu-lu` |
-| 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | 能 | 链上 | —（xl-byy（closed）） | `DrugMenu.java:52,110-192`；会话起战斗时从药包现读存货、每一拍写回；真的用药那一路由剧本 `battle-drugs`（驱动器新字段 `drugs`）逐字段钉住；实跑 `battleTrace.test.ts`、`session.test.ts`「战斗里的药来自药包（xl-byy）」 |
+| 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | 能 | 链上 | —（xl-byy（closed）） | `DrugMenu.java:52,110-192`；会话起战斗时从药包现读存货、每一拍写回；真的用药那一路由剧本 `battle-drugs`（驱动器新字段 `drugs`）逐字段钉住；实跑 `battleTrace.test.ts`、`session.test.ts`「战斗里的药来自药包」 |
 | 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **不能**：战斗画布只收按下，悬停的四种反馈一样都没有 | 链上 | xl-qqw（open） | `BattlePanel.java:349-367`；读代码：战斗画布只挂 `onMouseDown` |
 | 战斗 按住按钮拖开再松手照样触发 | **不能**：Web 一次点击是同一点上的移入 + 按下 + 松开，做不出「按在这、松在那」 | 链上 | xl-qqw（open） | `GameButton.java:54-72`；读代码 |
 | 战斗 按 J 秒杀全部敌人（原版留的调试键） | 能（照复刻：清空敌人、直接落进「全部怪物被杀死」那一段；控制台与提示照原版盖在结算画面上） | 链上 | 代价：正常打死 → 结算 → 回场景在行为真值里零覆盖了：xl-5zw（open） | `BattlePanel.java:289-296`；剧本 `battle-victory`（加了一步 `debugKill`）；实跑 `battleTrace.test.ts` 57/57、`useGame.test.tsx` 13/13（进脚本22，按 J，经验得动） |
