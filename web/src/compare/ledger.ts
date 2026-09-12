@@ -41,6 +41,12 @@ export interface LedgerVerdict {
   readonly firstMismatch: number | null
 }
 
+/** 两轮取图的账本第一次分叉在哪一帧，以及两边各是什么数。 */
+export interface LedgerDivergence {
+  readonly tick: number
+  readonly detail: string
+}
+
 /**
  * 逐帧对账。**两端都得交齐**：原版帧清单里没有账本、原版药包是空表、取图页某一帧没交
  * 账本、帧数对不上 —— 都是硬失败（抛），不是「没什么可比」。空药包对空药包恒等，那样的
@@ -111,12 +117,15 @@ export function judgeLedger(
  * 注入点」，读起来像判据失灵、像渲染不确定，其实是**两轮比的不是同一个世界**。
  *
  * 比的是 Web 对 Web，不经过原版：两轮都交齐才比，少一帧是硬失败（理由同 `judgeLedger`）。
+ *
+ * ⚠️ 只核账本那两样（金币、药包）。别的随机源分叉而账本恰好相同时（比如计步战斗挑了
+ * 另一场、却还没打到结算），这里是 `null`，自检退回只看像素 —— 它是一道加固，不是全覆盖。
  */
 export function firstLedgerDivergence(
   ticks: readonly number[],
   clean: readonly (LedgerEntry | undefined)[],
   broken: readonly (LedgerEntry | undefined)[],
-): { readonly tick: number; readonly detail: string } | null {
+): LedgerDivergence | null {
   if (ticks.length === 0) throw new Error('账本一帧都没有 —— 空序列不算两轮相等')
   if (clean.length !== ticks.length || broken.length !== ticks.length) {
     throw new Error(`账本帧数对不上：清单 ${ticks.length} 帧，干净版 ${clean.length} 份，改坏版 ${broken.length} 份`)

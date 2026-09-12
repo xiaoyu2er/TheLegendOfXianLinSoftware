@@ -82,8 +82,8 @@ describe('firstLedgerDivergence（自检：改坏版与干净版是不是同一�
   })
 
   it('某一轮少交一帧、或帧数对不上，是硬失败 —— 不是「没什么可比」', () => {
-    expect(() => firstLedgerDivergence([0, 25], [webEntry(10000), webEntry(10000)], [webEntry(10000), undefined])).toThrow(/第 25 帧/)
-    expect(() => firstLedgerDivergence([0, 25], [webEntry(10000)], [webEntry(10000), webEntry(10000)])).toThrow(/帧/)
-    expect(() => firstLedgerDivergence([], [], [])).toThrow()
+    expect(() => firstLedgerDivergence([0, 25], [webEntry(10000), webEntry(10000)], [webEntry(10000), undefined])).toThrow(/第 25 帧改坏版没交账本/)
+    expect(() => firstLedgerDivergence([0, 25], [webEntry(10000)], [webEntry(10000), webEntry(10000)])).toThrow(/干净版 1 份/)
+    expect(() => firstLedgerDivergence([], [], [])).toThrow(/空序列/)
   })
 })

@@ -490,7 +490,7 @@ async function runSelfCheck(
       process.stdout.write(
         `        两轮不是同一个世界：第 ${diverged.tick} 帧账本 ${diverged.detail}。` +
           `注入只改画面，账本不该变 —— 取图页有不确定的输入（如没播种的随机数，xl-2e0），` +
-          `上面的帧号不算数。\n`,
+          `或者 web/ 是旧的一轮（--skip-capture 不重截干净版）。上面的帧号不算数。\n`,
       )
     } else if (!pass) {
       process.stdout.write(
