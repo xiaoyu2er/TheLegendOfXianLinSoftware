@@ -767,18 +767,19 @@ describe('滚动条：拖拽滑块（xl-03x.9）', () => {
     const max = maxScroll(V, WEAPON_ROWS)
     const bar = scrollbar(V, WEAPON_ROWS, 0)!
     const grab = { x: bar.thumb.x + 1, y: bar.thumb.y + Math.floor(bar.thumb.height / 2) }
-    for (const [name, second, want] of [
-      ['按在别处', { x: V.box.left - 50, y: V.box.top + 10 }, 0],
-      ['按在槽里滑块下方', { x: bar.track.x + 1, y: bar.thumb.y + bar.thumb.height + 5 }, Math.min(rows, max)],
+    // 每种落点之后往「列表停着的那一端的反方向」拖远：残留的锚点在，列表就会
+    // 被拽到另一端 —— 失败的样子与通过不同。
+    for (const [name, second, want, dragBy] of [
+      ['按在别处', { x: V.box.left - 50, y: V.box.top + 10 }, 0, +1000],
+      ['按在槽里滑块下方', { x: bar.track.x + 1, y: bar.thumb.y + bar.thumb.height + 5 }, Math.min(rows, max), -1000],
     ] as const) {
       const s: Scrollable = { scroll: 0, drag: null }
       pressScrollTrack(V, s, WEAPON_ROWS, grab.x, grab.y)
-      expect(s.drag, '头一下没按在滑块上，这条判据是恒真的').toBeTruthy()
+      expect(s.drag, `${name}：头一下没按在滑块上，这条判据是恒真的`).toBeTruthy()
       pressScrollTrack(V, s, WEAPON_ROWS, second.x, second.y)
       expect(s.drag, `${name}之后还在拖`).toBeNull()
       expect(s.scroll).toBe(want)
-      // 往与第二下相反的方向拖远：残留的锚点在，列表就会被拽到另一端。
-      dragScroll(V, s, WEAPON_ROWS, want === 0 ? grab.y + 1000 : grab.y - 1000)
+      dragScroll(V, s, WEAPON_ROWS, grab.y + dragBy)
       expect(s.scroll, `${name}之后移动鼠标把列表拖走了`).toBe(want)
     }
   })
