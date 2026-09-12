@@ -84,21 +84,29 @@ yourself, then use `--force`.
 
 Issues live in a local Dolt database under `.beads/`. Cross-machine sync is
 `bd dolt push` / `bd dolt pull`, stored under `refs/dolt/data` on the git
-remote. `.beads/issues.jsonl` is a **passive export** — useful for review and
-disaster recovery, but `bd import` during normal operation is an anti-pattern.
+remote. `.beads/issues.jsonl` is **not in git** (xl-319): it was a
+hand-refreshed export that fell days behind — 125 records committed against 272
+in the live database. Export one locally with `bd export -o .beads/issues.jsonl`
+when you need it (it is gitignored); `bd import` during normal operation is an
+anti-pattern either way.
 
-**The issue data has never left this machine.** Two bd commands disagree about
-the remote, so check with git rather than trusting either:
+**The issue data is on origin now, but only as of the last `bd dolt push`.**
+This paragraph used to say it had never left this machine; that stopped being
+true and nobody noticed, which is the whole reason to check with git rather
+than trusting either bd command:
 
+- `git ls-remote origin 'refs/dolt/*'` → `a0cef5ae…  refs/dolt/data`
+  (re-measured 2026-09-12) — decisive.
 - `bd dolt remote list` reports `origin git+https://github.com/...` — that is
-  `sync.remote` from `config.yaml`, a declared intent.
-- `bd dolt show` reports `Remotes: (none)` — the embedded Dolt engine itself
-  has no remote registered.
-- `git ls-remote origin 'refs/dolt/*'` returns **nothing** — decisive: no beads
-  data has ever been pushed.
+  `sync.remote` from `config.yaml`, a declared intent, not evidence.
+- `bd dolt show` reports no remote — the embedded Dolt engine itself has none
+  registered. It says this whether or not data has been pushed.
 
-Before relying on cross-machine sync, run that `git ls-remote` and then an
-actual `bd dolt push`; do not infer from the two commands above.
+⚠️ **What is on origin is a snapshot, not a mirror**: a clone bootstrapped on
+2026-09-12 came up with 251 issues while the live database held 273. Since
+`.beads/issues.jsonl` left git (xl-319), `bd dolt push` is the *only* way issue
+data reaches anyone else — run it before relying on cross-machine sync, and do
+not infer its state from the two bd commands above.
 
 ## Label inheritance gotcha
 

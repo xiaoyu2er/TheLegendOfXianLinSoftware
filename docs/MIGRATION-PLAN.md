@@ -200,7 +200,7 @@ src/                原版 Java（= 规格文档，保持可运行）
 tools/              取景器与规格提取器  —— 见 tools/README.md
 tools/ground-truth/ 96 个脚本的解析真值 JSON（冻结产物，任何 diff 都是信号）
 tools/reference/    1327 张原版参考截图（WebP q80，112MB）
-.beads/             issue 追踪（Dolt 库不入 git，提交 issues.jsonl 快照）
+.beads/             issue 追踪（Dolt 库与 issues.jsonl 都不入 git；clone 后 bd bootstrap 从 origin 的 refs/dolt/data 拉库）
 docs/               本文档
 web/                浏览器版（Vite + React + TS）—— 见 web/README.md
                     目前只有 1024×640 舞台脚手架（xl-9bd.1），无游戏内容

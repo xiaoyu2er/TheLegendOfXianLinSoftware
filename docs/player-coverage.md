@@ -48,7 +48,7 @@
 - **判据只守引用、不守内容**：表里每个票号后面写着它的状态，判据拿它们对着入库的票据快照
   `tools/issue-snapshot/issues.json` 撞（票号存在、状态一致、「不能 / 不对」有开着的票或签过的例外认领、例外键与测试文件名真有、上面那句读数与表对得上）。
   「能不能做」是人现查着写的，**判据一个字都不核，也绝对不许改成自动生成** —— 自动扫出来的表等于让被守的东西自己签字。
-- **快照不是 `.beads/issues.jsonl`**：那是 bd 的被动导出，现查时是过期的（2026-09-11 开工时读数：它 125 条、open 25；活库 251 条、非 closed 84 —— 读数，不是规格；为什么过期归 xl-319（open））。
+- **快照不是 `.beads/issues.jsonl`**：那是 bd 的被动导出，现查时是过期的（2026-09-11 开工时读数：它 125 条、open 25；活库 251 条、非 closed 84 —— 读数，不是规格）。**那份导出已经撤出 git**（xl-319（closed），2026-09-12 用户裁定）：它从来没有被自动刷新过，留着只会让人读到旧账。
   快照由 `tools/export-issues.sh` 从活库导出（同一次还导出每张 open 票的身份标签 `identity.json`），`tools/export-issues.sh --check`（或重导后 `git diff tools/issue-snapshot`）为空才算快照是活库现在的样子。
   改完表的流程：`tools/export-issues.sh` → `cd web && pnpm exec vitest run src/mainline/test/playerCoverage.test.ts src/mainline/test/issueIdentity.test.ts`。
 
