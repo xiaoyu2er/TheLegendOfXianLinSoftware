@@ -114,6 +114,7 @@ public class ExportScaledBlit {
         Sweep transparent = sweepBoth(tmpDir, true);
         Sweep opaque = sweepBoth(tmpDir, false);
         int[][] narratage = sweepNarratage(tmpDir);
+        String thumbnail = sweepThumbnails(tmpDir);
         deleteTree(tmpDir);
 
         File f = new File(out);
@@ -134,7 +135,8 @@ public class ExportScaledBlit {
                     + ", \"map\": " + flat(narratage[0]) + " },\n");
             w.write("    \"y\": { \"srcLen\": " + NARR_SRC_H + ", \"destLen\": " + NARR_DEST_H
                     + ", \"map\": " + flat(narratage[1]) + " }\n");
-            w.write("  }");
+            w.write("  },\n");
+            w.write(thumbnail);
             w.write("\n}\n");
         }
         System.out.println("已写出 " + out + "：两种形态 × (X 目标长 1.." + MAX_DEST_W
@@ -446,6 +448,421 @@ public class ExportScaledBlit {
     private static BufferedImage drawLikeNarratage(Image img) {
         BufferedImage canvas = new BufferedImage(NARR_DEST_W, NARR_DEST_H, BufferedImage.TYPE_INT_ARGB);
         canvas.getGraphics().drawImage(img, 0, 0, 1024, 640, 0, 0, 639, 395, null);
+        return canvas;
+    }
+
+    // ------------------------------------------------------------------
+    // 存读档缩略图（xl-cpo）
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code LoadAndSavePanel.paint()} 那一句（GBK 源码现读）：
+     * {@code backgroundGraphics.drawImage(Reader.readImage("maps/" + maps.get(i)), 100, 100 + i*200, 150, 100, this)}，
+     * 画在 {@code new BufferedImage(1024, 640, TYPE_INT_ARGB)} 上。
+     */
+    private static final int THUMB_X = 100;
+    private static final int THUMB_Y0 = 100;
+    private static final int THUMB_STRIDE = 200;
+    private static final int THUMB_W = 150;
+    private static final int THUMB_H = 100;
+    private static final int THUMB_SLOTS = 3;
+    private static final String MAPS_DIR = "maps/";
+
+    /**
+     * 缩略图的采样表与「每张地图走哪条循环」，**照原版那一句真画一遍读回**。
+     *
+     * <p>两轴扫描（源 128 / 24）与旁白那一对都是放大；这里是大幅缩小（3200→150 即
+     * 1/21.3），在它们之外，所以不外推，按原版的几何单独量：
+     *
+     * <ul>
+     *   <li>{@code maps/} 下每一种出现过的尺寸，各做两张梯度图：带透明（右下角那个像素挖成
+     *       全透明，TYPE_INT_ARGB）与全不透明（TYPE_INT_RGB，与 JPEG / RGB PNG 同形）。
+     *       像素编码自己的坐标（x、y 各 12 位，拆进三个通道）。</li>
+     *   <li>走 {@code tools.Reader.readImage}，照原版那句画在三个槽的落点上，读回 150×100。</li>
+     *   <li>**每张真地图**也照原版那句画一遍，拿它去对两张表各自预言的像素：只对上其中一张，
+     *       那就是它走的循环 —— 这是**跑出来**的，不是按「带不带 alpha」推的。</li>
+     * </ul>
+     *
+     * <p>判据，任一条不成立退出码 1：
+     * <ol>
+     *   <li>梯度图每个读回的像素不透明（记号像素除外）、坐标不越界；</li>
+     *   <li>整块可分离：每一行的 x 等于第 0 行、每一列的 y 等于第 0 列；</li>
+     *   <li>三个槽的落点给出同一张表；</li>
+     *   <li>每张真地图至少对上一张表（在源像素全不透明的那些位置上逐像素比；半透明的
+     *       位置经过 SrcOver 混合，读回值不是源值，跳过，并记下比了几个）。</li>
+     * </ol>
+     *
+     * @return JSON 片段，{@code "thumbnail": {...}}，两格缩进
+     */
+    private static String sweepThumbnails(File dir) throws Exception {
+        File[] files = new File(MAPS_DIR).listFiles(File::isFile);
+        if (files == null || files.length == 0) fail("maps/ 下一张图都没有：从仓库根目录跑");
+        java.util.Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
+
+        // 尺寸 -> [带透明的 x 表, y 表, 不透明的 x 表, y 表]
+        java.util.TreeMap<String, int[][]> tables = new java.util.TreeMap<>();
+        java.util.List<int[]> sizes = new java.util.ArrayList<>();
+        for (File f : files) {
+            BufferedImage raw = ImageIO.read(f);
+            if (raw == null) fail("读不出这张地图：" + f.getPath());
+            String key = sizeKey(raw.getWidth(), raw.getHeight());
+            if (tables.containsKey(key)) continue;
+            int w = raw.getWidth();
+            int h = raw.getHeight();
+            int[][] t = thumbTables(dir, w, h, true);
+            int[][] o = thumbTables(dir, w, h, false);
+            tables.put(key, new int[][] {t[0], t[1], o[0], o[1]});
+            sizes.add(new int[] {w, h});
+        }
+
+        StringBuilder mapsJson = new StringBuilder();
+        for (File f : files) {
+            BufferedImage raw = ImageIO.read(f);
+            int w = raw.getWidth();
+            int h = raw.getHeight();
+            int minAlpha = 255;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) minAlpha = Math.min(minAlpha, raw.getRGB(x, y) >>> 24);
+            }
+            Image img = tools.Reader.readImage(f.getPath());
+            if (img.getWidth(null) != w || img.getHeight(null) != h) {
+                fail(f.getPath() + " 经 Reader.readImage 读成 " + img.getWidth(null) + "×"
+                        + img.getHeight(null) + "，ImageIO 读的是 " + w + "×" + h);
+            }
+            // 源像素取「原版读图那条路 1:1 画出来的」，不取 ImageIO 解的 —— 两个 JPEG 解码器
+            // 未必逐字节相同，比的应当是同一份解码。
+            BufferedImage src = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+            src.getGraphics().drawImage(img, 0, 0, null);
+            // 第一问：画在缩略图那 150×100 上，对上哪张表。
+            int[][] t = tables.get(sizeKey(w, h));
+            Verdict atThumb = verdict(f, src, drawScaled(img, THUMB_X, THUMB_Y0, THUMB_W, THUMB_H),
+                    THUMB_X, THUMB_Y0, t);
+
+            // 第二问：两张表在 150×100 上多半逐个相同（缩小时平局少），那样第一问答不出走哪条
+            // 循环。挑一个两条循环真的不同的尺寸，把同一张图画上去再问一次。尺寸是按两个拟合
+            // 公式挑的，但两张表是梯度图在那个尺寸上**现量**的，挑错了（两张表其实相同）就响。
+            int[] probe = null;
+            Verdict atProbe = null;
+            int[][] origin = {{PROBE_ORIGIN, PROBE_ORIGIN}};
+            for (int[] candidate : probeCandidates(w, h)) {
+                int[][] pt = measureTables(dir, w, h, true, candidate[0], candidate[1], origin);
+                int[][] po = measureTables(dir, w, h, false, candidate[0], candidate[1], origin);
+                if (java.util.Arrays.equals(pt[0], po[0]) && java.util.Arrays.equals(pt[1], po[1])) continue;
+                Verdict v = verdict(f, src, drawScaled(img, PROBE_ORIGIN, PROBE_ORIGIN, candidate[0], candidate[1]),
+                        PROBE_ORIGIN, PROBE_ORIGIN, new int[][] {pt[0], pt[1], po[0], po[1]});
+                // 两张表不同、但不同的那几格恰好取到半透明像素：这一问仍答不出，换下一个。
+                if (v.distinguishing == 0) continue;
+                probe = candidate;
+                atProbe = v;
+                break;
+            }
+            // 两问都分得出来时必须一致；最终取分得出来的那一问。
+            String loop = atThumb.loop;
+            if (atProbe != null && !atProbe.loop.equals("either") && !atProbe.loop.equals("unknown")) {
+                if ((loop.equals("transparent") || loop.equals("opaque")) && !loop.equals(atProbe.loop)) {
+                    fail(f.getPath() + " 在缩略图上走 " + loop + "、在探针上走 " + atProbe.loop);
+                }
+                loop = atProbe.loop;
+            }
+            if (mapsJson.length() > 0) mapsJson.append(",\n");
+            mapsJson.append("      { \"name\": ").append(Json.str(f.getName()))
+                    .append(", \"width\": ").append(w).append(", \"height\": ").append(h)
+                    .append(", \"alphaChannel\": ").append(raw.getColorModel().hasAlpha())
+                    .append(", \"minAlpha\": ").append(minAlpha)
+                    .append(", \"loop\": ").append(Json.str(loop))
+                    .append(",\n        \"atThumbnail\": ").append(atThumb.json())
+                    .append(",\n        \"atProbe\": ")
+                    .append(atProbe == null ? "null" : atProbe.json(probe[0], probe[1])).append(" }");
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("  \"thumbnail\": {\n");
+        sb.append("    \"dest\": { \"x\": ").append(THUMB_X).append(", \"y0\": ").append(THUMB_Y0)
+                .append(", \"stride\": ").append(THUMB_STRIDE).append(", \"width\": ").append(THUMB_W)
+                .append(", \"height\": ").append(THUMB_H).append(" },\n");
+        sb.append("    \"sizes\": [\n");
+        for (int k = 0; k < sizes.size(); k++) {
+            int w = sizes.get(k)[0];
+            int h = sizes.get(k)[1];
+            int[][] t = tables.get(sizeKey(w, h));
+            sb.append("      { \"width\": ").append(w).append(", \"height\": ").append(h)
+                    .append(",\n        \"transparent\": { \"x\": ").append(flat(t[0]))
+                    .append(", \"y\": ").append(flat(t[1])).append(" },\n")
+                    .append("        \"opaque\": { \"x\": ").append(flat(t[2]))
+                    .append(", \"y\": ").append(flat(t[3])).append(" } }")
+                    .append(k + 1 < sizes.size() ? ",\n" : "\n");
+        }
+        sb.append("    ],\n");
+
+        int[][] origin = {{THUMB_X, THUMB_Y0}};
+        sb.append("    \"sweeps\": [\n");
+        for (int k = 0; k < SWEEP_SIZES.length; k++) {
+            int w = SWEEP_SIZES[k][0];
+            int h = SWEEP_SIZES[k][1];
+            sb.append("      { \"width\": ").append(w).append(", \"height\": ").append(h);
+            for (boolean alpha : new boolean[] {true, false}) {
+                int[][] xs = new int[THUMB_W + 1][];
+                int[][] ys = new int[THUMB_H + 1][];
+                xs[0] = new int[0];
+                ys[0] = new int[0];
+                for (int d = 1; d <= THUMB_W; d++) xs[d] = measureTables(dir, w, h, alpha, d, THUMB_H, origin)[0];
+                for (int d = 1; d <= THUMB_H; d++) ys[d] = measureTables(dir, w, h, alpha, THUMB_W, d, origin)[1];
+                sb.append(",\n        ").append(Json.str(alpha ? "transparent" : "opaque"))
+                        .append(": { \"x\": ").append(Json.grid(xs)).append(", \"y\": ").append(Json.grid(ys)).append(" }");
+            }
+            sb.append(" }").append(k + 1 < SWEEP_SIZES.length ? ",\n" : "\n");
+        }
+        sb.append("    ],\n");
+
+        int[][] probeOrigin = {{PROBE_ORIGIN, PROBE_ORIGIN}};
+        sb.append("    \"checks\": [\n");
+        for (int k = 0; k < CHECKS.length; k++) {
+            int[] c = CHECKS[k];
+            int[][] t = measureTables(dir, c[0], c[1], true, c[2], c[3], probeOrigin);
+            int[][] o = measureTables(dir, c[0], c[1], false, c[2], c[3], probeOrigin);
+            sb.append("      { \"width\": ").append(c[0]).append(", \"height\": ").append(c[1])
+                    .append(", \"destWidth\": ").append(c[2]).append(", \"destHeight\": ").append(c[3])
+                    .append(",\n        \"transparent\": { \"x\": ").append(flat(t[0])).append(", \"y\": ").append(flat(t[1]))
+                    .append(" },\n        \"opaque\": { \"x\": ").append(flat(o[0])).append(", \"y\": ").append(flat(o[1]))
+                    .append(" } }").append(k + 1 < CHECKS.length ? ",\n" : "\n");
+        }
+        sb.append("    ],\n");
+
+        sb.append("    \"maps\": [\n").append(mapsJson).append("\n    ]\n");
+        sb.append("  }");
+        return sb.toString();
+    }
+
+    /** 探针画在这个落点上。目标比 1024×640 大时画布跟着放大（{@link #drawScaled}）。 */
+    private static final int PROBE_ORIGIN = 8;
+
+    /**
+     * 缩小区间的扫描：三个入库样例槽的源图尺寸（大地图.jpg / 宿舍.png / 大迷宫.png，
+     * web 端测试拿 {@code tools/ground-truth/存档/} 对撞），横轴目标宽 1..150、纵轴目标高
+     * 1..100，两条循环各一批。
+     */
+    private static final int[][] SWEEP_SIZES = {{3200, 2560}, {1024, 640}, {2865, 699}};
+
+    /**
+     * 单独量的几对 {@code {源宽, 源高, 目标宽, 目标高}}。2865×699 → 233×253 是旧的「带透明
+     * 16 位」公式在缩小区间里第一个对不上的地方（横 233、纵 253 都是），扫描范围之外，单列。
+     */
+    private static final int[][] CHECKS = {{2865, 699, 233, 253}};
+
+    /** 一张真图画出来，与两张表各自预言的像素比的结果。 */
+    private static final class Verdict {
+        final int compared;
+        final int distinguishing;
+        final String loop;
+        Verdict(int compared, int distinguishing, String loop) {
+            this.compared = compared;
+            this.distinguishing = distinguishing;
+            this.loop = loop;
+        }
+        String json() {
+            return "{ \"loop\": " + Json.str(loop) + ", \"compared\": " + compared
+                    + ", \"distinguishing\": " + distinguishing + " }";
+        }
+        String json(int dw, int dh) {
+            return "{ \"width\": " + dw + ", \"height\": " + dh + ", \"loop\": " + Json.str(loop)
+                    + ", \"compared\": " + compared + ", \"distinguishing\": " + distinguishing + " }";
+        }
+    }
+
+    /**
+     * 真图画在 (ox, oy) 起的那一块，逐像素对两张表的预言。{@code t} 是
+     * {@code [带透明 x, 带透明 y, 不透明 x, 不透明 y]}。
+     *
+     * <p>只比两张表取到的源像素都全不透明的那些格：半透明的经过 SrcOver 混合，读回来的
+     * 不是源值。{@code distinguishing} 是其中两张表预言不同的格数 —— 它是 0 时「对上了」
+     * 两张都成立，答不出走哪条循环，记成 {@code either}，不猜。
+     *
+     * <p>一个都比不了（maps/无.png 整张全透明）记成 {@code unknown}。它不是任何场景的地图
+     * （空槽读的是没有扩展名的 {@code "maps/无"}，找不到文件）；web 侧的判据只要求场景地图
+     * 全部分得出来。两张都对不上就退出码 1。
+     */
+    private static Verdict verdict(File f, BufferedImage src, BufferedImage canvas, int ox, int oy, int[][] t) {
+        int compared = 0;
+        int distinguishing = 0;
+        int missT = 0;
+        int missO = 0;
+        for (int j = 0; j < t[1].length; j++) {
+            for (int i = 0; i < t[0].length; i++) {
+                int pt = src.getRGB(t[0][i], t[1][j]);
+                int po = src.getRGB(t[2][i], t[3][j]);
+                if ((pt >>> 24) != 0xFF || (po >>> 24) != 0xFF) continue;
+                compared++;
+                if (pt != po) distinguishing++;
+                int got = canvas.getRGB(ox + i, oy + j);
+                if (got != pt) missT++;
+                if (got != po) missO++;
+            }
+        }
+        if (compared == 0) return new Verdict(0, 0, "unknown");
+        if (missT == 0 && missO == 0) return new Verdict(compared, distinguishing, "either");
+        if (missT == 0) return new Verdict(compared, distinguishing, "transparent");
+        if (missO == 0) return new Verdict(compared, distinguishing, "opaque");
+        fail(f.getPath() + " 画成 " + t[0].length + "×" + t[1].length + " 时两张表都对不上：带透明那张差 "
+                + missT + " 个、不透明那张差 " + missO + " 个（比了 " + compared + " 个）");
+        return null;
+    }
+
+    /** 每条轴最多试几个候选。 */
+    private static final int PROBE_TRIES = 8;
+
+    /**
+     * 探针的候选尺寸 {@code [dw, dh]}：按两个拟合公式，横轴上预言会不同的最小几个目标宽
+     * （纵轴取缩略图的 100），再是纵轴上的（横轴取 150）。
+     *
+     * <p>公式只用来**排候选**，不用来下结论：两张表由梯度图在候选尺寸上现量，量出来相同
+     * 的候选直接跳过（{@link #sweepThumbnails}）。这一步实测撞过两次公式说错 —— 81×73 →
+     * 203×235（放大两倍多）与 2865×699 → 233×253（那一次用的是旧的「带透明 16 位」公式，
+     * 正是它在那里对不上，才有了现在两条循环共用位数的写法）。所以候选不止一个。
+     *
+     * <p>目标长不超过源长的两倍（两轴扫描量过的放大倍率）。挑不出候选就记 {@code either}：
+     * 1023×639（教室2.png）在这个范围里两个公式处处相同，它走哪条循环是**看不出来的**，
+     * 而看不出来也就意味着画出来一样。
+     */
+    private static java.util.List<int[]> probeCandidates(int w, int h) {
+        int shift = blitShift(w, h);
+        java.util.List<int[]> out = new java.util.ArrayList<>();
+        for (int d : differing(w, shift)) out.add(new int[] {d, THUMB_H});
+        for (int d : differing(h, shift)) out.add(new int[] {THUMB_W, d});
+        return out;
+    }
+
+    /** 两个拟合公式（同一个位数，只差半步向下 / 向上取整）预言会不同的目标长。 */
+    private static java.util.List<Integer> differing(int srcLen, int shift) {
+        java.util.List<Integer> out = new java.util.ArrayList<>();
+        for (int d = 2; d <= 2 * srcLen && out.size() < PROBE_TRIES; d++) {
+            long inc = ((long) srcLen << shift) / d;
+            long locT = inc / 2;
+            long locO = (inc + 1) / 2;
+            for (int i = 0; i < d; i++) {
+                if (((locT + i * inc) >> shift) != ((locO + i * inc) >> shift)) {
+                    out.add(d);
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 两条循环共用的定点位数：{@code 31 - bitLength(源宽 | 源高)}。拟合出来的，判据是
+     * 这份黄金数据本身（web 端 scaledBlit.test.ts 逐张核），不是 OpenJDK 源码。
+     */
+    private static int blitShift(int w, int h) {
+        return 31 - (32 - Integer.numberOfLeadingZeros(w | h));
+    }
+
+    private static String sizeKey(int w, int h) {
+        return String.format("%05dx%05d", w, h);
+    }
+
+    /** 梯度图按 (尺寸, 形态) 只写一次、只读一次。 */
+    private static final java.util.Map<String, Image> GRADIENTS = new java.util.HashMap<>();
+
+    private static Image gradient(File dir, int w, int h, boolean withAlpha) throws Exception {
+        String key = sizeKey(w, h) + (withAlpha ? "-alpha" : "-opaque");
+        Image hit = GRADIENTS.get(key);
+        if (hit != null) return hit;
+        BufferedImage g = new BufferedImage(w, h,
+                withAlpha ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                g.setRGB(x, y, 0xFF000000 | ((x & 0xFF) << 16) | ((y & 0xFF) << 8)
+                        | (x >> 8) | ((y >> 8) << 4));
+            }
+        }
+        if (withAlpha) g.setRGB(w - 1, h - 1, 0x00000000);
+        File png = new File(dir, "thumb-" + key + ".png");
+        ImageIO.write(g, "png", png);
+        Image img = tools.Reader.readImage(png.getPath());
+        GRADIENTS.put(key, img);
+        return img;
+    }
+
+    /** 一种尺寸、一种透明度形态、画到缩略图那 150×100 上的两张表：{@code [x 表, y 表]}。 */
+    private static int[][] thumbTables(File dir, int w, int h, boolean withAlpha) throws Exception {
+        int[][] origins = new int[THUMB_SLOTS][];
+        for (int slot = 0; slot < THUMB_SLOTS; slot++) {
+            origins[slot] = new int[] {THUMB_X, THUMB_Y0 + slot * THUMB_STRIDE};
+        }
+        return measureTables(dir, w, h, withAlpha, THUMB_W, THUMB_H, origins);
+    }
+
+    /**
+     * 梯度图画成 dw×dh，在每个落点上各画一遍读回两张表；落点之间必须给出同一张表。
+     */
+    private static int[][] measureTables(
+            File dir, int w, int h, boolean withAlpha, int dw, int dh, int[][] origins) throws Exception {
+        Image img = gradient(dir, w, h, withAlpha);
+
+        int[] first = null;
+        int[] firstY = null;
+        for (int[] origin : origins) {
+            BufferedImage canvas = drawScaled(img, origin[0], origin[1], dw, dh);
+            int ox = origin[0];
+            int oy = origin[1];
+            int[] mx = new int[dw];
+            int[] my = new int[dh];
+            for (int j = 0; j < dh; j++) {
+                for (int i = 0; i < dw; i++) {
+                    int argb = canvas.getRGB(ox + i, oy + j);
+                    int x = ((argb >> 16) & 0xFF) | ((argb & 0x0F) << 8);
+                    int y = ((argb >> 8) & 0xFF) | (((argb >> 4) & 0x0F) << 8);
+                    boolean mark = withAlpha && (argb >>> 24) != 0xFF;
+                    if (!mark && (argb >>> 24) != 0xFF) {
+                        fail("缩略图梯度图 " + w + "×" + h + " 读回透明像素 (" + i + "," + j + ")：没画上");
+                    }
+                    if (mark) {
+                        // 只有记号像素是透明的，它必须恰好落在 (w-1, h-1) 那一格上：
+                        // 行 / 列都要等于表里已有的那个值（第 0 行 / 列不会取到它）。
+                        if (j == 0 || i == 0) fail("缩略图梯度图 " + w + "×" + h + " 第 0 行 / 列取到了记号像素");
+                        continue;
+                    }
+                    if (x >= w || y >= h) fail("缩略图梯度图读回的源坐标越界：(" + x + "," + y + ")");
+                    if (j == 0) mx[i] = x;
+                    if (i == 0) my[j] = y;
+                    if (x != mx[i] || y != my[j]) {
+                        fail("缩略图缩放不可分离：" + w + "×" + h + " 的 (" + i + "," + j + ") 取到源 ("
+                                + x + "," + y + ")，两张一维表说的是 (" + mx[i] + "," + my[j] + ")");
+                    }
+                }
+            }
+            // 记号像素那一格：两张表合起来必须指向 (w-1, h-1)，否则那个透明像素是别的原因。
+            for (int j = 0; j < dh; j++) {
+                for (int i = 0; i < dw; i++) {
+                    boolean transparent = (canvas.getRGB(ox + i, oy + j) >>> 24) != 0xFF;
+                    boolean atMark = withAlpha && mx[i] == w - 1 && my[j] == h - 1;
+                    if (transparent != atMark) {
+                        fail("缩略图梯度图 " + w + "×" + h + " 的 (" + i + "," + j + ") 透明 = " + transparent
+                                + "，而表说它" + (atMark ? "是" : "不是") + "记号像素");
+                    }
+                }
+            }
+            if (first == null) {
+                first = mx;
+                firstY = my;
+            } else if (!java.util.Arrays.equals(first, mx) || !java.util.Arrays.equals(firstY, my)) {
+                fail("缩略图落点相关：" + w + "×" + h + " 画成 " + dw + "×" + dh + " 时，落点 ("
+                        + origins[0][0] + "," + origins[0][1] + ") 与 (" + ox + "," + oy + ") 给出了两张不同的表");
+            }
+        }
+        return new int[][] {first, firstY};
+    }
+
+    /**
+     * 原版那一句的形状 {@code drawImage(img, x, y, dw, dh, observer)}，画在与
+     * {@code LoadAndSavePanel.background} 同型（TYPE_INT_ARGB）的位图上。缩略图与扫描都
+     * 放得进 1024×640，画布就是原版那么大；只有探针的目标可能更宽（大迷宫那张要 1619 宽
+     * 才分得出两条循环），那时画布放大到装得下 —— 同型、只是更大。
+     */
+    private static BufferedImage drawScaled(Image img, int x, int y, int dw, int dh) {
+        BufferedImage canvas = new BufferedImage(
+                Math.max(CANVAS_W, x + dw), Math.max(CANVAS_H, y + dh), BufferedImage.TYPE_INT_ARGB);
+        canvas.getGraphics().drawImage(img, x, y, dw, dh, null);
         return canvas;
     }
 

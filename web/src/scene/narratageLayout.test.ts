@@ -136,8 +136,9 @@ describe('旁白背景：CPU 按原版的采样表拼', () => {
   })
 
   it('两条轴的采样表与 Java2D 量出来的逐个相同', () => {
-    expect(opaqueSourceIndexes(GX.srcLen, GX.destLen)).toEqual(GX.map)
-    expect(opaqueSourceIndexes(GY.srcLen, GY.destLen)).toEqual(GY.map)
+    const extent = { width: GX.srcLen, height: GY.srcLen }
+    expect(opaqueSourceIndexes(GX.srcLen, GX.destLen, extent)).toEqual(GX.map)
+    expect(opaqueSourceIndexes(GY.srcLen, GY.destLen, extent)).toEqual(GY.map)
   })
 
   // ⚠️ 这一条只钉**黄金数据**里的一个数，改渲染代码它不会红（守渲染器的是逐帧
