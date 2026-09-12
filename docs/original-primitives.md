@@ -25,7 +25,7 @@
 
 | 调用点 | 原语 | 判定 | 证据 |
 |---|---|---|---|
-| `src/battle/BattlePanel.java:17,157` | 线程 | 未核 | 战斗里：`battle/loop.ts` 100 ms 一拍，`game/session.ts` 的 `advanceBattle`，`battle/battleTrace.test.ts` 逐步对真值。**战斗之外**：原版这条线程构造时起、关机停，战斗结束后每拍仍调 `doAction()`（只推待机帧）、`launchAttack.check()`、`gameOver.update()`、`victoryReminder.update()` 等；web 只在 `panel === 'battle'` 时推。后几样改不改得到下一场的状态，读代码判断不了 |
+| `src/battle/BattlePanel.java:17,157` | 线程 | 未核 | 战斗里：`battle/loop.ts` 100 ms 一拍，`game/session.ts` 的 `advanceBattle`，`battle/battleTrace.test.ts` 逐步对真值。**战斗之外**：原版这条线程构造时起、关机停，战斗结束后每拍仍调 `doAction()`（只推待机帧）、`launchAttack.check()`、`gameOver.update()`、`victoryReminder.update()` 等；web 只在 `panel === 'battle'` 时推。后几样改不改得到下一场的状态，读代码判断不了 —— 归 xl-03x.23 跑读数 |
 | `src/battle/BattlePanel.java:470,471` | 睡眠 / 捕获 | 照做 | `battle/loop.ts` 的 `BATTLE_TICK_MS = 100`（ADR-0003）；try 里只有 sleep，吞掉的只是 `InterruptedException` |
 | `src/battle/BattlePanel.java:304,306,308` | 光标 | 照做 | 透明光标 + 自绘鼠标：`index.css` 的 `.stage { cursor: none }`（xl-03x.20 补）+ `battle/render/assets.ts` 的鼠标图；`app/stageCursor.test.ts` |
 | `src/battle/BattleState.java:85` | 随机数 | 已登记 `ADR-0001#random-streams-per-battle-and-shop` | 算式照抄：`battle/step.ts` 的 `nextDouble()*100`；`battle/battleTrace.test.ts` |
