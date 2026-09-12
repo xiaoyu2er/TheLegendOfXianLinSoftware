@@ -98,7 +98,7 @@
 | **菜单** 点物品 / 装备 / 奇术 / 天书四个标签切页 | 能 | 随时 | — | `menu/Command.java:91-119`；剧本 `menu-hero` / `menu-magic`；实跑 `menuTrace.test.ts` 76/76 |
 | 菜单 顶栏「当前任务」显示当前任务 | 能（「错一个字」逐帧比对看不见 —— 顶栏是字形缺口区；判据是逐字符串对真值） | 随时 | —（xl-03x.10（closed）、xl-lna（closed）） | `menu/Command.java:130-141`、`Reader.java:267`；剧本 `menu-task`；实跑 `taskTitle.test.ts` 8/8、`menuTask.test.ts` 5/5 |
 | 菜单 点头像换人（陆 / 文在队才有）、看等级 | 能 | 随时 | — | `Scoll.java:121-184`；剧本 `menu-hero` |
-| 菜单 药品页：悬停选药、点「使用」回血回蓝 | **能，但不对**：药品页永远看不到玩家持有的药，只会说「没药了」 | 随时 | xl-bsv（open） | `DrugPanel.java:92-300`；读代码（本票复核）：`game/session.ts` 两处 `refreshMenuWorld` 只传 `live` / `audio`，不同步药包 |
+| 菜单 药品页：悬停选药、点「使用」回血回蓝 | 能 | 随时 | xl-bsv（本分支关） | `DrugPanel.java:92-300`；`game/session.ts` 开菜单时从药包现读（`refreshMenuWorld` 的 `drugs`）、每一拍写回；实跑 `menuSession.test.ts`「物品页看得见药包里的药（xl-bsv）」与「喝一瓶药」那条的药包断言 |
 | 菜单 装备页：六个槽位切换、悬停看升降箭头、「使用」/「弃用」/ 不能用时「禁止」 | 能 | 随时 | — | `EquipPanel.java:297-320,520-950`；剧本 `menu-equip`；实跑 `equipPanel.test.ts` 9/9、`equipDraw.test.ts` 22/22 |
 | 菜单 装备页里看见战斗掉的装备 | **能，但不对**：战利品装备写进另一个背包，菜单与商店都读不到 | 随时 | xl-5jx（open） | `VictoryReminder.java:348-361`；读代码（本票复核）：`battle/victory.ts` 仍从 `fakes/equipmentPack` 引 `addEqupment`，菜单读 `owned` |
 | 菜单 长列表：够到框外的那几行 | 能（原版不裁剪、没有滚动条，框外照画照点；Web 画的那一半裁、加滚动条，`ADR-0001#list-clipped-with-scrollbar`。滑块拖得动（xl-03x.9（closed））） | 随时 | —（xl-03x.9（closed）、xl-4ev（closed）） | `EquipPanel.java:474-486,548-571`；剧本 `menu-scroll`；实跑 `scroll.test.ts` 25/25 |
@@ -116,12 +116,12 @@
 | **战斗** 「击」→ 点怪选敌 | 能 | 链上 | — | `battle/Command.java:81-88`；剧本 `battle-min` / `battle-victory`；实跑 `battleTrace.test.ts` 57/57 |
 | 战斗 「技」→ 技能菜单 → 选招（单体选敌、全体直接放）、菜单里「返回」 | 能 | 链上 | — | `SkillMenu.java:202-287`；剧本 `battle-zhang-skills` / `battle-menus` 等 |
 | 战斗 「防」：怒气满放秘术，不满弹提示 | 能 | 链上 | — | `battle/Command.java:104-144`；剧本 `battle-mishu-zhang` / `battle-mishu-yu` / `battle-mishu-lu` |
-| 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | **能，但不对**：Web 战斗里的存货恒为 0，永远只弹「没药」 | 链上 | xl-byy（open） | `DrugMenu.java:52,110-130` 读的是与商店 / 菜单共用的 `DrugPack`；读代码（本票复核）：Web `battle/world.ts` 仍写死 `drugStock: DRUGS.map(() => 0)` |
+| 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | 能 | 链上 | xl-byy（本分支关） | `DrugMenu.java:52,110-192`；会话起战斗时从药包现读存货、每一拍写回；真的用药那一路由剧本 `battle-drugs`（驱动器新字段 `drugs`）逐字段钉住；实跑 `battleTrace.test.ts`、`session.test.ts`「战斗里的药来自药包（xl-byy）」 |
 | 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **不能**：战斗画布只收按下，悬停的四种反馈一样都没有 | 链上 | xl-qqw（open） | `BattlePanel.java:349-367`；读代码：战斗画布只挂 `onMouseDown` |
 | 战斗 按住按钮拖开再松手照样触发 | **不能**：Web 一次点击是同一点上的移入 + 按下 + 松开，做不出「按在这、松在那」 | 链上 | xl-qqw（open） | `GameButton.java:54-72`；读代码 |
 | 战斗 按 J 秒杀全部敌人（原版留的调试键） | 能（照复刻：清空敌人、直接落进「全部怪物被杀死」那一段；控制台与提示照原版盖在结算画面上） | 链上 | 代价：正常打死 → 结算 → 回场景在行为真值里零覆盖了：xl-5zw（open） | `BattlePanel.java:289-296`；剧本 `battle-victory`（加了一步 `debugKill`）；实跑 `battleTrace.test.ts` 57/57、`useGame.test.tsx` 13/13（进脚本22，按 J，经验得动） |
 | 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能 | 链上 | 真值里只剩按 J 那一条路：xl-5zw（open）（xl-3hn（closed）那十份剧情战真值都停在「胜利」出现的那一刻，没走结算） | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`；实跑 `victory.test.ts` 11/11；主线连跑（`playthrough.test.ts`）在状态层用真实出厂数据开出链上每场仗，**按 J 打赢**、结算、回到地图（正常打死那条路仍归 xl-5zw（open）） |
-| 战斗 战利品：药和钱进背包 | 能（战斗里用不上、菜单里看不见是另两行的事） | 链上 | — | `VictoryReminder.java:348-361`；实跑 `victory.test.ts`「物品与钱在 thing_sx1==4 那一拍发出去」 |
+| 战斗 战利品：药和钱进背包 | 能 | 链上 | — | `VictoryReminder.java:348-361`；实跑 `victory.test.ts`「物品与钱在 thing_sx1==4 那一拍发出去」 |
 | 战斗 全灭：第一槽是罹年居士回地图，其余回标题 | 能 | 链上 | — | `GameOver.java:93-125`；剧本 `battle-defeat-scene` / `battle-defeat-start` / `battle-defeat-slot2`；实跑 `session.test.ts`「打输的两条分支」 |
 | 战斗 全灭时第一槽的怪已先被打死 | **能，但不对**：原版空指针冻住战斗线程；Web 故意抛，但主循环没人接 —— 失败的样子不同 | 链上 | xl-9go（open） | `GameOver.java:95`、`Check.java:19-23`；读代码 |
 | 战斗 听战斗背景音乐 | 能（修之前 10 首进战斗那一拍抛） | 链上 | —（xl-19z（closed）） | `BattlePanel.java:170-203`；实跑 `bgmPlayer.test.ts` 34/34（「战斗背景音乐」：曲名从源码现读，逐首 `resolveBgmOrNull` 非 null、真播放器逐首 `sync` 不抛） |

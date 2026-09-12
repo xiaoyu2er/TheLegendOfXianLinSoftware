@@ -426,6 +426,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `background` / `enemies` | 就是 `script/*.txt` 里 `Fight` 那一行的第一列与后三列。怪物写法 `名字/编号`，编号必须是 5/6/7（原版 `Enemy.initial` 按它定站位：5 中 / 6 上 / 7 下）。空槽位写 `null`，但三个槽位要写满。 |
 | `party` / `level` | 出战的我方单位与各自的等级。**等级没有默认值**：三个人的原版默认等级各不相同（张小凡 1 / 文敏 3 / 陆雪琪 1），而这份真值里每一个伤害数字都是从这里算出来的。 |
 | `skillNumber` | **可选**，技能菜单上给谁画几颗按钮，也就是 `ZhangXiaoFan.skillNumber` 等三个 **static** 字段（xl-rh9.14）。整个不写就一个字都不碰，用原版那三个字段的初值 **2 / 3 / 2**，而且**真值头里也不回显它** —— 老真值因此逐字节不变。写了的键必须在 `party` 里，取值 1..5。<br>为什么必须由剧本给：那三个字段只由 `levelUp()`（胜利结算）与 `intialFromInfo()`（读档）改，导出器只写 `level = n`，构造函数一个字都不碰它 —— **等级再高，菜单上仍然是那几颗**，第 3/4/5 颗被 `SkillMenu.checkReleased` 里的 `if(skillNumber>=n)` 守着。 |
+| `drugs` | **可选**，开打之前背包里有哪几味药、各几件：`{"金创药": 2}`，也就是 `DrugPack.addDrug(名字, 件数)`（xl-byy）。与 `skillNumber` 同一个规矩：整个不写就一个字都不碰（干净 JVM 里六种药全是 0，老剧本「点药走提示图」那一路靠的就是它），**真值头里也不回显**。名字对不上 `sources/Shop/drug.txt` 是硬失败（原版 `addDrug` 会一声不响丢掉，丢掉之后与「没写」长得一样），件数至少是 1。<br>为什么要剧本给：战斗里用药读的是 static 的 `DrugPack.drugList`，一个干净进程里只有商店、宝箱、战利品、读档往里写 —— 单写一条战斗剧本，真的用药那一路一次都走不到。剧本 `battle-drugs` 用它。 |
 | `seed` | `Math.random()` 的种子。伤害、怪物选招选人、状态命中全走它。 |
 | `tickMs` | 只能是 `100` —— `BattlePanel.run()` 的循环周期就是 `Clock.sleep(100)`。 |
 

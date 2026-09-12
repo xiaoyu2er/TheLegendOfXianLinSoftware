@@ -892,4 +892,26 @@ describe('战斗里的药来自药包，用掉的写回药包（xl-byy）', () =
     }
     throw new Error('5000 拍里一次药都没用上')
   })
+
+  /**
+   * 战利品的药是在战斗那一拍**里面**直接 `addDrug` 进药包的（`victory.ts` 的
+   * `awardLoot`），不经过战斗世界的 `drugStock`。写回要是拿「世界里的数 − 药包里的数」
+   * 去补，这一拍掉的药当场就被减回去 —— 打赢了、画面上也画着掉了什么，背包里没有。
+   */
+  it('打赢掉的药进了药包，战斗每一拍的写回不许把它抹掉', () => {
+    levelParty(20)
+    const before = DRUGS.map((d) => drugCount(d.name))
+    const s = walkUntilBattle(openSession(createWorld(getScene('迷宫1')), deps())).session
+    // 这一场掉什么从怪现读（`thing` 那一列，`名字/1` 是药），不手写。
+    const loot = new Map<string, number>()
+    for (const e of battleWorldOf(s)!.enemies) {
+      const [name, kind] = e.spec.thing.split('/')
+      if (kind === '1' && DRUGS.some((d) => d.name === name)) loot.set(name!, (loot.get(name!) ?? 0) + 1)
+    }
+    expect(loot.size, '对照失效：这一场一味药都不掉').toBeGreaterThan(0)
+
+    const done = runBattleToExit(s)
+    expect(done.session.panel, '没打赢 —— 战利品那一拍没走到').toBe('scene')
+    expect(DRUGS.map((d) => drugCount(d.name))).toEqual(before.map((n, i) => n + (loot.get(DRUGS[i]!.name) ?? 0)))
+  })
 })

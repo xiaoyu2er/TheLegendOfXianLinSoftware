@@ -552,6 +552,20 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     // 里的读数逐字相同（那一趟是人工数的，这一趟是流水线数的）。
     exact: [{ ...REMINDER_EXACT, drawnTicks: 63 }],
   },
+  'battle-drugs': {
+    // 战斗里真的用药（xl-byy）：与 battle-menus 同一场遭遇，多了回复数字与存货变化。
+    // 实测（2026-09-12，`tools/compare-frames.sh battle-drugs`，30 帧，容差 8）：
+    // 30/30 帧偏离、最差 #125 0.9688% @ (92,234)-(951,612) —— 药品菜单开着那一帧，
+    // 与 battle-menus 的最差帧同一处同一笔字形账。上界照 battle-menus 取最差帧的两倍。
+    // 提示图逐像素相等区：采样到 2 帧、4160 个像素全等。
+    status: 'gap',
+    maxRatio: 0.0194,
+    why:
+      '状态栏那九行字 + 药品菜单的存货与介绍文字（同一笔字形账，与 battle-menus 同源）；' +
+      '背景动画的有损重编码（JPG 源 → cwebp -q 95 -sns 0）',
+    issue: 'xl-9bd.17 / xl-7ip',
+    exact: [{ ...REMINDER_EXACT, drawnTicks: 42 }],
+  },
   // ===== xl-rh9.14 的六条：剩下那些技能与秘术 =====
   //
   // 六条原先都是 `unpainted`（技能菜单与状态图标归 xl-rh9.12、小精灵归
