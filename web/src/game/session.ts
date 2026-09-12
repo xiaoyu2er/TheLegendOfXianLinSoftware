@@ -168,6 +168,8 @@ export interface SessionDeps {
    * 原版第二处根本没有种子：`calDamage` 直接调 `Math.random()`。这一层的
    * 战斗世界带一个 `JavaRandom`（真值要可复现），所以游戏本体得**现摇一个
    * 种子**出来 —— 那是这一层与原版的一处明写出来的差别，不是疏忽。
+   *
+   * @exception ADR-0001#random-streams-per-battle-and-shop
    */
   readonly random: () => number
   /**
@@ -398,6 +400,11 @@ const NO_SFX: readonly string[] = []
  * 扣成负的）、剧情三元组 `currentScript` / `isLoad` / 任务文本（原版也活过「起」，于是「新局」的
  * 剧情接着上一局走；这一层的新世界回到开机值），以及菜单停在哪一页。JVM 读数与判据见
  * `game/loadResidue.test.ts` 最后一组。
+ *
+ * **也不带、而且上面那张名单漏了的**：两家店（`Session.shop`）。原版 `ShopPanel` /
+ * `EquipmentShopPanel` 开机建一次、存货从此不变，活过「起」；这里会话一重建它就回到
+ * `null`，新局头一次进门重掷存货（xl-03x.20 现查，读代码，未跑）。
+ * @exception ADR-0001#new-game-rerolls-shop-stock
  */
 export interface NewGameCarry {
   /** 上一局的装备库存；`null` = 没有上一局（开机）。 */
@@ -1087,7 +1094,7 @@ function enterShop(
       coins: getCoins(),
       // 原版存货是 `Math.random()` 现掷的，没有种子；这一层的商店世界带一个
       // `JavaRandom`（真值要可复现），所以现摇一个 —— 与战斗那一处同一个取舍
-      // （见 `SessionDeps.random`）。
+      // （见 `SessionDeps.random`）。@exception ADR-0001#random-streams-per-battle-and-shop
       seed: Math.trunc(deps.random() * 0x7fffffff),
     })
   w.coins = getCoins()

@@ -1768,7 +1768,7 @@ function heroTargets(w: BattleWorld): Enemy[] {
   // （只有打全体的 `case 8` 有）。槽位空着时它是一发 NPE。这里不"顺手补上
   // 判空"（那是 ADR-0001 明令不许的"把缺陷修好"），也不静默跳过 —— 静默跳过
   // 会导出一份"打过了、一切正常、可就是没人挨打"的 trace。照抄的是**它会炸**
-  // 这件事，只是把炸法换成一句说得清的话。
+  // 这件事，只是把炸法换成一句说得清的话。@exception ADR-0001#fail-loud-where-original-swallows
   const targets: Enemy[] = []
   const aimed = (e: Enemy | null, slot: number): Enemy => {
     if (!e) {

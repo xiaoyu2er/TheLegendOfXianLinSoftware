@@ -32,6 +32,14 @@ import type { StartEffect, StartPanelState, StartView } from './panelState'
  * 补拍的那一批里一旦有一拍推出了 `newGame`，后面的拍不该再跑 —— 原版那一拍
  * 是 `switchTo("scene")`，面板当场就换走了。接着跑等于在一个已经不在屏幕上的
  * 面板上继续推进，而那在画面上完全看不出来。
+ *
+ * ## 离开标题就停、回来从头来
+ *
+ * 原版 `StartPanel.startAnimationThread()` 那条线程开机起、关机停，**不管标题显不显示**：
+ * 鼠标 / 按钮 / 卷轴的帧、云的坐标一路往前走，回到标题时接着之前的相位。这里的计时器
+ * 随组件卸载（`App.tsx` 只在标题时挂它），回来时 `createStartPanelState()` 全新一份。
+ * 与菜单那几条线程同一个取舍（xl-03x.20 现扫 `new Thread` 补登）。
+ * @exception ADR-0001#panel-threads-run-while-hidden
  */
 export interface StartPanelHandle {
   /** 这一拍该画什么。 */
