@@ -192,6 +192,41 @@ describe('开始界面', () => {
     expect(glow()).not.toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
   })
 
+  it('按着键移进按钮不跑悬停 —— 原版 mouseDragged 只记坐标、不跑 isMoveIn（xl-vi8）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const el = screen.getByRole('button', { name: '开始新游戏' })
+    const glow = () => (el.querySelector('.start-button-glow') as HTMLImageElement).src
+    const face = () => (el.querySelector('.start-button-face') as HTMLImageElement).src
+    // 原版把 mouseMoved / mouseDragged 两个回调分开，判据就从 GBK 源码现读：
+    // mouseDragged 那一支里一句 isMoveIn 都没有。
+    const src = javaSource('src/start/StartPanel.java').replace(/\s+/g, '')
+    const dragged = src.slice(src.indexOf('publicvoidmouseDragged('))
+    // 截到监听器收尾的 `});` —— mouseDragged 是 MouseMotionAdapter 里最后一个方法。
+    const end = dragged.indexOf('});')
+    expect(end, '没找到 mouseDragged 或它的收尾').toBeGreaterThan(0)
+    expect(dragged.slice(0, end)).toContain('currentX=ex.getX();')
+    expect(dragged.slice(0, end)).not.toContain('isMoveIn')
+
+    // 按着键（舞台外按下拖进来 / 面板上按下拖过来，两种在这里同形）移进、再动。
+    fireEvent.mouseEnter(el, { buttons: 1 })
+    fireEvent.mouseMove(el, { buttons: 1 })
+    tick(2)
+    expect(face()).toContain(resolveAsset(startAssetId('newGame')))
+    expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
+
+    // 对照：松开键之后头一下移动就是 mouseMoved，当场换。没有这一半，事件没带上 buttons 也是绿的。
+    fireEvent.mouseMove(el, { buttons: 0 })
+    tick(2)
+    expect(face()).toContain(resolveAsset(startAssetId('newGameHover')))
+    expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 1)))
+
+    // 移出**不看键**（与原版不逐拍相同，欠账 xl-4zo）：按下 / 松手在这里合成一次 `click`，
+    // 移出也看键的话，拖出框松手之后悬停会卡住。这一段守的是「别把移出改成看键」。
+    fireEvent.mouseLeave(el, { buttons: 1 })
+    expect(face()).toContain(resolveAsset(startAssetId('newGame')))
+    expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
+  })
+
   it('键盘 Tab 过来也换图、也转高亮 —— 原版没有这条，是这里补的无障碍', () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const el = screen.getByRole('button', { name: '开始新游戏' })
