@@ -79,6 +79,16 @@ describe('上屏 keep 的渲染器层判据', () => {
     expect(judgePresentKeep([f]).verdict).toContain('判不出')
   })
 
+  it('颜色离底色不到 2 倍容差：扔不扔 alpha 都落在容差附近，也算分不开', () => {
+    // 与底色差 10（< 2×8）：任何一档 alpha 下两个预测至多差 10。门槛若放松成「差出来就算」，
+    // 这一场会被读成「判得出、而且通过」—— 而渲染器扔 alpha 时读数照样在容差边上。
+    const java = javaRamp(BG.map((c) => c - 10) as [number, number, number])
+    const f = presentKeepFrame(0, java, over(java), T)
+    expect(f.translucent).toBe(255)
+    expect(f.separable).toBe(0)
+    expect(judgePresentKeep([f]).verdict).toContain('判不出')
+  })
+
   it('一帧都没有也红', () => {
     expect(judgePresentKeep([]).ok).toBe(false)
   })
