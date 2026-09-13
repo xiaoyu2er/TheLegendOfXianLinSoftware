@@ -194,11 +194,8 @@ async function capture(
       await browser.evaluate(
         `window.__xlBreak = ${brk === null ? 'undefined' : JSON.stringify(brk)}`,
       )
-      await browser.evaluate(
-        `window.__xlPresent = ${present === null ? 'undefined' : JSON.stringify(present)}`,
-      )
       const loaded = await browser.evaluate<{ scene: string; tickCount: number }>(
-        `window.__xlReplay.load(${JSON.stringify(slimTrace(trace))})`,
+        `window.__xlReplay.load(${JSON.stringify(slimTrace(trace, present))})`,
       )
       // 两端跑的必须是同一份剧本的同样长度。对不上就不是"差异大"，是接错了。
       if (loaded.tickCount !== m.tickCount) {
@@ -232,7 +229,7 @@ async function capture(
  * 而取图页一个状态字段都不读 —— 对话与旁白都由它自己推进（xl-9bd.10 /
  * xl-9bd.11，口子在 xl-4rx 关上）。
  */
-function slimTrace(json: string): string {
+function slimTrace(json: string, present: 'keep' | null): string {
   const trace = JSON.parse(json) as {
     driver: string
     script: FixtureHeader['script']
@@ -271,6 +268,8 @@ function slimTrace(json: string): string {
     // 在这里（Node）按状态层判据用的同一个读取器解好再送进去，理由见
     // `src/compare/saveFixtures.ts`。别的剧本得到 `undefined`，键整个去掉，字节与从前相同。
     fixture: saveFixtureOf(trace),
+    // 战斗上屏走哪一支（xl-k9e）：只有上屏 keep 那一轮带，别的轮得到 `undefined`、键整个去掉。
+    present: present ?? undefined,
   })
 }
 
