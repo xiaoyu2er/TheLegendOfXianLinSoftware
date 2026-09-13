@@ -435,6 +435,45 @@ describe('开始界面', () => {
     expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '320px', top: '210px' })
   })
 
+  /**
+   * xl-m9q：舞台外按下左键、按着拖进来，再在面板上按右键。JDK 17 `LightweightDispatcher.isMouseGrab`
+   * 对 MOUSE_PRESSED 只异或本键（右键），左键还在 → 为真，`mouseEventTarget` 不重设、仍是 null：
+   * 这一下按下不派，之后的 `mouseDragged` 也不派（MOUSE_DRAGGED 在按着键时 `isMouseGrab` 恒真）。
+   */
+  it('舞台外按着左键拖进来再按右键：这一下按下不收，之后的拖动也不收（xl-m9q）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    const about = screen.getByRole('button', { name: '关于我们' })
+    fireEvent.mouseMove(panel, { clientX: 100, clientY: 100, buttons: 0 })
+    fireEvent.mouseDown(about, { button: 2, buttons: 3 })
+    fireEvent.mouseMove(panel, { clientX: 300, clientY: 200, buttons: 3 })
+    expect({ left: cursor.style.left, top: cursor.style.top }, '按下起了 grab，拖动跟着走了').toEqual({
+      left: '100px',
+      top: '100px',
+    })
+    fireEvent.mouseUp(about, { button: 2, buttons: 1 })
+    fireEvent.mouseUp(about, { button: 0, buttons: 0 })
+    tick(1)
+    expect(screen.queryByTestId('start-about'), '按下被送进去了').toBeNull()
+  })
+
+  it('对照：只按着右键（之前没有别的键）在面板上按下，照常收、照常起 grab', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    const about = screen.getByRole('button', { name: '关于我们' })
+    fireEvent.mouseMove(panel, { clientX: 100, clientY: 100, buttons: 0 })
+    fireEvent.mouseDown(about, { button: 2, buttons: 2 })
+    fireEvent.mouseMove(panel, { clientX: 300, clientY: 200, buttons: 2 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '300px', top: '200px' })
+    fireEvent.mouseUp(about, { button: 2, buttons: 0 })
+    tick(1)
+    expect(screen.queryByTestId('start-about')).not.toBeNull()
+  })
+
   it('对照：面板上按下再拖，grab 在这块面板上，mouseDragged 照样记坐标', () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
