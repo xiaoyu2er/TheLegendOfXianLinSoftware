@@ -3,7 +3,7 @@
 这是这个项目唯一一份**玩家视角的全貌**：原版里玩家能做的每一件事，Web 端今天做不做得到。
 每个里程碑收口时**现查着重写**，完工判据拿它当分母。
 
-**现查：2026-09-12，战斗鼠标那两行（悬停、按住拖开再松手）由「不能」改判「能」之后；再往前是 xl-6zf（closed） 把「存读档 按 Esc 回到来处」、xl-5jx（closed） 把「菜单装备页里看见战斗掉的装备」两行各由「不对」改判「能」之后（再往前是 xl-byy（closed）/ xl-bsv（closed）改判两行，能 53 · 不能 5 · 能但不对 4；xl-3hn（closed）改判三行，能 51 · 不能 5 · 能但不对 6）。共 62 行（能 58 · 不能 2 · 能但不对 2）——「声音 战斗 / 场景里的音效」那一行由主干在合并 xl-o9z（closed）/ xl-03x.22（closed）/ xl-cpo（closed）/ xl-r0x（closed）之后改判「能」：它欠的那张票 xl-b36（closed）早已合进主干，只是票据快照没重导、判据因此没红（2026-09-12）。**（上一次整表逐行重查是 2026-09-11 M8 收口那张票 xl-03x.19（closed），那时是能 49、不能 6、不对 7；之后 xl-3hn（closed）只改了三行，xl-byy（closed）/ xl-bsv（closed）只改了两行（菜单药品页、战斗用药）外加删掉「战斗 战利品」那一行里指向这两行的括注，最近这一次只改了「存读档 按 Esc 回到来处」一行，其余各行没有重查。）
+**现查：2026-09-12，「战斗 全灭时第一槽的怪已先被打死」一行由「不对」改判「能」之后；再往前是战斗鼠标那两行（悬停、按住拖开再松手）由「不能」改判「能」之后；再往前是 xl-6zf（closed） 把「存读档 按 Esc 回到来处」、xl-5jx（closed） 把「菜单装备页里看见战斗掉的装备」两行各由「不对」改判「能」之后（再往前是 xl-byy（closed）/ xl-bsv（closed）改判两行，能 53 · 不能 5 · 能但不对 4；xl-3hn（closed）改判三行，能 51 · 不能 5 · 能但不对 6）。共 62 行（能 59 · 不能 2 · 能但不对 1）——「声音 战斗 / 场景里的音效」那一行由主干在合并 xl-o9z（closed）/ xl-03x.22（closed）/ xl-cpo（closed）/ xl-r0x（closed）之后改判「能」：它欠的那张票 xl-b36（closed）早已合进主干，只是票据快照没重导、判据因此没红（2026-09-12）。**（上一次整表逐行重查是 2026-09-11 M8 收口那张票 xl-03x.19（closed），那时是能 49、不能 6、不对 7；之后 xl-3hn（closed）只改了三行，xl-byy（closed）/ xl-bsv（closed）只改了两行（菜单药品页、战斗用药）外加删掉「战斗 战利品」那一行里指向这两行的括注，最近这一次只改了「存读档 按 Esc 回到来处」一行，其余各行没有重查。）
 （这句读数由 `web/src/mainline/test/playerCoverage.test.ts` 对着下面那张表现数核对，改了表不改这句会红。）
 
 ## M8 完工判据：当前读数（2026-09-11，M8 收口实跑）
@@ -123,7 +123,7 @@
 | 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能 | 链上 | —（xl-3hn（closed）那十份剧情战真值都停在「胜利」出现的那一刻，没走结算；走完结算的是右栏那两份） | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`（按 J）/ `battle-victory-normal`（正常打死）；`battleTrace.test.ts`「正常打赢之后结算走完、回到场景」从真值现算这类剧本的份数、要求至少一份；实跑 `victory.test.ts` 11/11；主线连跑（`playthrough.test.ts`）在状态层用真实出厂数据开出链上每场仗，**按 J 打赢**、结算、回到地图（正常打死那条路见 `battle-victory-normal`） |
 | 战斗 战利品：药和钱进背包 | 能 | 链上 | — | `VictoryReminder.java:348-361`；实跑 `victory.test.ts`「物品与钱在 thing_sx1==4 那一拍发出去」 |
 | 战斗 全灭：第一槽是罹年居士回地图，其余回标题 | 能 | 链上 | — | `GameOver.java:93-125`；剧本 `battle-defeat-scene` / `battle-defeat-start` / `battle-defeat-slot2`；实跑 `session.test.ts`「打输的两条分支」 |
-| 战斗 全灭时第一槽的怪已先被打死 | **能，但不对**：原版空指针冻住战斗线程；Web 故意抛，但主循环没人接 —— 失败的样子不同 | 链上 | xl-9go（open） | `GameOver.java:95`、`Check.java:19-23`；读代码 |
+| 战斗 全灭时第一槽的怪已先被打死 | 能（照原版：那一发空指针冲出 `run()`、战斗线程死掉，面板不切、画面停在那一帧，场景线程照跑；Web 在同一句抛 `BattleThreadDied`，推进器只接这一类） | 链上 | — | `GameOver.java:95`、`Check.java:19-23`、`BattlePanel.java:464-471`（try 只包着 sleep）；实跑 `threadDeath.test.ts`（源码形状现读 + 死后一拍不推）、`session.test.ts`「全灭时第一槽已空」 |
 | 战斗 听战斗背景音乐 | 能（修之前 10 首进战斗那一拍抛） | 链上 | —（xl-19z（closed）） | `BattlePanel.java:170-203`；实跑 `bgmPlayer.test.ts` 34/34（「战斗背景音乐」：曲名从源码现读，逐首 `resolveBgmOrNull` 非 null、真播放器逐首 `sync` 不抛） |
 | **声音** 场景 / 标题的背景音乐，从别的面板回来恢复 | 能（延后转码名单上的 16 首故意静音） | 链上 | — | `ScenePanel.java:171,262-265`；剧本 `milestone`；实跑 `bgmPlayer.test.ts` 34/34 |
 | 声音 菜单 / 商店里的音效 | 能（与背景音乐同时响；音效之间后一声顶掉前一声，照原版） | 随时 | —（xl-03x.5（closed）、xl-03x.6（closed）、xl-03x.7（closed）、xl-8l2（closed）） | `MusicPlayer.java`；实跑 `sfxWiring.test.ts` 25/25（有非空音效真值的 9 份剧本逐步对撞：真值 music == 经会话交给播放器的序列）、`sfxPlayer.test.ts`。⚠️ 证的是「该响的时候调了播放器、参数对」，**证不了玩家真的听到了** |
