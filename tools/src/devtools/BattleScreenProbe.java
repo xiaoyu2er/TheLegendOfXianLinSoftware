@@ -145,6 +145,7 @@ public final class BattleScreenProbe {
     }
 
     private static void capture(File scriptFile, int frames, File out) throws Exception {
+        if (frames <= 0) ExportTrace.die("帧数要大于 0，给的是 " + frames);
         BattleDriver d = new BattleDriver(TraceScript.load(scriptFile));
         // 第一步才建原版面板；建之前拿不到它的 opaque 之类，所以先推第 0 步。
         if (!d.step()) ExportTrace.die(scriptFile.getName() + " 一步都没推就结束了");
@@ -282,6 +283,9 @@ public final class BattleScreenProbe {
                 if ((bg.getRGB(x, y) >>> 24) < 255) { edge[y * w + x] = true; translucent++; }
             }
         }
+        // 没有半透明边，下面每一行「边上超容差」都按构造是 0 —— 与「没差」同形。
+        if (translucent == 0) ExportTrace.die(background + " 没有 alpha<255 的像素，边上一个都量不到（背景图传错了？）");
+        if (frames <= 0) ExportTrace.die("帧数要大于 0，给的是 " + frames);
         System.out.println("背景 alpha<255 的像素：" + translucent + "；容差 " + tol + "（逐通道，显示器色彩空间）");
 
         // 「下面是什么」：第 0 帧缓冲没叠满的边上，按 a·web + (1-a)·候选 预测屏幕，
@@ -315,7 +319,8 @@ public final class BattleScreenProbe {
                 }
             }
         }
-        System.out.println("第 0 帧候选可分的边像素：" + apart + "；按各候选预测屏幕、差在 " + (3 * tol) + " 以内的个数：");
+        System.out.println("第 0 帧候选可分的边像素：" + apart + (apart == 0 ? "（判不出，下面的 0 不是「都对」）" : "")
+                + "；按各候选预测屏幕、差在 " + (3 * tol) + " 以内的个数：");
         for (int k = 0; k < cands.length; k++) System.out.println("  " + cands[k] + "\t" + hit[k]);
 
         // 第 1 帧起下面是什么：上一帧的屏幕（不透明面板重画不清底），还是又一次底色。
@@ -339,11 +344,13 @@ public final class BattleScreenProbe {
                     if (maxChannelDelta(s.getRGB(x, y), pb) <= 3 * tol) hitBg++;
                 }
             }
-            System.out.println("第 " + i + " 帧两候选可分的边像素：" + sep + "；命中 上一帧屏幕 " + hitPrev + "、底色 " + hitBg);
+            System.out.println("第 " + i + " 帧两候选可分的边像素：" + sep + (sep == 0 ? "（判不出）" : "")
+                    + "；命中 上一帧屏幕 " + hitPrev + "、底色 " + hitBg);
         }
 
         // 品红面板的截图里不是品红的像素：窗口圆角露出后面的东西，就落在这里。
         int ux = w, uy = h, ux1 = -1, uy1 = -1, notU = 0;
+        // 基准取截图中心而不是 UNDERLAY：截图在显示器色彩空间里，UNDERLAY 的 sRGB 值对不上。
         int magenta = ci[0].getRGB(w / 2, h / 2);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
