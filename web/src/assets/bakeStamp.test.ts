@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { posix, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
@@ -111,24 +111,23 @@ describe('烘焙指纹', () => {
     dir: string
     recursive: boolean
     keep: (relative: string) => boolean
-    /** 这一处扫描写在闭包里哪个文件 —— 下面「扫描点与登记对账」按文件数。 */
+    /** 这一处扫描写在闭包里哪个文件 —— 下面「扫描点与登记对账」按「文件 → 目录」逐条对。 */
     site: string
-    /** 没导出、只能手抄的路径：它在 `site` 里的定义原文，逐字核（xl-cn3）。 */
-    copied?: string
   }[] = [
-    // `tracedFromTruth` 只读 `.trace.json`；决定烘哪几首 BGM。
-    { dir: 'tools/traces/out', recursive: false, keep: (f) => f.endsWith('.trace.json'), site: BAKER_ENTRY, copied: "resolve(REPO, 'tools/traces/out')" },
+    // `tracedFromTruth` 只读 `.trace.json`；决定烘哪几首 BGM。手抄的三个路径（这一行、
+    // `src`、药品）没导出 —— 导出会改闭包、迫使重烘 —— 由下面的对账从扫描实参里现解析出来核。
+    { dir: 'tools/traces/out', recursive: false, keep: (f) => f.endsWith('.trace.json'), site: BAKER_ENTRY },
     { dir: IMAGE_ROOT, recursive: true, keep: () => true, site: BAKER_ENTRY },
     { dir: MENU_ROOT, recursive: true, keep: () => true, site: BAKER_ENTRY },
     // `scanShopReferences` 的 `JAVA_ROOT`（没导出：导出它会改烘焙器闭包，指纹就得重烘）。
-    { dir: 'src', recursive: true, keep: (f) => f.endsWith('.java'), site: 'web/src/shop/shopReferences.ts', copied: "const JAVA_ROOT = 'src'" },
+    { dir: 'src', recursive: true, keep: (f) => f.endsWith('.java'), site: 'web/src/shop/shopReferences.ts' },
     { dir: END_PICTURE_DIR, recursive: false, keep: (f) => !f.startsWith('.'), site: BAKER_ENTRY },
     { dir: EQUIP_PICTURE_ROOT, recursive: true, keep: isBakedEquipPicture, site: BAKER_ENTRY },
     // 装备图与药品介绍图两个子目录 `shopAssetOwner` 判 'elsewhere'，不在这一行里，
     // 各自单列（药品那一行漏过一次：篡改抹掉它一条，这张表照绿）。
     { dir: SHOP_ROOT, recursive: true, keep: (f) => shopAssetOwner(f) === 'baked', site: BAKER_ENTRY },
     // `bake.ts` 的 `DRUG_PICTURE_DIR`，`readdirSync` 不过滤（没导出，理由同 `src`）。
-    { dir: 'sources/Shop/药品/回复类', recursive: false, keep: () => true, site: BAKER_ENTRY, copied: "const DRUG_PICTURE_DIR = 'sources/Shop/药品/回复类'" },
+    { dir: 'sources/Shop/药品/回复类', recursive: false, keep: () => true, site: BAKER_ENTRY },
   ]
   /** 上面单列成用例的两处（`script/` 与音效），也是 `bake.ts` 里的目录扫描。 */
   const SCANNED_ABOVE: readonly { dir: string; site: string }[] = [
@@ -157,34 +156,38 @@ describe('烘焙指纹', () => {
   })
 
   /**
-   * 登记表的**反向对账**（xl-cn3）：上面几条只核「登记了的目录」，`bake.ts` 或
+   * 登记表的**反向对账**（xl-cn3，xl-pcg）：上面几条只核「登记了的目录」，`bake.ts` 或
    * 它闭包里任何一个模块新加一处 `readdirSync` / `listFiles`，表不会自己变红。
    *
    * 分母是**烘焙器闭包的语法树**（`bakerSources` 现爬，TypeScript 解析，注释与
-   * 字符串里的同名字样不算），按文件数目录扫描调用；分子是登记表按 `site`
-   * 数的行数。两边逐文件相等。`listFiles.ts` 是扫描原语本身，它肚子里那两处
-   * 不是「又一个输入目录」，不数 —— 但它必须还在闭包里，否则这条豁免就是在
-   * 豁免一个不存在的文件。
+   * 字符串里的同名字样不算）：找出每一处目录扫描调用，再把它的**第一个实参
+   * 解析回仓库里的目录**（见 `scannedDirs`）；分子是登记表的 `site → dir`。两边
+   * 按「文件 → 目录」逐条相等 —— 同一文件里「删一处、换一处扫别的目录」会红，
+   * 一个函数拿参数扫几个目录就按调用它的实参数成几条。`listFiles.ts` 是扫描原语
+   * 本身，它肚子里那两处不是「又一个输入目录」，不数 —— 但它必须还在闭包里，
+   * 否则这条豁免就是在豁免一个不存在的文件。
    *
    * 数不到的写法要响，不要漏：扫描函数的名字出现在「直接调用」与「原名导入」
    * 以外的任何位置 —— 别名导入、解构改名、`fs['readdirSync']`、存进变量、
-   * `.call(…)`、再导出 —— 那处调用这里认不出，所以名字本身就判红。
-   *
-   * 兜不住的（/code-review 两轴都点到）：它数的是**调用处**，不核每一处扫的是
-   * 哪个目录 —— 同一文件里「删一处、换一处扫别的目录」次数不变，照绿；一个
-   * 函数拿参数扫两个目录也只算一处。下面 `copied` 同理，只证明那段原文还在
-   * 源文件里，不证明扫描用的就是它。
+   * `.call(…)`、再导出 —— 那处调用这里认不出，所以名字本身就判红。实参解析不回
+   * 常量（算出来的、从外面读进来的）同样判红，不猜。
    */
   it('烘焙器闭包里的每一处目录扫描都在登记表里，反之亦然', () => {
     const PRIMITIVE = 'web/src/assets/listFiles.ts'
     const SCANNERS = new Set(['readdirSync', 'readdir', 'opendirSync', 'opendir', 'globSync', 'glob', 'listFiles'])
     const closure = bakerSources(REPO)
     expect(closure).toContain(PRIMITIVE)
-    const found: Record<string, number> = {}
+    const program = ts.createProgram(
+      closure.map((f) => resolve(REPO, f)),
+      { noLib: true, types: [], noEmit: true, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler },
+    )
+    const scanned = scannedDirs(program, REPO)
+    const found: string[] = []
     const escaped: string[] = []
     for (const file of closure) {
       if (file === PRIMITIVE) continue
-      const tree = ts.createSourceFile(file, readFileSync(resolve(REPO, file), 'utf8'), ts.ScriptTarget.Latest, true)
+      const tree = program.getSourceFile(resolve(REPO, file))
+      if (tree === undefined) throw new Error(`${file} 不在 TypeScript 程序里`)
       const visit = (node: ts.Node): void => {
         if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && SCANNERS.has(node.text)) {
           const parent = node.parent
@@ -197,8 +200,13 @@ describe('烘焙指纹', () => {
           const declared =
             (ts.isImportSpecifier(parent) && parent.propertyName === undefined) ||
             (ts.isFunctionDeclaration(parent) && parent.name === node)
-          if (called) found[file] = (found[file] ?? 0) + 1
-          else if (!declared && ts.isIdentifier(node)) escaped.push(`${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${node.text}`)
+          if (called) {
+            const call = (ts.isCallExpression(parent) ? parent : parent.parent) as ts.CallExpression
+            const at = `${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
+            const first = call.arguments[0]
+            if (first === undefined) escaped.push(`${at} ${node.text}() 没有实参`)
+            else for (const dir of scanned(first, at)) found.push(`${file} → ${dir}`)
+          } else if (!declared && ts.isIdentifier(node)) escaped.push(`${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${node.text}`)
           else if (ts.isStringLiteralLike(node) && ts.isElementAccessExpression(parent)) escaped.push(`${file} ['${node.text}']`)
         }
         ts.forEachChild(node, visit)
@@ -206,20 +214,10 @@ describe('烘焙指纹', () => {
       visit(tree)
     }
     expect(escaped, '扫描函数以数不到的写法出现了').toEqual([])
-    const registered: Record<string, number> = {}
-    for (const { site } of [...DIR_SOURCES, ...SCANNED_ABOVE]) registered[site] = (registered[site] ?? 0) + 1
-    expect(Object.keys(found).length, '闭包里一处目录扫描都没数到 —— 数法坏了').toBeGreaterThan(0)
-    expect(found).toEqual(registered)
+    const registered = [...DIR_SOURCES, ...SCANNED_ABOVE].map(({ site, dir }) => `${site} → ${dir}`)
+    expect(found.length, '闭包里一处目录扫描都没数到 —— 数法坏了').toBeGreaterThan(0)
+    expect(found.sort()).toEqual(registered.sort())
   })
-
-  // 手抄的三个路径：没导出（导出会改闭包、迫使重烘），就逐字核它在源码里的定义。
-  it.each(DIR_SOURCES.filter((s) => s.copied !== undefined).map((s) => [s.dir, s] as const))(
-    '手抄的 %s 与烘焙器源码里的定义逐字一致',
-    (dir, { site, copied }) => {
-      expect(copied).toContain(`'${dir}'`)
-      expect(readFileSync(resolve(REPO, site), 'utf8')).toContain(copied)
-    },
-  )
 
   /**
    * 映射表与产物目录必须**互相盖满**。
@@ -282,6 +280,109 @@ describe('烘焙指纹', () => {
     }
   })
 })
+
+/**
+ * 把一处目录扫描的第一个实参解析回仓库里的目录（相对仓库根的正斜杠路径），
+ * 供上面「每一处目录扫描都在登记表里」按「文件 → 目录」对账（xl-pcg）。
+ *
+ * 只认这几种写法，其余一律抛 —— 解析不回就判红，不猜：
+ *
+ * - 字符串字面量、不带插值的模板；
+ * - `const` 常量，顺着 import 跨文件（导出的 `IMAGE_ROOT` 与没导出的 `DRUG_PICTURE_DIR`
+ *   一样，读的都是扫描实参真正指向的那个定义，不是手抄的原文）；
+ * - 具名函数的参数：回到闭包里**每一处调用它的地方**取那个位置的实参（没传就取默认值），
+ *   所以一个函数拿参数扫两个目录会解析成两条；
+ * - 从 `node:path` / `node:url` 导入的 `resolve` / `join` / `dirname` / `fileURLToPath`，
+ *   以及 `import.meta.url` —— 烘焙器的 `REPO` 就是从它自己的文件位置这么算出来的。
+ *
+ * 路径在一个以 `/` 为仓库根的虚拟文件系统里算；算出来不落在根下的（或正好是根）也抛。
+ */
+function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at: string) => string[] {
+  const checker = program.getTypeChecker()
+  const calls: ts.CallExpression[] = []
+  for (const file of program.getSourceFiles()) {
+    const collect = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) calls.push(node)
+      ts.forEachChild(node, collect)
+    }
+    collect(file)
+  }
+  const PATH_FUNCTIONS: Record<string, (...args: string[]) => string> = {
+    resolve: (...args) => posix.resolve('/', ...args),
+    join: (...args) => posix.join(...args),
+    dirname: (path = '') => posix.dirname(path),
+    fileURLToPath: (url = '') => {
+      if (!url.startsWith('file://')) throw new Error(`fileURLToPath 拿到的不是 file: 地址：${url}`)
+      return url.slice('file://'.length)
+    },
+  }
+  // 被调用的是不是 `node:path` / `node:url` 里那个函数：看导入声明，不看名字 —— 本地一个
+  // 叫 `resolve` 的函数不该被当成路径拼接。
+  const pathFunction = (callee: ts.Expression): ((...args: string[]) => string) | undefined => {
+    if (!ts.isIdentifier(callee)) return undefined
+    const decl = checker.getSymbolAtLocation(callee)?.declarations?.[0]
+    if (decl === undefined || !ts.isImportSpecifier(decl)) return undefined
+    const from = decl.parent.parent.parent.moduleSpecifier
+    if (!ts.isStringLiteral(from) || !['node:path', 'path', 'node:url', 'url'].includes(from.text)) return undefined
+    return PATH_FUNCTIONS[(decl.propertyName ?? decl.name).text]
+  }
+  const product = (lists: string[][]): string[][] =>
+    lists.reduce<string[][]>((acc, list) => acc.flatMap((prefix) => list.map((v) => [...prefix, v])), [[]])
+
+  const evaluate = (expr: ts.Expression, depth: number): string[] => {
+    const where = () => {
+      const file = expr.getSourceFile()
+      return `${relative(repo, file.fileName)}:${file.getLineAndCharacterOfPosition(expr.getStart()).line + 1} \`${expr.getText()}\``
+    }
+    if (depth > 20) throw new Error(`解析太深（递归？）：${where()}`)
+    if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || ts.isSatisfiesExpression(expr)) return evaluate(expr.expression, depth + 1)
+    if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return [expr.text]
+    if (
+      ts.isPropertyAccessExpression(expr) && expr.name.text === 'url' &&
+      ts.isMetaProperty(expr.expression) && expr.expression.keywordToken === ts.SyntaxKind.ImportKeyword
+    ) {
+      return [`file:///${relative(repo, expr.getSourceFile().fileName).split(sep).join('/')}`]
+    }
+    if (ts.isCallExpression(expr)) {
+      const fn = pathFunction(expr.expression)
+      if (fn === undefined) throw new Error(`认不出的调用：${where()}`)
+      return product(expr.arguments.map((a) => evaluate(a, depth + 1))).map((args) => fn(...args))
+    }
+    if (ts.isIdentifier(expr)) {
+      let symbol = checker.getSymbolAtLocation(expr)
+      if (symbol !== undefined && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol)
+      const decl = symbol?.valueDeclaration
+      if (
+        decl !== undefined && ts.isVariableDeclaration(decl) && decl.initializer !== undefined &&
+        ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const
+      ) {
+        return evaluate(decl.initializer, depth + 1)
+      }
+      if (decl !== undefined && ts.isParameter(decl) && ts.isFunctionDeclaration(decl.parent) && decl.parent.name !== undefined) {
+        const index = decl.parent.parameters.indexOf(decl)
+        const owner = checker.getSymbolAtLocation(decl.parent.name)
+        const callers = calls.filter((call) => {
+          let callee = checker.getSymbolAtLocation(call.expression)
+          if (callee !== undefined && callee.flags & ts.SymbolFlags.Alias) callee = checker.getAliasedSymbol(callee)
+          return callee !== undefined && callee === owner
+        })
+        if (callers.length === 0) throw new Error(`参数所在的函数在闭包里没人调用：${where()}`)
+        return callers.flatMap((call) => {
+          const arg = call.arguments[index] ?? decl.initializer
+          if (arg === undefined) throw new Error(`调用处没传这个参数、也没有默认值：${where()}`)
+          return evaluate(arg, depth + 1)
+        })
+      }
+    }
+    throw new Error(`解析不回常量：${where()}`)
+  }
+
+  return (arg, at) =>
+    evaluate(arg, 0).map((path) => {
+      if (!path.startsWith('/') || path === '/') throw new Error(`${at} 扫的不是仓库里的一个目录：${path}`)
+      return path.slice(1)
+    })
+}
 
 /**
  * 判据自己也要验 —— 一个恒真的指纹和一个管用的指纹长得一样。下面两条不碰
