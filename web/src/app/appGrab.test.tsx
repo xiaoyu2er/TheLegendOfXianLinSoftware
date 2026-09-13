@@ -346,6 +346,20 @@ describe('App 的 mouse grab', () => {
     expect(menuInput.mock.calls.map(([i]) => i.e)).toEqual(['press', 'press', 'release', 'release'])
   })
 
+  it('和弦一只键在窗口外松开、另一只回来松开：最后那一下补齐两次松手，下一次按下另起 grab', () => {
+    panel.current = 'battle'
+    render(<App />)
+    const el = screen.getByTestId('battle-host')
+    stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 0, buttons: 1 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 2, buttons: 3 })
+    // 左键在窗口外松开，这里一个事件都没有；右键回到页面上松开。
+    fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 2, buttons: 0 })
+    fireEvent.mouseDown(el, { clientX: 70, clientY: 80, button: 0, buttons: 1 })
+    fireEvent.mouseUp(window, { clientX: 70, clientY: 80, button: 0, buttons: 0 })
+    expect(battleMouse.mock.calls.map(([i]) => i.e)).toEqual(['press', 'press', 'release', 'release', 'press', 'release'])
+  })
+
   it('和弦两只键都在窗口外松开：回来头一下没按键的移动补上两次松手', () => {
     panel.current = 'ls'
     render(<App />)
