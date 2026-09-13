@@ -135,7 +135,7 @@ UTF-8 JSON，放在 `tools/traces/scripts/*.json`。
 |---|---|
 | `warmup` | 先加载一遍的脚本，可为 `null`。96 个场景里有 20 个没有 `Dialogue` 段，依赖前一个场景残留的 `dialogueEvent` 对象才能跑，直接进去会 NPE。 |
 | `isScript` | 对应 `ScenePanel.isScript`。`false` 时旁白与主线对话的轮询被跳过 —— 从大地图走进宿舍时原版就是这个状态。 |
-| `load` | **读档起手，可选**（xl-i06.10）。写了槽号 N，导出器就不 `initiation(scene)`，而是照 `LoadAndSavePanel.setButton()` 的读档分支走 `Loader.load(N)` → `switchTo("scene")`（中间那句多起一条场景循环不做，那是 M6 唯一不复刻的一条）。读的是草稿区 `sources/Record/存档N.txt`，起手先核它与 `tools/ground-truth/存档/` 逐字节相同，不同就拒绝运行。写了 `load` 时 `scene` 与 `isScript` **是核对项不是输入**：读完档之后 `ScenePanel.fileName` / `isScript` 必须等于它们，所以 `isScript` 必须显式写。`warmup` 照样可写 —— 那就是「中途读档」（读档之前场景那一侧已经有一局）。不写 `load` 的剧本回显里一个字都没有，老真值逐字节不变。 |
+| `load` | **读档起手，可选**（xl-i06.10）。写了槽号 N，导出器就不 `initiation(scene)`，而是照 `LoadAndSavePanel.setButton()` 的读档分支走 `Loader.load(N)` → `switchTo("scene")`（中间那句多起一条场景循环不做，那是 M6 唯一不复刻的一条）。读的是草稿区 `sources/Record/存档N.txt`，起手先核它与 `tools/ground-truth/存档/` 逐字节相同，不同就拒绝运行。写了 `load` 时 `scene` 与 `isScript` **是核对项不是输入**：读完档之后 `ScenePanel.fileName` / `isScript` 必须等于它们，所以 `isScript` 必须显式写。`warmup` 照样可写 —— 那就是「中途读档」（读档之前场景那一侧已经有一局）。不写 `load` 的剧本回显里一个字都没有，老真值逐字节不变。**起点的语义是「原版读档之后的状态」，不是「存档里写着的状态」**（xl-s9w）：两者不等的地方照原版记：装备库存读不回来（xl-1dv.32，`stock` 恒 0）；答题两组读进来就搁着、从不回填（xl-1dv.19 / xl-1dv.20，场景真值本来也不记它们）；读档之后的残留（xl-i06.11）同样是起点的一部分，不另清。起点与数据层真值 `存档N.json` 的逐字段对撞、以及哪几项登记为派生 / 读不回来 / 场景真值不记，在 `web/src/state/loadStartTruth.test.ts` —— 真值对真值，不经过 web 实现。 |
 | `tickMs` | 虚拟时钟的步长，必须整除 10。原版 17 个定时器的间隔是 10/20/30/40/50/80/100/180/200/500，全是 10 的倍数；步长不整除它们，触发时刻就会被舍入。 |
 | `maxTicks` | 整份剧本的 tick 上限；跑满仍未结束是硬失败。 |
 | `every` | **取帧密度，可选，四支驱动器通用**（xl-6lo.3）。跨端逐帧比对每 `every` 步存一张 PNG。不写就走导出器的缺省 25；写了就是这份剧本自己说了算，`--every` 仍能压掉它。`0` 与负数是硬失败（见下）。 |
