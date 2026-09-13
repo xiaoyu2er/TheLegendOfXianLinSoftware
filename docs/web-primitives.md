@@ -67,7 +67,7 @@
 | `web/src/stage/useViewportSize.ts:32,33,38,39` | 视口 / 事件 / 全局 | 已登记 `ADR-0001#stage-scales-to-window` | 随窗口缩放 |
 | `web/src/start/StartPanel.tsx:153,242` | 无障碍 / 元素 | 已登记 `ADR-0001#screen-reader-text` | 按钮 `aria-label`、「关于我们」的 `alt`（**xl-03x.22 补登**） |
 | `web/src/start/StartPanel.tsx:155` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 「结」禁用的理由 |
-| `web/src/start/StartPanel.tsx:165,166,167,202` | 事件 / 元素 | 对应 `src/start/StartPanel.java:202` | `mouseMoved` |
+| `web/src/start/StartPanel.tsx:165,166,167,202` | 事件 / 元素 | 对应 `src/start/StartPanel.java:202` | `mouseMoved`；按着键的移动 / 移入是 `mouseDragged`（`:211`，只记坐标、不跑 `isMoveIn`），不碰悬停（xl-vi8） |
 | `web/src/start/StartPanel.tsx:172,173` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 键盘焦点 = 悬停 |
 | `web/src/start/StartPanel.tsx:174` | 事件 | 对应 `src/start/StartPanel.java:192` | 原版在**松手**时响应（`mouseReleased` → `isRelesedButton`），`click` 也在松手时触发。用 `onClick` 还为了「键盘也按得动」—— 真浏览器里曾经按不动，`xl-fqm` 修了 |
 | `web/src/start/StartPanel.tsx:186,195,210,216,226,252,261,277` | 无障碍 / 元素 | 工程 | 装饰图的 `alt=""`（读屏跳过） |
