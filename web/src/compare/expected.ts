@@ -2496,6 +2496,14 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: '卷轴与反向卷轴（别名）的有损 WebP（q80）：展开之后纸面铺满整屏，切不出分区',
     issue: 'xl-bbs',
   },
+  // xl-4zo：在「转」上按下、拖出框外松手照样展开；收起之后在空处按一下松一下又展开。与 start-about 同一笔卷轴 WebP 账。
+  'start-drag-out': {
+    status: 'gap',
+    // 53 帧（every 1），偏离 36/53（#11 起，框外松手之后卷轴开播）。最差 #48 4.3254% → 8.6508%。
+    maxRatio: 0.086508,
+    why: '卷轴与反向卷轴（别名）的有损 WebP（q80）：展开之后纸面铺满整屏，切不出分区',
+    issue: 'xl-bbs',
+  },
   // xl-r0x：悬停「结」。**签过字的差，不是欠账**：web 那颗按 ADR-0001 的 start-exit-disabled 禁用，
   // 悬停不换图、高亮不转；原版换成 190×53 的悬停图、那圈 4 帧高亮开转。回放照产品推
   // （`start/replay.ts`），所以这一差在这里看得见。
