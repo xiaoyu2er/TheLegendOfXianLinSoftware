@@ -1941,7 +1941,7 @@ export function checkEnemyDead(w: BattleWorld): void {
  *
  * 判胜走的就是正常打赢那一个 `checkEnemyDead` —— 三个 `drop` 因为槽位已经空了
  * 一个都不进，直接落到「全部怪物被杀死」那一段。与正常打赢**不同**的只有它
- * 跳过的那几句，行为真值 `battle-victory` 里逐拍看得见（2026-09-11 实跑）：
+ * 跳过的那几句，`battle-victory` 对照正常打死的 `battle-victory-normal` 逐拍看得见：
  *
  * - **行动条上三只怪的位置不清零**：清零（`Enemy1X=0`）写在 `drop` 里，这里没走；
  * - 怪物的血原样留着（没打死就判胜了）；
