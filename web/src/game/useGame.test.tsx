@@ -43,6 +43,16 @@ function clickAt([x, y]: [number, number]): MenuInput[] {
   ]
 }
 
+/**
+ * 会话的随机源（`useGame.ts` 的 `SESSION_DEPS.random`）在**模块加载时**就拿走了
+ * `Math.random` 这个函数本身，测试里再 spy 已经晚了 —— 所以桩要在 import 之前装。
+ * 默认原样转给真的 `Math.random`，别的用例不受影响；只有要定种子的那一条临时换掉它。
+ */
+const random = vi.hoisted(() => {
+  const real = Math.random
+  return { real, spy: vi.spyOn(Math, 'random').mockImplementation(real) }
+})
+
 // 这个文件只验接线（键盘 → 推进 → 面板），不验出声 —— 那归 `useGameBgm.test.tsx`。
 // 播放器换成哑的，是因为「战斗里按 J」那条要进 `脚本22`，而它的场景曲
 // `紧急` 还没进烘焙映射表，真播放器一 `sync` 就抛（与 J 键无关的另一笔账）。
@@ -561,6 +571,10 @@ describe('useGame 接线', () => {
    */
   it('战斗画布的鼠标：悬停「技」换待点图、点「击」收起控制台', async () => {
     resetParty()
+    // 种子定死：这一场是剧情必败战，我方回合出不出得来看种子（真随机时实测三跑两红）。
+    // 扫过 0.05..0.95（步长 0.1）：0.95 等不到控制台，其余都等得到；0.5 也等不到，
+    // 原因没查（0.45 / 0.55 都行）。取扫描带正中的 0.25。
+    random.spy.mockImplementation(() => 0.25)
     const sprite = decodePng(readFileSync(repoPath('image/怪物', '罹年居士', '1.png')))
     vi.stubGlobal(
       'Image',
@@ -618,6 +632,7 @@ describe('useGame 接线', () => {
       expect(result.current.panel).toBe('battle')
       expect(command(), '点了「击」控制台还在 —— 鼠标没送进战斗').toHaveLength(0)
     } finally {
+      random.spy.mockImplementation(random.real)
       vi.unstubAllGlobals()
       resetEnemySprites()
     }
