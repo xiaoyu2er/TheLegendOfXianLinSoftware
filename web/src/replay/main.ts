@@ -10,6 +10,7 @@ import { createSceneRenderer } from '../scene/sceneRenderer'
 import { battleTextureIds, enemyWalkId } from '../battle/render/assets'
 import { createBattleRenderer } from '../battle/render/battleRenderer'
 import type { BattleRenderer } from '../battle/render/battleRenderer'
+import type { BufferMode } from '../battle/render/bufferPlan'
 import { battleDrawList } from '../battle/render/drawList'
 import type { DrawOp } from '../battle/render/drawList'
 import { createPaintState } from '../battle/render/paint'
@@ -722,7 +723,8 @@ const battleAssembly = createEventDrivenAssembly({
       return size
     })
     // 取图页每份剧本一块新面板，缓冲当新建的（xl-pgq）；游戏侧传 'keep'。
-    await renderer.load(battleTextureIds(world), 'fresh')
+    // 比对器验上屏 'keep' 那一支时（`__xlPresent`，xl-k9e）才换，见 `compare/presentKeep.ts`。
+    await renderer.load(battleTextureIds(world), window.__xlPresent ?? 'fresh')
     // **这里不画**（xl-84z）：战斗渲染器画在一张不清屏的持久缓冲上，多画这一帧
     // 就等于原版多 paint 了一次 —— 原版第 0 帧的边缘 alpha 实测正好是「背景
     // 只合成过一次」的值。第一次画在 seek(0) 里。
@@ -924,6 +926,11 @@ declare global {
     __xlDrivers?: readonly string[]
     /** 故意改坏渲染的注入点，见 `breakRender`。驱动器只在自检时设它。 */
     __xlBreak?: { fromTick: number; heroDx: number }
+    /**
+     * 战斗这一场以哪一支上屏（xl-k9e）。不设就是 `'fresh'`；比对器只在单独开的一轮里
+     * 设 `'keep'` —— 渲染器在页内跨剧本复用，同一页里前面打过一场，缓冲就不再是新的。
+     */
+    __xlPresent?: BufferMode
   }
 }
 

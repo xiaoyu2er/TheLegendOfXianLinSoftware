@@ -30,6 +30,8 @@ import { repoPath } from '../src/test/repoPath'
 import { judgeWhole } from '../src/compare/verdict'
 import { firstLedgerDivergence, judgeLedger } from '../src/compare/ledger'
 import type { LedgerEntry, LedgerVerdict } from '../src/compare/ledger'
+import { PRESENT_KEEP_SCRIPTS, judgePresentKeep, presentKeepFrame } from '../src/compare/presentKeep'
+import type { PresentVerdict } from '../src/compare/presentKeep'
 import { launch } from './cdp'
 import type { Browser } from './cdp'
 
@@ -118,11 +120,23 @@ async function main(): Promise<void> {
 
   if (!skipCapture && comparable.length > 0) await capture(root, comparable, 'web', null)
 
+  // 上屏 'keep' 那一支（xl-k9e）：登记的剧本再单独回放一轮。**一条一个浏览器** ——
+  // 渲染器在页内跨剧本复用，同一页里前面打过一场，'keep' 的缓冲就不再是新的。
+  const keepTargets = comparable.filter((m) => PRESENT_KEEP_SCRIPTS.includes(m.script))
+  if (!skipCapture) {
+    for (const m of keepTargets) await capture(root, [m], PRESENT_KEEP_SIDE, null, 'keep')
+  }
+
   const reports = comparable.map((m) => compareOne(root, m, threshold, tolerance))
   report(reports, blocked, threshold, tolerance)
+  const presents = keepTargets.map((m) => comparePresentKeep(root, m, tolerance))
+  reportPresents(presents)
 
   const selfCheckOk = selfCheck ? await runSelfCheck(root, comparable, tolerance) : true
-  const failed = reports.filter((r) => !r.ok)
+  const failed = [
+    ...reports.filter((r) => !r.ok),
+    ...presents.filter((p) => !p.ok).map((p) => ({ name: `${p.name}（上屏 keep）` })),
+  ]
   writeFileSync(
     join(root, 'report.json'),
     `${JSON.stringify(
@@ -142,6 +156,7 @@ async function main(): Promise<void> {
           issue: s.expectation.issue ?? null,
         })),
         reports,
+        presents,
       },
       null,
       2,
@@ -158,6 +173,7 @@ async function capture(
   manifests: readonly Manifest[],
   side: string,
   brk: { fromTick: number; heroDx: number } | null,
+  present: 'keep' | null = null,
 ): Promise<void> {
   const server = await createServer({ logLevel: 'warn', server: { port: 0 } })
   await server.listen()
@@ -177,6 +193,9 @@ async function capture(
       const trace = readFileSync(join(root, m.script, 'java', 'trace.json'), 'utf8')
       await browser.evaluate(
         `window.__xlBreak = ${brk === null ? 'undefined' : JSON.stringify(brk)}`,
+      )
+      await browser.evaluate(
+        `window.__xlPresent = ${present === null ? 'undefined' : JSON.stringify(present)}`,
       )
       const loaded = await browser.evaluate<{ scene: string; tickCount: number }>(
         `window.__xlReplay.load(${JSON.stringify(slimTrace(trace))})`,
@@ -404,6 +423,39 @@ function compareOne(
   }
 
   return { name: m.script, expectation, sequence, ok, verdict, regions, exact, ledger }
+}
+
+/** 上屏 'keep' 那一轮的截图目录（`<剧本>/` 下）。 */
+const PRESENT_KEEP_SIDE = 'web-keep'
+
+interface PresentReport extends PresentVerdict {
+  readonly name: string
+}
+
+/**
+ * 上屏 'keep' 那一支对原版上屏（xl-k9e）：原版导出的非预乘 RGBA 缓冲在这边盖到
+ * `Panel.background` 上当预测，只比缓冲没叠满的像素。判据在 `src/compare/presentKeep.ts`。
+ */
+function comparePresentKeep(root: string, m: Manifest, tolerance: number): PresentReport {
+  const javaDir = join(root, m.script, 'java')
+  const keepDir = join(root, m.script, PRESENT_KEEP_SIDE)
+  const frames = m.ticks.map((t) =>
+    presentKeepFrame(
+      t,
+      decodePng(readFrame(javaDir, t, m.script, '原版')),
+      decodePng(readFrame(keepDir, t, m.script, 'Web（keep）')),
+      tolerance,
+    ),
+  )
+  return { name: m.script, ...judgePresentKeep(frames) }
+}
+
+function reportPresents(presents: readonly PresentReport[]): void {
+  if (presents.length === 0) return
+  process.stdout.write(`\n上屏 keep 那一支（原版缓冲盖在 Panel.background 上，只比没叠满的像素）：\n`)
+  for (const p of presents) {
+    process.stdout.write(`  ${p.ok ? '通过' : '失败'}  ${p.name.padEnd(12)} ${p.verdict}\n`)
+  }
 }
 
 /** 取图页在 `dir` 里留下的逐帧账本；没交的帧读成 `undefined`（JSON 里是 null）。 */
