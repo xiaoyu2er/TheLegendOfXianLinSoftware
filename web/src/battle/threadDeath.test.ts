@@ -4,7 +4,6 @@ import { decodePng } from '../compare/png'
 import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { BATTLE_TICK_MS, advanceBattle, createBattleTicker } from './loop'
-import { createBufferPlan } from './render/bufferPlan'
 import { battleDrawList } from './render/drawList'
 import type { BattleTicker } from './loop'
 import { replayBattle } from './replay'
@@ -127,6 +126,7 @@ describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
     const get = w.victoryReminder.expToGet
     expect(get, '这一场没有经验可发 —— 经验那条恒真').toBeGreaterThan(0)
     // 期望值在按之前记下来（`Check.checkEnemyDead`：先加经验，够了就升一级、扣掉那一级的门槛）。
+    // ⚠️ 这是照原版手写的一步，不是真值：「线程死后按 J」没有行为真值（导出器那侧线程死了导不出）。
     const expected = w.heroes.map((h) => {
       const exp = h.exp + get
       return exp >= h.expToLevelUp ? { level: h.level + 1, exp: exp - h.expToLevelUp } : { level: h.level, exp }
@@ -134,19 +134,17 @@ describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
     const code = w.gameOver.code
     const tick = w.tick
     const before = battleDrawList(w, dead.paint)
-    // 死之前最后一次合成的就是这个拍号（死的那一拍抛在 `w.tick++` 之前）。
-    const plan = createBufferPlan()
-    plan.next(tick)
 
     const pressed = advanceBattle(dead, [{ e: 'key', key: 'j' }], BATTLE_TICK_MS)
     expect(pressed.sfx).toEqual(Array.from({ length: heroes }, () => '战斗胜利.MP3'))
     expect(w.heroes.map((h) => ({ level: h.level, exp: h.exp }))).toEqual(expected)
-    // 循环体一句没跑：全灭图的计数器、拍号都停在死的那一刻。
+    // 循环体一句没跑：全灭图的计数器停在死的那一刻。
     expect(w.gameOver.code).toBe(code)
-    expect(w.tick).toBe(tick)
-    // 这一下真把画面该画的东西改了（英雄换成胜利动画）—— 所以「不合成」是承重的：
+    // 这一下真把画面该画的东西改了（英雄换成胜利动画）—— 所以拍号不动是承重的：
+    // 画面定格靠渲染器同一拍号不再合成（`render/bufferPlan.ts`，判据在它自己的测试里），
+    // 这里守的是它的前提。
     expect(battleDrawList(w, pressed.paint)).not.toEqual(before)
-    expect(plan.next(w.tick)).toBe('skip')
+    expect(w.tick).toBe(tick)
 
     // 原版没有门：再按一次，胜利那一段再跑一遍、再响一轮。
     const again = advanceBattle(pressed, [{ e: 'key', key: 'j' }], 0)

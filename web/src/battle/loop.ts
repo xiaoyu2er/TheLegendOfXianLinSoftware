@@ -145,16 +145,17 @@ const EMPTY: readonly BattleInput[] = []
  */
 function afterDeath(ticker: BattleTicker, arriving: readonly BattleInput[]): BattleTicker {
   if (arriving.length === 0) return { ...ticker, pending: [], sfx: NO_SFX }
-  ticker.world.music.length = 0
   feedInputs(ticker.world, ticker.paint, arriving)
   return { ...ticker, pending: [], sfx: [...ticker.world.music] }
 }
 
 /**
- * 喂一批输入：事件处理器先跑（读这一条**之前**的 `command.isDraw`），跑完它自己就可能
- * 把 `isDraw` 改掉，下一条读到的是改过的。原因见 `stepBattleWithPaint`。
+ * 喂一批输入，**先清音效**（xl-b36：输入里出的声从这里算起）。事件处理器先跑（读这一条
+ * **之前**的 `command.isDraw`），跑完它自己就可能把 `isDraw` 改掉，下一条读到的是改过的。
+ * 原因见 `stepBattleWithPaint`。
  */
 function feedInputs(world: BattleWorld, paint: PaintState, inputs: readonly BattleInput[]): void {
+  world.music.length = 0
   for (const input of inputs) {
     applyPaintInput(world, paint, input)
     applyBattleInput(world, input)
@@ -188,7 +189,6 @@ export function stepBattleWithPaint(
   inputs: readonly BattleInput[] = EMPTY,
 ): void {
   // 一拍的开头：音效从这里清（xl-b36），输入里出的声算进这一拍。
-  world.music.length = 0
   feedInputs(world, paint, inputs)
   // 输入已经在上面喂完了，这里不再传；也不再清音效（上面已经清过）。
   stepBattle(world, EMPTY, false)
