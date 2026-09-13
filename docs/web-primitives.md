@@ -44,7 +44,7 @@
 | `web/src/audio/bgmPlayer.ts:59,99` | 键盘 / 指针 / 事件 | 已登记 `ADR-0001#bgm-waits-for-gesture` | 自动播放被挡时等第一次手势（**xl-03x.22 补登**） |
 | `web/src/audio/bgmPlayer.ts:62` | 音频 | 对应 `src/media/MusicPlayer.java:71` | 背景音乐开播（`play()` 里 `sourceDataLine.start()`）；web 只有一个播放对象、换 `src` |
 | `web/src/audio/sfxPlayer.ts:79` | 音频 | 对应 `src/media/MusicPlayer.java:111` | 音效开播（`playmusic()` 里 `sourceDataLine.start()`）；后一声顶掉前一声 |
-| `web/src/battle/render/battleRenderer.ts:148,168` | 全局 | 工程 | 量字 / 离屏画布 |
+| `web/src/battle/render/battleRenderer.ts:151,171` | 全局 | 工程 | 量字 / 离屏画布 |
 | `web/src/battle/render/scaledBlit.ts:283` | 全局 | 工程 | 离屏画布（战斗与存读档共用的 `blitRectsOnto`，xl-cpo 从 `battleRenderer` 挪过来的） |
 | `web/src/game/enemySprites.ts:47` | 图片 | 工程 | 量怪物贴图的尺寸 |
 | `web/src/game/keyboard.ts:11,68,77` | 键盘 | 对应 `src/main/GameLauncher.java:186` | 按下 / 松开两路；逐键见下面「## 键位」 |
