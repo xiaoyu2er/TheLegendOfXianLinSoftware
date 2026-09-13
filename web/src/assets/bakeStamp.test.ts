@@ -96,8 +96,9 @@ describe('烘焙指纹', () => {
    * 没重烘，一直不在 inputs 里，`pnpm test` 照绿 —— 上面「输入还是那一份」只
    * 核记下了的。烘焙器从这些目录**现扫**分母，多一个文件就可能多一份产物。
    *
-   * **分母是磁盘那一侧**：先扫目录、按烘焙器自己的规则（`keep`，与 `bake.ts`
-   * 用的是同一个过滤）挑出它会读的，再与名单里同一前缀、同一规则下的条目比
+   * **分母是磁盘那一侧**：先扫目录、按烘焙器的规则（`keep`：装备与商店两行
+   * 直接用烘焙器的同一个函数，其余四行是照 `bake.ts` 手抄的过滤，烘焙器改了
+   * 过滤这里不会跟着变）挑出它会读的，再与名单里同一前缀、同一规则下的条目比
    * 相等 —— 两个方向都红：磁盘上多一个名单里没有的，名单里有一个磁盘上没了的。
    * 反过来「拿名单去扫磁盘」是让被守的东西自己给自己签字。
    *
@@ -132,6 +133,16 @@ describe('烘焙指纹', () => {
       .filter((p) => p.startsWith(`${dir}/`))
       .filter((p) => keep(p.slice(dir.length + 1)))
     expect(recorded.sort()).toEqual(onDisk.sort())
+  })
+
+  // 上一条在名单那一侧也套了 `keep`，于是名单里一条落在某个目录下、却不合任何
+  // 一行规则的条目会被滤掉、两边都不比 —— 这一条把它捡回来（/code-review 逮到的）。
+  it('名单里落在这些目录下的每一条都被某一行认领', () => {
+    const unclaimed = Object.keys(STAMP.inputs).filter((p) => {
+      const rows = DIR_SOURCES.filter(({ dir }) => p.startsWith(`${dir}/`))
+      return rows.length > 0 && !rows.some(({ dir, keep }) => keep(p.slice(dir.length + 1)))
+    })
+    expect(unclaimed).toEqual([])
   })
 
   /**
