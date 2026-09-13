@@ -41,6 +41,33 @@ describe('商店状态层的那几步', () => {
     expect(w.drug.currentX).toBe(600)
   })
 
+  /**
+   * 按住移动（xl-bwl）：两家店的 `mouseDragged` 只记 `currentX/Y` 再 `repaint()`，**不跑**
+   * 按钮的 `isMoveIn` 与面板的 `isMoveIn()` —— 在按钮上按下再拖走，悬停贴图、图标框与店主
+   * 台词都停在拖动之前那一份。
+   */
+  it('拖动只挪落点：悬停、图标框、台词都不动', () => {
+    for (const file of ['src/shop/ShopPanel.java', 'src/shop/EquipmentShopPanel.java']) {
+      const m = [...javaSource(file).matchAll(/public void mouseDragged\(MouseEvent ex\) \{([^}]*)\}/g)]
+      expect(m, `${file} 的 mouseDragged`).toHaveLength(1)
+      expect(m[0]![1]!.replace(/\s+/g, '')).toBe('currentX=ex.getX();currentY=ex.getY();repaint();')
+    }
+    for (const shop of ['drug', 'equipment'] as const) {
+      const w = createShopWorld(BASE)
+      open(w, shop)
+      stepShop(w, [{ e: 'move', x: 600, y: 190 }])
+      const before = structuredClone(shop === 'drug' ? w.drug : w.equipment) as { currentX: number; currentY: number }
+      // 拖到另一行、再拖到一颗按钮上 —— 两处 move 都会改悬停，drag 一处都不该改。
+      stepShop(w, [{ e: 'drag', x: 600, y: 310 }])
+      const [bx, by] = hitCenter(BACK_BOX)
+      stepShop(w, [{ e: 'drag', x: bx, y: by }])
+      const after = shop === 'drug' ? w.drug : w.equipment
+      expect(after.currentX).toBe(bx)
+      expect(after.currentY).toBe(by)
+      expect({ ...after, currentX: before.currentX, currentY: before.currentY }).toEqual(before)
+    }
+  })
+
   it('落点落在第几行，跟着当前那一栏的行数走', () => {
     const w = createShopWorld(BASE)
     open(w, 'equipment')

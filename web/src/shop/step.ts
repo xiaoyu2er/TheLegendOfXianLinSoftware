@@ -28,7 +28,7 @@ import type { DrugShopState, EquipShopState, ShopPanelState, ShopWorld } from '.
  * `drawIcon` 里加了赋值，这句话就不成立了 —— 而它的表现是某一列安静地慢一拍。
  */
 
-/** 真值 `input` 那一列的条目，外加两种真值里没有的。 */
+/** 真值 `input` 那一列的条目，外加几种真值里没有的（各支注释里写着）。 */
 export type ShopInput =
   | {
       readonly e: 'press' | 'release' | 'move'
@@ -36,6 +36,11 @@ export type ShopInput =
       readonly y: number
       readonly target?: string
     }
+  /**
+   * 按住任一键移动 —— `mouseDragged`（xl-bwl）。**真值里没有它**：`ShopDriver` 只点不拖。
+   * 与 `move` 分开，是因为原版这一支只记坐标、不跑 `isMoveIn`。
+   */
+  | { readonly e: 'drag'; readonly x: number; readonly y: number }
   /**
    * 换一家店。**真值里这一步的 `input` 是空数组** —— 原版是靠场景里的选择
    * 事件 `GameLauncher.switchTo` 进店的，面板自己收不到任何鼠标事件
@@ -71,6 +76,13 @@ export function applyShopInput(w: ShopWorld, input: ShopInput): void {
     case 'move':
       shopMouseMoved(w, input.x, input.y)
       return
+    case 'drag': {
+      // `mouseDragged`：只记落点再 `repaint()`，悬停、图标框与台词都停在拖动之前。
+      const p = activePanel(w)
+      p.currentX = input.x
+      p.currentY = input.y
+      return
+    }
     case 'anim':
       // 帧号今天不在状态层里 —— 绘制层自己数（`render/drawList.ts` 的
       // `frame` 参数）。留着这一支是为了让"输入的种类"在一处说全。

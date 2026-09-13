@@ -31,6 +31,9 @@ import { devToolsEnabled } from './devTools'
  */
 export const TITLE_OPTION = ''
 
+/** `MouseEvent.button`（哪个键）→ 它在 `MouseEvent.buttons` 位掩码里的那一位。中键与右键是反着的。 */
+const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16]
+
 /**
  * 存读档面板上的几行字（xl-i06.9）。**画在 overlay 上，不画进 Pixi**：它们原版没有，
  * 是这一层对浏览器存储那几种状态的表态 —— 混进画布就会被当成原版画面去比。
@@ -285,7 +288,7 @@ export function App() {
    * `isclicked` 按下就挂上了，框外松手不清它）。
    */
   const onBattleMouse = (type: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!inBattle) return
+    if (!inBattle || (type === 'move' && grabbedElsewhere(event))) return
     const box = event.currentTarget.getBoundingClientRect()
     const at = stagePointIn(box, event)
     if (!at) return
@@ -304,7 +307,7 @@ export function App() {
    * 而列表的选中整个走的是 `mouseMoved` —— 少送移动等于选不中任何东西。
    */
   const onMenuMouse = (e: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!inMenu) return
+    if (!inMenu || (e === 'move' && grabbedElsewhere(event))) return
     const box = event.currentTarget.getBoundingClientRect()
     const at = stagePointIn(box, event)
     if (!at) return
@@ -335,36 +338,54 @@ export function App() {
    * 拖动 Swing 也按 grab 派，拖出组件外照样收（xl-b28）：按下到松手之间 window 上同时
    * 挂着 `mousemove`，**落在宿主外的**才由它送 `drag`（落在宿主里的宿主自己的
    * `onMouseMove` 已经送了，冒泡上来的不重送）。面板已经切走的话 `useGame` 照当前面板
-   * 丢掉它 —— 藏着的菜单收不到拖动，那处差异仍登记在 `session.ts` 菜单那一段。
+   * 丢掉它 —— 藏着的面板收不到拖动，那处差异登记在 `useGame.routeByGrab`。反过来，grab
+   * 握在别的宿主上时，指针底下那块宿主自己的 `onMouseMove` 不收（{@link grabbedElsewhere}）：
+   * 菜单上按下「存档」、翻到存读档再拖，这些拖动归菜单（xl-bwl）。
+   *
+   * 在浏览器窗口外松手，window 收不到 mouseup，原版却照样收到松手（操作系统替窗口握着
+   * grab）。这一层只看得见后果：grab 还挂着，指针上却没有键了 —— 回到页面的头一下移动
+   * `buttons` 为 0，或者一次除自己之外没按着别的键的新按下。见到就当场补上那一下松手
+   * （xl-bwl），两个监听挂在捕获阶段，赶在宿主自己收这一下之前。⚠️ 补的坐标是见到它的
+   * 那一刻，不是真正松手的地方（窗口外，这一层无从得知）—— 残余差异，如实记下。
    */
-  const endGrabRef = useRef<(() => void) | null>(null)
+  const grabRef = useRef<{ readonly host: Element; readonly end: () => void } | null>(null)
   const grabRelease = (
     host: Element,
     box: DOMRect,
     send: (at: { x: number; y: number }) => void,
-    drag: (at: { x: number; y: number }, buttons: number) => void,
+    drag: (at: { x: number; y: number }) => void,
   ) => {
-    endGrabRef.current?.()
+    grabRef.current?.end()
     const onRelease = (event: MouseEvent) => {
       endGrab()
       const at = stagePointIn(box, event)
       if (at) send(at)
     }
     const onDrag = (event: MouseEvent) => {
-      if (event.buttons === 0 || (event.target instanceof Node && host.contains(event.target))) return
+      if (event.buttons === 0) return onRelease(event)
+      if (event.target instanceof Node && host.contains(event.target)) return
       const at = stagePointIn(box, event)
-      if (at) drag(at, event.buttons)
+      if (at) drag(at)
+    }
+    // 按着左键再按右键（和弦）不算：那时 `buttons` 里还有别的键。
+    const onPress = (event: MouseEvent) => {
+      if ((event.buttons & ~(BUTTON_BITS[event.button] ?? 0)) === 0) onRelease(event)
     }
     const endGrab = () => {
       window.removeEventListener('mouseup', onRelease)
-      window.removeEventListener('mousemove', onDrag)
-      endGrabRef.current = null
+      window.removeEventListener('mousemove', onDrag, true)
+      window.removeEventListener('mousedown', onPress, true)
+      grabRef.current = null
     }
-    endGrabRef.current = endGrab
+    grabRef.current = { host, end: endGrab }
     window.addEventListener('mouseup', onRelease)
-    window.addEventListener('mousemove', onDrag)
+    window.addEventListener('mousemove', onDrag, true)
+    window.addEventListener('mousedown', onPress, true)
   }
-  useEffect(() => () => endGrabRef.current?.(), [])
+  useEffect(() => () => grabRef.current?.end(), [])
+  /** grab 握在另一块宿主上：这一下移动归那边（window 上的 `onDrag` 送），这块宿主不收。 */
+  const grabbedElsewhere = (event: ReactMouseEvent<HTMLDivElement>): boolean =>
+    grabRef.current !== null && grabRef.current.host !== event.currentTarget
 
   /**
    * 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。
@@ -373,14 +394,15 @@ export function App() {
    * 就送给游戏。两边都不在就丢掉。
    */
   const onShopMouse = (e: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!inShopPreview && !inShop) return
+    if ((!inShopPreview && !inShop) || (e === 'move' && grabbedElsewhere(event))) return
     const box = event.currentTarget.getBoundingClientRect()
     const at = stagePointIn(box, event)
     if (!at) return
     // 松手的主人在按下时就定了：按下时是预览，松手也归预览（见 `grabRelease`）。
     const send = inShopPreview ? shop.input : view.shopInput
-    send({ e, x: at.x, y: at.y })
-    if (e === 'press') grabRelease(event.currentTarget, box, (p) => send({ e: 'release', ...p }), (p) => send({ e: 'move', ...p }))
+    // 按住任一键移动是 `mouseDragged`：两家店那一支只记坐标，不跑 `isMoveIn`（xl-bwl）。
+    send({ e: e === 'move' && event.buttons !== 0 ? 'drag' : e, x: at.x, y: at.y })
+    if (e === 'press') grabRelease(event.currentTarget, box, (p) => send({ e: 'release', ...p }), (p) => send({ e: 'drag', ...p }))
   }
 
   /**
@@ -388,19 +410,18 @@ export function App() {
    * 按下 / 松开 / 移动三种都要送 —— 按钮光效走的是 `mouseMoved`。
    */
   const onLsMouse = (e: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!inLs) return
+    if (!inLs || (e === 'move' && grabbedElsewhere(event))) return
     const box = event.currentTarget.getBoundingClientRect()
     const at = stagePointIn(box, event)
     if (!at) return
-    // 按住左键移动是 Swing 的 `mouseDragged`（只记坐标、不碰按钮），不是 `mouseMoved`
-    // （`isMoveIn` 改光效）。浏览器两种都叫 mousemove，按 `buttons` 分开。
-    const kind = e === 'move' && (event.buttons & 1) === 1 ? 'drag' : e
+    // 按住任一键移动是 Swing 的 `mouseDragged`（只记坐标、不碰按钮），不是 `mouseMoved`
+    // （`isMoveIn` 改光效）。浏览器两种都叫 mousemove，按 `buttons` 分开 —— Swing 不分哪个
+    // 键，右键拖动也是拖动（xl-bwl）。
+    const kind = e === 'move' && event.buttons !== 0 ? 'drag' : e
     view.lsInput({ e: kind, x: at.x, y: at.y })
     if (e === 'press') {
       const host = event.currentTarget
-      const drag = (p: { x: number; y: number }, buttons: number) =>
-        view.lsInput({ e: (buttons & 1) === 1 ? 'drag' : 'move', ...p })
-      grabRelease(host, box, (p) => view.lsInput({ e: 'release', ...p }), drag)
+      grabRelease(host, box, (p) => view.lsInput({ e: 'release', ...p }), (p) => view.lsInput({ e: 'drag', ...p }))
     }
   }
 

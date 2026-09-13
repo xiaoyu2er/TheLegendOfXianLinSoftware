@@ -163,14 +163,14 @@ describe('App 的 mouse grab', () => {
    * 组件外照样收，坐标可以在组件外（负数、超过 1024）。宿主自己的 `onMouseMove` 这时
    * 一个都收不到 —— 战斗四颗按钮的贴图会停在出界前那一张，直到松手。
    *
-   * 每块宿主拖出去送的是它自己「按住移动」那一种：战斗与存读档是 `drag`，菜单与店
-   * 不分移动与拖动（原版两支逐字相同 / 宿主本来就只送 `move`）。
+   * 每块宿主拖出去送的是它自己「按住移动」那一种：战斗、存读档与店是 `drag`，菜单不分
+   * 移动与拖动（原版 `MenuPanel` 两支逐字相同）。
    */
   for (const [name, p, host, spy, kind] of [
     ['战斗画布', 'battle', 'battle-host', battleMouse, 'drag'],
     ['存读档面板', 'ls', 'ls-host', lsInput, 'drag'],
     ['菜单', 'menu', 'menu-host', menuInput, 'move'],
-    ['店', 'shop', 'shop-host', shopInput, 'move'],
+    ['店', 'shop', 'shop-host', shopInput, 'drag'],
   ] as const) {
     it(`${name}：按下之后拖出宿主照样收拖动，宿主里的拖动不重送，松手之后画布外的移动不再收`, () => {
       panel.current = p
@@ -194,4 +194,108 @@ describe('App 的 mouse grab', () => {
       ])
     })
   }
+
+  /**
+   * 店与存读档面板：Swing 的 `mouseDragged` 不分哪个键（xl-bwl）。原版这两块的拖动只记
+   * 坐标，不跑 `isMoveIn` —— 送成 `move` 的话，右键拖过按钮会点亮光效、店里会换掉悬停
+   * 贴图与店主台词。
+   */
+  for (const [name, p, host, spy] of [
+    ['店', 'shop', 'shop-host', shopInput],
+    ['存读档面板', 'ls', 'ls-host', lsInput],
+  ] as const) {
+    it(`${name}：按住任一键移动都是拖动，宿主里宿主外一样`, () => {
+      panel.current = p
+      render(<App />)
+      const el = screen.getByTestId(host)
+      stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+      fireEvent.mouseMove(el, { clientX: 10, clientY: 10, buttons: 0 })
+      fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 2, buttons: 2 })
+      fireEvent.mouseMove(el, { clientX: 30, clientY: 30, buttons: 2 })
+      fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 30, buttons: 2 })
+      fireEvent.mouseMove(el, { clientX: 40, clientY: 40, buttons: 4 })
+      fireEvent.mouseUp(window, { clientX: 40, clientY: 40 })
+      expect(spy.mock.calls.map(([i]) => i)).toEqual([
+        { e: 'move', x: 10, y: 10 },
+        { e: 'press', x: 20, y: 20 },
+        { e: 'drag', x: 30, y: 30 },
+        { e: 'drag', x: 1100, y: 30 },
+        { e: 'drag', x: 40, y: 40 },
+        { e: 'release', x: 40, y: 40 },
+      ])
+    })
+  }
+
+  /**
+   * 菜单上按下「存档」，按下那一拍就翻到存读档面板（xl-bwl）。按住拖到刚露出来的存读档
+   * 宿主上：Swing grab 下这些拖动归菜单，存读档面板一个都收不到。
+   *
+   * 这里只验 App 这一层把它们送给了菜单那一路。菜单此刻藏着，`useGame.routeByGrab` 会照当前
+   * 面板把它们丢掉 —— 那是登记过的有意差异（藏着的面板收不到拖动），不在这条判据里。
+   */
+  it('菜单上按下、翻到存读档之后在存读档宿主上拖：拖动归菜单，存读档面板一条都不收', () => {
+    panel.current = 'menu'
+    const { rerender } = render(<App />)
+    const menuHost = screen.getByTestId('menu-host')
+    stubBox(menuHost, HALF)
+    fireEvent.mouseDown(menuHost, CENTER)
+
+    panel.current = 'ls'
+    rerender(<App />)
+    const lsHost = screen.getByTestId('ls-host')
+    expect(lsHost).not.toHaveAttribute('hidden')
+    stubBox(lsHost, HALF)
+    fireEvent.mouseMove(lsHost, { ...CENTER, buttons: 1 })
+    fireEvent.mouseUp(lsHost, CENTER)
+
+    expect(lsInput, '拖动落在了没按下过的存读档面板上').not.toHaveBeenCalled()
+    expect(menuInput.mock.calls.map(([i]) => i)).toEqual([
+      { e: 'press', x: 512, y: 320 },
+      { e: 'move', x: 512, y: 320 },
+      { e: 'release', x: 512, y: 320 },
+    ])
+  })
+
+  /**
+   * 在浏览器窗口外松手，window 收不到 mouseup（xl-bwl）。原版那一下照样到（操作系统替窗口
+   * 握着 grab）。这一层看不见松手本身，只看得见它的后果：**grab 还挂着，指针却没有键按着了**
+   * —— 回到页面的头一下移动（`buttons` 为 0），或者没按着别的键的一次新按下。见到就当场
+   * 补上那一下松手，坐标取见到它的那一刻。
+   */
+  it('窗口外松了手：回来头一下没按键的移动补上松手，之后别处的拖动与松手不再归它', () => {
+    panel.current = 'ls'
+    render(<App />)
+    const el = screen.getByTestId('ls-host')
+    stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 30, buttons: 1 })
+    // 松手发生在窗口外，这里一个事件都没有。指针回到页面上：
+    fireEvent.mouseMove(el, { clientX: 50, clientY: 60, buttons: 0 })
+    // 之后在工具栏上按下、拖、松开 —— 与存读档面板无关。
+    fireEvent.mouseDown(document.body, { clientX: 1100, clientY: 700 })
+    fireEvent.mouseMove(document.body, { clientX: 1150, clientY: 700, buttons: 1 })
+    fireEvent.mouseUp(document.body, { clientX: 1150, clientY: 700 })
+    expect(lsInput.mock.calls.map(([i]) => i)).toEqual([
+      { e: 'press', x: 20, y: 20 },
+      { e: 'drag', x: 1100, y: 30 },
+      { e: 'release', x: 50, y: 60 },
+      { e: 'move', x: 50, y: 60 },
+    ])
+  })
+
+  it('窗口外松了手、回来直接按下：先补上一次的松手，再送这一下按下', () => {
+    panel.current = 'battle'
+    render(<App />)
+    const el = screen.getByTestId('battle-host')
+    stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 0, buttons: 1 })
+    fireEvent.mouseDown(el, { clientX: 70, clientY: 80, button: 0, buttons: 1 })
+    fireEvent.mouseUp(window, { clientX: 70, clientY: 80 })
+    expect(battleMouse.mock.calls.map(([i]) => i)).toEqual([
+      { e: 'press', x: 20, y: 20 },
+      { e: 'release', x: 70, y: 80 },
+      { e: 'press', x: 70, y: 80 },
+      { e: 'release', x: 70, y: 80 },
+    ])
+  })
 })

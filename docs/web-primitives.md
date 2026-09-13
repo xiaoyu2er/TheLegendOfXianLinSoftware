@@ -25,7 +25,7 @@
 | 调用点 | 类 | 判定 | 证据 |
 |---|---|---|---|
 | `web/src/app/App.tsx:73` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
-| `web/src/app/App.tsx:359,360,364,365` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28；对应 `BattlePanel.java:369`、`MenuPanel.java:116`、`LoadAndSavePanel.java:188`、`ShopPanel.java:200`、`EquipmentShopPanel.java:276`）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
+| `web/src/app/App.tsx:375,376,377,381,382,383` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28；对应 `BattlePanel.java:369`、`MenuPanel.java:116`、`LoadAndSavePanel.java:188`、`ShopPanel.java:200`、`EquipmentShopPanel.java:276`），grab 期间别的宿主不收移动；`mousemove` 与 `mousedown` 挂在捕获阶段，窗口外松了手（window 收不到 mouseup，原版照样收到）之后头一下没按键的移动或新按下当场补上松手（xl-bwl，坐标是见到的那一刻）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
 | `web/src/app/App.tsx:421` | 元素 | 工程 | 外壳 `div` |
 | `web/src/app/App.tsx:437` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
 | `web/src/app/App.tsx:438` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
@@ -33,8 +33,8 @@
 | `web/src/app/App.tsx:446` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
 | `web/src/app/App.tsx:447` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
 | `web/src/app/App.tsx:448` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
-| `web/src/app/App.tsx:455,456` | 事件 | 对应 `src/shop/ShopPanel.java:173` | 两家店的按下 / 移动（装备店是 `EquipmentShopPanel.java:249` 同形的一段）。**松手不在宿主上**，走上面那一行的 `grabRelease`（xl-o9z） |
-| `web/src/app/App.tsx:463,464` | 事件 | 对应 `src/start/LoadAndSavePanel.java:161` | 按 `buttons` 分开 `mouseDragged` 与 `mouseMoved`；松手同样走 `grabRelease`（xl-o9z） |
+| `web/src/app/App.tsx:476,477` | 事件 | 对应 `src/shop/ShopPanel.java:173` | 两家店的按下 / 移动（装备店是 `EquipmentShopPanel.java:249` 同形的一段）；按住任一键移动送 `drag`（`ShopPanel.java:200`，只记坐标不跑 `isMoveIn`，xl-bwl）。**松手不在宿主上**，走上面那一行的 `grabRelease`（xl-o9z） |
+| `web/src/app/App.tsx:484,485` | 事件 | 对应 `src/start/LoadAndSavePanel.java:161` | 按 `buttons` 分开 `mouseDragged` 与 `mouseMoved`，任一键都算拖动（xl-bwl）；松手同样走 `grabRelease`（xl-o9z） |
 | `web/src/app/App.tsx:480,489,494,499,504` | 元素 / 无障碍 | 已登记 `ADR-0001#loading-notices` | 「正在载入 …」与渲染失败那一行（**xl-03x.22 补登**） |
 | `web/src/app/App.tsx:485` | 事件 | 工程 | `<StartPanel onNewGame onLoad>` 是组件 prop，不是浏览器事件 —— 正则的误报，如实记下 |
 | `web/src/app/App.tsx:515,555,582,583` | 元素 / 无障碍 / 事件 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏、操作提示、放大方式切换（**xl-03x.22 补登**） |
