@@ -602,6 +602,9 @@ export function useGame(
       openMenuRef.current = false
       const next = advanceSession(opening ? openMenu(session) : session, input, elapsed)
       sessionRef.current = next
+      // 战斗线程这一拍死了（xl-9go）：原版是 stderr 上一条 NPE 的栈，这里是控制台一条，只报一次。
+      const died = next.battle?.died ?? null
+      if (died !== null && died !== session.battle?.died) console.error('战斗线程死了，画面停在这一帧：', died)
       // 回标题（xl-6zf）与场景消费 SCENE_SIGNAL（xl-4io）那两拍同一首也从头放。
       bgmRef.current?.sync(currentBgm(next), bgmFromStart(session, next))
       if (sfxRef.current) playSfx(sfxRef.current, next)

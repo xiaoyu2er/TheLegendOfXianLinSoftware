@@ -51,7 +51,7 @@
 | `web/src/game/useGame.ts:352,380,395,396,398,399` | 键盘 / 事件 / 全局 | 对应 `src/main/GameLauncher.java:186` | 窗口级键盘监听（原版 `this.addKeyListener(this)` 挂在 `JFrame` 上）。只在 `keyReceiver` 认的面板上收键并 `preventDefault`，别的面板既不收也不拦 —— 标题页按钮的回车 / 空格激活靠的就是那个默认动作（`xl-fqm` 修，见文末）；`app/App.test.tsx`、`game/useGame.test.tsx` |
 | `web/src/game/useGame.ts:359` | 键盘 | 对应 `src/scene/ScenePanel.java:207` | ESC 开菜单 |
 | `web/src/game/useGame.ts:372` | 键盘 | 对应 `src/battle/BattlePanel.java:290` | 调试外挂键 J（xl-03x.14） |
-| `web/src/game/useGame.ts:475,494,808,809` | 时钟 / 定时 / 全局 | 对应 `src/scene/ScenePanel.java:276` | 10 ms 一拍，按真实流逝补拍；`state/loop.test.ts` |
+| `web/src/game/useGame.ts:475,494,811,812` | 时钟 / 定时 / 全局 | 对应 `src/scene/ScenePanel.java:276` | 10 ms 一拍，按真实流逝补拍；`state/loop.test.ts` |
 | `web/src/index.css:112` | 伪类 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏按钮悬停描边 |
 | `web/src/main.tsx:6` | 全局 | 工程 | 挂载根 |
 | `web/src/menu/render/menuRenderer.ts:129,148` | 全局 | 工程 | 量字 / 离屏画布 |

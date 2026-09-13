@@ -19,7 +19,7 @@ import { replayBattle } from '../battle/replay'
 import { createBattleTicker } from '../battle/loop'
 import { REVIVE_HP_RATIO, createBattle } from '../battle/world'
 import { hitsEnemy } from '../battle/render/hitBox'
-import { commandButtons } from '../battle/step'
+import { BattleThreadDied, checkEnemyDead, commandButtons } from '../battle/step'
 import { battleClick } from './battleInput'
 import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
@@ -362,6 +362,43 @@ describe('场景 → 战斗 → 场景', () => {
       'battle-defeat-scene': 'scene',
       'battle-defeat-start': 'start',
     })
+  })
+
+  /**
+   * 全灭时第一槽的怪已先被打死（xl-9go）：原版那一发 NPE 冲出 `BattlePanel.run()`，
+   * 战斗线程死掉 —— 面板不切、画面停住，**场景那条线程照跑**。会话层这里原先一路抛到
+   * `useGame` 的 pump，没人接。
+   */
+  it('全灭时第一槽已空：不抛，面板停在战斗，场景照跑', () => {
+    resetParty()
+    const base = openSession(createWorld(getScene('迷宫1')), deps())
+    let s: RunningSession = {
+      ...base,
+      panel: 'battle',
+      battle: createBattleTicker(replayBattle(readBattleTrace('battle-defeat-start'), spriteSize)),
+    }
+    const world = (): BattleWorld => {
+      const w = battleWorldOf(s)
+      if (w === null) throw new Error(`战斗世界没了，面板是 ${s.panel}`)
+      return w
+    }
+    for (let i = 0; i < 500 && !world().gameOver.isDraw; i++) s = advanceSession(s, NO_INPUT, BATTLE_PUMP_MS)
+    const w = world()
+    expect(w.gameOver.isDraw).toBe(true)
+    // 第一槽的怪在全灭之前先被打死了：血置 0，交给 `Check.checkEnemyDead` 的移植去摘。
+    const em1 = w.em1
+    if (em1 === null) throw new Error('这份真值全灭时第一槽本来就有怪 —— 前提变了')
+    em1.hp = 0
+    checkEnemyDead(w)
+    expect(w.em1).toBeNull()
+
+    for (let i = 0; i < 500 && s.battle?.died == null; i++) s = advanceSession(s, NO_INPUT, BATTLE_PUMP_MS)
+    expect(s.battle?.died).toBeInstanceOf(BattleThreadDied)
+    const diedAt = { tick: world().tick, timeMs: s.scene.world.timeMs }
+    for (let i = 0; i < 50; i++) s = advanceSession(s, NO_INPUT, BATTLE_PUMP_MS)
+    expect(s.panel).toBe('battle')
+    expect(world().tick).toBe(diedAt.tick)
+    expect(s.scene.world.timeMs).toBeGreaterThan(diedAt.timeMs)
   })
 
   /**
