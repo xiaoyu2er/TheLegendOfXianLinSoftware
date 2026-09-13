@@ -67,85 +67,72 @@ describe('烘焙指纹', () => {
    * 推不出「今天应该有哪些输入」，所以**新增的输入它一条都看不见**，而
    * 「没验到」和「验过了」长得一样。
    *
-   * 脚本这一类的分母是数得出来的（`script/` 下有几个 `.txt`），就在这里数：
-   * 加一个脚本却不重烘，这条红。其余素材（地图 / NPC / 头像 / 背景图 / BGM）
-   * 的分母要跑一遍烘焙器才知道，但它们**只可能由三样东西引进来**：脚本数据、
+   * 分母数得出来的那些（`script/` 下有几个 `.txt`、音效目录下有几个文件……）
+   * 由下面「按目录现读的输入源」逐目录数。其余素材（地图 / NPC / 头像 / 背景图 /
+   * BGM）的分母要跑一遍烘焙器才知道，但它们**只可能由三样东西引进来**：脚本数据、
    * 烘焙器自己的规则、以及决定烘哪几首 BGM 的行为真值 `tools/traces/out/`
    * —— 三样都在指纹里，改了必红，红了就得重烘，重烘时名单自己补齐。
    */
-  it('script/ 下的每一个脚本都在输入名单里', () => {
-    const scripts = readdirSync(repoPath('script'))
-      .filter((f) => f.endsWith('.txt'))
-      .map((f) => `script/${f}`)
-      .sort()
-    expect(scripts.length).toBeGreaterThan(0)
-    const recorded = Object.keys(STAMP.inputs).filter((p) => p.startsWith('script/'))
-    expect(recorded.sort()).toEqual(scripts)
-  })
 
   /**
-   * 音效那一类的分母同样数得出来（xl-03x.5）：`bakeSfx` 烘的就是
-   * `sources/music/` 整个目录。往里加一个文件却不重烘，上一条「输入还是
-   * 那一份」看不见它 —— 它只核记下了的。这条补的是那个方向。
-   */
-  it(`${SFX_ROOT}/ 下的每一个文件都在输入名单里`, () => {
-    const files = readdirSync(repoPath(SFX_ROOT))
-      .filter((f) => !f.startsWith('.'))
-      .map((f) => `${SFX_ROOT}/${f}`)
-      .sort()
-    expect(files.length).toBeGreaterThan(0)
-    const recorded = Object.keys(STAMP.inputs).filter((p) => p.startsWith(`${SFX_ROOT}/`))
-    expect(recorded.sort()).toEqual(files)
-  })
-
-  /**
-   * 其余**按目录现读**的输入源，同一个形状（xl-bnf）。
+   * **按目录现读**的输入源（xl-bnf；`script/` 与音效两处原本各自单列，xl-de7 并进来）。
    *
    * 洞是实测撞到的：`tools/traces/out/shop-party.trace.json` 进了真值目录却
    * 没重烘，一直不在 inputs 里，`pnpm test` 照绿 —— 上面「输入还是那一份」只
    * 核记下了的。烘焙器从这些目录**现扫**分母，多一个文件就可能多一份产物。
    *
-   * **分母是磁盘那一侧**：先扫目录、按烘焙器的规则（`keep`：装备与商店两行
-   * 直接用烘焙器的同一个函数，其余四行是照 `bake.ts` 手抄的过滤，烘焙器改了
-   * 过滤这里不会跟着变）挑出它会读的，再与名单里同一前缀、同一规则下的条目比
-   * 相等 —— 两个方向都红：磁盘上多一个名单里没有的，名单里有一个磁盘上没了的。
-   * 反过来「拿名单去扫磁盘」是让被守的东西自己给自己签字。
+   * **分母是磁盘那一侧**：先照烘焙器的扫法（`scan`）扫目录、按烘焙器的规则挑出它会读的，
+   * 再与名单里同一前缀、同一规则下的条目比相等 —— 两个方向都红：磁盘上多一个名单里没有的，
+   * 名单里有一个磁盘上没了的。反过来「拿名单去扫磁盘」是让被守的东西自己给自己签字。
    *
-   * 这张表本身是**登记**（烘焙器扫了哪几个目录），由人来签；新加一处
+   * 规则不手抄（xl-de7）：`filter` 是烘焙器在扫描调用上**直接链着的** `.filter(…)` 的原文，
+   * 下面的对账从语法树里现读出来逐字比，这里的判法就是把这段原文编译出来用 —— 烘焙器改了过滤，
+   * 对账先红。`downstream` 是烘焙器扫完之后另用自己的函数挑的（装备、商店），这里直接用同一个
+   * 函数；**它是不是真被用在这批扫描结果上，对账看不见**（见下面对账的头注）。
+   *
+   * 这张表本身是**登记**（烘焙器扫了哪几个目录、怎么扫），由人来签；新加一处
    * `readdirSync` / `listFiles` 就得在这里加一行 —— 忘了加由下面「每一处目录扫描都在
-   * 登记表里」那条判红（xl-cn3）。`script/` 与音效两处在上面。
+   * 登记表里」那条判红（xl-cn3）。
    */
   const DIR_SOURCES: readonly {
     dir: string
-    recursive: boolean
-    keep: (relative: string) => boolean
+    /** 烘焙器用哪个函数扫：`readdirSync` 只一层，`listFiles` 递归。对账逐条核。 */
+    scan: Scan
+    /** 扫描调用上直接链着的 `.filter(…)` 实参原文（空白压成一个空格）；没有就不写。对账逐字核。 */
+    filter?: string
+    /** 烘焙器扫完之后另用来挑文件的函数（不在调用链上，对账不核）。 */
+    downstream?: (relative: string) => boolean
     /** 这一处扫描写在闭包里哪个文件 —— 下面「扫描点与登记对账」按「文件 → 目录」逐条对。 */
     site: string
   }[] = [
-    // `tracedFromTruth` 只读 `.trace.json`；决定烘哪几首 BGM。手抄的三个路径（这一行、
-    // `src`、药品）没导出 —— 导出会改闭包、迫使重烘 —— 由下面的对账从扫描实参里现解析出来核。
-    { dir: 'tools/traces/out', recursive: false, keep: (f) => f.endsWith('.trace.json'), site: BAKER_ENTRY },
-    { dir: IMAGE_ROOT, recursive: true, keep: () => true, site: BAKER_ENTRY },
-    { dir: MENU_ROOT, recursive: true, keep: () => true, site: BAKER_ENTRY },
+    // `tracedFromTruth`，决定烘哪几首 BGM。手抄的三个路径（这一行、`src`、药品）没导出 ——
+    // 导出会改闭包、迫使重烘 —— 由下面的对账从扫描实参里现解析出来核。
+    { dir: 'tools/traces/out', scan: 'readdirSync', filter: "(f) => f.endsWith('.trace.json')", site: BAKER_ENTRY },
+    { dir: 'script', scan: 'readdirSync', filter: "(f) => f.endsWith('.txt')", site: BAKER_ENTRY },
+    // `bakeSfx`（xl-03x.5）。
+    { dir: SFX_ROOT, scan: 'readdirSync', filter: "(f) => !f.startsWith('.')", site: BAKER_ENTRY },
+    { dir: IMAGE_ROOT, scan: 'listFiles', site: BAKER_ENTRY },
+    { dir: MENU_ROOT, scan: 'listFiles', site: BAKER_ENTRY },
     // `scanShopReferences` 的 `JAVA_ROOT`（没导出：导出它会改烘焙器闭包，指纹就得重烘）。
-    { dir: 'src', recursive: true, keep: (f) => f.endsWith('.java'), site: 'web/src/shop/shopReferences.ts' },
-    { dir: END_PICTURE_DIR, recursive: false, keep: (f) => !f.startsWith('.'), site: BAKER_ENTRY },
-    { dir: EQUIP_PICTURE_ROOT, recursive: true, keep: isBakedEquipPicture, site: BAKER_ENTRY },
+    { dir: 'src', scan: 'listFiles', filter: "(f) => f.endsWith('.java')", site: 'web/src/shop/shopReferences.ts' },
+    { dir: END_PICTURE_DIR, scan: 'readdirSync', filter: "(f) => !f.startsWith('.')", site: BAKER_ENTRY },
+    { dir: EQUIP_PICTURE_ROOT, scan: 'listFiles', downstream: isBakedEquipPicture, site: BAKER_ENTRY },
     // 装备图与药品介绍图两个子目录 `shopAssetOwner` 判 'elsewhere'，不在这一行里，
     // 各自单列（药品那一行漏过一次：篡改抹掉它一条，这张表照绿）。
-    { dir: SHOP_ROOT, recursive: true, keep: (f) => shopAssetOwner(f) === 'baked', site: BAKER_ENTRY },
+    { dir: SHOP_ROOT, scan: 'listFiles', downstream: (f) => shopAssetOwner(f) === 'baked', site: BAKER_ENTRY },
     // `bake.ts` 的 `DRUG_PICTURE_DIR`，`readdirSync` 不过滤（没导出，理由同 `src`）。
-    { dir: 'sources/Shop/药品/回复类', recursive: false, keep: () => true, site: BAKER_ENTRY },
+    { dir: 'sources/Shop/药品/回复类', scan: 'readdirSync', site: BAKER_ENTRY },
   ]
-  /** 上面单列成用例的两处（`script/` 与音效），也是 `bake.ts` 里的目录扫描。 */
-  const SCANNED_ABOVE: readonly { dir: string; site: string }[] = [
-    { dir: 'script', site: BAKER_ENTRY },
-    { dir: SFX_ROOT, site: BAKER_ENTRY },
-  ]
+  const keepOf = ({ filter, downstream }: (typeof DIR_SOURCES)[number]): ((relative: string) => boolean) => {
+    const chained = filter === undefined ? () => true : compileFilter(filter)
+    return (f) => chained(f) && (downstream === undefined || downstream(f))
+  }
 
-  it.each(DIR_SOURCES.map((s) => [s.dir, s] as const))('%s/ 下烘焙器会读的每一个文件都在输入名单里，反之亦然', (_, { dir, recursive, keep }) => {
+  it.each(DIR_SOURCES.map((s) => [s.dir, s] as const))('%s/ 下烘焙器会读的每一个文件都在输入名单里，反之亦然', (_, source) => {
+    const { dir, scan } = source
+    const keep = keepOf(source)
     const root = repoPath(dir)
-    const onDisk = (recursive ? listFiles(root) : readdirSync(root)).filter(keep).map((f) => `${dir}/${f}`)
+    const onDisk = (scan === 'listFiles' ? listFiles(root) : readdirSync(root)).filter(keep).map((f) => `${dir}/${f}`)
     expect(onDisk.length, `${dir}/ 下一个烘焙器会读的文件都没扫到`).toBeGreaterThan(0)
     const recorded = Object.keys(STAMP.inputs)
       .filter((p) => p.startsWith(`${dir}/`))
@@ -158,7 +145,7 @@ describe('烘焙指纹', () => {
   it('名单里落在这些目录下的每一条都被某一行认领', () => {
     const unclaimed = Object.keys(STAMP.inputs).filter((p) => {
       const rows = DIR_SOURCES.filter(({ dir }) => p.startsWith(`${dir}/`))
-      return rows.length > 0 && !rows.some(({ dir, keep }) => keep(p.slice(dir.length + 1)))
+      return rows.length > 0 && !rows.some((row) => keepOf(row)(p.slice(row.dir.length + 1)))
     })
     expect(unclaimed).toEqual([])
   })
@@ -179,47 +166,29 @@ describe('烘焙指纹', () => {
    * 以外的任何位置 —— 别名导入、解构改名、`fs['readdirSync']`、存进变量、
    * `.call(…)`、再导出 —— 那处调用这里认不出，所以名字本身就判红。实参解析不回
    * 常量（算出来的、从外面读进来的）同样判红，不猜。
+   *
+   * 每一条不只是「文件 → 目录」，还带着**怎么扫**（xl-de7）：扫描函数（`readdirSync`
+   * 一层 / `listFiles` 递归，其余扫描函数与带第二个实参的调用没建模，判红）与调用上直接链着的
+   * `.filter(…)` 原文（中间隔着 `.sort()` 也算；到 `.map` 停；链上别的方法判红）。所以
+   * `readdirSync` 改成 `listFiles`、过滤条件改一个字、链上加一道 `.slice`，都与登记行对不上。
+   * `node:fs` 的命名空间 / 默认导入只许 `fs.名字` 一种用法，拼出来的成员名与动态 import 判红。
+   *
+   * **这一条的分母**：闭包语法树里每一处扫描调用，逐条核（文件、目录、扫描函数、链上的过滤）。
+   * **仍然绕得过的写法**：扫描结果先存进变量再挑、`.map` 之后再挑、或者在循环里 `continue` 掉
+   * 一部分 —— 调用链之外的过滤这里看不见，登记行照旧按「全读」或 `downstream` 判。装备与商店
+   * 两行的 `downstream` 就是这种：烘焙器是不是真拿那个函数挑这批扫描结果，这里不核。不经扫描
+   * 函数的枚举（按编号 `existsSync` 试探）不在分母里。登记行的 `filter` 只能是自包含的箭头函数：
+   * 烘焙器的过滤引用了外面的常量，编译出来一调就 ReferenceError —— 响，但要先改登记的形状。
    */
   it('烘焙器闭包里的每一处目录扫描都在登记表里，反之亦然', () => {
     const PRIMITIVE = 'web/src/assets/listFiles.ts'
-    const SCANNERS = new Set(['readdirSync', 'readdir', 'opendirSync', 'opendir', 'globSync', 'glob', 'listFiles'])
     const closure = bakerSources(REPO)
     expect(closure).toContain(PRIMITIVE)
     const program = ts.createProgram(closure.map((f) => resolve(REPO, f)), PROGRAM_OPTIONS)
-    const scanned = scannedDirs(program, REPO)
-    const found: string[] = []
-    const escaped: string[] = []
-    for (const file of closure) {
-      if (file === PRIMITIVE) continue
-      const tree = program.getSourceFile(resolve(REPO, file))
-      if (tree === undefined) throw new Error(`${file} 不在 TypeScript 程序里`)
-      const visit = (node: ts.Node): void => {
-        if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && SCANNERS.has(node.text)) {
-          const parent = node.parent
-          // `readdirSync(…)` 或 `fs.readdirSync(…)`：名字就是被调用的那个。
-          const called =
-            (ts.isCallExpression(parent) && parent.expression === node) ||
-            (ts.isPropertyAccessExpression(parent) && parent.name === node &&
-              ts.isCallExpression(parent.parent) && parent.parent.expression === parent)
-          // `import { readdirSync } from 'node:fs'` / `function listFiles(`：原名，不带 `as`。
-          const declared =
-            (ts.isImportSpecifier(parent) && parent.propertyName === undefined) ||
-            (ts.isFunctionDeclaration(parent) && parent.name === node)
-          if (called) {
-            const call = (ts.isCallExpression(parent) ? parent : parent.parent) as ts.CallExpression
-            const at = `${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
-            const first = call.arguments[0]
-            if (first === undefined) escaped.push(`${at} ${node.text}() 没有实参`)
-            else for (const dir of scanned(first, at)) found.push(`${file} → ${dir}`)
-          } else if (!declared && ts.isIdentifier(node)) escaped.push(`${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${node.text}`)
-          else if (ts.isStringLiteralLike(node) && ts.isElementAccessExpression(parent)) escaped.push(`${file} ['${node.text}']`)
-        }
-        ts.forEachChild(node, visit)
-      }
-      visit(tree)
-    }
+    const { sites, escaped } = scanSites(program, REPO, closure.filter((f) => f !== PRIMITIVE))
     expect(escaped, '扫描函数以数不到的写法出现了').toEqual([])
-    const registered = [...DIR_SOURCES, ...SCANNED_ABOVE].map(({ site, dir }) => `${site} → ${dir}`)
+    const found = sites.map(siteKey)
+    const registered = DIR_SOURCES.map((row) => siteKey({ ...row, filters: row.filter === undefined ? [] : [row.filter] }))
     expect(found.length, '闭包里一处目录扫描都没数到 —— 数法坏了').toBeGreaterThan(0)
     expect(found.sort()).toEqual(registered.sort())
   })
@@ -403,6 +372,119 @@ function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at
     })
 }
 
+/** 建了模的扫描函数：`readdirSync` 只扫一层，`listFiles` 递归。 */
+const MODELLED = ['readdirSync', 'listFiles'] as const
+type Scan = (typeof MODELLED)[number]
+const isModelled = (name: string): name is Scan => (MODELLED as readonly string[]).includes(name)
+/** 认得出名字就数，不管建没建模 —— 没建模的出现就判红，不能当它不存在。 */
+const SCANNERS = new Set<string>([...MODELLED, 'readdir', 'opendirSync', 'opendir', 'globSync', 'glob'])
+const FS_MODULES = new Set(['node:fs', 'fs', 'node:fs/promises', 'fs/promises'])
+
+type ScanSite = { site: string; dir: string; scan: Scan; filters: string[] }
+const siteKey = ({ site, dir, scan, filters }: ScanSite): string =>
+  [`${site} → ${dir}`, scan, ...filters.map((f) => `.filter(${f})`)].join(' · ')
+const squash = (text: string): string => text.replace(/\s+/g, ' ').trim()
+
+/** 登记行里的过滤原文编译成判法 —— 与对账逐字比的是同一段字，不另抄一份。 */
+function compileFilter(source: string): (relative: string) => boolean {
+  // `ts.transpile` 遇到语法错误照样吐一段 JS（`f.endsWith(` 变成 `f.endsWith()`），坏原文会编出
+  // 一个「能跑」的错判法 —— 所以要诊断，有一条就抛。
+  const { outputText, diagnostics = [] } = ts.transpileModule(`(${source})`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+    reportDiagnostics: true,
+  })
+  if (diagnostics.length > 0) throw new Error(`过滤原文编不过：${source}（${ts.flattenDiagnosticMessageText(diagnostics[0]!.messageText, ' ')}）`)
+  const keep: unknown = new Function(`return ${outputText}`)()
+  if (typeof keep !== 'function') throw new Error(`过滤原文不是一个函数：${source}`)
+  return keep as (relative: string) => boolean
+}
+
+/**
+ * 在 `files` 的语法树里找出每一处目录扫描调用（xl-cn3），各自解析回目录（xl-pcg）、
+ * 记下扫描函数与调用上直接链着的 `.filter(…)`（xl-de7）。认不出的写法进 `escaped`。
+ */
+function scanSites(program: ts.Program, repo: string, files: readonly string[]): { sites: ScanSite[]; escaped: string[] } {
+  const scanned = scannedDirs(program, repo)
+  const sites: ScanSite[] = []
+  const escaped: string[] = []
+  // `x.filter(a).sort().filter(b)`：往外走，`.filter` 记下实参、`.sort` 跳过；`.map` 之后挑的就不是
+  // 文件名了，停（那之后的过滤看不见，头注写明了）。别的方法（`.slice`、`.reverse`……）会删改这批
+  // 文件又没建模 —— 判红，不停下当没事（xl-de7 /code-review Spec 轴实测 `.slice(1)` 照绿过）。
+  const chainedFilters = (call: ts.CallExpression, at: string): string[] => {
+    const out: string[] = []
+    let node: ts.Expression = call
+    for (;;) {
+      const access = node.parent
+      if (!ts.isPropertyAccessExpression(access) || access.expression !== node) break
+      const outer = access.parent
+      const method = access.name.text
+      if (!ts.isCallExpression(outer) || outer.expression !== access) {
+        escaped.push(`${at} 扫描结果上的 .${method} 不是调用，没建模`)
+        break
+      }
+      if (method === 'map') break
+      if (method === 'filter') out.push(squash(outer.arguments.map((a) => a.getText()).join(', ')))
+      else if (method !== 'sort') escaped.push(`${at} 扫描结果上链了 .${method}(…)，没建模`)
+      node = outer
+    }
+    return out
+  }
+  // `import * as fs from 'node:fs'` / `import fs from 'node:fs'`：只许 `fs.名字` 这一种用法 ——
+  // `fs[\`readdir${'Sync'}\`]`、`Reflect.get(fs, …)`、把 `fs` 传走，扫描函数的名字都不以
+  // 标识符出现，按名字认不出（Spec 轴实测模板字符串那种照绿过）。动态 `import('node:fs')` 同理。
+  const fsHandle = (node: ts.Identifier): boolean => {
+    const decl = program.getTypeChecker().getSymbolAtLocation(node)?.declarations?.[0]
+    if (decl === undefined || !(ts.isNamespaceImport(decl) || ts.isImportClause(decl))) return false
+    const from = (ts.isNamespaceImport(decl) ? decl.parent.parent : decl.parent).moduleSpecifier
+    return ts.isStringLiteral(from) && FS_MODULES.has(from.text)
+  }
+  for (const file of files) {
+    const tree = program.getSourceFile(resolve(repo, file))
+    if (tree === undefined) throw new Error(`${file} 不在 TypeScript 程序里`)
+    const line = (node: ts.Node) => `${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
+    const visit = (node: ts.Node): void => {
+      if (ts.isIdentifier(node) && !ts.isImportClause(node.parent) && !ts.isNamespaceImport(node.parent) && fsHandle(node)) {
+        const parent = node.parent
+        if (!(ts.isPropertyAccessExpression(parent) && parent.expression === node)) escaped.push(`${line(node)} ${node.text} 不是以 ${node.text}.名字 用的`)
+      }
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const spec = node.arguments[0]
+        if (spec === undefined || !ts.isStringLiteralLike(spec) || FS_MODULES.has(spec.text)) escaped.push(`${line(node)} 动态 import 了 fs（或说不清是哪个模块）`)
+      }
+      if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && SCANNERS.has(node.text)) {
+        const parent = node.parent
+        // `readdirSync(…)` 或 `fs.readdirSync(…)`：名字就是被调用的那个。
+        const called =
+          (ts.isCallExpression(parent) && parent.expression === node) ||
+          (ts.isPropertyAccessExpression(parent) && parent.name === node &&
+            ts.isCallExpression(parent.parent) && parent.parent.expression === parent)
+        // `import { readdirSync } from 'node:fs'` / `function listFiles(`：原名，不带 `as`。
+        const declared =
+          (ts.isImportSpecifier(parent) && parent.propertyName === undefined) ||
+          (ts.isFunctionDeclaration(parent) && parent.name === node)
+        if (called) {
+          const call = (ts.isCallExpression(parent) ? parent : parent.parent) as ts.CallExpression
+          const at = line(node)
+          const first = call.arguments[0]
+          // 第二个实参会改扫法（`{ recursive: true }`、`withFileTypes`、`listFiles` 的前缀），没建模。
+          const scan = node.text
+          if (!isModelled(scan)) escaped.push(`${at} ${scan}() 这个扫描函数没建模`)
+          else if (first === undefined) escaped.push(`${at} ${scan}() 没有实参`)
+          else if (call.arguments.length > 1) escaped.push(`${at} ${scan}() 带了第二个实参，扫法没建模`)
+          else {
+            const filters = chainedFilters(call, at)
+            for (const dir of scanned(first, at)) sites.push({ site: file, dir, scan, filters })
+          }
+        } else if (!declared && ts.isIdentifier(node)) escaped.push(`${line(node)} ${node.text}`)
+        else if (ts.isStringLiteralLike(node) && ts.isElementAccessExpression(parent)) escaped.push(`${file} ['${node.text}']`)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(tree)
+  }
+  return { sites, escaped }
+}
+
 /**
  * 判据自己也要验 —— 一个恒真的指纹和一个管用的指纹长得一样。下面两条不碰
  * 仓库，在临时目录里造一个最小的模块图，把「改一个字节」与「爬不到 import」
@@ -474,27 +556,49 @@ describe('指纹本身不是空转', () => {
    * `scannedDirs` 的参数分支，今天烘焙器里没有一处走得到（每处扫描的实参都是常量），
    * 所以在临时目录里造出来验，不靠烘焙器碰巧长什么样（xl-pcg，/code-review 点到）。
    */
-  const scansIn = (files: Record<string, string>): string[] => {
+  const sitesIn = (files: Record<string, string>): ReturnType<typeof scanSites> => {
     const dir = realpathSync(mkdtempSync(resolve(tmpdir(), 'bake-scan-')))
     for (const [name, text] of Object.entries(files)) writeFileSync(resolve(dir, name), text)
     const program = ts.createProgram(Object.keys(files).map((f) => resolve(dir, f)), PROGRAM_OPTIONS)
-    const scanned = scannedDirs(program, dir)
-    const out: string[] = []
-    for (const name of Object.keys(files)) {
-      const visit = (node: ts.Node): void => {
-        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'readdirSync') {
-          const first = node.arguments[0]
-          if (first !== undefined) out.push(...scanned(first, name))
-        }
-        ts.forEachChild(node, visit)
-      }
-      visit(program.getSourceFile(resolve(dir, name))!)
-    }
-    return out.sort()
+    return scanSites(program, dir, Object.keys(files))
   }
+  const scansIn = (files: Record<string, string>): string[] => sitesIn(files).sites.map((s) => s.dir).sort()
   const HEADER =
-    "import { readdirSync } from 'node:fs'\nimport { resolve } from 'node:path'\nimport { fileURLToPath } from 'node:url'\n" +
-    "const ROOT = resolve(fileURLToPath(import.meta.url), '..')\n"
+    "import { readdirSync } from 'node:fs'\nimport { listFiles } from './listFiles'\nimport { resolve } from 'node:path'\n" +
+    "import { fileURLToPath } from 'node:url'\nconst ROOT = resolve(fileURLToPath(import.meta.url), '..')\n"
+
+  it('每一处扫描记下扫描函数与链上的过滤：换扫描函数、改过滤，键就变（xl-de7）', () => {
+    const keys = (body: string) => sitesIn({ 'entry.ts': `${HEADER}${body}\n` }).sites.map(({ scan, filters }) => [scan, ...filters].join(' '))
+    expect(keys("readdirSync(resolve(ROOT, 'a')).filter((f) => f.endsWith('.txt')).sort()")).toEqual(["readdirSync (f) => f.endsWith('.txt')"])
+    expect(keys("listFiles(resolve(ROOT, 'a')).filter((f) => f.endsWith('.txt'))")).toEqual(["listFiles (f) => f.endsWith('.txt')"])
+    // 隔着 `.sort()` 的第二道过滤也算；`.map` 之后的就不是在挑文件名了，停。
+    expect(keys("readdirSync(resolve(ROOT, 'a')).filter(p).sort().filter(q).map(r).filter(s)")).toEqual(['readdirSync p q'])
+    expect(keys("const all = readdirSync(resolve(ROOT, 'a'))")).toEqual(['readdirSync'])
+  })
+
+  it('没建模的扫描函数、带第二个实参的扫描，进 escaped，不当成一层扫（xl-de7）', () => {
+    const escapedIn = (body: string) => sitesIn({ 'entry.ts': `${HEADER}${body}\n` }).escaped
+    expect(escapedIn("readdirSync(resolve(ROOT, 'a'), { recursive: true })")).toEqual([expect.stringMatching(/带了第二个实参/)])
+    expect(escapedIn("listFiles(resolve(ROOT, 'a'), 'sub')")).toEqual([expect.stringMatching(/带了第二个实参/)])
+    expect(escapedIn("import { globSync } from 'node:fs'\nglobSync(resolve(ROOT, 'a'))")).toEqual([expect.stringMatching(/没建模/)])
+    // 链上删改这批文件的方法（/code-review Spec 轴实测 `.slice(1)` 在旧版照绿）。
+    expect(escapedIn("readdirSync(resolve(ROOT, 'a')).filter(p).slice(1)")).toEqual([expect.stringMatching(/\.slice\(…\)，没建模/)])
+  })
+
+  it('fs 的命名空间只许 fs.名字 一种用法：拼出来的成员名、传走、动态 import 都进 escaped（xl-de7）', () => {
+    const escapedIn = (body: string) => sitesIn({ 'entry.ts': `${HEADER}import * as nodefs from 'node:fs'\n${body}\n` }).escaped
+    expect(escapedIn('nodefs.existsSync(ROOT)')).toEqual([])
+    expect(escapedIn("nodefs[`readdir${'Sync'}`](resolve(ROOT, 'a'))")).toEqual([expect.stringMatching(/不是以 nodefs\.名字 用的/)])
+    expect(escapedIn("Reflect.get(nodefs, 'readdirSync')")).toEqual([expect.stringMatching(/不是以 nodefs\.名字 用的/)])
+    expect(escapedIn("void import('node:fs')")).toEqual([expect.stringMatching(/动态 import/)])
+  })
+
+  it('登记行的过滤原文编译出来就是那个判法', () => {
+    const keep = compileFilter("(f) => f.endsWith('.trace.json')")
+    expect(['a.trace.json', 'a.json'].filter(keep)).toEqual(['a.trace.json'])
+    expect(() => compileFilter('(f) => f.endsWith(')).toThrowError(/编不过/)
+    expect(() => compileFilter("'.txt'")).toThrowError(/不是一个函数/)
+  })
 
   it('一个函数拿参数扫两个目录，解析成两条（跨文件导入的调用也算）', () => {
     expect(
