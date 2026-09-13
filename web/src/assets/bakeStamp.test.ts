@@ -8,6 +8,11 @@ import stamp from '../generated/bakeStamp.json'
 import { BAKER_ENTRY, bakerSources, hashFile, hashFiles } from './bakeStamp'
 import { listFiles } from './listFiles'
 import { SFX_ROOT } from './sfxAssets'
+import { IMAGE_ROOT } from './battleAssets'
+import { MENU_ROOT } from './menuAssets'
+import { END_PICTURE_DIR } from '../end/assets'
+import { EQUIP_PICTURE_ROOT, isBakedEquipPicture } from '../menu/equipmentPictures'
+import { SHOP_ROOT, shopAssetOwner } from '../shop/shopAssets'
 import type { BakeStamp } from './bakeStamp'
 
 /**
@@ -82,6 +87,48 @@ describe('烘焙指纹', () => {
     expect(files.length).toBeGreaterThan(0)
     const recorded = Object.keys(STAMP.inputs).filter((p) => p.startsWith(`${SFX_ROOT}/`))
     expect(recorded.sort()).toEqual(files)
+  })
+
+  /**
+   * 其余**按目录现读**的输入源，同一个形状（xl-bnf）。
+   *
+   * 洞是实测撞到的：`tools/traces/out/shop-party.trace.json` 进了真值目录却
+   * 没重烘，一直不在 inputs 里，`pnpm test` 照绿 —— 上面「输入还是那一份」只
+   * 核记下了的。烘焙器从这些目录**现扫**分母，多一个文件就可能多一份产物。
+   *
+   * **分母是磁盘那一侧**：先扫目录、按烘焙器自己的规则（`keep`，与 `bake.ts`
+   * 用的是同一个过滤）挑出它会读的，再与名单里同一前缀、同一规则下的条目比
+   * 相等 —— 两个方向都红：磁盘上多一个名单里没有的，名单里有一个磁盘上没了的。
+   * 反过来「拿名单去扫磁盘」是让被守的东西自己给自己签字。
+   *
+   * 这张表本身是**登记**（烘焙器扫了哪几个目录），由人来签；新加一处
+   * `readdirSync` / `listFiles` 就得在这里加一行。`script/` 与音效两处在上面。
+   */
+  const DIR_SOURCES: readonly {
+    dir: string
+    recursive: boolean
+    keep: (relative: string) => boolean
+  }[] = [
+    // `tracedFromTruth` 只读 `.trace.json`；决定烘哪几首 BGM。
+    { dir: 'tools/traces/out', recursive: false, keep: (f) => f.endsWith('.trace.json') },
+    { dir: IMAGE_ROOT, recursive: true, keep: () => true },
+    { dir: MENU_ROOT, recursive: true, keep: () => true },
+    // `scanShopReferences` 的 `JAVA_ROOT`（没导出：导出它会改烘焙器闭包，指纹就得重烘）。
+    { dir: 'src', recursive: true, keep: (f) => f.endsWith('.java') },
+    { dir: END_PICTURE_DIR, recursive: false, keep: (f) => !f.startsWith('.') },
+    { dir: EQUIP_PICTURE_ROOT, recursive: true, keep: isBakedEquipPicture },
+    // 药品介绍图那个子目录也在这里面（`shopAssetOwner` 判它 'baked'）。
+    { dir: SHOP_ROOT, recursive: true, keep: (f) => shopAssetOwner(f) === 'baked' },
+  ]
+
+  it.each(DIR_SOURCES)('$dir/ 下烘焙器会读的每一个文件都在输入名单里，反之亦然', ({ dir, recursive, keep }) => {
+    const root = repoPath(dir)
+    const onDisk = (recursive ? listFiles(root) : readdirSync(root)).filter(keep).map((f) => `${dir}/${f}`)
+    expect(onDisk.length, `${dir}/ 下一个烘焙器会读的文件都没扫到`).toBeGreaterThan(0)
+    const recorded = Object.keys(STAMP.inputs)
+      .filter((p) => p.startsWith(`${dir}/`))
+      .filter((p) => keep(p.slice(dir.length + 1)))
+    expect(recorded.sort()).toEqual(onDisk.sort())
   })
 
   /**
