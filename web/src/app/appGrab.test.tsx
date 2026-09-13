@@ -154,8 +154,10 @@ describe('App 的 mouse grab', () => {
     render(<App />)
     const host = screen.getByTestId('battle-host')
     stubBox(host, { left: 0, top: 0, width: 1024, height: 640 })
+    // 右键先在画布上按下 —— 没有这一下，拖动的目标是 null，一个都不派（xl-5ee）。
+    fireEvent.mouseDown(host, { clientX: 50, clientY: 50, button: 2, buttons: 2 })
     fireEvent.mouseMove(host, { clientX: 60, clientY: 60, buttons: 2 })
-    expect(battleMouse.mock.calls.map(([i]) => i.e)).toEqual(['drag'])
+    expect(battleMouse.mock.calls.map(([i]) => i.e)).toEqual(['press', 'drag'])
   })
 
   /**
@@ -409,6 +411,46 @@ describe('App 的 mouse grab', () => {
     fireEvent.mouseUp(window, { ...CENTER, button: 0, buttons: 2 })
     fireEvent.mouseUp(window, { ...CENTER, button: 2, buttons: 0 })
     expect(menuInput, '右键按在场景上，左键那一下却送给了菜单').not.toHaveBeenCalled()
+  })
+
+  /**
+   * 没有 grab 时按着键移到宿主上（xl-5ee）。JDK 17 `Container.java` 的
+   * `LightweightDispatcher.processMouseEvent`：MOUSE_DRAGGED 的 `isMouseGrab` 恒为真（不异或
+   * 本键，按着键就是真），于是它**从不重设** `mouseEventTarget`，只派给更早那一下定下的目标。
+   * 键按在舞台外（原版窗口外）或不收鼠标的面板上，那个目标是 null —— `met != null` 那一整块
+   * 不进，一个 `mouseDragged` 都不派。全松开之后的移动是 MOUSE_MOVED，照常重设、照常送。
+   */
+  for (const [name, p, host, spy] of [
+    ['战斗画布', 'battle', 'battle-host', battleMouse],
+    ['存读档面板', 'ls', 'ls-host', lsInput],
+    ['菜单', 'menu', 'menu-host', menuInput],
+    ['店', 'shop', 'shop-host', shopInput],
+  ] as const) {
+    it(`${name}：舞台外按着键移到宿主上 —— 拖动一个都不送，松开之后的移动照常`, () => {
+      panel.current = p
+      render(<App />)
+      const el = screen.getByTestId(host)
+      stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+      fireEvent.mouseDown(document.body, { clientX: 1100, clientY: 20, button: 0, buttons: 1 })
+      fireEvent.mouseMove(el, { clientX: 20, clientY: 20, buttons: 1 })
+      fireEvent.mouseMove(el, { clientX: 30, clientY: 30, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 30, clientY: 30, button: 0, buttons: 0 })
+      fireEvent.mouseMove(el, { clientX: 40, clientY: 50, buttons: 0 })
+      expect(spy.mock.calls.map(([i]) => i)).toEqual([{ e: 'move', x: 40, y: 50 }])
+    })
+  }
+
+  it('场景上按着右键、翻到菜单再移动：菜单一条拖动都不收', () => {
+    panel.current = 'scene'
+    const { rerender } = render(<App />)
+    fireEvent.mouseDown(screen.getByTestId('scene-host'), { ...CENTER, button: 2, buttons: 2 })
+    panel.current = 'menu'
+    rerender(<App />)
+    const menuHost = screen.getByTestId('menu-host')
+    expect(menuHost).not.toHaveAttribute('hidden')
+    stubBox(menuHost, HALF)
+    fireEvent.mouseMove(menuHost, { ...CENTER, buttons: 2 })
+    expect(menuInput, '右键按在场景上，按着它的移动却送给了菜单').not.toHaveBeenCalled()
   })
 
   it('和弦两只键都在窗口外松开：回来头一下没按键的移动补上两次松手', () => {
