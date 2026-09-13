@@ -75,7 +75,9 @@ export interface BattleTicker {
   readonly sfx: readonly string[]
   /**
    * 战斗线程死于哪一发异常（xl-9go），没死是 `null`。死了之后这一场**一拍都不再推**，
-   * 输入也不收：原版那条线程已经退出了 `run()`，世界与画面都停在抛出来的那一刻。
+   * 世界与画面都停在抛出来的那一刻（原版那条线程已经退出了 `run()`）。
+   * ⚠️ 输入也不收 —— 这一半**不是**原版：原版的键鼠监听在事件线程上照样改状态
+   * （按 J 出胜利音效、涨经验）。没做、不是故意不复刻，见 xl-jkt。
    * 面板不切 —— 原版没人 `switchTo`，会话层读到的 `exitPanel` 一直是 `null`。
    */
   readonly died: BattleThreadDied | null
@@ -120,6 +122,8 @@ export function advanceBattle(
       // 只接原版真会死线程的那一类（见 `BattleThreadDied`）。死在这一拍：之前几拍照常算、
       // 这一拍抛出来之前改掉的字段照留（原版也是），之后的拍不再推。
       if (!(e instanceof BattleThreadDied)) throw e
+      // 这一拍抛出来之前已经出的声照样算（输入里、循环体前半段）。
+      heard.push(...ticker.world.music)
       return { ...ticker, carryMs: 0, pending: [], sfx: heard, died: e }
     }
     heard.push(...ticker.world.music)

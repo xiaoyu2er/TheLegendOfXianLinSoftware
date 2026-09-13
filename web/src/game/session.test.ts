@@ -19,7 +19,7 @@ import { replayBattle } from '../battle/replay'
 import { createBattleTicker } from '../battle/loop'
 import { REVIVE_HP_RATIO, createBattle } from '../battle/world'
 import { hitsEnemy } from '../battle/render/hitBox'
-import { commandButtons } from '../battle/step'
+import { BattleThreadDied, checkEnemyDead, commandButtons } from '../battle/step'
 import { battleClick } from './battleInput'
 import type { BattleInput } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
@@ -385,15 +385,15 @@ describe('场景 → 战斗 → 场景', () => {
     for (let i = 0; i < 500 && !world().gameOver.isDraw; i++) s = advanceSession(s, NO_INPUT, BATTLE_PUMP_MS)
     const w = world()
     expect(w.gameOver.isDraw).toBe(true)
-    // `Check.java:19-23` 逐句：第一槽的怪在全灭之前先被打死了。
+    // 第一槽的怪在全灭之前先被打死了：血置 0，交给 `Check.checkEnemyDead` 的移植去摘。
     const em1 = w.em1
     if (em1 === null) throw new Error('这份真值全灭时第一槽本来就有怪 —— 前提变了')
-    w.enemies.splice(w.enemies.indexOf(em1), 1)
-    w.em1 = null
-    w.progressBar.enemy1X = 0
+    em1.hp = 0
+    checkEnemyDead(w)
+    expect(w.em1).toBeNull()
 
     for (let i = 0; i < 500 && s.battle?.died == null; i++) s = advanceSession(s, NO_INPUT, BATTLE_PUMP_MS)
-    expect(s.battle?.died).toBeInstanceOf(Error)
+    expect(s.battle?.died).toBeInstanceOf(BattleThreadDied)
     const diedAt = { tick: world().tick, timeMs: s.scene.world.timeMs }
     for (let i = 0; i < 50; i++) s = advanceSession(s, NO_INPUT, BATTLE_PUMP_MS)
     expect(s.panel).toBe('battle')

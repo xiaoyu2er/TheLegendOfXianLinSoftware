@@ -7,7 +7,9 @@ import { BATTLE_TICK_MS, advanceBattle, createBattleTicker } from './loop'
 import type { BattleTicker } from './loop'
 import { replayBattle } from './replay'
 import { snapshotBattle } from './snapshot'
+import { BattleThreadDied, checkEnemyDead } from './step'
 import { readBattleTrace } from './trace'
+import type { BattleWorld } from './types'
 
 /**
  * 全灭时第一槽的怪已先被打死（xl-9go）：原版在 `GameOver.update()` 里读
@@ -40,12 +42,17 @@ function defeatWithEmptySlot1(): BattleTicker {
   const w = t.world
   expect(w.gameOver.isDraw).toBe(true)
   expect(w.gameOver.code).toBe(0)
-  const em1 = w.em1
-  if (em1 === null) throw new Error('这份真值全灭时第一槽本来就有怪 —— 前提变了')
-  w.enemies.splice(w.enemies.indexOf(em1), 1)
-  w.em1 = null
-  w.progressBar.enemy1X = 0
+  killSlot1(w)
   return t
+}
+
+/** 第一槽的怪在全灭之前先被打死：血置 0，交给 `Check.checkEnemyDead` 的移植去摘。 */
+function killSlot1(w: BattleWorld): void {
+  const em1 = w.em1
+  if (em1 === null) throw new Error('全灭时第一槽本来就有怪 —— 前提变了')
+  em1.hp = 0
+  checkEnemyDead(w)
+  if (w.em1 !== null || w.em2 === null) throw new Error('摘完应当只空第一槽 —— 前提变了')
 }
 
 /** 全灭图 64 拍对开满、再数 10 下：一共 73 次 update（见 `updateGameOver`）。多给一截。 */
@@ -54,8 +61,9 @@ const PAST_GAME_OVER_MS = 100 * BATTLE_TICK_MS
 describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
   it('原版的形状：run() 的 try 只包着 sleep，gameOver.update() 在 try 外；GameOver 读 em1.name 不判空', () => {
     const src = javaSource('src/battle/BattlePanel.java').replace(/\r/g, '')
-    const run = src.slice(src.indexOf('public void run()'))
-    expect(run.length).toBeGreaterThan(0)
+    const runAt = src.indexOf('public void run()')
+    expect(runAt).toBeGreaterThanOrEqual(0)
+    const run = src.slice(runAt)
     const tryAt = run.indexOf('try {')
     const catchAt = run.indexOf('} catch (Exception e) {')
     const updateAt = run.indexOf('gameOver.update();')
@@ -67,7 +75,8 @@ describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
       .map((l) => l.trim())
       .filter((l) => l !== '' && !l.startsWith('//'))
     expect(body).toEqual(['Clock.sleep(100);'])
-    // gameOver.update() 在那个 catch 之后，而 run() 里只有这一个 catch。
+    // gameOver.update() 在那个 catch 之后；从 run() 到文件末尾只有这一个 catch
+    // （run() 是最后一个方法，所以这等于 run() 里只有这一个）。
     expect(updateAt).toBeGreaterThan(catchAt)
     expect(run.split('catch').length - 1).toBe(1)
 
@@ -77,7 +86,7 @@ describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
 
   it('不抛；死因记在推进器上，面板哪儿都不去', () => {
     const t = advanceBattle(defeatWithEmptySlot1(), [], PAST_GAME_OVER_MS)
-    expect(t.died).toBeInstanceOf(Error)
+    expect(t.died).toBeInstanceOf(BattleThreadDied)
     expect(t.died?.message).toMatch(/GameOver/)
     expect(t.world.exitPanel).toBeNull()
     // 死在数到 10 的那一下：之前那几句（code++）已经落了，之后那几句一句没跑。
@@ -85,6 +94,8 @@ describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
     expect(t.world.gameOver.isStop).toBe(false)
   })
 
+  // ⚠️ 「输入也不收」**不是**原版：原版的键鼠监听在 Swing 事件线程上，线程死了照样改状态
+  // （按 J 还会出胜利音效、涨经验）。没做、不是故意不复刻 —— 见 xl-jkt。
   it('死了之后再推：世界、画面状态、拍号一个字都不动，输入也不收', () => {
     const dead = advanceBattle(defeatWithEmptySlot1(), [], PAST_GAME_OVER_MS)
     const world = snapshotBattle(dead.world)
