@@ -117,6 +117,17 @@ describe('上屏 keep 的渲染器层判据', () => {
     expect(v.verdict).toContain('叠满处')
   })
 
+  it('叠满处逐位比、不给容差：只有一个通道差 1 也红', () => {
+    // 两轮是同一台浏览器画同一份清单，基线实测差 0 个；给了容差，一层轻微的滤镜就混过去了。
+    const java = javaMixed()
+    const keep = over(java)
+    const i = 300 * 4 // 叠满那一段里的一个像素
+    keep.rgba[i] = keep.rgba[i]! === 0 ? 1 : keep.rgba[i]! - 1
+    const f = presentKeepFrame(0, java, keep, dropAlpha(java), T)
+    expect(f.opaqueDiffering).toBe(1)
+    expect(judgePresentKeep([f]).ok).toBe(false)
+  })
+
   it('一个叠满像素都没有：叠满那一半判不出，当场红', () => {
     const java = javaRamp()
     java.rgba[255 * 4 + 3] = 254
