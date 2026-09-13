@@ -401,11 +401,11 @@ const NO_SFX: readonly string[] = []
  * - **答题记录**（`SelectEvent.mapName` / `answeredRecorder` 两张 static 表）：落点在场景世界的
  *   `recorder`，同样随会话没了 —— `recorder`，由调用方交给新世界（`createWorld` 第三个参数）。
  *
- * **不带**、归 xl-9rv 裁的：三个人的等级 / 血 / 经验（web 的「起」故意回出厂状态，xl-lly 的
- * 例外）、身上的装备（四项加成算在属性上，与等级绑在一起：只带装备不带属性，弃用那一下会把加成
- * 扣成负的）、剧情三元组 `currentScript` / `isLoad` / 任务文本（原版也活过「起」，于是「新局」的
- * 剧情接着上一局走；这一层的新世界回到开机值），以及菜单停在哪一页。JVM 读数与判据见
- * `game/loadResidue.test.ts` 最后一组。
+ * **不带**（xl-9rv 裁定沿用 xl-lly 的例外）：三个人的等级 / 血 / 经验（web 的「起」故意回出厂状态）、
+ * 身上的装备（四项加成算在属性上，与等级绑在一起：只带装备不带属性，弃用那一下会把加成扣成负的）、
+ * 剧情三元组 `currentScript` / `isLoad` / 任务文本（原版也活过「起」，于是「新局」的剧情接着上一局走；
+ * 这一层的新世界回到开机值），以及菜单停在哪一页（这一样无判据）。JVM 读数见 `game/loadResidue.test.ts`
+ * 最后一组，判据在 `game/useGameNewGameAfterLoad.test.tsx`。
  *
  * **也不带、而且上面那张名单漏了的**：两家店（`Session.shop`）。原版 `ShopPanel` /
  * `EquipmentShopPanel` 开机建一次、存货从此不变，活过「起」；这里会话一重建它就回到

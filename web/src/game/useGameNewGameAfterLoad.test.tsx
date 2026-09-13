@@ -35,7 +35,7 @@ import { useGame } from './useGame'
  * |---|---|---|
  * | 等级 / 血 / 经验 | 出厂 | xl-lly 的例外本身 |
  * | 身上的装备 | 默认 | 四项加成算在属性上，与等级绑着：只带装备不带属性，弃用那一下扣成负的 |
- * | 剧情三元组、`isLoad` | 开机值 | 队伍回了出厂，剧情却接着存档里的「比武第二阶段」走，是一局拼起来的游戏 |
+ * | 剧情三元组、`isLoad`、任务文本 | 开机值 | 队伍回了出厂，剧情却接着存档里的「比武第二阶段」走，是一局拼起来的游戏 |
  * | 钱 / 药 / 装备库存 / 答题记录 | **带**（照抄原版） | xl-i06.11 已复刻；这里顺带把 `useGame` 那根接线也钉住 |
  *
  * **判据的样子**：开机在宿舍先存一份（槽 2，出厂基线）→ 拨到食堂 → 读 存档0 → 读完立刻存一份
@@ -257,6 +257,10 @@ describe('读档 → 起（xl-9rv）', () => {
 
     expect(newWorld.isLoad, 'isLoad 活过了「起」').toBe(false)
 
+    // 任务文本：宿舍没有 Task 段，新世界是 null；存档0 读进的场景有一句。
+    expect(prev.summary.task, '前提：上一局的任务文本与开机相同').not.toBe(boot.summary.task)
+    expect(next.summary.task, '任务文本活过了「起」').toBe(boot.summary.task)
+
     // ——— 带进新局的那几样：槽 1 像槽 0，而槽 0 与槽 2 在这一样上确实不同 ———
     expect(prev.coins, '前提：存档0 的钱与出厂相同').not.toBe(boot.coins)
     expect(next.coins).toBe(prev.coins)
@@ -267,5 +271,7 @@ describe('读档 → 起（xl-9rv）', () => {
     // 没有答题段，所以新局里有食堂那一条，只可能是 `useGame` 把 `carry.recorder` 交给了新世界。
     expect(prev.neverReadBack.questionMaps, '前提：上一局的答题表与开机相同').not.toEqual(boot.neverReadBack.questionMaps)
     expect(next.neverReadBack).toEqual(prev.neverReadBack)
+    // ⚠️ `neverReadBack` 里的装备库存**这一场观测不到**：上一局与开机都是全 0（没买过东西），篡改
+    // 「库存不带」这条是绿的。库存的判据在 `loadResidue.test.ts`「装备库存：新局的全局背包是上一局那份」。
   })
 })
