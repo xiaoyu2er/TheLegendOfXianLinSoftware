@@ -22,6 +22,11 @@ import type { Bitmap } from './png'
  *   取 2 倍：一个落在「扔 alpha」预测容差之内的像素，离「盖底色」预测必然超过容差。
  *
  * 所以通过的条件是：可分像素 > 0，且半透明像素里没有一个离「盖底色」预测超过容差。
+ *
+ * **覆盖边界**：判的只是缓冲没叠满的那几帧里的那些像素 —— battle-script3 按剧本自报的
+ * 25 拍取帧，45 帧里只有第 0 帧有（2026-09-13 实测 3195 个）。keep 那一支若连叠满处都
+ * 画错，这里看不见，'fresh' 那一轮也看不见（它走另一支）。`--skip-capture` 下判的是
+ * 上一轮留在 `web-keep/` 的截图，与 `web/` 那一侧同样的前提。
  */
 
 /**
@@ -30,6 +35,11 @@ import type { Bitmap } from './png'
  * 浏览器、多截一轮图；可分像素为 0 的剧本登记进来会当场红，登记不了恒绿的。
  */
 export const PRESENT_KEEP_SCRIPTS: readonly string[] = ['battle-script3']
+
+/** `0xRRGGBB` 拆成三个通道。 */
+export function rgbOf(color: number): [number, number, number] {
+  return [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff]
+}
 
 /** 原版上屏的一个通道：非预乘 `c`、alpha `a` 以 SrcOver 盖在不透明底色 `bg` 上。 */
 export function javaOver(c: number, a: number, bg: number): number {
@@ -58,7 +68,7 @@ export function presentKeepFrame(
   if (java.width !== web.width || java.height !== web.height) {
     throw new Error(`第 ${tick} 帧两端尺寸不同：${java.width}×${java.height} vs ${web.width}×${web.height}`)
   }
-  const bg = [(background >> 16) & 0xff, (background >> 8) & 0xff, background & 0xff]
+  const bg = rgbOf(background)
   let translucent = 0
   let separable = 0
   let differing = 0

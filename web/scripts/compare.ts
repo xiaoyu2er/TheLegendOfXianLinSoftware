@@ -32,6 +32,7 @@ import { firstLedgerDivergence, judgeLedger } from '../src/compare/ledger'
 import type { LedgerEntry, LedgerVerdict } from '../src/compare/ledger'
 import { PRESENT_KEEP_SCRIPTS, judgePresentKeep, presentKeepFrame } from '../src/compare/presentKeep'
 import type { PresentVerdict } from '../src/compare/presentKeep'
+import type { BufferMode } from '../src/battle/render/bufferPlan'
 import { launch } from './cdp'
 import type { Browser } from './cdp'
 
@@ -126,17 +127,19 @@ async function main(): Promise<void> {
   if (!skipCapture) {
     for (const m of keepTargets) await capture(root, [m], PRESENT_KEEP_SIDE, null, 'keep')
   }
+  // 登记了而这一趟没判到的：点了名（或全量跑）却没判到算失败 —— 装不出来、被挪走时
+  // keep 那一支一行不打，与「判过、通过」同形。没点名的只报一句「这一趟未判」。
+  const unjudged = PRESENT_KEEP_SCRIPTS.filter((n) => !keepTargets.some((m) => m.script === n))
+  const missed = unjudged.filter((n) => wanted.includes(n))
 
   const reports = comparable.map((m) => compareOne(root, m, threshold, tolerance))
   report(reports, blocked, threshold, tolerance)
   const presents = keepTargets.map((m) => comparePresentKeep(root, m, tolerance))
-  reportPresents(presents)
+  reportPresents(presents, unjudged, missed)
 
   const selfCheckOk = selfCheck ? await runSelfCheck(root, comparable, tolerance) : true
-  const failed = [
-    ...reports.filter((r) => !r.ok),
-    ...presents.filter((p) => !p.ok).map((p) => ({ name: `${p.name}（上屏 keep）` })),
-  ]
+  const failed = reports.filter((r) => !r.ok)
+  const failedPresents = [...presents.filter((p) => !p.ok).map((p) => p.name), ...missed]
   writeFileSync(
     join(root, 'report.json'),
     `${JSON.stringify(
@@ -157,13 +160,17 @@ async function main(): Promise<void> {
         })),
         reports,
         presents,
+        // 上屏 keep 那一支没过的剧本（含登记了、点了名却没判到的）。`failed` 只管整屏那一套。
+        failedPresents,
       },
       null,
       2,
     )}\n`,
     'utf8',
   )
-  process.exit(failed.length === 0 && selfCheckOk && blocked.length === 0 ? 0 : 1)
+  process.exit(
+    failed.length === 0 && failedPresents.length === 0 && selfCheckOk && blocked.length === 0 ? 0 : 1,
+  )
 }
 
 // ================= 取图 =================
@@ -173,7 +180,7 @@ async function capture(
   manifests: readonly Manifest[],
   side: string,
   brk: { fromTick: number; heroDx: number } | null,
-  present: 'keep' | null = null,
+  present: BufferMode | null = null,
 ): Promise<void> {
   const server = await createServer({ logLevel: 'warn', server: { port: 0 } })
   await server.listen()
@@ -229,7 +236,7 @@ async function capture(
  * 而取图页一个状态字段都不读 —— 对话与旁白都由它自己推进（xl-9bd.10 /
  * xl-9bd.11，口子在 xl-4rx 关上）。
  */
-function slimTrace(json: string, present: 'keep' | null): string {
+function slimTrace(json: string, present: BufferMode | null): string {
   const trace = JSON.parse(json) as {
     driver: string
     script: FixtureHeader['script']
@@ -449,11 +456,21 @@ function comparePresentKeep(root: string, m: Manifest, tolerance: number): Prese
   return { name: m.script, ...judgePresentKeep(frames) }
 }
 
-function reportPresents(presents: readonly PresentReport[]): void {
-  if (presents.length === 0) return
+function reportPresents(
+  presents: readonly PresentReport[],
+  unjudged: readonly string[],
+  missed: readonly string[],
+): void {
   process.stdout.write(`\n上屏 keep 那一支（原版缓冲盖在 Panel.background 上，只比没叠满的像素）：\n`)
   for (const p of presents) {
     process.stdout.write(`  ${p.ok ? '通过' : '失败'}  ${p.name.padEnd(12)} ${p.verdict}\n`)
+  }
+  for (const n of unjudged) {
+    process.stdout.write(
+      missed.includes(n)
+        ? `  失败  ${n.padEnd(12)} 登记了、这一趟也点了名，却没判到（装配不出来？）—— keep 那一支一个像素都没比\n`
+        : `  未判  ${n.padEnd(12)} 这一趟没选它\n`,
+    )
   }
 }
 

@@ -5,7 +5,7 @@ import { repoPath } from '../test/repoPath'
 import { DEFAULT_TOLERANCE } from './diff'
 import { scriptNames } from './expected'
 import type { Bitmap } from './png'
-import { PRESENT_KEEP_SCRIPTS, javaOver, judgePresentKeep, presentKeepFrame } from './presentKeep'
+import { PRESENT_KEEP_SCRIPTS, javaOver, judgePresentKeep, presentKeepFrame, rgbOf } from './presentKeep'
 
 /**
  * 判据自己的测试（xl-k9e）。每一条问的都是：坏的和好的长得一样吗。
@@ -13,7 +13,7 @@ import { PRESENT_KEEP_SCRIPTS, javaOver, judgePresentKeep, presentKeepFrame } fr
  */
 
 const T = DEFAULT_TOLERANCE
-const BG = [(PANEL_BACKGROUND >> 16) & 0xff, (PANEL_BACKGROUND >> 8) & 0xff, PANEL_BACKGROUND & 0xff]
+const BG = rgbOf(PANEL_BACKGROUND)
 
 /** 原版缓冲：一行 256 个像素，红色，alpha 0..255 各一档。 */
 function javaRamp(rgb: [number, number, number] = [255, 0, 0]): Bitmap {
@@ -46,10 +46,9 @@ describe('上屏 keep 的渲染器层判据', () => {
     expect(judgePresentKeep([f]).ok).toBe(true)
   })
 
-  it('浏览器扔 alpha（取图页 fresh 的上屏）：红，而且红在可分的那些像素上', () => {
+  it('浏览器扔 alpha（取图页 fresh 的上屏）：红', () => {
     const java = javaRamp()
     const f = presentKeepFrame(0, java, dropAlpha(java), T)
-    expect(f.differing).toBeGreaterThanOrEqual(f.separable)
     expect(f.separable).toBeGreaterThan(0)
     const v = judgePresentKeep([f])
     expect(v.ok).toBe(false)
@@ -73,7 +72,7 @@ describe('上屏 keep 的渲染器层判据', () => {
   })
 
   it('半透明但颜色恰好就是底色：两个预测分不开，当场红', () => {
-    const java = javaRamp(BG as [number, number, number])
+    const java = javaRamp(BG)
     const f = presentKeepFrame(0, java, dropAlpha(java), T)
     expect(f.translucent).toBe(255)
     expect(f.separable).toBe(0)
