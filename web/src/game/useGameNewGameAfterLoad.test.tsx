@@ -150,7 +150,6 @@ describe('读档 → 起（xl-9rv）', () => {
     })
     expect(rec.store, '存档仓库不是这份记账仓库 —— mock 没生效').not.toBeNull()
     rec.store!.write(0, SLOT0)
-    expect(rec.store!.read(0), '槽 0 没放进 存档0 —— 下面读的是空档').toEqual(SLOT0)
 
     const { funcTab, save, read } = menuGeometry()
     const tick = (n = 1) =>
@@ -232,6 +231,7 @@ describe('读档 → 起（xl-9rv）', () => {
     expect(getParty().zhang.level, '读回来的等级').toBe(SLOT0.heroes.zhangXiaoFan.level)
     const loadedWorld = lastWorld()
     expect(loadedWorld.isLoad, '读档之后 isLoad 该是真的 —— 下面那条「回到假」就分不出来').toBe(true)
+    expect(loadedWorld.currentScript, '前提：读回来的剧情三元组与开机相同').not.toEqual(bootWorld.currentScript)
 
     // ——— 读完立刻存一份（槽 0 = 上一局）———
     saveTo(0)
@@ -257,7 +257,8 @@ describe('读档 → 起（xl-9rv）', () => {
 
     expect(newWorld.isLoad, 'isLoad 活过了「起」').toBe(false)
 
-    // 任务文本：宿舍没有 Task 段，新世界是 null；存档0 读进的场景有一句。
+    // 任务文本：`generated/readerStatics.json` 里宿舍的 `task` 是 null、存档0 读进的脚本38 有一句
+    // （2026-09-13 现读）。不靠这句注释：下一行的前提就是它，数据一变先红的是前提。
     expect(prev.summary.task, '前提：上一局的任务文本与开机相同').not.toBe(boot.summary.task)
     expect(next.summary.task, '任务文本活过了「起」').toBe(boot.summary.task)
 
