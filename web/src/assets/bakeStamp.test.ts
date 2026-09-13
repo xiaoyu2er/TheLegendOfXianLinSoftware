@@ -117,11 +117,14 @@ describe('烘焙指纹', () => {
     { dir: 'src', recursive: true, keep: (f) => f.endsWith('.java') },
     { dir: END_PICTURE_DIR, recursive: false, keep: (f) => !f.startsWith('.') },
     { dir: EQUIP_PICTURE_ROOT, recursive: true, keep: isBakedEquipPicture },
-    // 药品介绍图那个子目录也在这里面（`shopAssetOwner` 判它 'baked'）。
+    // 装备图与药品介绍图两个子目录 `shopAssetOwner` 判 'elsewhere'，不在这一行里，
+    // 各自单列（药品那一行漏过一次：篡改抹掉它一条，这张表照绿）。
     { dir: SHOP_ROOT, recursive: true, keep: (f) => shopAssetOwner(f) === 'baked' },
+    // `bake.ts` 的 `DRUG_PICTURE_DIR`，`readdirSync` 不过滤（没导出，理由同 `src`）。
+    { dir: 'sources/Shop/药品/回复类', recursive: false, keep: () => true },
   ]
 
-  it.each(DIR_SOURCES)('$dir/ 下烘焙器会读的每一个文件都在输入名单里，反之亦然', ({ dir, recursive, keep }) => {
+  it.each(DIR_SOURCES.map((s) => [s.dir, s] as const))('%s/ 下烘焙器会读的每一个文件都在输入名单里，反之亦然', (_, { dir, recursive, keep }) => {
     const root = repoPath(dir)
     const onDisk = (recursive ? listFiles(root) : readdirSync(root)).filter(keep).map((f) => `${dir}/${f}`)
     expect(onDisk.length, `${dir}/ 下一个烘焙器会读的文件都没扫到`).toBeGreaterThan(0)
