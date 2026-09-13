@@ -144,11 +144,16 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
   useEffect(() => () => grabRef.current?.(), [])
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!handlers) return
+    const own = BUTTON_BITS[event.button] ?? 0
+    const othersHeld = (event.buttons & ~own) !== 0
+    // 没 grab、而这一下之外还按着别的键（舞台外按下拖进来的）：`isMouseGrab` 为真，目标还是那个 null
+    // —— 按下不派、不起 grab，之后的拖动与松手也就一个都不收（xl-m9q，与 `App.tsx` 的 `grabbedElsewhere`
+    // 同一判法）。⚠️ 未验证：全松开那一下 JDK 会重设目标并派松手，原版收不收得到要看平台把它送给谁。
+    if (grabRef.current === null && othersHeld) return
     // 拦截还挂着、而这一下之外没按着别的键：上一次的松手丢在窗口外了，回来没动就又按下。
     // 先补上那一下松手（落点是见到它的这一刻），再送这次按下 —— 与 `App.tsx` 的 `grabRelease`
     // 里 `onPress` 同一个判法（按下看的是**别的**键，`isMouseGrab`）。
-    const own = BUTTON_BITS[event.button] ?? 0
-    if (grabRef.current !== null && (event.buttons & ~own) === 0) {
+    if (grabRef.current !== null && !othersHeld) {
       grabRef.current()
       handlers.release(buttonOf(event.target))
     }
