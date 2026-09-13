@@ -30,6 +30,9 @@ import { repoPath } from '../src/test/repoPath'
 import { judgeWhole } from '../src/compare/verdict'
 import { firstLedgerDivergence, judgeLedger } from '../src/compare/ledger'
 import type { LedgerEntry, LedgerVerdict } from '../src/compare/ledger'
+import { PRESENT_KEEP_SCRIPTS, judgePresentKeep, presentKeepFrame } from '../src/compare/presentKeep'
+import type { PresentVerdict } from '../src/compare/presentKeep'
+import type { BufferMode } from '../src/battle/render/bufferPlan'
 import { launch } from './cdp'
 import type { Browser } from './cdp'
 
@@ -118,11 +121,25 @@ async function main(): Promise<void> {
 
   if (!skipCapture && comparable.length > 0) await capture(root, comparable, 'web', null)
 
+  // 上屏 'keep' 那一支（xl-k9e）：登记的剧本再单独回放一轮。**一条一个浏览器** ——
+  // 渲染器在页内跨剧本复用，同一页里前面打过一场，'keep' 的缓冲就不再是新的。
+  const keepTargets = comparable.filter((m) => PRESENT_KEEP_SCRIPTS.includes(m.script))
+  if (!skipCapture) {
+    for (const m of keepTargets) await capture(root, [m], PRESENT_KEEP_SIDE, null, 'keep')
+  }
+  // 登记了而这一趟没判到的：点了名（或全量跑）却没判到算失败 —— 装不出来、被挪走时
+  // keep 那一支一行不打，与「判过、通过」同形。没点名的只报一句「这一趟未判」。
+  const unjudged = PRESENT_KEEP_SCRIPTS.filter((n) => !keepTargets.some((m) => m.script === n))
+  const missed = unjudged.filter((n) => wanted.includes(n))
+
   const reports = comparable.map((m) => compareOne(root, m, threshold, tolerance))
   report(reports, blocked, threshold, tolerance)
+  const presents = keepTargets.map((m) => comparePresentKeep(root, m, tolerance))
+  reportPresents(presents, unjudged, missed)
 
   const selfCheckOk = selfCheck ? await runSelfCheck(root, comparable, tolerance) : true
   const failed = reports.filter((r) => !r.ok)
+  const failedPresents = [...presents.filter((p) => !p.ok).map((p) => p.name), ...missed]
   writeFileSync(
     join(root, 'report.json'),
     `${JSON.stringify(
@@ -142,13 +159,18 @@ async function main(): Promise<void> {
           issue: s.expectation.issue ?? null,
         })),
         reports,
+        presents,
+        // 上屏 keep 那一支没过的剧本（含登记了、点了名却没判到的）。`failed` 只管整屏那一套。
+        failedPresents,
       },
       null,
       2,
     )}\n`,
     'utf8',
   )
-  process.exit(failed.length === 0 && selfCheckOk && blocked.length === 0 ? 0 : 1)
+  process.exit(
+    failed.length === 0 && failedPresents.length === 0 && selfCheckOk && blocked.length === 0 ? 0 : 1,
+  )
 }
 
 // ================= 取图 =================
@@ -158,6 +180,7 @@ async function capture(
   manifests: readonly Manifest[],
   side: string,
   brk: { fromTick: number; heroDx: number } | null,
+  present: BufferMode | null = null,
 ): Promise<void> {
   const server = await createServer({ logLevel: 'warn', server: { port: 0 } })
   await server.listen()
@@ -179,7 +202,7 @@ async function capture(
         `window.__xlBreak = ${brk === null ? 'undefined' : JSON.stringify(brk)}`,
       )
       const loaded = await browser.evaluate<{ scene: string; tickCount: number }>(
-        `window.__xlReplay.load(${JSON.stringify(slimTrace(trace))})`,
+        `window.__xlReplay.load(${JSON.stringify(slimTrace(trace, present))})`,
       )
       // 两端跑的必须是同一份剧本的同样长度。对不上就不是"差异大"，是接错了。
       if (loaded.tickCount !== m.tickCount) {
@@ -213,7 +236,7 @@ async function capture(
  * 而取图页一个状态字段都不读 —— 对话与旁白都由它自己推进（xl-9bd.10 /
  * xl-9bd.11，口子在 xl-4rx 关上）。
  */
-function slimTrace(json: string): string {
+function slimTrace(json: string, present: BufferMode | null): string {
   const trace = JSON.parse(json) as {
     driver: string
     script: FixtureHeader['script']
@@ -252,6 +275,8 @@ function slimTrace(json: string): string {
     // 在这里（Node）按状态层判据用的同一个读取器解好再送进去，理由见
     // `src/compare/saveFixtures.ts`。别的剧本得到 `undefined`，键整个去掉，字节与从前相同。
     fixture: saveFixtureOf(trace),
+    // 战斗上屏走哪一支（xl-k9e）：只有上屏 keep 那一轮带，别的轮得到 `undefined`、键整个去掉。
+    present: present ?? undefined,
   })
 }
 
@@ -404,6 +429,49 @@ function compareOne(
   }
 
   return { name: m.script, expectation, sequence, ok, verdict, regions, exact, ledger }
+}
+
+/** 上屏 'keep' 那一轮的截图目录（`<剧本>/` 下）。 */
+const PRESENT_KEEP_SIDE = 'web-keep'
+
+interface PresentReport extends PresentVerdict {
+  readonly name: string
+}
+
+/**
+ * 上屏 'keep' 那一支对原版上屏（xl-k9e）：原版导出的非预乘 RGBA 缓冲在这边盖到
+ * `Panel.background` 上当预测，只比缓冲没叠满的像素。判据在 `src/compare/presentKeep.ts`。
+ */
+function comparePresentKeep(root: string, m: Manifest, tolerance: number): PresentReport {
+  const javaDir = join(root, m.script, 'java')
+  const keepDir = join(root, m.script, PRESENT_KEEP_SIDE)
+  const frames = m.ticks.map((t) =>
+    presentKeepFrame(
+      t,
+      decodePng(readFrame(javaDir, t, m.script, '原版')),
+      decodePng(readFrame(keepDir, t, m.script, 'Web（keep）')),
+      tolerance,
+    ),
+  )
+  return { name: m.script, ...judgePresentKeep(frames) }
+}
+
+function reportPresents(
+  presents: readonly PresentReport[],
+  unjudged: readonly string[],
+  missed: readonly string[],
+): void {
+  process.stdout.write(`\n上屏 keep 那一支（原版缓冲盖在 Panel.background 上，只比没叠满的像素）：\n`)
+  for (const p of presents) {
+    process.stdout.write(`  ${p.ok ? '通过' : '失败'}  ${p.name.padEnd(12)} ${p.verdict}\n`)
+  }
+  for (const n of unjudged) {
+    process.stdout.write(
+      missed.includes(n)
+        ? `  失败  ${n.padEnd(12)} 登记了、这一趟也点了名，却没判到（装配不出来？）—— keep 那一支一个像素都没比\n`
+        : `  未判  ${n.padEnd(12)} 这一趟没选它\n`,
+    )
+  }
 }
 
 /** 取图页在 `dir` 里留下的逐帧账本；没交的帧读成 `undefined`（JSON 里是 null）。 */

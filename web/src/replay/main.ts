@@ -722,7 +722,14 @@ const battleAssembly = createEventDrivenAssembly({
       return size
     })
     // 取图页每份剧本一块新面板，缓冲当新建的（xl-pgq）；游戏侧传 'keep'。
-    await renderer.load(battleTextureIds(world), 'fresh')
+    // 比对器验上屏 'keep' 那一支时才在载荷里带 `present`（xl-k9e），见 `compare/presentKeep.ts`。
+    // 渲染器在页内跨剧本复用，所以那一轮单独开一个浏览器 —— 前面打过一场，缓冲就不是新的。
+    const { present } = parsed as BattleTrace & { readonly present?: unknown }
+    // 认不出的值是硬失败，不猜：拼错成 'kep' 而悄悄按 'fresh' 画，keep 那一轮就在比另一支。
+    if (present !== undefined && present !== 'keep' && present !== 'fresh') {
+      throw new Error(`载荷里的 present 只认 'keep' / 'fresh'，收到 ${JSON.stringify(present)}`)
+    }
+    await renderer.load(battleTextureIds(world), present ?? 'fresh')
     // **这里不画**（xl-84z）：战斗渲染器画在一张不清屏的持久缓冲上，多画这一帧
     // 就等于原版多 paint 了一次 —— 原版第 0 帧的边缘 alpha 实测正好是「背景
     // 只合成过一次」的值。第一次画在 seek(0) 里。
