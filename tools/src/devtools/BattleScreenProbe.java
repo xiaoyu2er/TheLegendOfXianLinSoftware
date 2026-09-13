@@ -69,6 +69,21 @@ import battle.BattlePanel;
  *   $J capture tools/traces/scripts/battle-script3.json 8 /tmp/screen
  *   $J diff image/背景图/校园小道.png /tmp/screen 8 8
  * </pre>
+ *
+ * <h2>读数（2026-09-12，macOS Aqua，三轮）</h2>
+ *
+ * 边上超容差：第 0 帧 1711 / 1708 / 1712（最大差 78 / 78 / 79），第 1 帧 153 / 153 / 154
+ * （32 / 33 / 33），第 2 帧 58 / 57 / 58（13 / 14 / 14），第 3 帧起 0。
+ * 第 0 帧下面是内容面板底色：候选可分的 485 个边像素，{@code Panel.background} 命中 485、
+ * 品红 0、黑 0。第 1 帧起两个候选可分的像素 0 个，判不出。
+ *
+ * 篡改：替身改画 {@link #opaque}（= 扔 alpha），8 帧边上超容差全 0；内容面板
+ * {@code setBackground(UNDERLAY)}，命中挪到品红 485、第 0 帧涨到 2755（最大 94），
+ * 而第 1 / 2 帧读数不变 —— 第 1 帧起下面不跟着内容面板底色走。
+ *
+ * 「已叠满处」偶尔在左下角 (0,629)-(10,639) 差出 32 个像素（五轮里两轮）：品红面板
+ * 的截图里本来就有 1090 个不是品红的像素、包围盒贴着四个角，推断是窗口圆角露出了
+ * 后面在变的东西，与缓冲无关（未核实）。
  */
 public final class BattleScreenProbe {
 
