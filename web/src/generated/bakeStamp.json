@@ -3840,6 +3840,7 @@
     "tools/traces/out/shop-trade.trace.json": "ca763f2b14a423b133d0f4b552860514c863c503100f37925ea6bc249f8febe3",
     "tools/traces/out/start-about-again.trace.json": "50997c8de00702df07e07f60edbf56b89502aafe3e2487579c9ba7b5a5945b64",
     "tools/traces/out/start-about.trace.json": "82cfeb8eef6ee7150e1c91e998b72135138e744e01a8df5896cdb04cce0c999d",
+    "tools/traces/out/start-drag-out.trace.json": "753812a4559195f73749599569cb68c7de93f971a31a477f1eb8e75f78d5254c",
     "tools/traces/out/start-hover-end.trace.json": "3ac621c39fd61a2527fc5988dd6295c0cba50add53c007c6213c49120b1e0865",
     "tools/traces/out/start-newgame.trace.json": "bd9ee0dc848f0b54bebde10a6eba293b22fa0ec15a8a78afd7c06b7a2981fe81"
   }

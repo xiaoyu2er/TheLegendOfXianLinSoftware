@@ -65,13 +65,16 @@
 | `web/src/stage/Stage.tsx:63` | 元素 | 工程 | overlay 容器（里面每一样各有自己的一行） |
 | `web/src/stage/useFullscreen.ts:15,19,21,22,30,31,33` | 全屏 / 全局 / 事件 | 已登记 `ADR-0001#stage-scales-to-window` | 可全屏 |
 | `web/src/stage/useViewportSize.ts:32,33,38,39` | 视口 / 事件 / 全局 | 已登记 `ADR-0001#stage-scales-to-window` | 随窗口缩放 |
-| `web/src/start/StartPanel.tsx:153,242` | 无障碍 / 元素 | 已登记 `ADR-0001#screen-reader-text` | 按钮 `aria-label`、「关于我们」的 `alt`（**xl-03x.22 补登**） |
-| `web/src/start/StartPanel.tsx:155` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 「结」禁用的理由 |
-| `web/src/start/StartPanel.tsx:165,166,167,202` | 事件 / 元素 | 对应 `src/start/StartPanel.java:202` | `mouseMoved`；按着键的移动 / 移入是 `mouseDragged`（`:211`，只记坐标、不跑 `isMoveIn`），不碰悬停（xl-vi8） |
-| `web/src/start/StartPanel.tsx:172,173` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 键盘焦点 = 悬停 |
-| `web/src/start/StartPanel.tsx:174` | 事件 | 对应 `src/start/StartPanel.java:192` | 原版在**松手**时响应（`mouseReleased` → `isRelesedButton`），`click` 也在松手时触发。用 `onClick` 还为了「键盘也按得动」—— 真浏览器里曾经按不动，`xl-fqm` 修了 |
-| `web/src/start/StartPanel.tsx:186,195,210,216,226,252,261,277` | 无障碍 / 元素 | 工程 | 装饰图的 `alt=""`（读屏跳过） |
-| `web/src/start/useStartPanel.ts:113,115,116` | 时钟 / 定时 | 对应 `src/start/StartPanel.java:153` | 100 ms 一拍，按真实流逝补拍 |
+| `web/src/start/StartPanel.tsx:156,157,161,162` | 事件 / 全局 | 对应 `src/start/StartPanel.java:192` | `mouseReleased`：面板上按下那一刻把松手挂到 window 上（Swing 的 mouse grab），落点不在任何一颗按钮上照样送 —— `setButton()` 不看坐标，拖出框松手照样触发；`buttons` 为 0 才解除，丢了 `mouseup`（窗口外 / 禁用的「结」上）由下一次没按键的移动补上（xl-4zo）；`start/StartPanel.test.tsx` |
+| `web/src/start/StartPanel.tsx:203,297` | 无障碍 / 元素 | 已登记 `ADR-0001#screen-reader-text` | 按钮 `aria-label`、「关于我们」的 `alt`（**xl-03x.22 补登**） |
+| `web/src/start/StartPanel.tsx:205` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 「结」禁用的理由 |
+| `web/src/start/StartPanel.tsx:215,216,217` | 事件 | 对应 `src/start/StartPanel.java:202` | `mouseMoved`；按着键的移动 / 移入 / 移出是 `mouseDragged`（`:211`，只记坐标、不跑 `isMoveIn`），不碰悬停（xl-vi8；移出 xl-4zo） |
+| `web/src/start/StartPanel.tsx:220` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 鼠标按下不给焦点：焦点 = 悬停那条加法只留给键盘，不然它会把 `isPressedButton` 刚停掉的高亮又转起来（xl-4zo） |
+| `web/src/start/StartPanel.tsx:225,226` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 键盘焦点 = 悬停 |
+| `web/src/start/StartPanel.tsx:229` | 事件 | 已登记 `ADR-0001#start-button-hitbox-dom` | 只收键盘的激活（`detail` 为 0）：原版标题页没有键盘输入，这一条是「真 `<button>`、回车按得动」那一半（真浏览器里曾经按不动，`xl-fqm` 修了）。鼠标不走它 —— 按下 / 松手分两下送（xl-4zo） |
+| `web/src/start/StartPanel.tsx:241,250,265,271,281,307,316,332` | 无障碍 / 元素 | 工程 | 装饰图的 `alt=""`（读屏跳过） |
+| `web/src/start/StartPanel.tsx:257` | 元素 / 事件 | 对应 `src/start/StartPanel.java:185` | `mousePressed`：面板上任何一处按下（落在空处按 `null`，只把图换回常态）；同一行的 `onMouseMove` 是自绘鼠标的坐标（`mouseMoved` 头一句 `currentX = ex.getX()`） |
+| `web/src/start/useStartPanel.ts:133,135,136` | 时钟 / 定时 | 对应 `src/start/StartPanel.java:153` | 100 ms 一拍，按真实流逝补拍 |
 | `web/src/ui/DialogueBox.tsx:50,53` | 元素 / 无障碍 | 已登记 `ADR-0001#screen-reader-text` | `aria-live` + 视觉隐藏的整句（**xl-03x.22 补登**） |
 | `web/src/ui/DialogueBox.tsx:77,124` | 无障碍 | 工程 | 头像与等待图标的 `alt=""` |
 
