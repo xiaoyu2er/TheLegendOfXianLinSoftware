@@ -114,6 +114,23 @@ function buttonOf(target: EventTarget | null): StartButtonKey | null {
   return key !== undefined && START_BUTTON_WIRING[key].enabled ? key : null
 }
 
+/**
+ * 客户端坐标 → 舞台**逻辑坐标**（1024×640），不裁（舞台外就是负数或超出）。外接矩形为 0（没布局）
+ * 就 `null`。跟 `app/App.tsx` 的 `stagePointIn` 同一套换算，同一个理由：`offsetX` 在有 CSS 缩放时
+ * 给的是**缩放后**的像素，指针越靠右偏得越多，而画面看起来完全正常。
+ */
+function stagePoint(
+  panel: Element,
+  event: { readonly clientX: number; readonly clientY: number },
+): { x: number; y: number } | null {
+  const box = panel.getBoundingClientRect()
+  if (box.width === 0 || box.height === 0) return null
+  return {
+    x: Math.round(((event.clientX - box.left) / box.width) * STAGE_WIDTH),
+    y: Math.round(((event.clientY - box.top) / box.height) * STAGE_HEIGHT),
+  }
+}
+
 export interface StartPanelViewProps {
   /** 这一帧画什么，`panelState.ts` 算好的。 */
   readonly view: StartView
@@ -139,6 +156,10 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * `buttons` 为 0 才解除（和弦里每一下松手原版都收，都要送）。窗口外松手 / 松在禁用的「结」
    * 上，浏览器可能一下 `mouseup` 都不派 —— 回来头一下没按着键的移动就当场补上那一下松手，
    * 与 `app/App.tsx` 的 `grabRelease` 同一个做法；补的落点是见到它的那一刻，不是真正松手的地方。
+   *
+   * 按下、松手、grab 期间的拖动都先记自绘鼠标的坐标（原版三个监听器头两句都是 `currentX = e.getX()`）。
+   * grab 期间 JDK 17 `LightweightDispatcher` 把 MOUSE_DRAGGED / MOUSE_RELEASED 照样派给这块面板，
+   * 坐标只减面板偏移、不裁：拖出舞台就是负数或超过 1024×640，光标画到画面外去（xl-40m）。
    */
   const grabRef = useRef<(() => void) | null>(null)
   useEffect(() => () => grabRef.current?.(), [])
@@ -150,6 +171,12 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     // —— 按下不派、不起 grab，之后的拖动与松手也就一个都不收（xl-m9q，与 `App.tsx` 的 `grabbedElsewhere`
     // 同一判法）。⚠️ 未验证：全松开那一下 JDK 会重设目标并派松手，原版收不收得到要看平台把它送给谁。
     if (grabRef.current === null && othersHeld) return
+    const panel = event.currentTarget
+    const moveTo = (e: { readonly clientX: number; readonly clientY: number }) => {
+      const p = stagePoint(panel, e)
+      if (p) handlers.moveCursor(p.x, p.y)
+    }
+    moveTo(event)
     // 拦截还挂着、而这一下之外没按着别的键：上一次的松手丢在窗口外了，回来没动就又按下。
     // 先补上那一下松手（落点是见到它的这一刻），再送这次按下 —— 与 `App.tsx` 的 `grabRelease`
     // 里 `onPress` 同一个判法（按下看的是**别的**键，`isMouseGrab`）。
@@ -161,9 +188,11 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     if (grabRef.current !== null) return
     const onUp = (e: MouseEvent) => {
       if (e.buttons === 0) end()
+      moveTo(e)
       handlers.release(buttonOf(e.target))
     }
     const onMove = (e: MouseEvent) => {
+      moveTo(e)
       if (e.buttons !== 0) return
       end()
       handlers.release(buttonOf(e.target))
@@ -179,20 +208,14 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
   }
 
   /**
-   * 一次 `mousemove` → 舞台**逻辑坐标**（1024×640），给自绘鼠标用。按着键而 grab 不在这块面板上
-   * （舞台外按下再拖进来）不记：原版目标是 null，`mouseDragged` 一次都不派（xl-b98）。
-   * 跟 `app/App.tsx` 的 `onStageClick` 同一套换算，同一个理由：`offsetX` 在
-   * 有 CSS 缩放时给的是**缩放后**的像素，指针越靠右偏得越多，而画面看起来
-   * 完全正常。
+   * 一次没按着键的 `mousemove` → 自绘鼠标（原版 `mouseMoved`）。按着键的归上面挂到 window 上的
+   * `onMove`（grab 在这块面板上，舞台外也记）；grab 不在这块面板上（舞台外按下再拖进来）不记：
+   * 原版目标是 null，`mouseDragged` 一次都不派（xl-b98）。
    */
   const onMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!handlers || (event.buttons !== 0 && grabRef.current === null)) return
-    const box = event.currentTarget.getBoundingClientRect()
-    if (box.width === 0 || box.height === 0) return
-    handlers.moveCursor(
-      Math.round(((event.clientX - box.left) / box.width) * STAGE_WIDTH),
-      Math.round(((event.clientY - box.top) / box.height) * STAGE_HEIGHT),
-    )
+    if (!handlers || event.buttons !== 0) return
+    const p = stagePoint(event.currentTarget, event)
+    if (p) handlers.moveCursor(p.x, p.y)
   }
 
   const renderButton = (button: StartButtonView) => {
