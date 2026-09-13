@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { decodePng } from '../compare/png'
 import { repoPath } from '../test/repoPath'
+import { enemyShowsSelected } from './render/hitBox'
 import { applyPaintInput, createPaintState } from './render/paint'
 import { applyBattleInput, skillMenuButtons, stepBattle } from './step'
 import type { BattleInput } from './step'
@@ -97,10 +98,16 @@ describe('选敌时的停帧：移动停、拖动不停', () => {
   it('游标移到一号怪身上它停帧，移开再动', () => {
     const w = selecting()
     const s = w.selector
+    expect(enemyShowsSelected(w.em1!), '还没悬停就画着选中图 —— 下面那条恒真').toBe(false)
     send(w, { e: 'move', x: s.x1 + 1, y: s.y1 + 1 })
     expect(w.em1!.isStop).toBe(true)
+    expect(enemyShowsSelected(w.em1!)).toBe(true)
     send(w, { e: 'move', ...EMPTY })
     expect(w.em1!.isStop).toBe(false)
+    // 框外那一支只放开 isStop：选中图留到下一次 doAction 真换帧。
+    expect(enemyShowsSelected(w.em1!)).toBe(true)
+    stepBattle(w)
+    expect(enemyShowsSelected(w.em1!)).toBe(false)
   })
 
   it('按着键拖过一号怪：不停帧（mouseDragged 里没有 enemySlector.checkMoveIn）', () => {
@@ -108,6 +115,8 @@ describe('选敌时的停帧：移动停、拖动不停', () => {
     const s = w.selector
     send(w, { e: 'press', ...EMPTY }, { e: 'drag', x: s.x1 + 1, y: s.y1 + 1 })
     expect(w.em1!.isStop).toBe(false)
+    // 游标在框里，但原版没换图 —— 渲染按游标位置现算的话这里是 true（xl-qqw 逐帧比对逮到的）。
+    expect(enemyShowsSelected(w.em1!)).toBe(false)
   })
 })
 

@@ -307,6 +307,7 @@ function makeEnemy(
     code: 0,
     isDraw: true,
     isStop: false,
+    showsSelected: false,
     isDead: false,
     speed,
     hp: spec.hp,

@@ -533,9 +533,16 @@ function hit(b: { x: number; y: number; width: number; height: number }, x: numb
 function selectorMoveIn(w: BattleWorld, x: number, y: number): void {
   const s = w.selector
   if (!s.isSlectable) return
-  if (w.em1) w.em1.isStop = inBox(x, y, s.x1, s.y1, s.width1, s.height1)
-  if (w.em2) w.em2.isStop = inBox(x, y, s.x2, s.y2, s.width2, s.height2)
-  if (w.em3) w.em3.isStop = inBox(x, y, s.x3, s.y3, s.width3, s.height1)
+  // 框里那一支还有一句 `currentImage=selectedImage`（xl-qqw）；框外那一支只放开 isStop，
+  // 图留到下一次 `doAction()` 真换帧才换回来。
+  const check = (e: Enemy | null, inside: boolean) => {
+    if (!e) return
+    e.isStop = inside
+    if (inside) e.showsSelected = true
+  }
+  check(w.em1, inBox(x, y, s.x1, s.y1, s.width1, s.height1))
+  check(w.em2, inBox(x, y, s.x2, s.y2, s.width2, s.height2))
+  check(w.em3, inBox(x, y, s.x3, s.y3, s.width3, s.height1))
 }
 
 /** `EnemySlector.checkClick`。第三槽同样用 `height1`。 */
@@ -565,8 +572,12 @@ function heroDoAction(h: Hero): void {
 }
 
 function enemyDoAction(e: Enemy): void {
-  if (!e.isStop && e.code < e.spec.length) e.code++
-  else if (e.code === e.spec.length) e.code = 0
+  if (!e.isStop && e.code < e.spec.length) {
+    // `currentImage=Images.get(code)` —— 选中图在这里才被换掉（`code==length` 那一支
+    // 不换图，于是选中图会多留一拍，照抄）。
+    e.showsSelected = false
+    e.code++
+  } else if (e.code === e.spec.length) e.code = 0
 }
 
 function updateVictoryAnimation(h: Hero): void {
