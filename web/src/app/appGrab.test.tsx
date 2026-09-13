@@ -451,6 +451,10 @@ describe('App 的 mouse grab', () => {
     stubBox(menuHost, HALF)
     fireEvent.mouseMove(menuHost, { ...CENTER, buttons: 2 })
     expect(menuInput, '右键按在场景上，按着它的移动却送给了菜单').not.toHaveBeenCalled()
+    // 正面对照：同一块宿主、同一处坐标，松开之后的移动照常送 —— 上面那句不是因为宿主收不到。
+    fireEvent.mouseUp(window, { ...CENTER, button: 2, buttons: 0 })
+    fireEvent.mouseMove(menuHost, { ...CENTER, buttons: 0 })
+    expect(menuInput.mock.calls.map(([i]) => i)).toEqual([{ e: 'move', x: 512, y: 320 }])
   })
 
   it('和弦两只键都在窗口外松开：回来头一下没按键的移动补上两次松手', () => {
