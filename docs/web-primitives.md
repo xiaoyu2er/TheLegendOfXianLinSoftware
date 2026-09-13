@@ -73,7 +73,7 @@
 | `web/src/start/StartPanel.tsx:236,237` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 键盘焦点 = 悬停 |
 | `web/src/start/StartPanel.tsx:240` | 事件 | 已登记 `ADR-0001#start-button-hitbox-dom` | 只收键盘的激活（`detail` 为 0）：原版标题页没有键盘输入，这一条是「真 `<button>`、回车按得动」那一半（真浏览器里曾经按不动，`xl-fqm` 修了）。鼠标不走它 —— 按下 / 松手分两下送（xl-4zo） |
 | `web/src/start/StartPanel.tsx:252,261,276,282,292,318,327,343` | 无障碍 / 元素 | 工程 | 装饰图的 `alt=""`（读屏跳过） |
-| `web/src/start/StartPanel.tsx:268` | 元素 / 事件 | 对应 `src/start/StartPanel.java:185` | `mousePressed`：面板上任何一处按下（落在空处按 `null`，只把图换回常态）；同一行的 `onMouseMove` 是自绘鼠标的坐标（`mouseMoved` 头一句 `currentX = ex.getX()`） |
+| `web/src/start/StartPanel.tsx:268` | 元素 / 事件 | 对应 `src/start/StartPanel.java:185` | `mousePressed`：面板上任何一处按下（落在空处按 `null`，只把图换回常态）；同一行的 `onMouseMove` 是自绘鼠标的坐标（`mouseMoved` 头一句 `currentX = ex.getX()`；按着键是 `mouseDragged`（`:211`）同样只记坐标，但只在 grab 挂在这块面板上时才记 —— 舞台外按下再拖进来，原版目标是 null、一次都不派（xl-b98）） |
 | `web/src/start/useStartPanel.ts:136,138,139` | 时钟 / 定时 | 对应 `src/start/StartPanel.java:153` | 100 ms 一拍，按真实流逝补拍 |
 | `web/src/ui/DialogueBox.tsx:50,53` | 元素 / 无障碍 | 已登记 `ADR-0001#screen-reader-text` | `aria-live` + 视觉隐藏的整句（**xl-03x.22 补登**） |
 | `web/src/ui/DialogueBox.tsx:77,124` | 无障碍 | 工程 | 头像与等待图标的 `alt=""` |
