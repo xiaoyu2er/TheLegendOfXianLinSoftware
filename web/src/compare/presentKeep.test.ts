@@ -141,8 +141,8 @@ describe('上屏 keep 的渲染器层判据', () => {
 
   it('keep 那一轮其实照 fresh 画：叠满那一半必然相等（分不开），靠半透明那一半红', () => {
     const java = javaMixed()
+    // keep 与 fresh 是同一张图，叠满那一半按构造逐位相同 —— 这里不断言它，判的是下面的红。
     const f = presentKeepFrame(0, java, dropAlpha(java), dropAlpha(java), T)
-    expect(f.opaqueDiffering).toBe(0)
     const v = judgePresentKeep([f])
     expect(v.ok).toBe(false)
     expect(v.verdict).toContain('不像原版上屏')

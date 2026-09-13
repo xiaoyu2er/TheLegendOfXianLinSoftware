@@ -24,8 +24,10 @@ import type { Bitmap } from './png'
  *
  * **叠满的像素另判一件事（xl-ejr）**：keep 那一轮与 fresh 那一轮（`web/`，整屏那一套
  * 已经拿它对原版判过）**逐位相同**。不对原版直接比，是为了不把字形那笔旧账再记一遍；
- * 逐位而不给容差，是因为两轮是同一台浏览器画同一份清单，基线实测一个都不差
- * （battle-script3，45 帧 29488005 个叠满像素，2026-09-13）。
+ * 逐位而不给容差，是因为两轮是同一台浏览器画同一份清单，实测一个都不差
+ * （battle-script3，45 帧 29488005 个叠满像素，2026-09-13 改前、改后各一趟，同一台机器）。
+ * 换浏览器或 GPU 后两轮若不再逐位相同，这里会红（响的一侧，不是恒绿）—— 那时先量
+ * 两轮的差，再决定给不给容差。
  *
  * ⚠️ **这一半分不开「盖底色」与「扔 alpha」，按构造就分不开**：`a = 255` 时
  * `javaOver(c, 255, bg) = c`，两个预测是同一个数。所以它不进 `separable`、也替代不了
@@ -78,12 +80,12 @@ export interface PresentFrame {
 export function presentKeepFrame(
   tick: number,
   java: Bitmap,
-  web: Bitmap,
+  keep: Bitmap,
   fresh: Bitmap,
   tolerance: number,
   background = PANEL_BACKGROUND,
 ): PresentFrame {
-  for (const [side, b] of [['keep', web], ['fresh', fresh]] as const) {
+  for (const [side, b] of [['keep', keep], ['fresh', fresh]] as const) {
     if (java.width !== b.width || java.height !== b.height) {
       throw new Error(`第 ${tick} 帧两端尺寸不同：${java.width}×${java.height} vs ${side} ${b.width}×${b.height}`)
     }
@@ -101,7 +103,7 @@ export function presentKeepFrame(
       // 叠满处两个预测按构造相同（`javaOver(c, 255, bg) = c`），这里分不开「盖底色」与
       // 「扔 alpha」，所以不进 `separable`；问的是另一件事：keep 与 fresh 两轮逐位相同。
       opaque++
-      if (web.rgba[i] !== fresh.rgba[i] || web.rgba[i + 1] !== fresh.rgba[i + 1] || web.rgba[i + 2] !== fresh.rgba[i + 2]) {
+      if (keep.rgba[i] !== fresh.rgba[i] || keep.rgba[i + 1] !== fresh.rgba[i + 1] || keep.rgba[i + 2] !== fresh.rgba[i + 2]) {
         opaqueDiffering++
       }
       continue
@@ -112,7 +114,7 @@ export function presentKeepFrame(
     for (let k = 0; k < 3; k++) {
       const c = java.rgba[i + k]!
       const over = javaOver(c, a, bg[k]!)
-      d = Math.max(d, Math.abs(web.rgba[i + k]! - over))
+      d = Math.max(d, Math.abs(keep.rgba[i + k]! - over))
       // 「扔 alpha」预测就是缓冲的非预乘 RGB 本身（取图页 'fresh' 上屏的样子）。
       gap = Math.max(gap, Math.abs(c - over))
     }
@@ -162,5 +164,5 @@ export function judgePresentKeep(frames: readonly PresentFrame[]): PresentVerdic
       verdict: `上屏 keep：叠满处与 fresh 那一轮不逐位相同 —— ${counts}，坏在 ${badOpaque.join('、')}`,
     }
   }
-  return { ok: true, verdict: `上屏 keep：与原版上屏一致 —— ${counts}` }
+  return { ok: true, verdict: `上屏 keep：半透明处与原版上屏一致、叠满处与 fresh 那一轮逐位相同 —— ${counts}` }
 }
