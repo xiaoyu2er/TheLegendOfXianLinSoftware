@@ -157,7 +157,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 上，浏览器可能一下 `mouseup` 都不派 —— 回来头一下没按着键的移动就当场补上那一下松手，
    * 与 `app/App.tsx` 的 `grabRelease` 同一个做法；补的落点是见到它的那一刻，不是真正松手的地方。
    *
-   * 按下、松手、grab 期间的拖动都先记自绘鼠标的坐标（原版三个监听器头两句都是 `currentX = e.getX()`）。
+   * 按下、松手、grab 期间的拖动都先记自绘鼠标的坐标（原版三个监听器头两句都是 `currentX = e.getX()`；补的松手记见到的那一刻）。
    * grab 期间 JDK 17 `LightweightDispatcher` 把 MOUSE_DRAGGED / MOUSE_RELEASED 照样派给这块面板，
    * 坐标只减面板偏移、不裁：拖出舞台就是负数或超过 1024×640，光标画到画面外去（xl-40m）。
    */

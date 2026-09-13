@@ -526,6 +526,19 @@ describe('开始界面', () => {
     })
   })
 
+  it('和弦中途在舞台外松开一个键：那一下松手也记坐标（RELEASED 照样派给 grab）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 2, buttons: 3 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '100px', top: '100px' })
+    fireEvent.mouseUp(document.body, { clientX: 1100, clientY: 50, button: 2, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '1100px', top: '50px' })
+  })
+
   it('对照：grab 不在这块面板上时，舞台外的移动 / 松手一概不记 —— 原版目标不是这块面板', () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
