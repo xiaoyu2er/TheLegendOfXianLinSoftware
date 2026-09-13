@@ -761,6 +761,10 @@ export function advanceSession(
       // `switchTo("scene")` 里那句 `SCENE_SIGNAL=1`：下一拍场景把自己的曲子
       // 放回去（进战斗那一下 BGM 被 `initial()` 换成了战斗曲，xl-yg6.11）。
       if (panel === 'scene') scene = signalScene(scene)
+      // 出口那一拍丢掉整个战斗世界。原版的 `BattlePanel` 线程不停，没升级的胜利
+      // 回地图约 4 秒后 `VictoryReminder` 会**再切一次场景**（xl-03x.23 量出机制、
+      // xl-sn2 量出后果）—— web 这一刀之后战斗循环不再推，那一次不会发生。
+      // @exception ADR-0001#victory-late-rescene
       battle = null
     }
   }
