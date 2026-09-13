@@ -174,14 +174,14 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
   }
 
   /**
-   * 一次 `mousemove` → 舞台**逻辑坐标**（1024×640），给自绘鼠标用。
-   *
+   * 一次 `mousemove` → 舞台**逻辑坐标**（1024×640），给自绘鼠标用。按着键而 grab 不在这块面板上
+   * （舞台外按下再拖进来）不记：原版目标是 null，`mouseDragged` 一次都不派（xl-b98）。
    * 跟 `app/App.tsx` 的 `onStageClick` 同一套换算，同一个理由：`offsetX` 在
    * 有 CSS 缩放时给的是**缩放后**的像素，指针越靠右偏得越多，而画面看起来
    * 完全正常。
    */
   const onMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!handlers) return
+    if (!handlers || (event.buttons !== 0 && grabRef.current === null)) return
     const box = event.currentTarget.getBoundingClientRect()
     if (box.width === 0 || box.height === 0) return
     handlers.moveCursor(

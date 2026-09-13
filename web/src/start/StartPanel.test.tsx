@@ -420,6 +420,34 @@ describe('开始界面', () => {
     })
   })
 
+  it('舞台外按下、按着键拖进来：自绘鼠标不动 —— 原版目标是 null，mouseDragged 一次都不派（xl-b98）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    fireEvent.mouseMove(panel, { clientX: 100, clientY: 100, buttons: 0 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '100px', top: '100px' })
+    // 按下不在面板上（没有 mousedown 落到它），按着键移进来。
+    fireEvent.mouseMove(panel, { clientX: 300, clientY: 200, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '100px', top: '100px' })
+    // 全松开之后头一下移动是 mouseMoved，照常记坐标。
+    fireEvent.mouseMove(panel, { clientX: 320, clientY: 210, buttons: 0 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '320px', top: '210px' })
+  })
+
+  it('对照：面板上按下再拖，grab 在这块面板上，mouseDragged 照样记坐标', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    // 动作之前先看一眼：初值恰好就是目标点的话，下面那句按构造成立。
+    expect({ left: cursor.style.left, top: cursor.style.top }).not.toEqual({ left: '300px', top: '200px' })
+    fireEvent.mouseDown(back, { button: 0, buttons: 1 })
+    fireEvent.mouseMove(back, { clientX: 300, clientY: 200, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '300px', top: '200px' })
+  })
+
   it('外接矩形为 0 时一动不动 —— 不写出 `left: NaNpx`', () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
