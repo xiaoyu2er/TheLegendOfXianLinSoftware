@@ -298,4 +298,76 @@ describe('App 的 mouse grab', () => {
       { e: 'release', x: 70, y: 80 },
     ])
   })
+
+  /**
+   * 和弦（xl-4xi）：Swing 的 `LightweightDispatcher.isMouseGrab` 看的是「这一下之前有没有键
+   * 按着」（JDK 17 `java/awt/Container.java`）。所以按住左键再按右键，第二次按下归 grab；
+   * 先松开的那一下也归 grab、**grab 不解除**；另一只键还按着时拖出宿主照样收；最后一次
+   * 松手才解除。
+   */
+  it('和弦：先松开一只键 grab 不解除 —— 还按着的那只拖出宿主照样收，两次松手都送', () => {
+    panel.current = 'battle'
+    render(<App />)
+    const el = screen.getByTestId('battle-host')
+    stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 0, buttons: 1 })
+    fireEvent.mouseDown(el, { clientX: 30, clientY: 30, button: 2, buttons: 3 })
+    fireEvent.mouseUp(window, { clientX: 40, clientY: 40, button: 0, buttons: 2 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 50, buttons: 2 })
+    fireEvent.mouseUp(window, { clientX: 1100, clientY: 60, button: 2, buttons: 0 })
+    // grab 解除之后：画布外的拖动不再归它。
+    fireEvent.mouseMove(document.body, { clientX: 1200, clientY: 70, buttons: 1 })
+    expect(battleMouse.mock.calls.map(([i]) => i)).toEqual([
+      { e: 'press', x: 20, y: 20 },
+      { e: 'press', x: 30, y: 30 },
+      { e: 'release', x: 40, y: 40 },
+      { e: 'drag', x: 1100, y: 50 },
+      { e: 'release', x: 1100, y: 60 },
+    ])
+  })
+
+  it('和弦里的第二次按下落在别的宿主上：归按下时那块，那块宿主一条都不收，也不把 grab 换走', () => {
+    panel.current = 'menu'
+    const { rerender } = render(<App />)
+    const menuHost = screen.getByTestId('menu-host')
+    stubBox(menuHost, HALF)
+    fireEvent.mouseDown(menuHost, { ...CENTER, button: 0, buttons: 1 })
+
+    panel.current = 'ls'
+    rerender(<App />)
+    const lsHost = screen.getByTestId('ls-host')
+    expect(lsHost).not.toHaveAttribute('hidden')
+    stubBox(lsHost, HALF)
+    fireEvent.mouseDown(lsHost, { ...CENTER, button: 2, buttons: 3 })
+    fireEvent.mouseUp(lsHost, { ...CENTER, button: 2, buttons: 1 })
+    fireEvent.mouseUp(lsHost, { ...CENTER, button: 0, buttons: 0 })
+
+    expect(lsInput, '和弦里的按下 / 松手落在了没按下过的存读档面板上').not.toHaveBeenCalled()
+    expect(menuInput.mock.calls.map(([i]) => i.e)).toEqual(['press', 'press', 'release', 'release'])
+  })
+
+  it('和弦一只键在窗口外松开、另一只回来松开：最后那一下补齐两次松手，下一次按下另起 grab', () => {
+    panel.current = 'battle'
+    render(<App />)
+    const el = screen.getByTestId('battle-host')
+    stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 0, buttons: 1 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 2, buttons: 3 })
+    // 左键在窗口外松开，这里一个事件都没有；右键回到页面上松开。
+    fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 2, buttons: 0 })
+    fireEvent.mouseDown(el, { clientX: 70, clientY: 80, button: 0, buttons: 1 })
+    fireEvent.mouseUp(window, { clientX: 70, clientY: 80, button: 0, buttons: 0 })
+    expect(battleMouse.mock.calls.map(([i]) => i.e)).toEqual(['press', 'press', 'release', 'release', 'press', 'release'])
+  })
+
+  it('和弦两只键都在窗口外松开：回来头一下没按键的移动补上两次松手', () => {
+    panel.current = 'ls'
+    render(<App />)
+    const el = screen.getByTestId('ls-host')
+    stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 0, buttons: 1 })
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 2, buttons: 3 })
+    fireEvent.mouseMove(el, { clientX: 50, clientY: 60, buttons: 0 })
+    expect(lsInput.mock.calls.map(([i]) => i.e)).toEqual(['press', 'press', 'release', 'release', 'move'])
+  })
 })

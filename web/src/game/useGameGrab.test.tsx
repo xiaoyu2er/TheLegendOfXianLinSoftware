@@ -156,6 +156,21 @@ describe('useGame 的 mouse grab（xl-o9z）', () => {
     const after = rec.writes.slice(sticky.length)
     expect(after, '槽 2 没点着').toContain(2)
     expect(after, '槽 1 根本没粘住，上面那条恒真').toContain(1)
+
+    // ——— 和弦（xl-4xi）：两次按下、两次松手，第二次松手也归存读档面板 ———
+    // 在槽 2 上按下两次（左键再右键），两次松手都在框外。槽 1 还粘着（上面刚证过），
+    // 每一次送到这块面板的松手都会让 `setButton()` 连带把它再存一遍 —— grab 在第一次
+    // 松手就解除的话，第二次被丢掉，一遍都不多存。
+    const beforeChord = rec.writes.length
+    ls({ e: 'press', ...slotCenter(2) }, { e: 'press', ...slotCenter(2) }, { e: 'release', x: 0, y: 0 })
+    const afterFirst = rec.writes.length
+    expect(rec.writes.slice(beforeChord), '和弦里第一次松手一遍都没存').toContain(1)
+    ls({ e: 'release', x: 0, y: 0 })
+    expect(rec.writes.slice(afterFirst), '和弦里的第二次松手没送到存读档面板').toContain(1)
+    // 两次都松完了，grab 解除：再来一次松手不归任何人。
+    const settled = rec.writes.length
+    ls({ e: 'release', x: 0, y: 0 })
+    expect(rec.writes.length, 'grab 该解除了，多出来的松手还是送到了').toBe(settled)
   })
 
   /**
