@@ -440,16 +440,19 @@ interface PresentReport extends PresentVerdict {
 
 /**
  * 上屏 'keep' 那一支对原版上屏（xl-k9e）：原版导出的非预乘 RGBA 缓冲在这边盖到
- * `Panel.background` 上当预测，只比缓冲没叠满的像素。判据在 `src/compare/presentKeep.ts`。
+ * `Panel.background` 上当预测，比缓冲没叠满的像素；叠满的像素比 keep 与 fresh 两轮截图
+ * 逐位相同（xl-ejr）。判据在 `src/compare/presentKeep.ts`。
  */
 function comparePresentKeep(root: string, m: Manifest, tolerance: number): PresentReport {
   const javaDir = join(root, m.script, 'java')
   const keepDir = join(root, m.script, PRESENT_KEEP_SIDE)
+  const webDir = join(root, m.script, 'web')
   const frames = m.ticks.map((t) =>
     presentKeepFrame(
       t,
       decodePng(readFrame(javaDir, t, m.script, '原版')),
       decodePng(readFrame(keepDir, t, m.script, 'Web（keep）')),
+      decodePng(readFrame(webDir, t, m.script, 'Web')),
       tolerance,
     ),
   )
@@ -461,7 +464,7 @@ function reportPresents(
   unjudged: readonly string[],
   missed: readonly string[],
 ): void {
-  process.stdout.write(`\n上屏 keep 那一支（原版缓冲盖在 Panel.background 上，只比没叠满的像素）：\n`)
+  process.stdout.write(`\n上屏 keep 那一支（没叠满的像素对原版缓冲盖在 Panel.background 上，叠满的对 fresh 那一轮逐位）：\n`)
   for (const p of presents) {
     process.stdout.write(`  ${p.ok ? '通过' : '失败'}  ${p.name.padEnd(12)} ${p.verdict}\n`)
   }
