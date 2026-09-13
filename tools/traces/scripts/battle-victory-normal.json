@@ -1,0 +1,18 @@
+{
+  "name": "battle-victory-normal",
+  "description": "正常打死最后一只怪 → 结算 → 原版自己 switchTo(\"scene\")（xl-5zw）。这是 battle-victory 在 xl-03x.14 之前那一版（837 步）换了个名字原样恢复：xl-03x.14 给 battle-victory 加了一步 debugKill（按 J 秒杀）之后，「正常打赢之后结算照样走完」这句话只剩代码同源推出、没有真值。两者真值上的差异只在判胜那一刻的战斗状态（行动条三只怪清不清零、怪物的血、控制台开没开），结算那一段走的是同一段代码。怪物、等级、种子与 battle-victory 相同：陆雪琪压到 1 级，于是结算的两条路（升级 / 不升级）都走到。",
+  "driver": "battle",
+  "background": "image/背景图/商塔迷宫.png",
+  "party": ["zhang", "yu", "lu"],
+  "level": { "zhang": 10, "yu": 10, "lu": 1 },
+  "enemies": ["武林高手2/5", "商塔弟子/6", "商塔护法/7"],
+  "seed": 20260907,
+  "tickMs": 100,
+  "maxTicks": 8000,
+  "steps": [
+    { "op": "command", "button": "attack", "budget": 400 },
+    { "op": "target", "enemy": 1, "budget": 50 },
+    { "op": "autoAttack", "until": "victory", "max": 4000 },
+    { "op": "awaitExit", "panel": "scenePanel", "max": 300 }
+  ]
+}
