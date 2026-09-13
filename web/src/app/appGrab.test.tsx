@@ -391,6 +391,26 @@ describe('App 的 mouse grab', () => {
     })
   }
 
+  /**
+   * 另一条落空的路：右键按在场景上（原版 `ScenePanel` 没挂鼠标监听，那一下按下
+   * `isMouseGrab` 为假、目标重设为 null），按着右键开菜单、在菜单上按左键 —— 这一下
+   * `isMouseGrab` 为真，目标还是 null，菜单一条都收不到。
+   */
+  it('场景上先按着右键、翻到菜单再按左键：菜单一条都不收', () => {
+    panel.current = 'scene'
+    const { rerender } = render(<App />)
+    fireEvent.mouseDown(screen.getByTestId('scene-host'), { ...CENTER, button: 2, buttons: 2 })
+    panel.current = 'menu'
+    rerender(<App />)
+    const menuHost = screen.getByTestId('menu-host')
+    expect(menuHost).not.toHaveAttribute('hidden')
+    stubBox(menuHost, HALF)
+    fireEvent.mouseDown(menuHost, { ...CENTER, button: 0, buttons: 3 })
+    fireEvent.mouseUp(window, { ...CENTER, button: 0, buttons: 2 })
+    fireEvent.mouseUp(window, { ...CENTER, button: 2, buttons: 0 })
+    expect(menuInput, '右键按在场景上，左键那一下却送给了菜单').not.toHaveBeenCalled()
+  })
+
   it('和弦两只键都在窗口外松开：回来头一下没按键的移动补上两次松手', () => {
     panel.current = 'ls'
     render(<App />)

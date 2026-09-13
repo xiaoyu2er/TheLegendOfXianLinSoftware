@@ -640,10 +640,13 @@ export function App() {
  * 定下的目标。两种用法：
  *
  * - grab 挂着（`grabRelease` 的 `onPress`）：和弦，这一下也归 grab（xl-4xi）；
- * - grab 没挂着（`grabbedElsewhere`）：更早那只键按在舞台外（原版是窗口外 ——
- *   `getMouseEventTargetImpl` 在界外返回 null）或不收鼠标的面板上（场景、结尾，原版没挂
- *   鼠标监听，目标同样落空）。目标是 null：这一下按下不送、不起 grab，它与别的键的松手
- *   也就一个都不送，直到全松开（xl-2yh）。
+ * - grab 没挂着（`grabbedElsewhere`）：目标是**最后一个不在 grab 里的事件**重设的，这一下
+ *   按下自己不查落点。更早那只键按在不收鼠标的面板上（场景、结尾，原版没挂鼠标监听）：重设
+ *   它的是那一下按下，`MouseEventTargetFilter` 不收这两块，落空成 null。按在舞台外（原版是
+ *   窗口外）：Swing 看不见那一下，重设它的是指针无键离开窗口的那一下 MOUSE_EXITED，界外
+ *   `getMouseEventTargetImpl` 返回 null。目标是 null：这一下按下不送、不起 grab，它与别的键
+ *   的松手也就一个都不送，直到全松开（xl-2yh）。⚠️ 未验证：窗口外按下的键在回到窗口后的
+ *   `getModifiersEx` 里带不带着，取决于平台，原版在真机上没按过。
  */
 function othersHeld(event: { readonly button: number; readonly buttons: number }): boolean {
   return (event.buttons & ~(BUTTON_BITS[event.button] ?? 0)) !== 0
