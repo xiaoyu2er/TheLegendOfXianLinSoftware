@@ -384,7 +384,7 @@ export function App() {
     }
     // 除这一下自己之外没按着别的键：上一次的松手丢在窗口外了。按着别的键就是和弦。
     const onPress = (event: MouseEvent) => {
-      if ((event.buttons & ~(BUTTON_BITS[event.button] ?? 0)) === 0) return endWithReleases(event)
+      if (!othersHeld(event)) return endWithReleases(event)
       held += 1
       if (event.target instanceof Node && host.contains(event.target)) return
       const p = at(event)
@@ -402,9 +402,9 @@ export function App() {
     window.addEventListener('mousedown', onPress, true)
   }
   useEffect(() => () => grabRef.current?.end(), [])
-  /** grab 握在另一块宿主上：这一下移动归那边（window 上的 `onDrag` 送），这块宿主不收。 */
+  /** grab 握在另一块宿主上（移动归那边的 `onDrag`），或舞台外按着的键把 grab 定在了空处（{@link othersHeld}）：这块宿主不收。 */
   const grabbedElsewhere = (event: ReactMouseEvent<HTMLDivElement>): boolean =>
-    grabRef.current !== null && grabRef.current.host !== event.currentTarget
+    grabRef.current === null ? event.type === 'mousedown' && othersHeld(event) : grabRef.current.host !== event.currentTarget
 
   /**
    * 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。
@@ -629,4 +629,22 @@ export function App() {
       </div>
     </div>
   )
+}
+
+/**
+ * 这一下按下（或松开）之前，还有**别的**键按着 —— Swing `LightweightDispatcher.isMouseGrab`
+ * 原样（JDK 17 `java/awt/Container.java`：`modifiers ^= getMaskForButton(e.getButton())`，
+ * 再看 `BUTTONS_DOWN_MASK`）。
+ *
+ * 为真时 `processMouseEvent` **不重设** `mouseEventTarget`，按下与松手都派给更早那一下按下
+ * 定下的目标。两种用法：
+ *
+ * - grab 挂着（`grabRelease` 的 `onPress`）：和弦，这一下也归 grab（xl-4xi）；
+ * - grab 没挂着（`grabbedElsewhere`）：更早那只键按在舞台外（原版是窗口外 ——
+ *   `getMouseEventTargetImpl` 在界外返回 null）或不收鼠标的面板上（场景、结尾，原版没挂
+ *   鼠标监听，目标同样落空）。目标是 null：这一下按下不送、不起 grab，它与别的键的松手
+ *   也就一个都不送，直到全松开（xl-2yh）。
+ */
+function othersHeld(event: { readonly button: number; readonly buttons: number }): boolean {
+  return (event.buttons & ~(BUTTON_BITS[event.button] ?? 0)) !== 0
 }
