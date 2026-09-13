@@ -278,10 +278,20 @@ export function App() {
     }
   }
 
-  const onStageClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+  /**
+   * 战斗画布与存读档面板同形（xl-qqw）：按下 / 移动 / 松开分开送，按住任一键移动是
+   * `mouseDragged` —— 原版那一支少一句 `enemySlector.checkMoveIn`，拖过怪物不停帧。
+   * 松手走 `grabRelease`：在「击」上按下、拖出画布再松手，原版照样触发（按钮的
+   * `isclicked` 按下就挂上了，框外松手不清它）。
+   */
+  const onBattleMouse = (type: 'press' | 'move') => (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!inBattle) return
-    const at = stagePoint(event)
-    if (at) view.click(at.x, at.y)
+    const box = event.currentTarget.getBoundingClientRect()
+    const at = stagePointIn(box, event)
+    if (!at) return
+    const kind = type === 'move' && event.buttons !== 0 ? 'drag' : type
+    view.battleMouse({ e: kind, x: at.x, y: at.y })
+    if (type === 'press') grabRelease(box, (p) => view.battleMouse({ e: 'release', ...p }))
   }
 
   /**
@@ -399,7 +409,8 @@ export function App() {
               className="stage-panel"
               ref={battleHostRef}
               hidden={!inBattle || inShopPreview}
-              onMouseDown={onStageClick}
+              onMouseDown={onBattleMouse('press')}
+              onMouseMove={onBattleMouse('move')}
               data-testid="battle-host"
             />
             <div

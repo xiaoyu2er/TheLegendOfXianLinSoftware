@@ -438,6 +438,8 @@ public final class BattleDriver implements TraceDriver {
                 if (!commandDrawn()) return false;
                 pressDebugKey();
                 return true;
+            case "mouse":
+                return mouse(in);
             default:
                 fail("不认识的指令 " + in.op);
                 return true;
@@ -584,13 +586,71 @@ public final class BattleDriver implements TraceDriver {
     // 监听器 —— 「鼠标点下去会发生什么」是原版的语义，抄一遍就有抄错的余地，
     // 而抄错了的表现是 trace 里少了一步状态变化，不是报错。
 
+    /**
+     * 单独送一个鼠标事件（xl-qqw）。{@code click} 那几条指令把移入 + 按下 + 松开
+     * 焊在同一个坐标上，于是「悬停」「按住拖开再松手」「按着键拖过怪物」这几条
+     * 原版真会走的路一条都导不出来 —— 这条指令把四个回调拆开来送。
+     *
+     * <p>落在一颗按钮 / 一只怪上时，**等它出来才送**（与 {@code command} /
+     * {@code target} 同一条规矩，等到超预算是硬失败）；落在空处的坐标当拍就送。
+     * {@code input} 记成 {@code {"e":<事件>,"x":..,"y":..}}，不带 target ——
+     * 回放端按坐标走原版那几句判断，用不着它。
+     */
+    private boolean mouse(TraceScript.Instruction in) {
+        int x = in.x, y = in.y;
+        if (in.at != null) {
+            int[] p = pointAt(in.at);
+            if (p == null) return false;
+            x = p[0];
+            y = p[1];
+        }
+        switch (in.event) {
+            case "move":    moved(x, y); break;
+            case "drag":    dragged(x, y); break;
+            case "press":   pressed(x, y); break;
+            case "release": released(x, y); break;
+            default: fail("mouse 不认识的事件 " + in.event);
+        }
+        pending.add("{\"e\":" + Json.str(in.event) + ",\"x\":" + x + ",\"y\":" + y + "}");
+        return true;
+    }
+
+    /** {@code at} 指的那颗按钮 / 那只怪的命中点；它这一拍还没出来就返回 null（等）。 */
+    private int[] pointAt(String at) {
+        int colon = at.indexOf(':');
+        String kind = at.substring(0, colon), name = at.substring(colon + 1);
+        switch (kind) {
+            case "command":
+                if (!commandDrawn()) return null;
+                return hitCenter(get(get(bp, "command"), buttonField(name)));
+            case "skillMenu":
+            case "drugMenu":
+                if (!getBool(get(bp, kind), "isDraw")) return null;
+                return hitCenter(menuButton(kind, name));
+            case "enemy":
+                if (!selectable()) return null;
+                return enemyCenter(Integer.parseInt(name));
+            default:
+                fail("mouse 不认识的 at " + at);
+                return null;
+        }
+    }
+
+    /**
+     * 一颗 {@code GameButton} 的**命中框**中心：{@code x-15+width/2}, {@code y-6+height/2}。
+     * -15 / -6 是原版 GameButton 判命中时的偏移（tools/GameButton.java），
+     * 所以点的是**命中框**的中心，不是图片的中心。
+     */
+    private int[] hitCenter(Object btn) {
+        return new int[] {
+            getInt(btn, "x") - 15 + getInt(btn, "width") / 2,
+            getInt(btn, "y") - 6 + getInt(btn, "height") / 2,
+        };
+    }
+
     private void clickButton(String button) {
-        Object cmd = get(bp, "command");
-        Object btn = get(cmd, buttonField(button));
-        int x = getInt(btn, "x") - 15 + getInt(btn, "width") / 2;
-        int y = getInt(btn, "y") - 6 + getInt(btn, "height") / 2;
-        // -15 / -6 是原版 GameButton 判命中时的偏移（tools/GameButton.java），
-        // 所以点的是**命中框**的中心，不是图片的中心。
+        int[] p = hitCenter(get(get(bp, "command"), buttonField(button)));
+        int x = p[0], y = p[1];
         moved(x, y);
         pressed(x, y);
         released(x, y);
@@ -620,53 +680,65 @@ public final class BattleDriver implements TraceDriver {
      * 一切正常、可就是什么都没选中"的真值。
      */
     private void clickMenuButton(String menu, String name) {
-        Object m = get(bp, menu);
-        Object btn;
-        if (menu.equals("skillMenu")) {
-            List<?> list = (List<?>) get(m, "skillButtons");
-            if (name.equals("return")) {
-                btn = get(m, "returnButton");
-                if (btn == null) {
-                    fail("技能菜单的返回按钮还是 null —— 它由 SkillMenu.checkRound() 现建，"
-                            + "而 checkRound 只在点「技」时调一次");
-                    return;
-                }
-            } else {
-                int i = Integer.parseInt(name.substring("skill".length())) - 1;
-                if (i >= list.size()) {
-                    fail("技能菜单这一场只有 " + list.size() + " 颗技能按钮（当前回合 "
-                            + getInt(bp, "currentRound") + "），剧本点的是第 " + (i + 1) + " 颗");
-                    return;
-                }
-                btn = list.get(i);
-            }
-        } else {
-            List<?> list = (List<?>) get(m, "drugButtons");
-            int i = name.equals("return") ? list.size() - 1
-                    : Integer.parseInt(name.substring("drug".length())) - 1;
-            if (i >= list.size()) {
-                fail("药品菜单只有 " + list.size() + " 颗按钮，剧本点的是第 " + (i + 1) + " 颗");
-                return;
-            }
-            btn = list.get(i);
-        }
-        int x = getInt(btn, "x") - 15 + getInt(btn, "width") / 2;
-        int y = getInt(btn, "y") - 6 + getInt(btn, "height") / 2;
+        int[] p = hitCenter(menuButton(menu, name));
+        int x = p[0], y = p[1];
         moved(x, y);
         pressed(x, y);
         released(x, y);
         pending.add(input("click", x, y, menu + ":" + name));
     }
 
-    private void clickEnemy(int slot) {
+    /**
+     * 技能菜单 / 药品菜单上 {@code name} 那颗按钮（{@code skill1}.. / {@code drug1}.. /
+     * {@code return}）。
+     *
+     * 按钮取不到时**硬失败**：技能菜单那几颗的数量由
+     * {@code ZhangXiaoFan.skillNumber} 等三个静态字段定（默认 2/3/2），
+     * 点一颗不存在的按钮如果只是"什么都没发生"，导出的就是一份"点过了、
+     * 一切正常、可就是什么都没选中"的真值。
+     */
+    private Object menuButton(String menu, String name) {
+        Object m = get(bp, menu);
+        if (menu.equals("skillMenu")) {
+            List<?> list = (List<?>) get(m, "skillButtons");
+            if (name.equals("return")) {
+                Object btn = get(m, "returnButton");
+                if (btn == null) {
+                    fail("技能菜单的返回按钮还是 null —— 它由 SkillMenu.checkRound() 现建，"
+                            + "而 checkRound 只在点「技」时调一次");
+                }
+                return btn;
+            }
+            int i = Integer.parseInt(name.substring("skill".length())) - 1;
+            if (i >= list.size()) {
+                fail("技能菜单这一场只有 " + list.size() + " 颗技能按钮（当前回合 "
+                        + getInt(bp, "currentRound") + "），剧本点的是第 " + (i + 1) + " 颗");
+            }
+            return list.get(i);
+        }
+        List<?> list = (List<?>) get(m, "drugButtons");
+        int i = name.equals("return") ? list.size() - 1
+                : Integer.parseInt(name.substring("drug".length())) - 1;
+        if (i >= list.size()) {
+            fail("药品菜单只有 " + list.size() + " 颗按钮，剧本点的是第 " + (i + 1) + " 颗");
+        }
+        return list.get(i);
+    }
+
+    /** 怪物图片的中心（{@code target} 点的就是这里）。槽位空着、没有图片 —— 硬失败。 */
+    private int[] enemyCenter(int slot) {
         int i = slot - 1;
-        if (!onField(i)) fail("怪物槽位 " + slot + " 上没有站着的怪物，点不了");
+        if (slot < 1 || slot > 3 || !onField(i)) fail("怪物槽位 " + slot + " 上没有站着的怪物，点不了");
         Enemy e = slots[i];
         Image img = ((List<?>) get(e, "Images")).get(0) instanceof Image
                 ? (Image) ((List<?>) get(e, "Images")).get(0) : null;
         if (img == null) fail("怪物槽位 " + slot + " 没有图片，算不出点在哪");
-        int x = getInt(e, "x") + img.getWidth(bp) / 2;
-        int y = getInt(e, "y") + img.getHeight(bp) / 2;
+        return new int[] { getInt(e, "x") + img.getWidth(bp) / 2, getInt(e, "y") + img.getHeight(bp) / 2 };
+    }
+
+    private void clickEnemy(int slot) {
+        int[] p = enemyCenter(slot);
+        int x = p[0], y = p[1];
         moved(x, y);
         pressed(x, y);
         int be = getInt(bp, "currentBeAttacked");
@@ -693,6 +765,12 @@ public final class BattleDriver implements TraceDriver {
     private void moved(int x, int y) {
         MouseEvent e = ev(MouseEvent.MOUSE_MOVED, x, y);
         for (MouseMotionListener l : bp.getMouseMotionListeners()) l.mouseMoved(e);
+    }
+
+    /** 原版的 {@code mouseDragged}：与 {@code mouseMoved} 差一句 {@code enemySlector.checkMoveIn}。 */
+    private void dragged(int x, int y) {
+        MouseEvent e = ev(MouseEvent.MOUSE_DRAGGED, x, y);
+        for (MouseMotionListener l : bp.getMouseMotionListeners()) l.mouseDragged(e);
     }
 
     private void pressed(int x, int y) {

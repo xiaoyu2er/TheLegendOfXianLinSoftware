@@ -18,6 +18,9 @@ import { useGame } from './useGame'
 import { resetEnemySprites } from './enemySprites'
 import { decodePng } from '../compare/png'
 import { repoPath } from '../test/repoPath'
+import { commandButtonId } from '../battle/render/assets'
+import type { BattleRenderer } from '../battle/render/battleRenderer'
+import type { DrawOp } from '../battle/render/drawList'
 import { buttonCenter } from '../test/menuClicks'
 import { createMemorySaveStore } from '../save/memoryStore'
 import { sceneSourceOf } from '../state/trace'
@@ -39,6 +42,16 @@ function clickAt([x, y]: [number, number]): MenuInput[] {
     { e: 'release', x, y },
   ]
 }
+
+/**
+ * 会话的随机源（`useGame.ts` 的 `SESSION_DEPS.random`）在**模块加载时**就拿走了
+ * `Math.random` 这个函数本身，测试里再 spy 已经晚了 —— 所以桩要在 import 之前装。
+ * 默认原样转给真的 `Math.random`，别的用例不受影响；只有要定种子的那一条临时换掉它。
+ */
+const random = vi.hoisted(() => {
+  const real = Math.random
+  return { real, spy: vi.spyOn(Math, 'random').mockImplementation(real) }
+})
 
 // 这个文件只验接线（键盘 → 推进 → 面板），不验出声 —— 那归 `useGameBgm.test.tsx`。
 // 播放器换成哑的，是因为「战斗里按 J」那条要进 `脚本22`，而它的场景曲
@@ -82,12 +95,12 @@ describe('useGame 接线', () => {
    * 世界要等它回来才建得出来。不等就推时间，推的是一个还没有世界的 ticker：
    * 表现是"渲染器一帧都没收到"，看上去像接线断了。
    */
-  async function mount(scene = '宿舍') {
+  async function mount(scene = '宿舍', battle: BattleRenderer | null = null) {
     // 出口的目标也要先取到手：世界要等它们到齐才开始推进
     // （见 `data/loadedScenes.ts`）。这里先取一遍，钩子里那一遍就是缓存命中，
     // 一个微任务就过去了 —— 不然假定时器下要等一次真的 I/O，谁也说不准几拍。
     await prepareExits(createWorld(await loadScene(scene)))
-    const rendered = renderHook(() => useGame(renderer, scene))
+    const rendered = renderHook(() => useGame(renderer, scene, battle))
     await act(async () => {
       await loadScene(scene)
     })
@@ -548,6 +561,82 @@ describe('useGame 接线', () => {
     const after = { level: getParty().zhang.level, exp: getParty().zhang.exp }
     expect(after, '打赢了罹年居士（exp 9999），张小凡的等级或经验总得动一样').not.toEqual(before)
   }
+
+  /**
+   * 战斗画布的鼠标事件（xl-qqw）真的送进了战斗。`appGrab.test.tsx` 那一条的 `useGame`
+   * 是假的，会话层的测试又不经过这里 —— `battleMouse` 接成空函数的话，那两边都还是绿的。
+   * 看得见的只有画出来的东西：悬停时「技」换成待点那张图，点「击」之后控制台收起来。
+   *
+   * 场景与出场图的桩同「战斗里按 J」那一条。
+   */
+  it('战斗画布的鼠标：悬停「技」换待点图、点「击」收起控制台', async () => {
+    resetParty()
+    // 种子定死：这一场是剧情必败战，我方回合出不出得来看种子（真随机时实测三跑两红）。
+    // 扫过 0.05..0.95（步长 0.1）：0.95 等不到控制台，其余都等得到；0.5 也等不到，
+    // 原因没查（0.45 / 0.55 都行）。取扫描带正中的 0.25。
+    random.spy.mockImplementation(() => 0.25)
+    const sprite = decodePng(readFileSync(repoPath('image/怪物', '罹年居士', '1.png')))
+    vi.stubGlobal(
+      'Image',
+      class {
+        src = ''
+        naturalWidth = sprite.width
+        naturalHeight = sprite.height
+        decode() {
+          return Promise.resolve()
+        }
+      },
+    )
+    let ops: readonly DrawOp[] = []
+    const battle: BattleRenderer = {
+      load: async () => {},
+      draw: (next) => {
+        ops = next
+      },
+      destroy: () => {},
+    }
+    type ImageOp = Extract<DrawOp, { kind: 'image' }>
+    const command = () => ops.filter((op): op is ImageOp => op.kind === 'image' && op.layer === 'command')
+    // 命中框中心：按钮 58×62，判命中时左偏 15、上偏 6（`battle/render/hitBox.ts`）。
+    const centre = (op: ImageOp) => ({ x: op.x - 15 + 29, y: op.y - 6 + 31 })
+    const tick = async () => {
+      await act(async () => {
+        vi.advanceTimersByTime(200)
+      })
+    }
+    try {
+      const { result } = await mount('脚本22', battle)
+      for (let i = 0; i < 400 && result.current.panel === 'scene'; i++) {
+        press(' ')
+        await act(async () => {
+          window.dispatchEvent(new KeyboardEvent('keyup', { key: ' ' }))
+          vi.advanceTimersByTime(200)
+        })
+      }
+      expect(result.current.panel).toBe('battle')
+      for (let i = 0; i < 600 && command().length === 0 && result.current.panel === 'battle'; i++) await tick()
+      expect(command(), '控制台一直没画出来 —— 下面两条测不到东西').toHaveLength(4)
+      // 画的顺序是击 → 技 → 防 → 物（`drawList.ts` 的 COMMAND_ORDER）。
+      const [attack, skill] = command() as [ImageOp, ImageOp]
+      expect(skill.id, '还没悬停就已经是待点图 —— 下面那条恒真').toBe(commandButtonId('skill', 1))
+
+      act(() => result.current.battleMouse({ e: 'move', ...centre(skill) }))
+      await tick()
+      expect(command().map((op) => op.id)).toContain(commandButtonId('skill', 2))
+
+      act(() => {
+        result.current.battleMouse({ e: 'press', ...centre(attack) })
+        result.current.battleMouse({ e: 'release', ...centre(attack) })
+      })
+      await tick()
+      expect(result.current.panel).toBe('battle')
+      expect(command(), '点了「击」控制台还在 —— 鼠标没送进战斗').toHaveLength(0)
+    } finally {
+      random.spy.mockImplementation(random.real)
+      vi.unstubAllGlobals()
+      resetEnemySprites()
+    }
+  })
 
   /**
    * xl-fqm 的另一半：标题页放开了回车 / 空格的默认动作，场景里**照旧拦** ——

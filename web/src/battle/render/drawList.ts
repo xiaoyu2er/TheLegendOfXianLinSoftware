@@ -183,7 +183,7 @@ export function battleDrawList(w: BattleWorld, p: PaintState): DrawOp[] {
   for (const h of w.heroes) victoryAnimOps(h, push)
 
   // 10 怪物走图（顺序是 `bp.enemies`：em2 → em1 → em3，原版靠它解决遮掩）
-  for (const e of w.enemies) enemyOps(w, e, push)
+  for (const e of w.enemies) enemyOps(e, push)
   // 11 小精灵
   petOps(w.pet, push)
 
@@ -601,9 +601,9 @@ function cornersOp(
   })
 }
 
-function enemyOps(w: BattleWorld, e: Enemy, push: (op: DrawOp) => void): void {
+function enemyOps(e: Enemy, push: (op: DrawOp) => void): void {
   if (!e.isDraw) return
-  const id = enemyShowsSelected(w, e)
+  const id = enemyShowsSelected(e)
     ? enemySelectedId(e.name)
     : enemyWalkId(e.name, trailingFrame(e.code, e.spec.length))
   push({ kind: 'image', layer: 'enemy', id, x: e.x, y: e.y })

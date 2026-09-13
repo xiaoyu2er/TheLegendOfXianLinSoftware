@@ -100,6 +100,13 @@ export interface Enemy {
   code: number
   isDraw: boolean
   isStop: boolean
+  /**
+   * `currentImage` 此刻是不是「选中」那张（xl-qqw）。原版 `EnemySlector.checkMoveIn`
+   * 框里那一支换上它，`doAction()` 下一次真换帧才换回走图 —— 只有 `mouseMoved`
+   * 调 `checkMoveIn`，按着键拖过去不换。不在行为真值里（导出器不取 `currentImage`），
+   * 只有渲染读它；判据是 `battle-mouse` 的逐帧比对（t=155..165 拖过 2 号怪那一段）。
+   */
+  showsSelected: boolean
   isDead: boolean
   speed: number
   hp: number

@@ -1,0 +1,63 @@
+{
+  "name": "battle-mouse",
+  "description": "分开来的鼠标事件（xl-qqw）：悬停、按住拖开再松手、按着键拖过怪物。与 battle-menus 同一场遭遇、同一颗种子（我方回合序 3→2→1）。文敏那一回合：游标停在「技」上（待点态，只在像素里）；点「物」开药品菜单，游标停在第 2 味药上（药品说明）；返回；在「击」上按下、拖到空处 (60,60) 松手 —— GameButton.isRelesedButton 框外不清 isclicked，照样开选敌；在空处按下、拖到 2 号怪身上（mouseDragged 不调 enemySlector.checkMoveIn，不停帧）再松手；游标移到 2 号怪身上（停帧）、移开（再动）；点 2 号怪。张小凡那一回合：点「技」（上一回合粘着的「击」isclicked 在这一下里一并被 checkReleased 读到），游标停在第 1 颗技能上（技能说明图），在第 2 颗上按下、拖到空处松手（照样选中浪里寻花），点 3 号怪；然后打到赢。",
+  "driver": "battle",
+  "background": "image/背景图/伏魔山树林.png",
+  "party": [
+    "zhang",
+    "yu",
+    "lu"
+  ],
+  "level": {
+    "zhang": 5,
+    "yu": 5,
+    "lu": 5
+  },
+  "enemies": [
+    "怪物1/5",
+    "怪物2/6",
+    "怪物2/7"
+  ],
+  "seed": 20260908,
+  "tickMs": 100,
+  "maxTicks": 4000,
+  "steps": [
+    { "op": "autoUntilRound", "round": 2, "max": 400, "budget": 500 },
+    { "op": "mouse", "e": "move", "at": "command:skill", "budget": 50 },
+    { "op": "wait", "ticks": 5 },
+    { "op": "command", "button": "thing", "budget": 50 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "mouse", "e": "move", "at": "drugMenu:drug2", "budget": 50 },
+    { "op": "wait", "ticks": 10 },
+    { "op": "drugMenu", "button": "return", "budget": 50 },
+    { "op": "wait", "ticks": 10 },
+    { "op": "mouse", "e": "press", "at": "command:attack", "budget": 50 },
+    { "op": "wait", "ticks": 3 },
+    { "op": "mouse", "e": "drag", "x": 60, "y": 60 },
+    { "op": "wait", "ticks": 3 },
+    { "op": "mouse", "e": "release", "x": 60, "y": 60 },
+    { "op": "wait", "ticks": 5 },
+    { "op": "mouse", "e": "press", "x": 60, "y": 60 },
+    { "op": "mouse", "e": "drag", "at": "enemy:2", "budget": 50 },
+    { "op": "wait", "ticks": 10 },
+    { "op": "mouse", "e": "release", "at": "enemy:2", "budget": 50 },
+    { "op": "wait", "ticks": 5 },
+    { "op": "mouse", "e": "move", "at": "enemy:2", "budget": 50 },
+    { "op": "wait", "ticks": 15 },
+    { "op": "mouse", "e": "move", "x": 60, "y": 60 },
+    { "op": "wait", "ticks": 5 },
+    { "op": "target", "enemy": 2, "budget": 50 },
+    { "op": "autoUntilRound", "round": 1, "max": 800, "budget": 900 },
+    { "op": "command", "button": "skill", "budget": 50 },
+    { "op": "wait", "ticks": 30 },
+    { "op": "mouse", "e": "move", "at": "skillMenu:skill1", "budget": 50 },
+    { "op": "wait", "ticks": 10 },
+    { "op": "mouse", "e": "press", "at": "skillMenu:skill2", "budget": 50 },
+    { "op": "wait", "ticks": 3 },
+    { "op": "mouse", "e": "drag", "x": 60, "y": 60 },
+    { "op": "wait", "ticks": 3 },
+    { "op": "mouse", "e": "release", "x": 60, "y": 60 },
+    { "op": "target", "enemy": 3, "budget": 50 },
+    { "op": "autoAttack", "until": "victory", "max": 2000 }
+  ]
+}

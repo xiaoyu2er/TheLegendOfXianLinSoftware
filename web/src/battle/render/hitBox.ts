@@ -52,23 +52,16 @@ export function hitsEnemy(w: BattleWorld, slot: 1 | 2 | 3, x: number, y: number)
 }
 
 /**
- * 这一拍这只怪身上画的是不是「选中」那张图。
+ * 这一拍这只怪身上画的是不是「选中」那张图 —— 状态层记着的 `showsSelected`
+ * （`step.ts` 的 `selectorMoveIn` 换上、`enemyDoAction` 换回）。
  *
- * 推法：只要**还能选**且游标在框里，原版就在 `checkMoveIn` 里把
- * `currentImage` 换成了选中图并且 `isStop=true`，而 `isStop` 为真时
- * `doAction()` 不再换图 —— 于是这张图会一直留着。游标一离开或者选择一结束，
- * `isStop` 立刻变假，同一拍里排在 `paint()` 之前的 `doAction()` 就把它换回
- * 走图了。
- *
- * ⚠️ **有一拍对不上**：游标离开框的那一拍，如果这只怪的 `code` 正好等于走图
- * 长度（`doAction` 走的是 `else` 那一支，不换图），原版会多留一拍选中图。
- * 没有把它做进去，是因为要做就得让渲染层拿到**入循环之前**的 `isStop/code`，
- * 而那要给装配加一条只为这一拍存在的通道。`battle-min` 采样到的 17 帧里
- * `selectable` 一次都没有为真（`ui.selectable` 全 false），所以这一拍今天
- * 观测不到；等哪天观测得到，逐帧比对会指着那一帧说话。
+ * ⚠️ 这里原先是**按游标现在在哪现算**的（还能选且游标在框里）。xl-qqw 之前玩家只能
+ * 点，游标只在点击时落下一次，两种写法看不出区别；分开收鼠标事件之后它就错了：
+ * 按着键拖过怪物，游标在框里而原版不换图（`mouseDragged` 不调 `checkMoveIn`）。
+ * `battle-mouse` 每 5 拍取帧实测 t=155/160/165 三帧 2 号怪那一框 9353/9328/9324 个
+ * 像素对不上，t=170 起（真悬停）全等。顺带，游标离框那一拍 `code` 正好等于走图长度时
+ * 选中图多留一拍 —— 那一条原先登记为「对不上」，现在是照抄的。
  */
-export function enemyShowsSelected(w: BattleWorld, e: Enemy): boolean {
-  if (!w.selector.isSlectable) return false
-  const slot = (e.roleCode - 4) as 1 | 2 | 3
-  return hitsEnemy(w, slot, w.currentX, w.currentY)
+export function enemyShowsSelected(e: Enemy): boolean {
+  return e.showsSelected
 }

@@ -40,7 +40,20 @@ import type {
  * 键盘只有 J 这一个：原版 `BattlePanel.keyPressed` 里就只有 `VK_J` 一支，
  * 别的键 `GameLauncher` 转过来也什么都不做。
  */
-export type BattleInput = BattleClick | BattleDebugKey
+export type BattleInput = BattleClick | BattlePointer | BattleDebugKey
+
+/**
+ * **分开来的**一个鼠标事件（xl-qqw），与原版 `BattlePanel.setMouse()` 挂的四个回调
+ * 一一对应：`mouseMoved` / `mouseDragged` / `mousePressed` / `mouseReleased`。
+ *
+ * 玩家那一侧（`app/App.tsx`）送的是这一种；真值里 `mouse` 那条指令导出的也是
+ * 这一种。`click` 是导出器那几条老指令焊死的三连发，留着给老真值回放。
+ */
+export interface BattlePointer {
+  readonly e: 'move' | 'drag' | 'press' | 'release'
+  readonly x: number
+  readonly y: number
+}
 
 export interface BattleClick {
   readonly e: 'click'
@@ -106,9 +119,15 @@ export function applyBattleInput(w: BattleWorld, input: BattleInput): void {
     debugKill(w)
     return
   }
+  if (input.e === 'move') return mouseMoved(w, input.x, input.y)
+  if (input.e === 'drag') return mouseDragged(w, input.x, input.y)
+  if (input.e === 'press') return mousePressed(w, input.x, input.y)
+  if (input.e === 'release') return mouseReleased(w, input.x, input.y)
   // 类型上到这里只剩 click，但真值是 `as unknown as` 断言进来的 JSON（`trace.ts`），
   // 导出器哪天多记一种输入，要在这里响，不能当成点击往下走。
-  if (input.e !== 'click') throw new Error(`战斗只认 click / key 输入，实际 ${String((input as { e: unknown }).e)}`)
+  if (input.e !== 'click') {
+    throw new Error(`战斗只认 click / move / drag / press / release / key 输入，实际 ${String((input as { e: unknown }).e)}`)
+  }
   mouseMoved(w, input.x, input.y)
   mousePressed(w, input.x, input.y)
   // 点按钮（控制台与两个菜单）是移入 + 按下 + 松开，点怪物只有移入 + 按下。
@@ -137,6 +156,17 @@ function mouseMoved(w: BattleWorld, x: number, y: number): void {
   if (w.skillMenu.isDraw) skillMenuMoveIn(w, x, y)
   if (w.drugMenu.isDraw) drugMenuMoveIn(w, x, y)
   selectorMoveIn(w, x, y)
+}
+
+/**
+ * `mouseDragged`：与 `mouseMoved` 逐句相同，**只少最后那句**
+ * `enemySlector.checkMoveIn` —— 按着键拖过怪物，怪物不停帧（xl-qqw）。
+ */
+function mouseDragged(w: BattleWorld, x: number, y: number): void {
+  w.currentX = x
+  w.currentY = y
+  if (w.skillMenu.isDraw) skillMenuMoveIn(w, x, y)
+  if (w.drugMenu.isDraw) drugMenuMoveIn(w, x, y)
 }
 
 function mousePressed(w: BattleWorld, x: number, y: number): void {
@@ -503,9 +533,16 @@ function hit(b: { x: number; y: number; width: number; height: number }, x: numb
 function selectorMoveIn(w: BattleWorld, x: number, y: number): void {
   const s = w.selector
   if (!s.isSlectable) return
-  if (w.em1) w.em1.isStop = inBox(x, y, s.x1, s.y1, s.width1, s.height1)
-  if (w.em2) w.em2.isStop = inBox(x, y, s.x2, s.y2, s.width2, s.height2)
-  if (w.em3) w.em3.isStop = inBox(x, y, s.x3, s.y3, s.width3, s.height1)
+  // 框里那一支还有一句 `currentImage=selectedImage`（xl-qqw）；框外那一支只放开 isStop，
+  // 图留到下一次 `doAction()` 真换帧才换回来。
+  const check = (e: Enemy | null, inside: boolean) => {
+    if (!e) return
+    e.isStop = inside
+    if (inside) e.showsSelected = true
+  }
+  check(w.em1, inBox(x, y, s.x1, s.y1, s.width1, s.height1))
+  check(w.em2, inBox(x, y, s.x2, s.y2, s.width2, s.height2))
+  check(w.em3, inBox(x, y, s.x3, s.y3, s.width3, s.height1))
 }
 
 /** `EnemySlector.checkClick`。第三槽同样用 `height1`。 */
@@ -535,8 +572,12 @@ function heroDoAction(h: Hero): void {
 }
 
 function enemyDoAction(e: Enemy): void {
-  if (!e.isStop && e.code < e.spec.length) e.code++
-  else if (e.code === e.spec.length) e.code = 0
+  if (!e.isStop && e.code < e.spec.length) {
+    // `currentImage=Images.get(code)` —— 选中图在这里才被换掉（`code==length` 那一支
+    // 不换图，于是选中图会多留一拍，照抄）。
+    e.showsSelected = false
+    e.code++
+  } else if (e.code === e.spec.length) e.code = 0
 }
 
 function updateVictoryAnimation(h: Hero): void {

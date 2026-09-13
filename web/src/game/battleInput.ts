@@ -19,6 +19,13 @@ import type { BattleWorld } from '../battle/types'
  * 落空返回 `'none'`：原版的三个监听器是无条件挂着的，点在空处照样跑一遍
  * （四颗按钮的贴图会一起刷回常态）。见 `battle/step.ts` 的 `applyBattleInput`。
  *
+ * ## xl-qqw 之后玩家那一侧不走这里
+ *
+ * 战斗画布现在送的是分开来的四种事件（`BattlePointer`：移动 / 拖动 / 按下 / 松开），
+ * 按坐标直接喂 `applyBattleInput`，不需要先判回 target。这里只剩测试在用：
+ * `session.test.ts` 的自动攻打要一次**焊死的点击**，形状与真值里导出器那几条老指令
+ * 记下来的一样。
+ *
  * ## 这一层没有独立判据，也不需要
  *
  * 它一行几何都不自己写：`hitsButton` / `hitsEnemy` 是渲染层那两个，而那两个

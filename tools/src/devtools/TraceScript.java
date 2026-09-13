@@ -161,13 +161,21 @@ public final class TraceScript {
         public final String panel;
         /** 战斗：`autoUntilRound` 要停在谁的回合上（1 张 / 2 文 / 3 陆）。 */
         public final int round;
+        /**
+         * 战斗：`mouse` 送哪一种事件（`move` / `drag` / `press` / `release`），落在
+         * 哪儿 —— `at` 是一颗按钮或一只怪（`command:attack` / `skillMenu:skill1` /
+         * `drugMenu:drug2` / `enemy:1`），为 null 时落在 `x`,`y` 这个空处（xl-qqw）。
+         */
+        public final String event, at;
         Instruction(String op, int x, int y, int ticks, int times, int max, int budget,
-                    String key, String button, String until, int enemy, String panel, int round) {
+                    String key, String button, String until, int enemy, String panel, int round,
+                    String event, String at) {
             this.op = op; this.x = x; this.y = y;
             this.ticks = ticks; this.times = times; this.max = max; this.budget = budget;
             this.key = key;
             this.button = button; this.until = until; this.enemy = enemy; this.panel = panel;
             this.round = round;
+            this.event = event; this.at = at;
         }
     }
 
@@ -187,7 +195,17 @@ public final class TraceScript {
 
     private static final List<String> BATTLE_OPS = Arrays.asList(
             "command", "target", "autoAttack", "awaitExit", "wait",
-            "skillMenu", "drugMenu", "autoUntilRound", "autoUntilAngry", "debugKill");
+            "skillMenu", "drugMenu", "autoUntilRound", "autoUntilAngry", "debugKill", "mouse");
+
+    /**
+     * {@code mouse} 认的四种事件，与原版 {@code BattlePanel.setMouse()} 挂的四个回调
+     * 一一对应：{@code mouseMoved} / {@code mouseDragged} / {@code mousePressed} /
+     * {@code mouseReleased}。**drag 与 move 不是同一件事**：原版的 {@code mouseDragged}
+     * 少一句 {@code enemySlector.checkMoveIn} —— 按着键拖过怪物不停帧。
+     */
+    private static final List<String> MOUSE_EVENTS = Arrays.asList("move", "drag", "press", "release");
+    /** {@code mouse} 的 {@code at} 认的前缀；冒号后面的部分由导出器当场按原版的对象解。 */
+    private static final List<String> MOUSE_AT = Arrays.asList("command:", "skillMenu:", "drugMenu:", "enemy:");
 
     /**
      * {@code awaitExit} 认的面板名：{@code GameLauncher.setLayout()} 往
@@ -372,8 +390,30 @@ public final class TraceScript {
                 throw new IllegalArgumentException("driver " + driver + " 不认识的指令 " + op + "，可用的是 " + ops);
             }
             int x = 0, y = 0, ticks = 0, times = 0, max = 0, enemy = 0, round = 0;
-            String key = null, button = null, until = null, panel = null;
+            String key = null, button = null, until = null, panel = null, event = null, at = null;
             if (!battle && isMove(op)) { x = JsonIn.i(s, "x"); y = JsonIn.i(s, "y"); }
+            if (op.equals("mouse")) {
+                event = JsonIn.str(s, "e");
+                if (!MOUSE_EVENTS.contains(event)) {
+                    throw new IllegalArgumentException("mouse 不认识的事件 " + event + "，可用的是 " + MOUSE_EVENTS);
+                }
+                at = JsonIn.strOr(s, "at", null);
+                // 两种落点二选一。两个都写时，哪个说了算没有答案；两个都不写时，
+                // 落在 (0,0) 与「这一步漏写了」长得一样 —— 两种都硬失败。
+                if (at != null) {
+                    if (s.containsKey("x") || s.containsKey("y")) {
+                        throw new IllegalArgumentException("mouse 的 at 与 x/y 只能写一种，实际两种都写了");
+                    }
+                    boolean known = false;
+                    for (String p : MOUSE_AT) known |= at.startsWith(p) && at.length() > p.length();
+                    if (!known) {
+                        throw new IllegalArgumentException("mouse 不认识的 at " + at + "，前缀只能是 " + MOUSE_AT);
+                    }
+                } else {
+                    x = JsonIn.i(s, "x");
+                    y = JsonIn.i(s, "y");
+                }
+            }
             if (op.equals("wait"))       ticks = JsonIn.i(s, "ticks");
             if (op.equals("advance"))    times = JsonIn.i(s, "times");
             if (op.equals("advanceAll")) max   = JsonIn.iOr(s, "max", 64);
@@ -439,7 +479,7 @@ public final class TraceScript {
                 max = JsonIn.iOr(s, "max", 300);
             }
             steps.add(new Instruction(op, x, y, ticks, times, max,
-                    JsonIn.iOr(s, "budget", 2000), key, button, until, enemy, panel, round));
+                    JsonIn.iOr(s, "budget", 2000), key, button, until, enemy, panel, round, event, at));
         }
         if (steps.isEmpty()) throw new IllegalArgumentException("剧本没有任何指令");
 
@@ -489,6 +529,11 @@ public final class TraceScript {
             if (s.op.equals("autoAttack")) b.append(",\"until\":").append(Json.str(s.until)).append(",\"max\":").append(s.max);
             if (s.op.equals("awaitExit"))  b.append(",\"panel\":").append(Json.str(s.panel)).append(",\"max\":").append(s.max);
             if (s.op.equals("wait"))       b.append(",\"ticks\":").append(s.ticks);
+            if (s.op.equals("mouse")) {
+                b.append(",\"e\":").append(Json.str(s.event));
+                if (s.at != null) b.append(",\"at\":").append(Json.str(s.at));
+                else b.append(",\"x\":").append(s.x).append(",\"y\":").append(s.y);
+            }
             b.append('}');
         }
         return b.append("]}").toString();
