@@ -69,6 +69,18 @@ export interface BattleDebugKey {
 }
 
 /**
+ * 原版在这里抛了异常、**战斗那条线程就此死掉**（xl-9go）。
+ *
+ * `BattlePanel.run()` 的 try/catch 只包着 `Clock.sleep(100)`，循环体里任何一句抛出来
+ * 都直接冲出 `run()`：面板不切、`repaint()` 再没人调，画面停在那一帧，场景那条线程照跑。
+ * 只有「原版真的会在这里抛」的地方才抛这一类；移植层自己的守卫（没移植、到不了）
+ * 照旧抛 `Error` —— `advanceBattle` 只接这一类，吞掉别的等于把没移植伪装成原版行为。
+ */
+export class BattleThreadDied extends Error {
+  override readonly name = 'BattleThreadDied'
+}
+
+/**
  * `freshTick` = 这一次调用是不是一拍的开头。是的话先清空 `w.music`（xl-b36）。
  * `stepBattleWithPaint` 自己先喂了输入、再调这里，那种调用传 `false` —— 否则
  * 输入里出的声（J 键秒杀 → 胜利那三声）会在这里被抹掉。
@@ -905,8 +917,9 @@ function updateGameOver(w: BattleWorld): void {
   const em1 = w.em1
   if (em1 === null) {
     // 原版这一句是 `bp.em1.name.equals(...)`，em1 为 null 时当场 NPE。
-    // 这里也不给它兜底：兜底等于替原版决定了一个它没有的行为。
-    throw new Error(
+    // 这里也不给它兜底：兜底等于替原版决定了一个它没有的行为。那一发 NPE 冲出
+    // `run()`、战斗线程就此死掉 —— 所以抛的是 `BattleThreadDied`，推进器只接这一类（xl-9go）。
+    throw new BattleThreadDied(
       '全灭结算时第一个槽位已经空了 —— 原版 GameOver.update() 在这里读的是 ' +
         '`bp.em1.name`，会抛 NullPointerException。这一层不替它选一条出口。',
     )

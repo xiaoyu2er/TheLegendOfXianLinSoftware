@@ -1,6 +1,6 @@
 import { advancePaintState, applyPaintInput, createPaintState } from './render/paint'
 import type { PaintState } from './render/paint'
-import { applyBattleInput, stepBattle } from './step'
+import { BattleThreadDied, applyBattleInput, stepBattle } from './step'
 import type { BattleInput } from './step'
 import type { BattleWorld } from './types'
 
@@ -73,13 +73,19 @@ export interface BattleTicker {
    * 「这一次推进出了哪几声」只能在这里逐拍收，不能事后读世界。
    */
   readonly sfx: readonly string[]
+  /**
+   * 战斗线程死于哪一发异常（xl-9go），没死是 `null`。死了之后这一场**一拍都不再推**，
+   * 输入也不收：原版那条线程已经退出了 `run()`，世界与画面都停在抛出来的那一刻。
+   * 面板不切 —— 原版没人 `switchTo`，会话层读到的 `exitPanel` 一直是 `null`。
+   */
+  readonly died: BattleThreadDied | null
 }
 
 const NO_SFX: readonly string[] = []
 
 export function createBattleTicker(world: BattleWorld, timeScale = 1): BattleTicker {
   if (!(timeScale > 0)) throw new Error(`时间倍率必须为正，收到 ${timeScale}`)
-  return { world, paint: createPaintState(world), carryMs: 0, pending: [], timeScale, sfx: NO_SFX }
+  return { world, paint: createPaintState(world), carryMs: 0, pending: [], timeScale, sfx: NO_SFX, died: null }
 }
 
 /**
@@ -99,6 +105,7 @@ export function advanceBattle(
   arriving: readonly BattleInput[],
   elapsedMs: number,
 ): BattleTicker {
+  if (ticker.died !== null) return { ...ticker, pending: [], sfx: NO_SFX }
   const queue = arriving.length === 0 ? ticker.pending : [...ticker.pending, ...arriving]
   const budget = ticker.carryMs + Math.max(0, elapsedMs) * ticker.timeScale
   const ticks = Math.floor(budget / BATTLE_TICK_MS)
@@ -107,7 +114,14 @@ export function advanceBattle(
   }
   const heard: string[] = []
   for (let i = 0; i < ticks; i++) {
-    stepBattleWithPaint(ticker.world, ticker.paint, i === 0 ? queue : EMPTY)
+    try {
+      stepBattleWithPaint(ticker.world, ticker.paint, i === 0 ? queue : EMPTY)
+    } catch (e) {
+      // 只接原版真会死线程的那一类（见 `BattleThreadDied`）。死在这一拍：之前几拍照常算、
+      // 这一拍抛出来之前改掉的字段照留（原版也是），之后的拍不再推。
+      if (!(e instanceof BattleThreadDied)) throw e
+      return { ...ticker, carryMs: 0, pending: [], sfx: heard, died: e }
+    }
     heard.push(...ticker.world.music)
   }
   return { ...ticker, carryMs: budget - ticks * BATTLE_TICK_MS, pending: [], sfx: heard }
