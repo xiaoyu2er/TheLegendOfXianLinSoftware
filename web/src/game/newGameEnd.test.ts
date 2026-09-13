@@ -1,14 +1,15 @@
 import { readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { getScene } from '../data/scenesEager'
-import { END_INITIAL, END_TICK_MS, END_WORD_STOP } from '../end/world'
+import { END_INITIAL, END_STEP, END_TICK_MS, END_WORD_STOP } from '../end/world'
 import { resetParty } from '../fakes/party'
 import { createMemorySaveStore } from '../save/memoryStore'
 import { createWorld } from '../state/step'
 import { sceneSourceOf } from '../state/trace'
 import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
-import { NO_INPUT, advanceSession, carryIntoNewGame, createSession, enterEnd, enterScene } from './session'
+import { buttonCenter, clickAt } from '../test/menuClicks'
+import { NO_INPUT, advanceSession, carryIntoNewGame, createSession, enterEnd, enterScene, menuWorldOf, openMenu } from './session'
 import type { RunningSession } from './session'
 
 /**
@@ -110,10 +111,14 @@ describe('原版：endPanel 活过「起」（GBK 源码现读）', () => {
  *   web 回开机值 —— 两边走到那段对话的路不同，谁都没量过；
  * - **原版第二次进来是两条线程**（`ADR-0001#end-thread-not-duplicated`）：`isStop` 放开那一拍两条
  *   线程各走一次 `update()` 是竞态，过场画会多翻一张还是两张没量；这一层一条；
- * - **标题页那几秒线程仍在走**：原版不停，这一层 `scene === null` 时 `advanceSession` 整拍原样交回
- *   （排在 `advanceEnd` 之前），结局循环不推。字幕已经滚到底的话只差 `iterations`；但 `switchTo("end")`
- *   不改 `currentPanel`，**字幕滚到一半**就能 ESC → 菜单「重新开始」—— 那时原版字幕在标题页接着滚，
- *   这一层冻住，差的是位置（/code-review 逮到的，未量；另票登记）。
+ * - **点「起」到新局场景取到手那几十毫秒**：新会话 `scene === null`，`advanceSession` 整拍原样交回
+ *   （排在 `advanceEnd` 之前），pump 那一支还 `last = now` 把时间丢掉 —— 丢的是整局的时间，
+ *   不只结局循环，就是 `useGame.ts` 里登记的 fetch 载入残差；原版同步读盘，那段窗口没有确定的期望值。
+ *   同一族还有 pump 的另三道门：`if (!renderer) return`（脚本1 的渲染器还没 ready）、`exitsReady`、
+ *   `spritesReady`（每次换场景都可能停一拍）—— 都停整局，不单停结局循环。
+ *
+ * 票面（xl-p6n）原以为**标题页上**也冻住，实测不成立：「重新开始」回标题不清场景，结局循环照推，
+ * 判据是本组「字幕滚到一半回标题」那一条。
  */
 describe('会话：「起」把结局循环带进新局（xl-eqo）', () => {
   const deps = () => ({
@@ -155,6 +160,39 @@ describe('会话：「起」把结局循环带进新局（xl-eqo）', () => {
     const next = newGame(creditsRolledToTheEnd())
     expect(next.end).not.toBeNull()
     expect(next.panel).not.toBe('end')
+  })
+
+  /**
+   * xl-p6n：字幕滚到一半 ESC →「退出」→「重新开始」，标题上字幕照滚。
+   *
+   * 票面怀疑这里冻住（`scene === null` 时 `advanceSession` 整拍原样交回，排在 `advanceEnd`
+   * 之前）。实测不冻：「重新开始」只把**同一个会话**的面板翻成 `'start'`，`scene` 还在，
+   * 那道门拦不到它。这条守的就是这件事 —— 哪天回标题改成清掉场景、或者给结局循环加一道
+   * 「标题上不推」，它红。期望值出自 `END_STEP`（与 GBK 源码 `wordY-=5` 的对撞在 `end/world.test.ts`）。
+   */
+  it('字幕滚到一半回标题：标题上那条线程接着滚，N 拍降 5·N（xl-p6n）', () => {
+    const HALF = 100
+    const ON_TITLE = 30
+    let s: RunningSession = enterEnd(enterScene(createSession(deps()), createWorld(getScene('宿舍'))))
+    for (let i = 0; i < HALF; i++) s = advanceSession(s, NO_INPUT, END_TICK_MS)
+    // 期望在动作之前钉：确实停在半路（离 −1280 还远过 ON_TITLE 拍），不然「接着滚」与「已经停了」分不开。
+    const half = s.end!.world.wordY
+    expect(half).toBe(END_INITIAL.wordY - END_STEP * HALF)
+    expect(half - END_STEP * ON_TITLE).toBeGreaterThan(END_WORD_STOP)
+
+    s = openMenu(s)
+    s = advanceSession(s, { ...NO_INPUT, menu: clickAt(buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
+    const fb = menuWorldOf(s)!.panels.funcPanel.funcButtons!
+    s = advanceSession(s, { ...NO_INPUT, menu: clickAt(buttonCenter(fb.main.exitButton)) }, 0)
+    s = advanceSession(s, { ...NO_INPUT, menu: clickAt(buttonCenter(fb.sub.restart)) }, 0)
+    expect(s.panel).toBe('start')
+    // 菜单那几下传的是 0 毫秒，结局循环按构造推不动；这一句只防菜单那几下自己改了 wordY，
+    // 好让下面降的每一格都记在标题上。
+    expect(s.end!.world.wordY).toBe(half)
+
+    for (let i = 0; i < ON_TITLE; i++) s = advanceSession(s, NO_INPUT, END_TICK_MS)
+    expect(s.panel).toBe('start')
+    expect(s.end!.world.wordY).toBe(half - END_STEP * ON_TITLE)
   })
 
   it('对照：开机那一局没有上一局，头一次进结局从 640 起滚', () => {
