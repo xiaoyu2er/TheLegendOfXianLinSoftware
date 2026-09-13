@@ -360,6 +360,57 @@ describe('App 的 mouse grab', () => {
     expect(battleMouse.mock.calls.map(([i]) => i.e)).toEqual(['press', 'press', 'release', 'release', 'press', 'release'])
   })
 
+  /**
+   * grab 开始之前就按着的键（xl-2yh）：右键先按在舞台外、再在宿主上按左键。Swing 的
+   * `isMouseGrab` 对这一下左键按下为真（右键在它之前就按着），于是 `mouseEventTarget` 不重设，
+   * 目标还是右键按下那一刻的落点 —— 舞台外（原版是窗口外）或不收鼠标的面板，都是 null。
+   * 这一下按下、两次松手，一个面板都收不到；全松开之后的下一次按下照常起 grab。
+   */
+  for (const [name, p, host, spy] of [
+    ['战斗画布', 'battle', 'battle-host', battleMouse],
+    ['存读档面板', 'ls', 'ls-host', lsInput],
+    ['菜单', 'menu', 'menu-host', menuInput],
+    ['店', 'shop', 'shop-host', shopInput],
+  ] as const) {
+    it(`${name}：舞台外先按着右键再在宿主上按左键 —— 这一下按下与两次松手都不送，全松开后照常`, () => {
+      panel.current = p
+      render(<App />)
+      const el = screen.getByTestId(host)
+      stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+      fireEvent.mouseDown(document.body, { clientX: 1100, clientY: 20, button: 2, buttons: 2 })
+      fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 0, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 30, clientY: 30, button: 2, buttons: 1 })
+      fireEvent.mouseUp(window, { clientX: 40, clientY: 40, button: 0, buttons: 0 })
+      // 全松开了：下一下是一次普通的点击。
+      fireEvent.mouseDown(el, { clientX: 70, clientY: 80, button: 0, buttons: 1 })
+      fireEvent.mouseUp(window, { clientX: 70, clientY: 80, button: 0, buttons: 0 })
+      expect(spy.mock.calls.map(([i]) => i)).toEqual([
+        { e: 'press', x: 70, y: 80 },
+        { e: 'release', x: 70, y: 80 },
+      ])
+    })
+  }
+
+  /**
+   * 另一条落空的路：右键按在场景上（原版 `ScenePanel` 没挂鼠标监听，那一下按下
+   * `isMouseGrab` 为假、目标重设为 null），按着右键开菜单、在菜单上按左键 —— 这一下
+   * `isMouseGrab` 为真，目标还是 null，菜单一条都收不到。
+   */
+  it('场景上先按着右键、翻到菜单再按左键：菜单一条都不收', () => {
+    panel.current = 'scene'
+    const { rerender } = render(<App />)
+    fireEvent.mouseDown(screen.getByTestId('scene-host'), { ...CENTER, button: 2, buttons: 2 })
+    panel.current = 'menu'
+    rerender(<App />)
+    const menuHost = screen.getByTestId('menu-host')
+    expect(menuHost).not.toHaveAttribute('hidden')
+    stubBox(menuHost, HALF)
+    fireEvent.mouseDown(menuHost, { ...CENTER, button: 0, buttons: 3 })
+    fireEvent.mouseUp(window, { ...CENTER, button: 0, buttons: 2 })
+    fireEvent.mouseUp(window, { ...CENTER, button: 2, buttons: 0 })
+    expect(menuInput, '右键按在场景上，左键那一下却送给了菜单').not.toHaveBeenCalled()
+  })
+
   it('和弦两只键都在窗口外松开：回来头一下没按键的移动补上两次松手', () => {
     panel.current = 'ls'
     render(<App />)
