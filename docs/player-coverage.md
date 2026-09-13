@@ -119,8 +119,8 @@
 | 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | 能 | 链上 | —（xl-byy（closed）） | `DrugMenu.java:52,110-192`；会话起战斗时从药包现读存货、每一拍写回；真的用药那一路由剧本 `battle-drugs`（驱动器新字段 `drugs`）逐字段钉住；实跑 `battleTrace.test.ts`、`session.test.ts`「战斗里的药来自药包」 |
 | 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **不能**：战斗画布只收按下，悬停的四种反馈一样都没有 | 链上 | xl-qqw（open） | `BattlePanel.java:349-367`；读代码：战斗画布只挂 `onMouseDown` |
 | 战斗 按住按钮拖开再松手照样触发 | **不能**：Web 一次点击是同一点上的移入 + 按下 + 松开，做不出「按在这、松在那」 | 链上 | xl-qqw（open） | `GameButton.java:54-72`；读代码 |
-| 战斗 按 J 秒杀全部敌人（原版留的调试键） | 能（照复刻：清空敌人、直接落进「全部怪物被杀死」那一段；控制台与提示照原版盖在结算画面上） | 链上 | 代价：正常打死 → 结算 → 回场景在行为真值里零覆盖了：xl-5zw（open） | `BattlePanel.java:289-296`；剧本 `battle-victory`（加了一步 `debugKill`）；实跑 `battleTrace.test.ts` 57/57、`useGame.test.tsx` 13/13（进脚本22，按 J，经验得动） |
-| 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能 | 链上 | 真值里只剩按 J 那一条路：xl-5zw（open）（xl-3hn（closed）那十份剧情战真值都停在「胜利」出现的那一刻，没走结算） | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`；实跑 `victory.test.ts` 11/11；主线连跑（`playthrough.test.ts`）在状态层用真实出厂数据开出链上每场仗，**按 J 打赢**、结算、回到地图（正常打死那条路仍归 xl-5zw（open）） |
+| 战斗 按 J 秒杀全部敌人（原版留的调试键） | 能（照复刻：清空敌人、直接落进「全部怪物被杀死」那一段；控制台与提示照原版盖在结算画面上） | 链上 | —（它让「正常打死 → 结算 → 回场景」一度零覆盖，xl-5zw 用 `battle-victory-normal` 补回） | `BattlePanel.java:289-296`；剧本 `battle-victory`（加了一步 `debugKill`）；实跑 `battleTrace.test.ts` 57/57、`useGame.test.tsx` 13/13（进脚本22，按 J，经验得动） |
+| 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能 | 链上 | —（xl-3hn（closed）那十份剧情战真值都停在「胜利」出现的那一刻，没走结算；走完结算的是下面这两份） | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`（按 J）/ `battle-victory-normal`（正常打死，xl-5zw）；`battleTrace.test.ts`「xl-5zw：正常打赢之后结算走完、回到场景」从真值现算这类剧本的份数、要求至少一份；实跑 `victory.test.ts` 11/11；主线连跑（`playthrough.test.ts`）在状态层用真实出厂数据开出链上每场仗，**按 J 打赢**、结算、回到地图（正常打死那条路仍归 xl-5zw（open）） |
 | 战斗 战利品：药和钱进背包 | 能 | 链上 | — | `VictoryReminder.java:348-361`；实跑 `victory.test.ts`「物品与钱在 thing_sx1==4 那一拍发出去」 |
 | 战斗 全灭：第一槽是罹年居士回地图，其余回标题 | 能 | 链上 | — | `GameOver.java:93-125`；剧本 `battle-defeat-scene` / `battle-defeat-start` / `battle-defeat-slot2`；实跑 `session.test.ts`「打输的两条分支」 |
 | 战斗 全灭时第一槽的怪已先被打死 | **能，但不对**：原版空指针冻住战斗线程；Web 故意抛，但主循环没人接 —— 失败的样子不同 | 链上 | xl-9go（open） | `GameOver.java:95`、`Check.java:19-23`；读代码 |
