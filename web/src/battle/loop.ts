@@ -75,9 +75,9 @@ export interface BattleTicker {
   readonly sfx: readonly string[]
   /**
    * 战斗线程死于哪一发异常（xl-9go），没死是 `null`。死了之后这一场**一拍都不再推**，
-   * 世界与画面都停在抛出来的那一刻（原版那条线程已经退出了 `run()`）。
-   * ⚠️ 输入也不收 —— 这一半**不是**原版：原版的键鼠监听在事件线程上照样改状态
-   * （按 J 出胜利音效、涨经验）。没做、不是故意不复刻，见 xl-jkt。
+   * 循环体停在抛出来的那一刻（原版那条线程已经退出了 `run()`）。
+   * **输入照收**（xl-jkt）：原版的键鼠监听挂在 Swing 事件线程上，线程死了它们照样改状态
+   * —— 按 J 走 `checkEnemyDead`，每个英雄一声「战斗胜利」、经验与升级照改。见 `afterDeath`。
    * 面板不切 —— 原版没人 `switchTo`，会话层读到的 `exitPanel` 一直是 `null`。
    */
   readonly died: BattleThreadDied | null
@@ -107,7 +107,7 @@ export function advanceBattle(
   arriving: readonly BattleInput[],
   elapsedMs: number,
 ): BattleTicker {
-  if (ticker.died !== null) return { ...ticker, pending: [], sfx: NO_SFX }
+  if (ticker.died !== null) return afterDeath(ticker, arriving)
   const queue = arriving.length === 0 ? ticker.pending : [...ticker.pending, ...arriving]
   const budget = ticker.carryMs + Math.max(0, elapsedMs) * ticker.timeScale
   const ticks = Math.floor(budget / BATTLE_TICK_MS)
@@ -132,6 +132,35 @@ export function advanceBattle(
 }
 
 const EMPTY: readonly BattleInput[] = []
+
+/**
+ * 战斗线程死了之后（xl-jkt）：**只剩事件线程** —— 输入照原版的监听器改世界与画面状态，
+ * 循环体一句不跑，拍号不动。时间不攒（没有拍可以承载），输入也不攒（原版事件线程是当场处理）。
+ *
+ * 原版画面只在 `repaint()` 时重画，而那句在循环体末尾、再没人调。web 这边**画面定格靠拍号**：
+ * 渲染器同一拍号只合成一次（`render/bufferPlan.ts`），拍号不动它就不再合成，按 J 改掉的
+ * 那些（英雄换成胜利动画、结算卷轴）画不出来。所以这里**绝不能推 `world.tick`**。
+ * ⚠️ 原版窗口被遮住再露出来（expose）时 Swing 会调 `paint()`、把改过的状态画出来；
+ * web 没有对应物，不复刻。
+ */
+function afterDeath(ticker: BattleTicker, arriving: readonly BattleInput[]): BattleTicker {
+  if (arriving.length === 0) return { ...ticker, pending: [], sfx: NO_SFX }
+  feedInputs(ticker.world, ticker.paint, arriving)
+  return { ...ticker, pending: [], sfx: [...ticker.world.music] }
+}
+
+/**
+ * 喂一批输入，**先清音效**（xl-b36：输入里出的声从这里算起）。事件处理器先跑（读这一条
+ * **之前**的 `command.isDraw`），跑完它自己就可能把 `isDraw` 改掉，下一条读到的是改过的。
+ * 原因见 `stepBattleWithPaint`。
+ */
+function feedInputs(world: BattleWorld, paint: PaintState, inputs: readonly BattleInput[]): void {
+  world.music.length = 0
+  for (const input of inputs) {
+    applyPaintInput(world, paint, input)
+    applyBattleInput(world, input)
+  }
+}
 
 /**
  * **一拍：输入 → 循环体 → 只有画面看得见的那点更新**（xl-rh9.18）。
@@ -160,13 +189,7 @@ export function stepBattleWithPaint(
   inputs: readonly BattleInput[] = EMPTY,
 ): void {
   // 一拍的开头：音效从这里清（xl-b36），输入里出的声算进这一拍。
-  world.music.length = 0
-  for (const input of inputs) {
-    // 顺序照抄原版：事件处理器先跑（读这一条**之前**的 `command.isDraw`），
-    // 跑完它自己就可能把 `isDraw` 改掉，下一条读到的是改过的。
-    applyPaintInput(world, paint, input)
-    applyBattleInput(world, input)
-  }
+  feedInputs(world, paint, inputs)
   // 输入已经在上面喂完了，这里不再传；也不再清音效（上面已经清过）。
   stepBattle(world, EMPTY, false)
   advancePaintState(world, paint)
