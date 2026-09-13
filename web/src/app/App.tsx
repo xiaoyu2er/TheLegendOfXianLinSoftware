@@ -291,7 +291,10 @@ export function App() {
     if (!at) return
     const kind = type === 'move' && event.buttons !== 0 ? 'drag' : type
     view.battleMouse({ e: kind, x: at.x, y: at.y })
-    if (type === 'press') grabRelease(box, (p) => view.battleMouse({ e: 'release', ...p }))
+    if (type === 'press') {
+      const host = event.currentTarget
+      grabRelease(host, box, (p) => view.battleMouse({ e: 'release', ...p }), (p) => view.battleMouse({ e: 'drag', ...p }))
+    }
   }
 
   /**
@@ -309,7 +312,10 @@ export function App() {
     // 画布上没有 `<button disabled title>` 可挂，禁用按钮的理由按坐标问出来、
     // 挂在宿主上 —— 与标题页「结」同一口径（xl-03x.12）。
     setMenuTitle(view.menuTitleAt(at.x, at.y))
-    if (e === 'press') grabRelease(box, (p) => view.menuInput({ e: 'release', ...p }))
+    if (e === 'press') {
+      const host = event.currentTarget
+      grabRelease(host, box, (p) => view.menuInput({ e: 'release', ...p }), (p) => view.menuInput({ e: 'move', ...p }))
+    }
   }
 
   /**
@@ -324,27 +330,41 @@ export function App() {
    *
    * 原版的对应物是 Swing 的 mouse grab。这一层只管 DOM 那一截（事件落在谁身上、坐标
    * 怎么换算）；**松手归哪个面板**由 `useGame` 的 `grabRef` 定 —— 按下被它丢掉（面板
-   * 对不上）的话，松手也一并丢掉。只接了松手：拖动（Swing 也按 grab 派）不送，差异
-   * 登记在 `session.ts` 藏着的菜单那一段。
+   * 对不上）的话，松手也一并丢掉。
+   *
+   * 拖动 Swing 也按 grab 派，拖出组件外照样收（xl-b28）：按下到松手之间 window 上同时
+   * 挂着 `mousemove`，**落在宿主外的**才由它送 `drag`（落在宿主里的宿主自己的
+   * `onMouseMove` 已经送了，冒泡上来的不重送）。面板已经切走的话 `useGame` 照当前面板
+   * 丢掉它 —— 藏着的菜单收不到拖动，那处差异仍登记在 `session.ts` 菜单那一段。
    */
-  const releaseRef = useRef<((event: MouseEvent) => void) | null>(null)
-  const grabRelease = (box: DOMRect, send: (at: { x: number; y: number }) => void) => {
-    if (releaseRef.current) window.removeEventListener('mouseup', releaseRef.current)
+  const endGrabRef = useRef<(() => void) | null>(null)
+  const grabRelease = (
+    host: Element,
+    box: DOMRect,
+    send: (at: { x: number; y: number }) => void,
+    drag: (at: { x: number; y: number }, buttons: number) => void,
+  ) => {
+    endGrabRef.current?.()
     const onRelease = (event: MouseEvent) => {
-      window.removeEventListener('mouseup', onRelease)
-      releaseRef.current = null
+      endGrab()
       const at = stagePointIn(box, event)
       if (at) send(at)
     }
-    releaseRef.current = onRelease
+    const onDrag = (event: MouseEvent) => {
+      if (event.buttons === 0 || (event.target instanceof Node && host.contains(event.target))) return
+      const at = stagePointIn(box, event)
+      if (at) drag(at, event.buttons)
+    }
+    const endGrab = () => {
+      window.removeEventListener('mouseup', onRelease)
+      window.removeEventListener('mousemove', onDrag)
+      endGrabRef.current = null
+    }
+    endGrabRef.current = endGrab
     window.addEventListener('mouseup', onRelease)
+    window.addEventListener('mousemove', onDrag)
   }
-  useEffect(
-    () => () => {
-      if (releaseRef.current) window.removeEventListener('mouseup', releaseRef.current)
-    },
-    [],
-  )
+  useEffect(() => () => endGrabRef.current?.(), [])
 
   /**
    * 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。
@@ -360,7 +380,7 @@ export function App() {
     // 松手的主人在按下时就定了：按下时是预览，松手也归预览（见 `grabRelease`）。
     const send = inShopPreview ? shop.input : view.shopInput
     send({ e, x: at.x, y: at.y })
-    if (e === 'press') grabRelease(box, (p) => send({ e: 'release', ...p }))
+    if (e === 'press') grabRelease(event.currentTarget, box, (p) => send({ e: 'release', ...p }), (p) => send({ e: 'move', ...p }))
   }
 
   /**
@@ -376,7 +396,12 @@ export function App() {
     // （`isMoveIn` 改光效）。浏览器两种都叫 mousemove，按 `buttons` 分开。
     const kind = e === 'move' && (event.buttons & 1) === 1 ? 'drag' : e
     view.lsInput({ e: kind, x: at.x, y: at.y })
-    if (e === 'press') grabRelease(box, (p) => view.lsInput({ e: 'release', ...p }))
+    if (e === 'press') {
+      const host = event.currentTarget
+      const drag = (p: { x: number; y: number }, buttons: number) =>
+        view.lsInput({ e: (buttons & 1) === 1 ? 'drag' : 'move', ...p })
+      grabRelease(host, box, (p) => view.lsInput({ e: 'release', ...p }), drag)
+    }
   }
 
   /**
