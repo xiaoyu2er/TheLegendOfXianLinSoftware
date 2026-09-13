@@ -215,7 +215,7 @@
   "xl-l6h": "closed",
   "xl-lly": "closed",
   "xl-lna": "closed",
-  "xl-m9q": "open",
+  "xl-m9q": "closed",
   "xl-now": "closed",
   "xl-now.1": "closed",
   "xl-now.2": "closed",
@@ -253,7 +253,7 @@
   "xl-rh9.17": "closed",
   "xl-rh9.18": "closed",
   "xl-s9w": "closed",
-  "xl-sn2": "open",
+  "xl-sn2": "closed",
   "xl-t0h": "closed",
   "xl-tkx": "closed",
   "xl-tkx.1": "closed",
@@ -292,5 +292,6 @@
   "xl-yg6.14": "closed",
   "xl-yg6.15": "closed",
   "xl-z4f": "closed",
-  "xl-zbo": "closed"
+  "xl-zbo": "closed",
+  "xl-zs6": "open"
 }
