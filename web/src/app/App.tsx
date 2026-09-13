@@ -384,7 +384,7 @@ export function App() {
     }
     // 除这一下自己之外没按着别的键：上一次的松手丢在窗口外了。按着别的键就是和弦。
     const onPress = (event: MouseEvent) => {
-      if (!othersHeld(event)) return endWithReleases(event)
+      if (!isMouseGrab(event)) return endWithReleases(event)
       held += 1
       if (event.target instanceof Node && host.contains(event.target)) return
       const p = at(event)
@@ -402,9 +402,9 @@ export function App() {
     window.addEventListener('mousedown', onPress, true)
   }
   useEffect(() => () => grabRef.current?.end(), [])
-  /** grab 握在另一块宿主上（移动归那边的 `onDrag`），或舞台外按着的键把 grab 定在了空处（{@link othersHeld}）：这块宿主不收。 */
+  /** grab 握在另一块宿主上（移动归那边的 `onDrag`），或舞台外按着的键把 grab 定在了空处（{@link isMouseGrab}，按下与拖动都算）：这块宿主不收。 */
   const grabbedElsewhere = (event: ReactMouseEvent<HTMLDivElement>): boolean =>
-    grabRef.current === null ? event.type === 'mousedown' && othersHeld(event) : grabRef.current.host !== event.currentTarget
+    grabRef.current === null ? isMouseGrab(event) : grabRef.current.host !== event.currentTarget
 
   /**
    * 商店与菜单一样是**纯鼠标**的：按下 / 松开 / 移动三种都要送。
@@ -632,12 +632,14 @@ export function App() {
 }
 
 /**
- * 这一下按下（或松开）之前，还有**别的**键按着 —— Swing `LightweightDispatcher.isMouseGrab`
- * 原样（JDK 17 `java/awt/Container.java`：`modifiers ^= getMaskForButton(e.getButton())`，
- * 再看 `BUTTONS_DOWN_MASK`）。
+ * 这一下事件**之前**有没有键按着 —— Swing `LightweightDispatcher.isMouseGrab` 原样（JDK 17
+ * `java/awt/Container.java`：只有 PRESSED / RELEASED 才 `modifiers ^= getMaskForButton(e.getButton())`，
+ * 再看 `BUTTONS_DOWN_MASK`）。按下看的是**别的**键；移动不扣本键，按着任一键就为真。这里只接
+ * 按下与移动两种（松手不经过它），按下用「去掉本键」而不是异或：jsdom 里不带 `buttons` 的按下
+ * 是 0，异或会把它读成「之前按着」。
  *
- * 为真时 `processMouseEvent` **不重设** `mouseEventTarget`，按下与松手都派给更早那一下按下
- * 定下的目标。两种用法：
+ * 为真时 `processMouseEvent` **不重设** `mouseEventTarget`，按下、松手与拖动都派给更早那一下
+ * 定下的目标（MOUSE_DRAGGED 在按着键时恒为真，所以拖动**从不**重设目标）。几种用法：
  *
  * - grab 挂着（`grabRelease` 的 `onPress`）：和弦，这一下也归 grab（xl-4xi）；
  * - grab 没挂着（`grabbedElsewhere`）：目标是**最后一个不在 grab 里的事件**重设的，这一下
@@ -647,7 +649,12 @@ export function App() {
  *   `getMouseEventTargetImpl` 返回 null。目标是 null：这一下按下不送、不起 grab，它与别的键
  *   的松手也就一个都不送，直到全松开（xl-2yh）。⚠️ 未验证：窗口外按下的键在回到窗口后的
  *   `getModifiersEx` 里带不带着，取决于平台，原版在真机上没按过。
+ * - grab 没挂着、按着键移到宿主上（`grabbedElsewhere`）：同一个 null 目标，`met != null` 那一块
+ *   不进，一个 `mouseDragged` 都不派，直到全松开、下一下 MOUSE_MOVED 重设目标（xl-5ee）。
+ *   ⚠️ 未验证：窗口外按着键移进窗口，原版平台上 Swing 收不收得到这些 DRAGGED 本身也没按过 ——
+ *   收得到目标是 null，收不到更是一个都没有，两种都不派。
  */
-function othersHeld(event: { readonly button: number; readonly buttons: number }): boolean {
-  return (event.buttons & ~(BUTTON_BITS[event.button] ?? 0)) !== 0
+function isMouseGrab(event: { readonly type: string; readonly button: number; readonly buttons: number }): boolean {
+  const own = event.type === 'mousedown' ? (BUTTON_BITS[event.button] ?? 0) : 0
+  return (event.buttons & ~own) !== 0
 }
