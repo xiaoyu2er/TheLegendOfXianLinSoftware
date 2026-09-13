@@ -118,8 +118,9 @@ describe('技能菜单的悬停', () => {
     send(w, { e: 'press', ...at }, { e: 'release', ...at })
     expect(w.skillMenu.isDraw).toBe(true)
     const first = skillMenuButtons(w)[0]!
-    // 松手那一下已经顺带判过一次 moveIn 以外的东西；先确认它还没画说明图。
+    // 悬停之前：说明图没画、那颗是常态 —— 不然下面两条是恒真。
     expect(w.skillMenu.isDrawIntro).toBe(false)
+    expect(first.variant).toBe(1)
     send(w, { e: 'move', ...center(first) })
     expect(w.skillMenu.isDrawIntro).toBe(true)
     expect(first.variant).toBe(2)

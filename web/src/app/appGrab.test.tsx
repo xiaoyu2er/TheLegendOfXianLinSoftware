@@ -148,4 +148,13 @@ describe('App 的 mouse grab', () => {
       { e: 'release', x: 1100, y: 60 },
     ])
   })
+
+  it('战斗画布：按住右键移动也是拖动 —— Swing 的 mouseDragged 不分哪个键', () => {
+    panel.current = 'battle'
+    render(<App />)
+    const host = screen.getByTestId('battle-host')
+    stubBox(host, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseMove(host, { clientX: 60, clientY: 60, buttons: 2 })
+    expect(battleMouse.mock.calls.map(([i]) => i.e)).toEqual(['drag'])
+  })
 })

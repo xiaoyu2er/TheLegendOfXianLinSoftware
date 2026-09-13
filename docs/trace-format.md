@@ -446,7 +446,7 @@ UTF-8 JSON，LF 换行，写到 `tools/traces/out/<name>.trace.json`，**入库*
 | `awaitExit` | `panel`, `max` | 等原版自己把面板切走，并断言切到了哪一块（`panel` 是 `GameLauncher` 那八张 `CardLayout` 卡片名之一，打输能走到的是 `scenePanel` / `startPanel`）。切到别的一块、或者跑满 `max`（默认 300）还没切 —— 都是硬失败。 |
 | `wait` | `ticks` | 空等（与场景共用）。 |
 | `debugKill` | — | 按一下原版留的调试外挂键 J（xl-03x.14）：交给原版自己的 `BattlePanel.keyPressed(VK_J)`，即 `enemies.clear()`、三个槽位置 `null`、`checkEnemyDead()` 当场判胜。**等控制台出来才按**（等到超预算是硬失败）—— 那一刻场上没有一招在飞；一招打到一半按下去，那一招落地时要去读已经被置 `null` 的槽位。`input` 记成 `{"e":"key","key":"j"}`。 |
-| `mouse` | `e`, `at` 或 `x`+`y` | **单独送一个鼠标事件**（xl-qqw）：`e` 是 `move`/`drag`/`press`/`release`，交给原版 `setMouse()` 挂的那四个回调之一。上面那几条点击指令把移入 + 按下 + 松开焊在同一个坐标上，于是悬停、按住拖开再松手、按着键拖过怪物（`mouseDragged` 比 `mouseMoved` 少一句 `enemySlector.checkMoveIn`）这几条路一条都导不出来。落点二选一：`at` 是 `command:<按钮>` / `skillMenu:<按钮>` / `drugMenu:<按钮>` / `enemy:<槽位>`，坐标取原版对象的命中中心，**等它出来才送**（等到超预算是硬失败）；`x`,`y` 是一处空地，当拍就送。两种都写、都不写 —— 硬失败。`input` 记成 `{"e":<事件>,"x":..,"y":..}`，不带 `target`。剧本 `battle-mouse` 用它。 |
+| `mouse` | `e`, `at` 或 `x`+`y` | **单独送一个鼠标事件**（xl-qqw）：`e` 是 `move`/`drag`/`press`/`release`，交给原版 `setMouse()` 挂的那四个回调之一。上面那几条点击指令把移入 + 按下 + 松开焊在同一个坐标上，于是悬停、按住拖开再松手、按着键拖过怪物（`mouseDragged` 比 `mouseMoved` 少一句 `enemySlector.checkMoveIn`）这几条路一条都导不出来。落点二选一：`at` 是 `command:<按钮>` / `skillMenu:<按钮>` / `drugMenu:<按钮>` / `enemy:<槽位>`，坐标取原版对象的命中点（按钮是 `GameButton` 命中框的中心，怪物是图片的中心 —— 与 `command` / `target` 点的同一处），**等它出来才送**（等到超预算是硬失败）；`x`,`y` 是一处空地，当拍就送。两种都写、都不写 —— 硬失败。`input` 记成 `{"e":<事件>,"x":..,"y":..}`，不带 `target`。剧本 `battle-mouse` 用它。 |
 
 `autoUntilRound` 存在的理由与 `autoAttack` 是同一条：**谁先跑满行动条由速度
 与种子决定，写剧本的人事先不知道。** 而"点技能菜单上的第二颗"是**认人**的
