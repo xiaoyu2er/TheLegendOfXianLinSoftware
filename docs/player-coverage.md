@@ -117,8 +117,8 @@
 | 战斗 「技」→ 技能菜单 → 选招（单体选敌、全体直接放）、菜单里「返回」 | 能 | 链上 | — | `SkillMenu.java:202-287`；剧本 `battle-zhang-skills` / `battle-menus` 等 |
 | 战斗 「防」：怒气满放秘术，不满弹提示 | 能 | 链上 | — | `battle/Command.java:104-144`；剧本 `battle-mishu-zhang` / `battle-mishu-yu` / `battle-mishu-lu` |
 | 战斗 「物」→ 药品菜单 → 用药（回血或回蓝、扣存货、跳过这一回合） | 能 | 链上 | —（xl-byy（closed）） | `DrugMenu.java:52,110-192`；会话起战斗时从药包现读存货、每一拍写回；真的用药那一路由剧本 `battle-drugs`（驱动器新字段 `drugs`）逐字段钉住；实跑 `battleTrace.test.ts`、`session.test.ts`「战斗里的药来自药包」 |
-| 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **不能**：战斗画布只收按下，悬停的四种反馈一样都没有 | 链上 | xl-qqw（open） | `BattlePanel.java:349-367`；读代码：战斗画布只挂 `onMouseDown` |
-| 战斗 按住按钮拖开再松手照样触发 | **不能**：Web 一次点击是同一点上的移入 + 按下 + 松开，做不出「按在这、松在那」 | 链上 | xl-qqw（open） | `GameButton.java:54-72`；读代码 |
+| 战斗 鼠标悬停：技能说明、药品说明、选敌时怪物高亮停帧、按钮待点态 | **能**（xl-qqw）：战斗画布分开收移动 / 拖动 / 按下 / 松开；按着键拖过怪物不停帧，与原版 `mouseDragged` 同 | 链上 | xl-qqw | `BattlePanel.java:349-367`；真值 `battle-mouse`（`mouse` 指令）逐字段回放 + 逐帧比对；`battle/pointer.test.ts`、`app/appGrab.test.tsx` |
+| 战斗 按住按钮拖开再松手照样触发 | **能**（xl-qqw）：松手走 `grabRelease`，拖出画布再松手也归战斗；框外松手不清 `isclicked`，下一次任何松手都会连带触发 —— 照原版 | 链上 | xl-qqw | `GameButton.java:54-72`；真值 `battle-mouse` 第 149 拍（拖开松手开选敌）、第 258 拍（粘着的「击」随「技」一起触发） |
 | 战斗 按 J 秒杀全部敌人（原版留的调试键） | 能（照复刻：清空敌人、直接落进「全部怪物被杀死」那一段；控制台与提示照原版盖在结算画面上） | 链上 | 代价：正常打死 → 结算 → 回场景在行为真值里零覆盖了：xl-5zw（open） | `BattlePanel.java:289-296`；剧本 `battle-victory`（加了一步 `debugKill`）；实跑 `battleTrace.test.ts` 57/57、`useGame.test.tsx` 13/13（进脚本22，按 J，经验得动） |
 | 战斗 打赢：经验、升级、属性滚动、结算完回地图 | 能 | 链上 | 真值里只剩按 J 那一条路：xl-5zw（open）（xl-3hn（closed）那十份剧情战真值都停在「胜利」出现的那一刻，没走结算） | `Check.java:38-68`、`VictoryReminder.java:332-437`；剧本 `battle-victory`；实跑 `victory.test.ts` 11/11；主线连跑（`playthrough.test.ts`）在状态层用真实出厂数据开出链上每场仗，**按 J 打赢**、结算、回到地图（正常打死那条路仍归 xl-5zw（open）） |
 | 战斗 战利品：药和钱进背包 | 能 | 链上 | — | `VictoryReminder.java:348-361`；实跑 `victory.test.ts`「物品与钱在 thing_sx1==4 那一拍发出去」 |

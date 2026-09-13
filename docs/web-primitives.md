@@ -25,9 +25,10 @@
 | 调用点 | 类 | 判定 | 证据 |
 |---|---|---|---|
 | `web/src/app/App.tsx:73` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
-| `web/src/app/App.tsx:322,324,330,334` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
+| `web/src/app/App.tsx:332,334,340,344` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
 | `web/src/app/App.tsx:386` | 元素 | 工程 | 外壳 `div` |
-| `web/src/app/App.tsx:402` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
+| `web/src/app/App.tsx:412` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
+| `web/src/app/App.tsx:413` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
 | `web/src/app/App.tsx:409` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
 | `web/src/app/App.tsx:410` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
 | `web/src/app/App.tsx:411` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
