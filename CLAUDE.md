@@ -74,6 +74,7 @@ tools/export-truth.sh            # re-export the 96 script ground-truth JSONs
 tools/export-trace.sh --check    # re-export the behaviour traces, twice, and cmp
 tools/export-random.sh           # re-export the java.util.Random golden data
 tools/export-scaled-blit.sh      # re-export the ScaledBlit sampling golden data
+tools/export-present.sh          # re-export the Java2D SrcOver present golden data
 
 cd web && pnpm install           # browser port; see web/README.md
 pnpm typecheck && pnpm test && pnpm build
