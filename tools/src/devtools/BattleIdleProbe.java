@@ -56,20 +56,130 @@ import main.GameLauncher;
  * </pre>
  *
  * 输出落在 stdout；读数与结论见 xl-03x.23 的关票理由。
+ *
+ * <h2>rescene：第二次回场景在面板之外做了什么（xl-sn2）</h2>
+ *
+ * <pre>
+ *   rescene &lt;第一场剧本&gt; &lt;空推拍数&gt; &lt;第几拍进菜单，-1 = 一直待在场景&gt;
+ * </pre>
+ *
+ * 同一个 JVM 里再立一块真的场景面板与菜单面板，战斗一拍对场景十拍地推，见 {@link #rescene}。
+ * 读数（2026-09-13，openjdk 17；nolevel = battle-victory 三人都压到 10 级，造法见 xl-sn2）：
+ *
+ * <ul>
+ *   <li>nolevel、第 20 拍进菜单：第 40 拍 {@code currentPanel} 菜单 → 场景，BGM 第二次 play；</li>
+ *   <li>nolevel、一直待在场景：第 40 拍 BGM 第二次 play（同一首，大地图.mp3）；</li>
+ *   <li>battle-victory（升级那一支）、第 20 拍进菜单：200 拍留在菜单，BGM 只 play 一次。</li>
+ * </ul>
  */
 public final class BattleIdleProbe {
 
     public static void main(String[] args) throws Exception {
-        if ((args.length != 3 && args.length != 5) || !args[0].equals("idle")) {
-            System.err.println("用法：idle <第一场剧本> <空推拍数> [<第二场剧本> <第二场拍数>]");
+        boolean idle = args.length >= 1 && args[0].equals("idle") && (args.length == 3 || args.length == 5);
+        boolean rescene = args.length == 4 && args[0].equals("rescene");
+        if (!idle && !rescene) {
+            System.err.println("用法：idle <第一场剧本> <空推拍数> [<第二场剧本> <第二场拍数>]\n"
+                    + "      rescene <第一场剧本> <空推拍数> <第几拍进菜单，-1 = 一直待在场景>");
             System.exit(2);
         }
         media.MusicPlayer.CAN_PLAY_MUSIC = media.MusicPlayer.NO;
         media.MusicPlayer.CAN_PLAY_BGM = media.MusicPlayer.NO;
-        idle(new File(args[1]), Integer.parseInt(args[2]),
-                args.length == 5 ? new File(args[3]) : null,
-                args.length == 5 ? Integer.parseInt(args[4]) : 0);
+        if (rescene) {
+            rescene(new File(args[1]), Integer.parseInt(args[2]), Integer.parseInt(args[3]));
+        } else {
+            idle(new File(args[1]), Integer.parseInt(args[2]),
+                    args.length == 5 ? new File(args[3]) : null,
+                    args.length == 5 ? Integer.parseInt(args[4]) : 0);
+        }
         System.exit(0);
+    }
+
+    // ================= rescene：第二次 switchTo("scene") 在面板之外做了什么（xl-sn2） =================
+
+    /** 场景循环 {@code Clock.sleep(10)}，战斗循环 {@code Clock.sleep(100)}：战斗一拍对场景十拍。 */
+    private static final int SCENE_STEPS_PER_BATTLE_TICK = 10;
+
+    /**
+     * 第一场照剧本打到原版自己切走面板，然后在**同一个 JVM** 里立起一块真的场景面板
+     * （大地图，立法照 {@link SceneDriver#start}）与一块真的菜单面板（照
+     * {@code GameLauncher} 构造函数那一句 {@code new MenuPanel(zxf, lxq, yj)}），
+     * 之后每放行一次战斗循环体就调十次 {@code ScenePanel.step()}。
+     *
+     * 第 {@code menuAt} 拍照 {@code ScenePanel.keyPressed} 的 ESC 那一句调
+     * {@code GameLauncher.switchTo("menu")}。每拍只打印变了的这几样：切面板观察点、
+     * {@code GameLauncher.currentPanel} 是哪一块、{@code SCENE_SIGNAL}、背景音乐曲名，
+     * 以及**背景音乐一共 play 了几次** —— {@code MusicPlayer.play} 每次都
+     * {@code new File} 再 {@code getAudioInputStream}，所以它的 {@code audioInputStream}
+     * 换了一个对象就是又从文件头开了一次。曲名在第二次 play 前后是同一首，只看曲名看不出来。
+     *
+     * 立起来的只是这三块面板，不是 {@code GameLauncher}（那是 xl-x0t）：切面板仍然由
+     * {@link BattleDriver} 装的 {@link PanelTap} 记名字、不碰容器。场景的定时器冻着不推
+     * （NPC 走不走与这里要量的无关）；菜单那四条 {@code FatherPanel} 线程照跑，它们只推帧。
+     */
+    private static void rescene(File first, int n, int menuAt) throws Exception {
+        TraceScript s1 = TraceScript.load(first);
+        BattleDriver d = new BattleDriver(s1);
+        int steps = 0;
+        while (d.step()) steps++;
+        PanelTap tap = (PanelTap) BattleDriver.get(d, "tap");
+        if (tap.count() != 1 || !"scenePanel".equals(tap.card())) {
+            ExportTrace.die(first.getName() + " 打完之后切面板 " + tap.count() + " 次、最后切到 " + tap.card()
+                    + " —— 这个模式要的是一场一路打到原版切回场景的胜利");
+        }
+
+        tools.Clock.freezeTimers(24L * 60 * 60 * 1000);
+        scene.ScenePanel sp = new scene.ScenePanel(null);
+        GameLauncher.scenePanel = sp;
+        sp.initiation("脚本1.txt");     // 预热，理由见 SceneDriver.start
+        sp.initiation("大地图.txt");
+        sp.isScript = false;
+        GameLauncher.currentPanel = sp;
+        GameLauncher.menuPanel = new menu.MenuPanel(GameLauncher.zhangXiaoFan, GameLauncher.luXueQi, GameLauncher.yuJie);
+
+        Object bgm = staticField("media.MusicReader", "background");
+        Object[] lastStream = {BattleDriver.get(bgm, "audioInputStream")};
+        int[] plays = {0};
+        System.out.println("# 第一场 " + s1.name + "：" + steps + " 步，原版已切面板 1 次（scenePanel）；"
+                + "场景 = 大地图，SCENE_SIGNAL=" + GameLauncher.SCENE_SIGNAL + "，此刻 BGM " + BattleDriver.get(bgm, "currentPlayingBGM"));
+
+        String prev = null;
+        for (int i = 0; i <= n; i++) {
+            if (i > 0) d.pumpAndPaint();
+            if (i == menuAt) GameLauncher.switchTo("menu");
+            for (int k = 0; k < SCENE_STEPS_PER_BATTLE_TICK; k++) {
+                sp.step();
+                Object s = BattleDriver.get(bgm, "audioInputStream");
+                if (s != lastStream[0]) {
+                    plays[0]++;
+                    lastStream[0] = s;
+                    System.out.println("  第 " + i + " 拍场景第 " + k + " 步：BGM play 第 " + plays[0] + " 次 "
+                            + BattleDriver.get(bgm, "currentPlayingBGM"));
+                }
+            }
+            String cur = "tap.count=" + tap.count() + " tap.card=" + tap.card()
+                    + " current=" + panelName(GameLauncher.currentPanel, sp)
+                    + " SCENE_SIGNAL=" + GameLauncher.SCENE_SIGNAL
+                    + " timeCode=" + BattleDriver.get(BattleDriver.get(d.panel(), "victoryReminder"), "timeCode")
+                    + " plays=" + plays[0];
+            // timeCode 每拍都在变，比较时去掉它，只在别的东西变了时打印
+            String key = cur.replaceAll(" timeCode=\\d+", "");
+            if (!key.equals(prev)) System.out.println("第 " + i + " 拍：" + cur);
+            prev = key;
+        }
+        System.out.println("# 空推 " + n + " 拍，BGM 共 play " + plays[0] + " 次");
+    }
+
+    private static String panelName(Object p, Object sp) {
+        if (p == null) return "null";
+        if (p == sp) return "scene";
+        if (p == GameLauncher.menuPanel) return "menu";
+        return p.getClass().getSimpleName();
+    }
+
+    private static Object staticField(String cls, String name) throws Exception {
+        Field f = Class.forName(cls).getDeclaredField(name);
+        f.setAccessible(true);
+        return f.get(null);
     }
 
     private static void idle(File first, int n, File second, int m) throws Exception {
