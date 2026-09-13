@@ -26,20 +26,20 @@
 |---|---|---|---|
 | `web/src/app/App.tsx:76` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
 | `web/src/app/App.tsx:394,395,396,400,401,402` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28；对应 `BattlePanel.java:369`、`MenuPanel.java:116`、`LoadAndSavePanel.java:188`、`ShopPanel.java:200`、`EquipmentShopPanel.java:276`），grab 期间别的宿主不收移动；`mousemove` 与 `mousedown` 挂在捕获阶段，窗口外松了手（window 收不到 mouseup，原版照样收到）之后头一下没按键的移动或新按下当场补上松手（xl-bwl，坐标是见到的那一刻）；和弦（按着一个键再按另一个）照 `Container.java` 的 `isMouseGrab`：第二次按下也归 grab，每一次松手都派给 grab，所有键都松开才解除，窗口外松开按按下次数补松手（xl-4xi）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
-| `web/src/app/App.tsx:442` | 元素 | 工程 | 外壳 `div` |
-| `web/src/app/App.tsx:458` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
-| `web/src/app/App.tsx:459` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
-| `web/src/app/App.tsx:466` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
-| `web/src/app/App.tsx:467` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
-| `web/src/app/App.tsx:468` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
-| `web/src/app/App.tsx:469` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
+| `web/src/app/App.tsx:461` | 元素 | 工程 | 外壳 `div` |
+| `web/src/app/App.tsx:477` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
+| `web/src/app/App.tsx:478` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
+| `web/src/app/App.tsx:485` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
+| `web/src/app/App.tsx:486` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
+| `web/src/app/App.tsx:487` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
+| `web/src/app/App.tsx:488` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
 | `web/src/app/App.tsx:495,496` | 事件 | 对应 `src/shop/ShopPanel.java:173` | 两家店的按下 / 移动（装备店是 `EquipmentShopPanel.java:249` 同形的一段）；按住任一键移动送 `drag`（`ShopPanel.java:200`，只记坐标不跑 `isMoveIn`，xl-bwl）。**松手不在宿主上**，走上面那一行的 `grabRelease`（xl-o9z） |
 | `web/src/app/App.tsx:503,504` | 事件 | 对应 `src/start/LoadAndSavePanel.java:161` | 按 `buttons` 分开 `mouseDragged` 与 `mouseMoved`，任一键都算拖动（xl-bwl）；松手同样走 `grabRelease`（xl-o9z） |
-| `web/src/app/App.tsx:501,510,515,520,525` | 元素 / 无障碍 | 已登记 `ADR-0001#loading-notices` | 「正在载入 …」与渲染失败那一行（**xl-03x.22 补登**） |
-| `web/src/app/App.tsx:506` | 事件 | 工程 | `<StartPanel onNewGame onLoad>` 是组件 prop，不是浏览器事件 —— 正则的误报，如实记下 |
-| `web/src/app/App.tsx:536,576,603,604` | 元素 / 无障碍 / 事件 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏、操作提示、放大方式切换（**xl-03x.22 补登**） |
-| `web/src/app/App.tsx:538,548,552,554,562,566,569` | 元素 / 事件 | 工程 | 场景 / 商店两个选择器，只在开发模式或 `?dev` 下渲染（`app/devTools.ts`） |
-| `web/src/app/App.tsx:595,597` | 事件 / 无障碍 | 已登记 `ADR-0001#stage-scales-to-window` | 全屏按钮 |
+| `web/src/app/App.tsx:520,529,534,539,544` | 元素 / 无障碍 | 已登记 `ADR-0001#loading-notices` | 「正在载入 …」与渲染失败那一行（**xl-03x.22 补登**） |
+| `web/src/app/App.tsx:525` | 事件 | 工程 | `<StartPanel onNewGame onLoad>` 是组件 prop，不是浏览器事件 —— 正则的误报，如实记下 |
+| `web/src/app/App.tsx:555,595,622,623` | 元素 / 无障碍 / 事件 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏、操作提示、放大方式切换（**xl-03x.22 补登**） |
+| `web/src/app/App.tsx:557,567,571,573,581,585,588` | 元素 / 事件 | 工程 | 场景 / 商店两个选择器，只在开发模式或 `?dev` 下渲染（`app/devTools.ts`） |
+| `web/src/app/App.tsx:614,616` | 事件 / 无障碍 | 已登记 `ADR-0001#stage-scales-to-window` | 全屏按钮 |
 | `web/src/app/devTools.ts:11` | 地址 / 全局 | 工程 | `?dev` 开关 |
 | `web/src/audio/bgmPlayer.ts:59,99` | 键盘 / 指针 / 事件 | 已登记 `ADR-0001#bgm-waits-for-gesture` | 自动播放被挡时等第一次手势（**xl-03x.22 补登**） |
 | `web/src/audio/bgmPlayer.ts:62` | 音频 | 对应 `src/media/MusicPlayer.java:71` | 背景音乐开播（`play()` 里 `sourceDataLine.start()`）；web 只有一个播放对象、换 `src` |
