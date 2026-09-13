@@ -169,13 +169,16 @@ describe('烘焙指纹', () => {
    *
    * 每一条不只是「文件 → 目录」，还带着**怎么扫**（xl-de7）：扫描函数（`readdirSync`
    * 一层 / `listFiles` 递归，其余扫描函数与带第二个实参的调用没建模，判红）与调用上直接链着的
-   * `.filter(…)` 原文（中间隔着 `.sort()` 也算；遇到别的方法就停）。所以 `readdirSync` 改成
-   * `listFiles`、过滤条件改一个字，都与登记行对不上。
+   * `.filter(…)` 原文（中间隔着 `.sort()` 也算；到 `.map` 停；链上别的方法判红）。所以
+   * `readdirSync` 改成 `listFiles`、过滤条件改一个字、链上加一道 `.slice`，都与登记行对不上。
+   * `node:fs` 的命名空间 / 默认导入只许 `fs.名字` 一种用法，拼出来的成员名与动态 import 判红。
    *
    * **这一条的分母**：闭包语法树里每一处扫描调用，逐条核（文件、目录、扫描函数、链上的过滤）。
-   * **仍然绕得过的写法**：扫描结果先存进变量、过一道 `.map`、或者在循环里 `continue` 掉
+   * **仍然绕得过的写法**：扫描结果先存进变量再挑、`.map` 之后再挑、或者在循环里 `continue` 掉
    * 一部分 —— 调用链之外的过滤这里看不见，登记行照旧按「全读」或 `downstream` 判。装备与商店
-   * 两行的 `downstream` 就是这种：烘焙器是不是真拿那个函数挑这批扫描结果，这里不核。
+   * 两行的 `downstream` 就是这种：烘焙器是不是真拿那个函数挑这批扫描结果，这里不核。不经扫描
+   * 函数的枚举（按编号 `existsSync` 试探）不在分母里。登记行的 `filter` 只能是自包含的箭头函数：
+   * 烘焙器的过滤引用了外面的常量，编译出来一调就 ReferenceError —— 响，但要先改登记的形状。
    */
   it('烘焙器闭包里的每一处目录扫描都在登记表里，反之亦然', () => {
     const PRIMITIVE = 'web/src/assets/listFiles.ts'
@@ -370,10 +373,12 @@ function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at
 }
 
 /** 建了模的扫描函数：`readdirSync` 只扫一层，`listFiles` 递归。 */
-type Scan = 'readdirSync' | 'listFiles'
-const MODELLED: readonly string[] = ['readdirSync', 'listFiles'] satisfies Scan[]
+const MODELLED = ['readdirSync', 'listFiles'] as const
+type Scan = (typeof MODELLED)[number]
+const isModelled = (name: string): name is Scan => (MODELLED as readonly string[]).includes(name)
 /** 认得出名字就数，不管建没建模 —— 没建模的出现就判红，不能当它不存在。 */
-const SCANNERS = new Set([...MODELLED, 'readdir', 'opendirSync', 'opendir', 'globSync', 'glob'])
+const SCANNERS = new Set<string>([...MODELLED, 'readdir', 'opendirSync', 'opendir', 'globSync', 'glob'])
+const FS_MODULES = new Set(['node:fs', 'fs', 'node:fs/promises', 'fs/promises'])
 
 type ScanSite = { site: string; dir: string; scan: Scan; filters: string[] }
 const siteKey = ({ site, dir, scan, filters }: ScanSite): string =>
@@ -402,26 +407,50 @@ function scanSites(program: ts.Program, repo: string, files: readonly string[]):
   const scanned = scannedDirs(program, repo)
   const sites: ScanSite[] = []
   const escaped: string[] = []
-  // `x.filter(a).sort().filter(b)`：往外走，`.filter` 记下实参、`.sort` 跳过，别的方法就停。
-  const chainedFilters = (call: ts.CallExpression): string[] => {
+  // `x.filter(a).sort().filter(b)`：往外走，`.filter` 记下实参、`.sort` 跳过；`.map` 之后挑的就不是
+  // 文件名了，停（那之后的过滤看不见，头注写明了）。别的方法（`.slice`、`.reverse`……）会删改这批
+  // 文件又没建模 —— 判红，不停下当没事（xl-de7 /code-review Spec 轴实测 `.slice(1)` 照绿过）。
+  const chainedFilters = (call: ts.CallExpression, at: string): string[] => {
     const out: string[] = []
     let node: ts.Expression = call
     for (;;) {
       const access = node.parent
       if (!ts.isPropertyAccessExpression(access) || access.expression !== node) break
       const outer = access.parent
-      if (!ts.isCallExpression(outer) || outer.expression !== access) break
-      if (access.name.text === 'filter') out.push(squash(outer.arguments.map((a) => a.getText()).join(', ')))
-      else if (access.name.text !== 'sort') break
+      const method = access.name.text
+      if (!ts.isCallExpression(outer) || outer.expression !== access) {
+        escaped.push(`${at} 扫描结果上的 .${method} 不是调用，没建模`)
+        break
+      }
+      if (method === 'map') break
+      if (method === 'filter') out.push(squash(outer.arguments.map((a) => a.getText()).join(', ')))
+      else if (method !== 'sort') escaped.push(`${at} 扫描结果上链了 .${method}(…)，没建模`)
       node = outer
     }
     return out
+  }
+  // `import * as fs from 'node:fs'` / `import fs from 'node:fs'`：只许 `fs.名字` 这一种用法 ——
+  // `fs[\`readdir${'Sync'}\`]`、`Reflect.get(fs, …)`、把 `fs` 传走，扫描函数的名字都不以
+  // 标识符出现，按名字认不出（Spec 轴实测模板字符串那种照绿过）。动态 `import('node:fs')` 同理。
+  const fsHandle = (node: ts.Identifier): boolean => {
+    const decl = program.getTypeChecker().getSymbolAtLocation(node)?.declarations?.[0]
+    if (decl === undefined || !(ts.isNamespaceImport(decl) || ts.isImportClause(decl))) return false
+    const from = (ts.isNamespaceImport(decl) ? decl.parent.parent : decl.parent).moduleSpecifier
+    return ts.isStringLiteral(from) && FS_MODULES.has(from.text)
   }
   for (const file of files) {
     const tree = program.getSourceFile(resolve(repo, file))
     if (tree === undefined) throw new Error(`${file} 不在 TypeScript 程序里`)
     const line = (node: ts.Node) => `${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1}`
     const visit = (node: ts.Node): void => {
+      if (ts.isIdentifier(node) && !ts.isImportClause(node.parent) && !ts.isNamespaceImport(node.parent) && fsHandle(node)) {
+        const parent = node.parent
+        if (!(ts.isPropertyAccessExpression(parent) && parent.expression === node)) escaped.push(`${line(node)} ${node.text} 不是以 ${node.text}.名字 用的`)
+      }
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const spec = node.arguments[0]
+        if (spec === undefined || !ts.isStringLiteralLike(spec) || FS_MODULES.has(spec.text)) escaped.push(`${line(node)} 动态 import 了 fs（或说不清是哪个模块）`)
+      }
       if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && SCANNERS.has(node.text)) {
         const parent = node.parent
         // `readdirSync(…)` 或 `fs.readdirSync(…)`：名字就是被调用的那个。
@@ -438,12 +467,13 @@ function scanSites(program: ts.Program, repo: string, files: readonly string[]):
           const at = line(node)
           const first = call.arguments[0]
           // 第二个实参会改扫法（`{ recursive: true }`、`withFileTypes`、`listFiles` 的前缀），没建模。
-          if (!MODELLED.includes(node.text)) escaped.push(`${at} ${node.text}() 这个扫描函数没建模`)
-          else if (first === undefined) escaped.push(`${at} ${node.text}() 没有实参`)
-          else if (call.arguments.length > 1) escaped.push(`${at} ${node.text}() 带了第二个实参，扫法没建模`)
+          const scan = node.text
+          if (!isModelled(scan)) escaped.push(`${at} ${scan}() 这个扫描函数没建模`)
+          else if (first === undefined) escaped.push(`${at} ${scan}() 没有实参`)
+          else if (call.arguments.length > 1) escaped.push(`${at} ${scan}() 带了第二个实参，扫法没建模`)
           else {
-            const filters = chainedFilters(call)
-            for (const dir of scanned(first, at)) sites.push({ site: file, dir, scan: node.text as Scan, filters })
+            const filters = chainedFilters(call, at)
+            for (const dir of scanned(first, at)) sites.push({ site: file, dir, scan, filters })
           }
         } else if (!declared && ts.isIdentifier(node)) escaped.push(`${line(node)} ${node.text}`)
         else if (ts.isStringLiteralLike(node) && ts.isElementAccessExpression(parent)) escaped.push(`${file} ['${node.text}']`)
@@ -551,6 +581,16 @@ describe('指纹本身不是空转', () => {
     expect(escapedIn("readdirSync(resolve(ROOT, 'a'), { recursive: true })")).toEqual([expect.stringMatching(/带了第二个实参/)])
     expect(escapedIn("listFiles(resolve(ROOT, 'a'), 'sub')")).toEqual([expect.stringMatching(/带了第二个实参/)])
     expect(escapedIn("import { globSync } from 'node:fs'\nglobSync(resolve(ROOT, 'a'))")).toEqual([expect.stringMatching(/没建模/)])
+    // 链上删改这批文件的方法（/code-review Spec 轴实测 `.slice(1)` 在旧版照绿）。
+    expect(escapedIn("readdirSync(resolve(ROOT, 'a')).filter(p).slice(1)")).toEqual([expect.stringMatching(/\.slice\(…\)，没建模/)])
+  })
+
+  it('fs 的命名空间只许 fs.名字 一种用法：拼出来的成员名、传走、动态 import 都进 escaped（xl-de7）', () => {
+    const escapedIn = (body: string) => sitesIn({ 'entry.ts': `${HEADER}import * as nodefs from 'node:fs'\n${body}\n` }).escaped
+    expect(escapedIn('nodefs.existsSync(ROOT)')).toEqual([])
+    expect(escapedIn("nodefs[`readdir${'Sync'}`](resolve(ROOT, 'a'))")).toEqual([expect.stringMatching(/不是以 nodefs\.名字 用的/)])
+    expect(escapedIn("Reflect.get(nodefs, 'readdirSync')")).toEqual([expect.stringMatching(/不是以 nodefs\.名字 用的/)])
+    expect(escapedIn("void import('node:fs')")).toEqual([expect.stringMatching(/动态 import/)])
   })
 
   it('登记行的过滤原文编译出来就是那个判法', () => {
