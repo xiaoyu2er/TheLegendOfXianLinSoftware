@@ -822,6 +822,19 @@ export function useGame(
    * 按下时那个组件（`session.ts` 菜单那一段有读数）。别的事件照当前面板过滤。
    *
    * App 那一层只记按下那一刻的外接矩形（换算坐标用），**归谁只在这里定**。
+   *
+   * ⚠️ **拖动照当前面板过滤，是一处有意的差异**（xl-bwl 登记）：Swing 把 MOUSE_DRAGGED
+   * 也按 grab 派，按下之后面板被切走，藏着的那块照样收拖动。四块各自为什么看不出来：
+   *
+   * - 菜单、存读档：见 `session.ts` 那两段（悬停贴图下次开菜单头一下移动全刷 / 只记坐标、
+   *   松手重写）；
+   * - 店：两家店换面板只有「返回游戏」一条，而它在 `mouseReleased` 的 `setButton()` 里
+   *   —— 键也到不了店（`GameLauncher.keyPressed` 没有店那一支），按着的时候店不会被切走，
+   *   这条路走不到；
+   * - 战斗：战斗线程自己结束、玩家还按着时走得到。原版 `BattlePanel` 只在构造时 new 一次、
+   *   场场复用，藏着的那块拖动会跑 `command/skillMenu/drugMenu.checkMoveIn()`（各自
+   *   `isDraw` 为真时）。⚠️ 未验证的推理：下一场开打时这几颗按钮的悬停贴图是否会被重置、
+   *   这几下拖动留不留得到下一场，没有量过。
    */
   const routeByGrab = <I extends { readonly e: string }>(owner: GrabOwner, input: I, queue: { current: I[] }): void => {
     if (input.e === 'release') {
