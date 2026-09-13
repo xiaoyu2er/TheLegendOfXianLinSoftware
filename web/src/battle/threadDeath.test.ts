@@ -4,6 +4,8 @@ import { decodePng } from '../compare/png'
 import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
 import { BATTLE_TICK_MS, advanceBattle, createBattleTicker } from './loop'
+import { createBufferPlan } from './render/bufferPlan'
+import { battleDrawList } from './render/drawList'
 import type { BattleTicker } from './loop'
 import { replayBattle } from './replay'
 import { snapshotBattle } from './snapshot'
@@ -94,14 +96,12 @@ describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
     expect(t.world.gameOver.isStop).toBe(false)
   })
 
-  // ⚠️ 「输入也不收」**不是**原版：原版的键鼠监听在 Swing 事件线程上，线程死了照样改状态
-  // （按 J 还会出胜利音效、涨经验）。没做、不是故意不复刻 —— 见 xl-jkt。
-  it('死了之后再推：世界、画面状态、拍号一个字都不动，输入也不收', () => {
+  it('死了之后空推：世界、画面状态、拍号一个字都不动', () => {
     const dead = advanceBattle(defeatWithEmptySlot1(), [], PAST_GAME_OVER_MS)
     const world = snapshotBattle(dead.world)
     const tick = dead.world.tick
     const paint = JSON.stringify([...dead.paint.bars, ...dead.paint.angry, dead.paint.mouse, dead.paint.buttons])
-    const later = advanceBattle(dead, [{ e: 'move', x: 300, y: 200 }], 50 * BATTLE_TICK_MS)
+    const later = advanceBattle(dead, [], 50 * BATTLE_TICK_MS)
     expect(later.died).toBe(dead.died)
     expect(snapshotBattle(later.world)).toEqual(world)
     expect(later.world.tick).toBe(tick)
@@ -110,6 +110,56 @@ describe('全灭时第一槽已空：战斗线程死掉，画面停住', () => {
     )
     expect(later.pending).toEqual([])
     expect(later.sfx).toEqual([])
+    expect(later.carryMs).toBe(dead.carryMs)
+  })
+
+  /**
+   * 原版的键鼠监听挂在 Swing 事件线程上（xl-jkt），战斗线程死了它们照样跑：
+   * `GameLauncher.keyPressed` 把 J 转给 `BattlePanel.keyPressed` → `Check.checkEnemyDead()`，
+   * 三个槽全空、`heroes.clear()` 死在它前面没跑到 —— 于是每个英雄一声「战斗胜利」，经验与升级照改。
+   * 画面不动：`repaint()` 在循环体末尾，再没人调。
+   */
+  it('死了之后按 J：照原版改状态、每个英雄一声胜利；拍号不动，画面不再合成', () => {
+    const dead = advanceBattle(defeatWithEmptySlot1(), [], PAST_GAME_OVER_MS)
+    const w = dead.world
+    const heroes = w.heroes.length
+    expect(heroes, '全灭时英雄名单是空的 —— 下面几条测不到东西').toBeGreaterThan(0)
+    const get = w.victoryReminder.expToGet
+    expect(get, '这一场没有经验可发 —— 经验那条恒真').toBeGreaterThan(0)
+    // 期望值在按之前记下来（`Check.checkEnemyDead`：先加经验，够了就升一级、扣掉那一级的门槛）。
+    const expected = w.heroes.map((h) => {
+      const exp = h.exp + get
+      return exp >= h.expToLevelUp ? { level: h.level + 1, exp: exp - h.expToLevelUp } : { level: h.level, exp }
+    })
+    const code = w.gameOver.code
+    const tick = w.tick
+    const before = battleDrawList(w, dead.paint)
+    // 死之前最后一次合成的就是这个拍号（死的那一拍抛在 `w.tick++` 之前）。
+    const plan = createBufferPlan()
+    plan.next(tick)
+
+    const pressed = advanceBattle(dead, [{ e: 'key', key: 'j' }], BATTLE_TICK_MS)
+    expect(pressed.sfx).toEqual(Array.from({ length: heroes }, () => '战斗胜利.MP3'))
+    expect(w.heroes.map((h) => ({ level: h.level, exp: h.exp }))).toEqual(expected)
+    // 循环体一句没跑：全灭图的计数器、拍号都停在死的那一刻。
+    expect(w.gameOver.code).toBe(code)
+    expect(w.tick).toBe(tick)
+    // 这一下真把画面该画的东西改了（英雄换成胜利动画）—— 所以「不合成」是承重的：
+    expect(battleDrawList(w, pressed.paint)).not.toEqual(before)
+    expect(plan.next(w.tick)).toBe('skip')
+
+    // 原版没有门：再按一次，胜利那一段再跑一遍、再响一轮。
+    const again = advanceBattle(pressed, [{ e: 'key', key: 'j' }], 0)
+    expect(again.sfx).toHaveLength(heroes)
+    // 空推一次，音效不重播。
+    expect(advanceBattle(again, [], BATTLE_TICK_MS).sfx).toEqual([])
+  })
+
+  it('死了之后移鼠标：监听器照样记下坐标', () => {
+    const dead = advanceBattle(defeatWithEmptySlot1(), [], PAST_GAME_OVER_MS)
+    const at = { x: dead.world.currentX + 37, y: dead.world.currentY + 11 }
+    advanceBattle(dead, [{ e: 'move', ...at }], 0)
+    expect({ x: dead.world.currentX, y: dead.world.currentY }).toEqual(at)
   })
 
   it('死的是那一拍，不是那一批：同一批里它之前的几拍照常算', () => {
