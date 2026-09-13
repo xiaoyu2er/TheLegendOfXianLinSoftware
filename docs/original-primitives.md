@@ -2,7 +2,7 @@
 
 原版 `src/` 里「浏览器没有对应物」的那一类平台原语，每一处调用点在 web 侧落成什么（xl-03x.20）。
 
-读数（2026-09-11）：共 151 行命中、53 个单元（照做 87 · 已登记 55 · 欠账 2 · 仪器 5 · 未核 2）
+读数（2026-09-13）：共 151 行命中、53 个单元（照做 87 · 已登记 55 · 欠账 4 · 仪器 5 · 未核 0）
 
 **分母不在这里写**：哪几类算「这一类原语」，是 `web/src/test/originalPrimitives.test.ts` 里
 `PRIMITIVES` 那张正则表定的（线程 / 睡眠 / 定时器 / 退出 / 随机数 / 音频 / 文件 / 捕获 / 光标 / 窗口），
@@ -30,7 +30,7 @@
 
 | 调用点 | 原语 | 判定 | 证据 |
 |---|---|---|---|
-| `src/battle/BattlePanel.java:17,157` | 线程 | 未核 | 战斗里：`battle/loop.ts` 100 ms 一拍，`game/session.ts` 的 `advanceBattle`，`battle/battleTrace.test.ts` 逐步对真值。**战斗之外**：原版这条线程构造时起、关机停，战斗结束后每拍仍调 `doAction()`（只推待机帧）、`launchAttack.check()`、`gameOver.update()`、`victoryReminder.update()` 等；web 只在 `panel === 'battle'` 时推。后几样改不改得到下一场的状态，读代码判断不了 —— 归 xl-03x.23 跑读数 |
+| `src/battle/BattlePanel.java:17,157` | 线程 | 欠账 xl-sn2 | 战斗里：`battle/loop.ts` 100 ms 一拍，`game/session.ts` 的 `advanceBattle`，`battle/battleTrace.test.ts` 逐步对真值。**战斗之外**：原版这条线程构造时起、关机停，web 只在 `panel === 'battle'` 时推。xl-03x.23 跑了读数（`tools/src/devtools/BattleIdleProbe.java`）：六种收场各空推 200 拍，动的只有帧相位（`mouse.code` / `instruct.code`）与下一场 `initial()` 会重建的对象（`stateBlank` 的血条宽度、`victoryReminder.timeCode`），英雄、`battleState`、钱、背包一个字段都不动；接着开的第二场，空推与不空推逐拍只差帧相位 —— 这部分与 `ADR-0001#panel-threads-run-while-hidden` 同族。**唯一的例外**：没升级的胜利在 `timeCode==15` 回地图，之后 `timeCode` 照加，空推第 40 拍到 55，`VictoryReminder.java:435` 又 `switchTo("scene")` 一次；web 在出口那一拍丢掉战斗世界，这一次不会发生 —— 复刻还是登记，归 xl-sn2 |
 | `src/battle/BattlePanel.java:470,471` | 睡眠 / 捕获 | 照做 | `battle/loop.ts` 的 `BATTLE_TICK_MS = 100`（ADR-0003）；try 里只有 sleep，吞掉的只是 `InterruptedException` |
 | `src/battle/BattlePanel.java:304,306,308` | 光标 | 照做 | 透明光标 + 自绘鼠标：`index.css` 的 `.stage { cursor: none }`（xl-03x.20 补）+ `battle/render/assets.ts` 的鼠标图；`app/stageCursor.test.ts` |
 | `src/battle/BattleState.java:85` | 随机数 | 已登记 `ADR-0001#random-streams-per-battle-and-shop` | 算式照抄：`battle/step.ts` 的 `nextDouble()*100`；`battle/battleTrace.test.ts` |
