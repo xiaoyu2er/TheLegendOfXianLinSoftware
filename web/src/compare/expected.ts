@@ -566,6 +566,22 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
     issue: 'xl-9bd.17 / xl-7ip',
     exact: [{ ...REMINDER_EXACT, drawnTicks: 42 }],
   },
+  'battle-mouse': {
+    // 分开来的鼠标事件（xl-qqw）：与 battle-menus 同一场遭遇、同一颗种子，多了悬停、
+    // 按住拖开再松手、拖过怪物。实测（2026-09-12，`tools/compare-frames.sh battle-menus
+    // battle-mouse`，剧本自报密度 = 25 拍一帧，22 帧，容差 8；battle-menus 排第一，
+    // 见 docs/frame-compare.md「排第一条的那条看不见装配没切换」）：
+    // 22/22 帧偏离、最差 #125 0.9810% @ (92,234)-(951,612) —— 药品菜单开着、游标停在
+    // 第 2 味药上那一帧，与 battle-menus 的最差帧（#125 0.9805%）同一处同一笔字形账。
+    // 上界照 battle-menus 取最差帧的两倍。提示图逐像素相等区：采样到 1 帧、2880 个像素全等。
+    status: 'gap',
+    maxRatio: 0.0196,
+    why:
+      '状态栏那九行字 + 药品菜单的存货与介绍文字（同一笔字形账，与 battle-menus 同源）；' +
+      '背景动画的有损重编码（JPG 源 → cwebp -q 95 -sns 0）',
+    issue: 'xl-9bd.17 / xl-7ip',
+    exact: [{ ...REMINDER_EXACT, drawnTicks: 21 }],
+  },
   // ===== xl-rh9.14 的六条：剩下那些技能与秘术 =====
   //
   // 六条原先都是 `unpainted`（技能菜单与状态图标归 xl-rh9.12、小精灵归
