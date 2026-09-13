@@ -66,6 +66,8 @@ const IMPLEMENTED: readonly string[] = [
   'battle-mishu-yu',
   'battle-mishu-lu',
   'battle-victory',
+  // xl-5zw：正常打死最后一只怪 → 结算 → 回场景（battle-victory 按 J 之前那一版）。
+  'battle-victory-normal',
   // xl-3hn：主线上那几场剧情战，原样照搬 Fight 那一行。
   'battle-script3',
   'battle-script6',
@@ -491,6 +493,29 @@ describe('战斗状态层对齐行为真值', () => {
       // 一次都没被调用 —— 抄成别的数不会红。
       // 哪天有真值让它退回，这一条会红：那时候把 8 挪到上面那个 toEqual 里。
       expect(returned).toEqual([5, 6, 7, 9, 10])
+    })
+  })
+
+  describe('xl-5zw：正常打赢之后结算走完、回到场景', () => {
+    /**
+     * 没按 J、胜利那一拍之后还接着记、最后切回 scenePanel 的那几场 —— 从真值
+     * 现算，不写名单。xl-03x.14 给 battle-victory 加了 debugKill 之后这个数一度
+     * 是 0：「正常打赢之后结算照样走完」只剩代码同源推出来，逐字段比对照样全绿。
+     */
+    const observable = IMPLEMENTED.filter((name) => {
+      const trace = traceOf(name)
+      if (trace.script.steps.some((s) => s.op === 'debugKill')) return false
+      if (scriptedExit(trace) !== 'scenePanel') return false
+      const won = trace.ticks.findIndex((t) => t.outcome === 'victory')
+      return won >= 0 && won < trace.ticks.length - 1
+    })
+
+    it('至少有一份真值正常打赢并走完结算 —— 否则那条路又只剩按 J 的秒杀盖着', () => {
+      expect(
+        observable.length,
+        '没有一份真值是「正常打死最后一只怪 → 结算 → switchTo(scene)」—— ' +
+          '判胜那一刻的战斗状态（行动条清零、控制台关着）与结算的衔接没有真值。',
+      ).toBeGreaterThan(0)
     })
   })
 

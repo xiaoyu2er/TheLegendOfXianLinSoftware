@@ -1009,6 +1009,61 @@ export const EXPECTED: Readonly<Record<string, Expectation>> = {
       },
     ],
   },
+  'battle-victory-normal': {
+    status: 'gap',
+    // **正常打死 → 结算 → 回场景**（xl-5zw）：battle-victory 按 J 之前那一版
+    // （837 步）换名恢复，六个缺口区与上界照搬 battle-victory 那组。实测
+    // （2026-09-12，`tools/compare-frames.sh battle-victory-normal`，`--every 25`，
+    // 34 帧，容差 8）：硬比区 34 帧逐像素相等；六个区的合计与最差帧
+    // 65480/2047 · 65727/2045 · 49144/1612 · 453/453 · 2741/1683 · 4132/1033，
+    // 与 battle-victory 上面那组 837 步的旧读数**逐项相同** —— 上界一律仍是实测 ×2。
+    why: '状态栏九行字 + 结算画面三栏数字的字形（原版 文鼎粗钢笔行楷 未交付）',
+    issue: 'xl-9bd.17',
+    gaps: [
+      {
+        name: 'panel-text-zhang',
+        maxPixels: 4094,
+        rect: { x0: 88, y0: 545, x1: 330, y1: 614 },
+        why: '第一格（张小凡）的等级 / 血 / 灵力三行字的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'panel-text-yu',
+        maxPixels: 4090,
+        rect: { x0: 410, y0: 545, x1: 652, y1: 614 },
+        why: '第二格（文敏）的等级 / 血 / 灵力三行字的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'panel-text-lu',
+        maxPixels: 3224,
+        rect: { x0: 732, y0: 545, x1: 974, y1: 614 },
+        why: '第三格（陆雪琪）的等级 / 血 / 灵力三行字的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'victory-attr-nums',
+        maxPixels: 906,
+        rect: { x0: 498, y0: 364, x1: 526, y1: 444 },
+        why: '第二页那四行属性数字的字形（这一场只有陆雪琪升级，所以只有第三行）',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'victory-exp-nums',
+        maxPixels: 3366,
+        rect: { x0: 528, y0: 173, x1: 584, y1: 444 },
+        why: '第一页每人两行经验数字（这一场获得多少 / 还差多少）的字形',
+        issue: 'xl-9bd.17',
+      },
+      {
+        name: 'victory-loot',
+        maxPixels: 2066,
+        rect: { x0: 691, y0: 133, x1: 768, y1: 215 },
+        why: '掉落物三行与「金钱 N」那一行的字形',
+        issue: 'xl-9bd.17',
+      },
+    ],
+  },
   'battle-em3-box': {
     status: 'gap',
     // em3 命中框那一场（xl-rh9.8 补齐状态层，xl-rh9.9 接上画面）。实测
