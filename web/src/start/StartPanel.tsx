@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { startAssetId, startFrameAssetId } from '../assets/ids'
 import type { StartSequenceName } from '../assets/ids'
@@ -91,11 +92,23 @@ export function StartPanel({ onNewGame, onLoad, keep }: StartPanelProps) {
   return <StartPanelView view={panel.view} handlers={panel} />
 }
 
-/** 视图组件收的三种输入。取图页不给（它只画、不收输入）。 */
+/** 视图组件收的几种输入。取图页不给（它只画、不收输入）。 */
 export interface StartPanelHandlers {
   readonly hover: (key: StartButtonKey | null) => void
+  readonly press: (key: StartButtonKey | null) => void
+  readonly release: (key: StartButtonKey | null) => void
   readonly click: (key: StartButtonKey) => void
   readonly moveCursor: (x: number, y: number) => void
+}
+
+/**
+ * 一个 DOM 事件落在哪颗按钮上 —— 命中判定归 DOM（按钮元素占的就是命中框，见 `buttons.ts`），
+ * 这里只顺着 `target` 往上找。禁用的那颗按空处算，与悬停同一个口径（ADR-0001 的 start-exit-disabled）。
+ */
+function buttonOf(target: EventTarget | null): StartButtonKey | null {
+  if (!(target instanceof Element)) return null
+  const key = target.closest<HTMLElement>('.start-button')?.dataset.key as StartButtonKey | undefined
+  return key !== undefined && START_BUTTON_WIRING[key].enabled ? key : null
 }
 
 export interface StartPanelViewProps {
@@ -112,6 +125,43 @@ export interface StartPanelViewProps {
  * 渲染器 —— 另写一份，比出来的是那一份像不像原版，产品自己画错了照样绿。
  */
 export function StartPanelView({ view, handlers }: StartPanelViewProps) {
+  /**
+   * 按下挂在面板上，**松手按下那一刻挂到 window 上**（xl-4zo）—— 原版的对应物是 Swing 的
+   * mouse grab：在面板上按下，松手不论落在哪儿都派给这块面板。原版 `mouseReleased` 先
+   * `setButton()`，它只看 `isclicked`、不看坐标，所以在按钮上按下、拖出框松手照样触发。
+   *
+   * 只挂一个面板上的 `onMouseUp` 不够：拖出舞台松手它收不到。反过来也不能常挂在 window 上：
+   * 舞台外按下、拖进来松手，原版一下都不收（按下不在面板上，grab 不归它）。
+   *
+   * `buttons` 为 0 才解除（和弦里每一下松手原版都收，都要送）。窗口外松手 / 松在禁用的「结」
+   * 上，浏览器可能一下 `mouseup` 都不派 —— 回来头一下没按着键的移动就当场补上那一下松手，
+   * 与 `app/App.tsx` 的 `grabRelease` 同一个做法；补的落点是见到它的那一刻，不是真正松手的地方。
+   */
+  const grabRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => grabRef.current?.(), [])
+  const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!handlers) return
+    handlers.press(buttonOf(event.target))
+    if (grabRef.current !== null) return
+    const onUp = (e: MouseEvent) => {
+      if (e.buttons === 0) end()
+      handlers.release(buttonOf(e.target))
+    }
+    const onMove = (e: MouseEvent) => {
+      if (e.buttons !== 0) return
+      end()
+      handlers.release(buttonOf(e.target))
+    }
+    const end = () => {
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('mousemove', onMove, true)
+      grabRef.current = null
+    }
+    grabRef.current = end
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('mousemove', onMove, true)
+  }
+
   /**
    * 一次 `mousemove` → 舞台**逻辑坐标**（1024×640），给自绘鼠标用。
    *
@@ -154,24 +204,29 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
         disabled={!wiring.enabled}
         title={wiring.disabledReason ?? undefined}
         data-hover={button.hover ? 'true' : 'false'}
+        data-key={button.key}
         // ⚠️ `onMouseMove` 与 `onMouseEnter` **两个都要**，且只认**没按着键**的。原版 `mouseMoved`
         // 每动一个像素就对每颗按钮重跑 `isMoveIn`，而 `isPressedButton` 会把高亮停掉 —— 于是"点一下、
         // 不出框、动一动"高亮当场续播；只挂 `onMouseEnter` 就得移出去再移回来才转。按着键是
         // `mouseDragged`，它只记坐标、不跑 `isMoveIn`（舞台外按下再拖进来，原版连它都不派），所以
-        // `buttons` 非 0 不碰悬停（xl-vi8）。移出**不看键**，与原版**不逐拍相同**（欠账，xl-4zo）：原版
-        // 拖出框时按下图留到松手、框外松手照样触发；这里按下 / 松手合成一次 `click`（`useStartPanel`），
-        // 移出也看键的话，拖出去松手之后悬停会卡住。
+        // `buttons` 非 0 不碰悬停（xl-vi8）。移出**也看键**（xl-4zo）：拖出框时原版的按下图留到松手，
+        // 松手那一下（面板上的 `onMouseDown` 挂到 window 上的那个）再按落点把图换回来。
         // 命中判定仍然归 DOM（按钮元素占的就是那个命中框，见 `buttons.ts`），这里不自己算坐标。
         onMouseMove={(event) => { if (event.buttons === 0) handlers?.hover(button.key) }}
         onMouseEnter={(event) => { if (event.buttons === 0) handlers?.hover(button.key) }}
-        onMouseLeave={() => handlers?.hover(null)}
+        onMouseLeave={(event) => { if (event.buttons === 0) handlers?.hover(null) }}
+        // 鼠标按下不给焦点：焦点会走下面的 `onFocus` = 悬停，把 `isPressedButton` 刚停掉的高亮
+        // 当场又转起来。原版没有焦点这回事，按下就是按下。
+        onMouseDown={(event) => event.preventDefault()}
         // @exception ADR-0001#start-focus-hover
         // 键盘走到这颗上等于"鼠标移进来"：原版没有这一条（它只认坐标），
         // 是这里补的无障碍。补它而不是只补一条 CSS，是为了让那圈高亮动画
         // 也跟着转 —— 只换图不转动画，Tab 过来的人看到的是一颗半死的按钮。
         onFocus={() => handlers?.hover(button.key)}
         onBlur={() => handlers?.hover(null)}
-        onClick={() => handlers?.click(button.key)}
+        // 只收键盘的那一下（`detail` 为 0：回车 / 空格 / 读屏的激活）。鼠标的 `click` 在按下与松手
+        // 之后才来，那两下已经由面板上的 `onMouseDown` 与挂到 window 上的松手送过了（xl-4zo）。
+        onClick={(event) => { if (event.detail === 0) handlers?.click(button.key) }}
       >
         {/*
           常态图与悬停图**只画一张**，由状态机说画哪张 —— 原版
@@ -199,7 +254,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
 
   return (
     /* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */
-    <div className="start-panel" data-testid="start-panel" onMouseMove={onMouseMove}>
+    <div className="start-panel" data-testid="start-panel" onMouseMove={onMouseMove} onMouseDown={onMouseDown}>
       {/*
         背景图**按原始尺寸画在 (0,0)**，与原版
         `backgroundGraphics.drawImage(backgroundImage, 0, 0, this)` 一致。

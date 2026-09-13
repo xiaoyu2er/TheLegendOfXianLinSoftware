@@ -1,0 +1,26 @@
+{
+  "driver": "start",
+  "name": "start-drag-out",
+  "description": "在「转」上按下、拖出框外松手 —— 原版照样展开（xl-4zo）。原版 mouseReleased 先 setButton()，它只看各按钮的 isclicked、不看坐标；后面那圈 isRelesedButton 只有落在框内才清 isclicked，框外只把图换回常态。所以：移上「转」、按下、按着停 2 拍（按下图留着、那圈高亮停着），在 (600,300) 这块空处松手 —— setButton() 读到 about.isclicked 为真：卷轴开播、aboutTimer.start(10)、signal=2，10 拍后展开（expect=unfold）。about.isclicked 从此一直是真。再点「回」收起 10 拍（expect=fold）。最后在空处按下、松开（两下都不落在任何一颗按钮上）：setButton() 又读到 about.isclicked —— 当场再展开一次（expect=unfold），再推 2 拍。",
+  "every": 1,
+  "steps": [
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 210, "y": 369 },
+    { "op": "tick", "times": 2 },
+    { "op": "press", "x": 210, "y": 369 },
+    { "op": "tick", "times": 2 },
+    { "op": "release", "x": 600, "y": 300 },
+    { "op": "tick", "times": 10, "expect": "unfold" },
+    { "op": "tick", "times": 3 },
+    { "op": "move", "x": 810, "y": 569 },
+    { "op": "tick", "times": 1 },
+    { "op": "press", "x": 810, "y": 569 },
+    { "op": "release", "x": 810, "y": 569 },
+    { "op": "tick", "times": 10, "expect": "fold" },
+    { "op": "tick", "times": 2 },
+    { "op": "press", "x": 600, "y": 300 },
+    { "op": "release", "x": 600, "y": 300 },
+    { "op": "tick", "times": 10, "expect": "unfold" },
+    { "op": "tick", "times": 2 }
+  ]
+}

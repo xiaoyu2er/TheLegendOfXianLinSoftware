@@ -51,7 +51,11 @@ export interface StartPanelHandle {
   readonly view: StartView
   /** 鼠标进了哪颗按钮（`null` = 一颗都不在）。命中判定归 DOM，见 `buttons.ts`。 */
   readonly hover: (key: StartButtonKey | null) => void
-  /** 按一颗按钮：原版的 press + release 合成一次，见 `StartPanel.tsx`。 */
+  /** 原版 `mousePressed`。`null` = 按在空处（或禁用的那颗上）。 */
+  readonly press: (key: StartButtonKey | null) => void
+  /** 原版 `mouseReleased`。`null` = 松在空处 —— 照样会触发，见 `releaseStartButton`。 */
+  readonly release: (key: StartButtonKey | null) => void
+  /** 键盘按下一颗按钮：press + release 合成一次。鼠标不走这里，见下面 `click` 的注释。 */
   readonly click: (key: StartButtonKey) => void
   /** 自绘鼠标画在哪儿（舞台逻辑坐标）。 */
   readonly moveCursor: (x: number, y: number) => void
@@ -93,21 +97,37 @@ export function useStartPanel(
     [input],
   )
 
-  /**
-   * 一次点击 = 原版的 `mousePressed` 加 `mouseReleased`。
-   *
-   * 分不开：DOM 的 `click` 事件是两者之后才来的一个事件，而键盘按回车根本
-   * 没有前两个。拆成 `onMouseDown` / `onMouseUp` 的话，用键盘走到这颗按钮
-   * 上按回车就什么都不会发生 —— 而"按钮点得动"与"只有鼠标点得动"在截图上
-   * 一模一样。
-   */
-  const click = useCallback((key: StartButtonKey) => {
-    const pressed = pressStartButton(stateRef.current!, key)
-    const released = releaseStartButton(pressed, key)
+  const press = useCallback(
+    (key: StartButtonKey | null) => input((state) => pressStartButton(state, key)),
+    [input],
+  )
+
+  /** 松手可能推出动作（「结」那句 `System.exit(0)` 是松手当场走的），所以不走 `input`。 */
+  const releaseFrom = useCallback((state: StartPanelState, key: StartButtonKey | null) => {
+    const released = releaseStartButton(state, key)
     stateRef.current = released.state
     setView(startView(released.state))
     if (released.effect !== null) effectRef.current(released.effect)
   }, [])
+
+  const release = useCallback(
+    (key: StartButtonKey | null) => releaseFrom(stateRef.current!, key),
+    [releaseFrom],
+  )
+
+  /**
+   * 键盘的一次「点击」= 原版的 `mousePressed` 加 `mouseReleased`。
+   *
+   * 鼠标走 `press` / `release` 两下（xl-4zo）：原版在按钮上按下、拖出框外松手**照样触发**，
+   * 而 DOM 的 `click` 在按下与松开不落在同一个元素上时根本不派 —— 合成一次的话那一下就丢了。
+   * 键盘按回车 / 空格却只有一个 `click`，没有前两个；只留 `press` / `release` 的话，用键盘
+   * 走到这颗按钮上按回车就什么都不会发生（xl-fqm）—— 而「按钮点得动」与「只有鼠标点得动」
+   * 在截图上一模一样。两路怎么分开见 `StartPanel.tsx` 的 `onClick`。
+   */
+  const click = useCallback(
+    (key: StartButtonKey) => releaseFrom(pressStartButton(stateRef.current!, key), key),
+    [releaseFrom],
+  )
 
   useEffect(() => {
     let last = performance.now()
@@ -138,5 +158,5 @@ export function useStartPanel(
     return () => clearInterval(id)
   }, [])
 
-  return { view, hover, click, moveCursor }
+  return { view, hover, press, release, click, moveCursor }
 }

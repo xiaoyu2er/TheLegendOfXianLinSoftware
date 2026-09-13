@@ -48,11 +48,13 @@ import type { StartEffect, StartPanelState, StartView } from './panelState'
  *
  * @exception ADR-0001#start-exit-disabled
  *
- * ## 三种产品里走不到的输入：当场抛
+ * ## 按下 / 松手分两下，落在空处也照送
  *
- * 产品的点击是 DOM 按钮上的 `click`（按下 + 松开合成一次，`useStartPanel.ts`），所以
- * 「按在空处」「按在禁用的按钮上」与「在一颗上按、到另一颗上松」都没有对应物。回放遇到就抛
- * —— 照猜一个画出来的是另一件事。
+ * 产品的鼠标按下挂在面板上、松手挂在 window 上（`StartPanel.tsx`，xl-4zo），所以「按在空处」
+ * 「在一颗上按、在别处松」都有对应物：落点不在任何一颗按钮上就按 `null` 推。仍然抛的两种：
+ * 按 / 松在禁用的「结」上（浏览器对禁用的按钮不派 `mousedown` / `mouseup`，没有对应物 ——
+ * ⚠️ 这一句没在真浏览器里量过），和没按下就松手（松手只在面板上按下之后才挂上）。
+ * 照猜一个画出来的是另一件事。
  */
 
 export type StartInput =
@@ -96,8 +98,8 @@ export function startStartReplay(name: string): StartReplay {
   let state = createStartPanelState()
   let current = 'start'
   let view: StartView | null = null
-  /** 按下去还没松开的那一颗。 */
-  let pressed: StartButtonKey | null = null
+  /** 按下去还没松开（产品里 window 上的松手挂着）。 */
+  let held = false
   let steps = 0
   return {
     get state() {
@@ -132,20 +134,18 @@ export function startStartReplay(name: string): StartReplay {
         }
         case 'press': {
           const key = buttonAt(state, input.x, input.y)
-          if (key === null) throw new Error(`${where}：按在了空处 —— 产品的点击只落在按钮上，没有对应物`)
-          if (!START_BUTTON_WIRING[key].enabled) throw new Error(`${where}：按在了禁用的 ${key} 上 —— 产品里那颗点不下去，没有对应物`)
+          if (key !== null && !START_BUTTON_WIRING[key].enabled) throw new Error(`${where}：按在了禁用的 ${key} 上 —— 产品里那颗点不下去，没有对应物`)
           state = pressStartButton(moveStartCursor(state, input.x, input.y), key)
-          pressed = key
+          held = true
           break
         }
         case 'release': {
           const key = buttonAt(state, input.x, input.y)
-          if (key === null || key !== pressed) {
-            throw new Error(`${where}：在 ${pressed} 上按下、在 ${key} 上松开 —— 产品的点击是同一颗上的按下 + 松开`)
-          }
+          if (!held) throw new Error(`${where}：没按下就松手 —— 产品的松手只在面板上按下之后才挂上`)
+          if (key !== null && !START_BUTTON_WIRING[key].enabled) throw new Error(`${where}：松在了禁用的 ${key} 上 —— 产品里那颗收不到松手，没有对应物`)
           const released = releaseStartButton(moveStartCursor(state, input.x, input.y), key)
           state = released.state
-          pressed = null
+          held = false
           // 「结」在原版是松手当场 System.exit(0)。产品里那颗是禁用的（`START_BUTTON_WIRING`）。
           if (released.effect !== null) throw new Error(`${where}：松手推出了 ${released.effect}，回放接不住`)
           break
