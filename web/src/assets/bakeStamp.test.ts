@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import manifest from '../generated/assets.json'
@@ -103,26 +104,36 @@ describe('烘焙指纹', () => {
    * 反过来「拿名单去扫磁盘」是让被守的东西自己给自己签字。
    *
    * 这张表本身是**登记**（烘焙器扫了哪几个目录），由人来签；新加一处
-   * `readdirSync` / `listFiles` 就得在这里加一行。`script/` 与音效两处在上面。
+   * `readdirSync` / `listFiles` 就得在这里加一行 —— 忘了加由下面「每一处目录扫描都在
+   * 登记表里」那条判红（xl-cn3）。`script/` 与音效两处在上面。
    */
   const DIR_SOURCES: readonly {
     dir: string
     recursive: boolean
     keep: (relative: string) => boolean
+    /** 这一处扫描写在闭包里哪个文件 —— 下面「扫描点与登记对账」按文件数。 */
+    site: string
+    /** 没导出、只能手抄的路径：它在 `site` 里的定义原文，逐字核（xl-cn3）。 */
+    copied?: string
   }[] = [
     // `tracedFromTruth` 只读 `.trace.json`；决定烘哪几首 BGM。
-    { dir: 'tools/traces/out', recursive: false, keep: (f) => f.endsWith('.trace.json') },
-    { dir: IMAGE_ROOT, recursive: true, keep: () => true },
-    { dir: MENU_ROOT, recursive: true, keep: () => true },
+    { dir: 'tools/traces/out', recursive: false, keep: (f) => f.endsWith('.trace.json'), site: BAKER_ENTRY, copied: "resolve(REPO, 'tools/traces/out')" },
+    { dir: IMAGE_ROOT, recursive: true, keep: () => true, site: BAKER_ENTRY },
+    { dir: MENU_ROOT, recursive: true, keep: () => true, site: BAKER_ENTRY },
     // `scanShopReferences` 的 `JAVA_ROOT`（没导出：导出它会改烘焙器闭包，指纹就得重烘）。
-    { dir: 'src', recursive: true, keep: (f) => f.endsWith('.java') },
-    { dir: END_PICTURE_DIR, recursive: false, keep: (f) => !f.startsWith('.') },
-    { dir: EQUIP_PICTURE_ROOT, recursive: true, keep: isBakedEquipPicture },
+    { dir: 'src', recursive: true, keep: (f) => f.endsWith('.java'), site: 'web/src/shop/shopReferences.ts', copied: "const JAVA_ROOT = 'src'" },
+    { dir: END_PICTURE_DIR, recursive: false, keep: (f) => !f.startsWith('.'), site: BAKER_ENTRY },
+    { dir: EQUIP_PICTURE_ROOT, recursive: true, keep: isBakedEquipPicture, site: BAKER_ENTRY },
     // 装备图与药品介绍图两个子目录 `shopAssetOwner` 判 'elsewhere'，不在这一行里，
     // 各自单列（药品那一行漏过一次：篡改抹掉它一条，这张表照绿）。
-    { dir: SHOP_ROOT, recursive: true, keep: (f) => shopAssetOwner(f) === 'baked' },
+    { dir: SHOP_ROOT, recursive: true, keep: (f) => shopAssetOwner(f) === 'baked', site: BAKER_ENTRY },
     // `bake.ts` 的 `DRUG_PICTURE_DIR`，`readdirSync` 不过滤（没导出，理由同 `src`）。
-    { dir: 'sources/Shop/药品/回复类', recursive: false, keep: () => true },
+    { dir: 'sources/Shop/药品/回复类', recursive: false, keep: () => true, site: BAKER_ENTRY, copied: "const DRUG_PICTURE_DIR = 'sources/Shop/药品/回复类'" },
+  ]
+  /** 上面单列成用例的两处（`script/` 与音效），也是 `bake.ts` 里的目录扫描。 */
+  const SCANNED_ABOVE: readonly { dir: string; site: string }[] = [
+    { dir: 'script', site: BAKER_ENTRY },
+    { dir: SFX_ROOT, site: BAKER_ENTRY },
   ]
 
   it.each(DIR_SOURCES.map((s) => [s.dir, s] as const))('%s/ 下烘焙器会读的每一个文件都在输入名单里，反之亦然', (_, { dir, recursive, keep }) => {
@@ -144,6 +155,71 @@ describe('烘焙指纹', () => {
     })
     expect(unclaimed).toEqual([])
   })
+
+  /**
+   * 登记表的**反向对账**（xl-cn3）：上面几条只核「登记了的目录」，`bake.ts` 或
+   * 它闭包里任何一个模块新加一处 `readdirSync` / `listFiles`，表不会自己变红。
+   *
+   * 分母是**烘焙器闭包的语法树**（`bakerSources` 现爬，TypeScript 解析，注释与
+   * 字符串里的同名字样不算），按文件数目录扫描调用；分子是登记表按 `site`
+   * 数的行数。两边逐文件相等。`listFiles.ts` 是扫描原语本身，它肚子里那两处
+   * 不是「又一个输入目录」，不数 —— 但它必须还在闭包里，否则这条豁免就是在
+   * 豁免一个不存在的文件。
+   *
+   * 数不到的写法要响，不要漏：扫描函数的名字出现在「直接调用」与「原名导入」
+   * 以外的任何位置 —— 别名导入、解构改名、`fs['readdirSync']`、存进变量、
+   * `.call(…)`、再导出 —— 那处调用这里认不出，所以名字本身就判红。
+   *
+   * 兜不住的（/code-review 两轴都点到）：它数的是**调用处**，不核每一处扫的是
+   * 哪个目录 —— 同一文件里「删一处、换一处扫别的目录」次数不变，照绿；一个
+   * 函数拿参数扫两个目录也只算一处。下面 `copied` 同理，只证明那段原文还在
+   * 源文件里，不证明扫描用的就是它。
+   */
+  it('烘焙器闭包里的每一处目录扫描都在登记表里，反之亦然', () => {
+    const PRIMITIVE = 'web/src/assets/listFiles.ts'
+    const SCANNERS = new Set(['readdirSync', 'readdir', 'opendirSync', 'opendir', 'globSync', 'glob', 'listFiles'])
+    const closure = bakerSources(REPO)
+    expect(closure).toContain(PRIMITIVE)
+    const found: Record<string, number> = {}
+    const escaped: string[] = []
+    for (const file of closure) {
+      if (file === PRIMITIVE) continue
+      const tree = ts.createSourceFile(file, readFileSync(resolve(REPO, file), 'utf8'), ts.ScriptTarget.Latest, true)
+      const visit = (node: ts.Node): void => {
+        if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && SCANNERS.has(node.text)) {
+          const parent = node.parent
+          // `readdirSync(…)` 或 `fs.readdirSync(…)`：名字就是被调用的那个。
+          const called =
+            (ts.isCallExpression(parent) && parent.expression === node) ||
+            (ts.isPropertyAccessExpression(parent) && parent.name === node &&
+              ts.isCallExpression(parent.parent) && parent.parent.expression === parent)
+          // `import { readdirSync } from 'node:fs'` / `function listFiles(`：原名，不带 `as`。
+          const declared =
+            (ts.isImportSpecifier(parent) && parent.propertyName === undefined) ||
+            (ts.isFunctionDeclaration(parent) && parent.name === node)
+          if (called) found[file] = (found[file] ?? 0) + 1
+          else if (!declared && ts.isIdentifier(node)) escaped.push(`${file}:${tree.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${node.text}`)
+          else if (ts.isStringLiteralLike(node) && ts.isElementAccessExpression(parent)) escaped.push(`${file} ['${node.text}']`)
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(tree)
+    }
+    expect(escaped, '扫描函数以数不到的写法出现了').toEqual([])
+    const registered: Record<string, number> = {}
+    for (const { site } of [...DIR_SOURCES, ...SCANNED_ABOVE]) registered[site] = (registered[site] ?? 0) + 1
+    expect(Object.keys(found).length, '闭包里一处目录扫描都没数到 —— 数法坏了').toBeGreaterThan(0)
+    expect(found).toEqual(registered)
+  })
+
+  // 手抄的三个路径：没导出（导出会改闭包、迫使重烘），就逐字核它在源码里的定义。
+  it.each(DIR_SOURCES.filter((s) => s.copied !== undefined).map((s) => [s.dir, s] as const))(
+    '手抄的 %s 与烘焙器源码里的定义逐字一致',
+    (dir, { site, copied }) => {
+      expect(copied).toContain(`'${dir}'`)
+      expect(readFileSync(resolve(REPO, site), 'utf8')).toContain(copied)
+    },
+  )
 
   /**
    * 映射表与产物目录必须**互相盖满**。
