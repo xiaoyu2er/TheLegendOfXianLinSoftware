@@ -8,17 +8,9 @@ import { createWorld } from '../state/step'
 import { sceneSourceOf } from '../state/trace'
 import { javaSource } from '../test/javaSource'
 import { repoPath } from '../test/repoPath'
-import { buttonCenter } from '../test/menuClicks'
-import type { MenuInput } from '../menu/step'
+import { buttonCenter, clickAt } from '../test/menuClicks'
 import { NO_INPUT, advanceSession, carryIntoNewGame, createSession, enterEnd, enterScene, menuWorldOf, openMenu } from './session'
 import type { RunningSession } from './session'
-
-function click(x: number, y: number): MenuInput[] {
-  return [
-    { e: 'press', x, y },
-    { e: 'release', x, y },
-  ]
-}
 
 /**
  * **「起」之后结局面板还在不在**（xl-eqo）。
@@ -122,6 +114,8 @@ describe('原版：endPanel 活过「起」（GBK 源码现读）', () => {
  * - **点「起」到新局场景取到手那几十毫秒**：新会话 `scene === null`，`advanceSession` 整拍原样交回
  *   （排在 `advanceEnd` 之前），pump 那一支还 `last = now` 把时间丢掉 —— 丢的是整局的时间，
  *   不只结局循环，就是 `useGame.ts` 里登记的 fetch 载入残差；原版同步读盘，那段窗口没有确定的期望值。
+ *   同一族还有 pump 的另三道门：`if (!renderer) return`（脚本1 的渲染器还没 ready）、`exitsReady`、
+ *   `spritesReady`（每次换场景都可能停一拍）—— 都停整局，不单停结局循环。
  *
  * 票面（xl-p6n）原以为**标题页上**也冻住，实测不成立：「重新开始」回标题不清场景，结局循环照推，
  * 判据是本组「字幕滚到一半回标题」那一条。
@@ -187,12 +181,13 @@ describe('会话：「起」把结局循环带进新局（xl-eqo）', () => {
     expect(half - END_STEP * ON_TITLE).toBeGreaterThan(END_WORD_STOP)
 
     s = openMenu(s)
-    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
+    s = advanceSession(s, { ...NO_INPUT, menu: clickAt(buttonCenter(menuWorldOf(s)!.tabs.func)) }, 0)
     const fb = menuWorldOf(s)!.panels.funcPanel.funcButtons!
-    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.main.exitButton)) }, 0)
-    s = advanceSession(s, { ...NO_INPUT, menu: click(...buttonCenter(fb.sub.restart)) }, 0)
+    s = advanceSession(s, { ...NO_INPUT, menu: clickAt(buttonCenter(fb.main.exitButton)) }, 0)
+    s = advanceSession(s, { ...NO_INPUT, menu: clickAt(buttonCenter(fb.sub.restart)) }, 0)
     expect(s.panel).toBe('start')
-    // 菜单那几下都是 0 毫秒，字幕一格没动 —— 下面降的每一格都是标题上推出来的。
+    // 菜单那几下传的是 0 毫秒，结局循环按构造推不动；这一句只防菜单那几下自己改了 wordY，
+    // 好让下面降的每一格都记在标题上。
     expect(s.end!.world.wordY).toBe(half)
 
     for (let i = 0; i < ON_TITLE; i++) s = advanceSession(s, NO_INPUT, END_TICK_MS)
