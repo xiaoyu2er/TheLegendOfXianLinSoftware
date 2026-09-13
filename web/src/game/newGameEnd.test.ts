@@ -110,8 +110,10 @@ describe('原版：endPanel 活过「起」（GBK 源码现读）', () => {
  *   web 回开机值 —— 两边走到那段对话的路不同，谁都没量过；
  * - **原版第二次进来是两条线程**（`ADR-0001#end-thread-not-duplicated`）：`isStop` 放开那一拍两条
  *   线程各走一次 `update()` 是竞态，过场画会多翻一张还是两张没量；这一层一条；
- * - **标题页那几秒线程仍在走**：原版不停，这一层新会话 `scene === null` 时 `advanceSession` 原样交回，
- *   `iterations` 不涨。`isStop` 之后那一圈什么都不改，所以只差计数。
+ * - **标题页那几秒线程仍在走**：原版不停，这一层 `scene === null` 时 `advanceSession` 整拍原样交回
+ *   （排在 `advanceEnd` 之前），结局循环不推。字幕已经滚到底的话只差 `iterations`；但 `switchTo("end")`
+ *   不改 `currentPanel`，**字幕滚到一半**就能 ESC → 菜单「重新开始」—— 那时原版字幕在标题页接着滚，
+ *   这一层冻住，差的是位置（/code-review 逮到的，未量；另票登记）。
  */
 describe('会话：「起」把结局循环带进新局（xl-eqo）', () => {
   const deps = () => ({
