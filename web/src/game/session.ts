@@ -282,9 +282,13 @@ export interface Session {
    * 都不走，两者观察不到差别。建好之后**再也不摘**：那条 `while(true)` 没有出口，
    * 被退出键切走（进了菜单）之后它照样每 100 ms 走一圈（`end/world.ts`）。
    *
-   * ⚠️ 未复刻：原版「起」不重建 `endPanel`（`GameLauncher.init()` 的调用点被注释掉），
-   * 所以那条线程与字幕停下的位置活过新局 —— 新局再走到 `$`，原版一进来就定格；这一层
-   * 「起」整个重建会话（`NewGameCarry` 不带它），会从头再滚一遍。未量过。
+   * 「起」**带着它**进新局（xl-eqo，经 {@link NewGameCarry} 的 `end`）：原版 `endPanel`
+   * 全 `src/` 只在 `GameLauncher` 构造函数里赋值一次（`init()` 就算活着也不碰它），所以那条
+   * 线程与字幕停下的位置活过「起」—— 新局再走到 `$`，一进来就定格。源码判据与会话判据在
+   * `game/newGameEnd.test.ts`。
+   *
+   * ⚠️ 下面这处标记是**过期的**，留着只为 `test/adrExceptions.test.ts` 的双向对撞不在本枝上红：
+   * ADR-0001 那一行由主干删，删的同一个提交里把这处标记一起删掉（xl-eqo 关票理由）。
  *
  * @exception ADR-0001#end-not-kept-across-new-game
    */
@@ -379,7 +383,7 @@ export function createSession(deps: SessionDeps, carry: NewGameCarry = NOTHING_C
     saveload: null,
     lsEntry: null,
     loadRequest: null,
-    end: null,
+    end: carry.end,
     sfx: NO_SFX,
     deps,
   }
@@ -399,7 +403,10 @@ const NO_SFX: readonly string[] = []
  * - **装备库存**（`EquipmentPack` 六张 static 表）：落点在菜单装备页的 `owned`
  *   （`Session.menu`），会话一重建就没了 —— `owned`；
  * - **答题记录**（`SelectEvent.mapName` / `answeredRecorder` 两张 static 表）：落点在场景世界的
- *   `recorder`，同样随会话没了 —— `recorder`，由调用方交给新世界（`createWorld` 第三个参数）。
+ *   `recorder`，同样随会话没了 —— `recorder`，由调用方交给新世界（`createWorld` 第三个参数）；
+ * - **结局面板与它那条线程**（`GameLauncher.endPanel`，xl-eqo）：落点是 `Session.end`，同样随会话
+ *   没了 —— `end`。原版 `endPanel` 全 `src/` 只赋值一次（构造函数），线程 `while(true)` 不退出，
+ *   两样都活过「起」。带的是**同一个**循环对象，不是拷贝：旧会话此后没人再推。
  *
  * **不带**、归 xl-9rv 裁的：三个人的等级 / 血 / 经验（web 的「起」故意回出厂状态，xl-lly 的
  * 例外）、身上的装备（四项加成算在属性上，与等级绑在一起：只带装备不带属性，弃用那一下会把加成
@@ -417,9 +424,11 @@ export interface NewGameCarry {
   readonly owned: Readonly<Record<EquipSlot, readonly number[]>> | null
   /** 上一局的答题记录；开机是空的。 */
   readonly recorder: readonly SelectRecord[]
+  /** 上一局的结局循环；没进过结局（或开机）是 `null`。 */
+  readonly end: EndLoop | null
 }
 
-const NOTHING_CARRIED: NewGameCarry = { owned: null, recorder: [] }
+const NOTHING_CARRIED: NewGameCarry = { owned: null, recorder: [], end: null }
 
 /** 从上一局的会话里取出「起」要带进新局的那几样（见 {@link NewGameCarry}）。`null` = 开机。 */
 export function carryIntoNewGame(prev: Session | null): NewGameCarry {
@@ -428,6 +437,7 @@ export function carryIntoNewGame(prev: Session | null): NewGameCarry {
   return {
     owned: Object.fromEntries(EQUIP_SLOTS.map((s) => [s, [...owned[s]]])) as Record<EquipSlot, number[]>,
     recorder: prev.scene?.world.recorder ?? [],
+    end: prev.end,
   }
 }
 
