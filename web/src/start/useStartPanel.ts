@@ -51,7 +51,10 @@ export interface StartPanelHandle {
   readonly view: StartView
   /** 鼠标进了哪颗按钮（`null` = 一颗都不在）。命中判定归 DOM，见 `buttons.ts`。 */
   readonly hover: (key: StartButtonKey | null) => void
-  /** 原版 `mousePressed`。`null` = 按在空处（或禁用的那颗上）。 */
+  /**
+   * 原版 `mousePressed`。`null` = 按在空处。禁用的「结」上组件也送 `null`（jsdom 里派得到）；
+   * 真浏览器多半一下都不派，所以回放在那上面按 / 松是抛（`replay.ts`）—— 没量过，xl-qzx。
+   */
   readonly press: (key: StartButtonKey | null) => void
   /** 原版 `mouseReleased`。`null` = 松在空处 —— 照样会触发，见 `releaseStartButton`。 */
   readonly release: (key: StartButtonKey | null) => void

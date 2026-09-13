@@ -337,13 +337,36 @@ describe('开始界面', () => {
     expect(screen.queryByTestId('start-about')).not.toBeNull()
   })
 
+  it('松手丢了、回来没动就又按下：先补那一下松手，再送这次按下', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const back = screen.getByTestId('start-panel').querySelector('.start-back') as HTMLElement
+    fireEvent.mouseDown(screen.getByRole('button', { name: '关于我们' }), { buttons: 1 })
+    // 左键又按下，除它之外没按着别的键 —— 上一次的松手丢了。
+    fireEvent.mouseDown(back, { button: 0, buttons: 1 })
+    tick(1)
+    expect(screen.queryByTestId('start-about'), '补上的松手让「转」触发了').not.toBeNull()
+  })
+
+  it('和弦：按着左键再按右键，不补松手 —— 那是第二个键，不是丢了松手', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const back = screen.getByTestId('start-panel').querySelector('.start-back') as HTMLElement
+    fireEvent.mouseDown(screen.getByRole('button', { name: '关于我们' }), { buttons: 1 })
+    fireEvent.mouseDown(back, { button: 2, buttons: 3 })
+    tick(1)
+    expect(screen.queryByTestId('start-about')).toBeNull()
+  })
+
   it('卸载时把挂在 window 上的松手摘掉', () => {
     const onNewGame = vi.fn()
     const view = render(<StartPanel onNewGame={onNewGame} onLoad={() => {}} />)
     const remove = vi.spyOn(window, 'removeEventListener')
     fireEvent.mouseDown(screen.getByRole('button', { name: '开始新游戏' }), { buttons: 1 })
     view.unmount()
-    expect(remove.mock.calls.map((c) => c[0]).sort()).toEqual(['mousemove', 'mouseup'])
+    // 连第三个参数一起比：`mousemove` 挂在捕获阶段，摘的时候漏写 `true` 就什么都没摘掉。
+    expect(remove.mock.calls.map((c) => [c[0], c[2] ?? false]).sort()).toEqual([
+      ['mousemove', true],
+      ['mouseup', false],
+    ])
     remove.mockRestore()
   })
 

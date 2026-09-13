@@ -261,7 +261,8 @@ describe('逐帧比对要的那一帧：只有 tick 步画', () => {
     // 选步只写**起因**：松手的落点不在任何一颗按钮上，而上一步有一颗 clicked 为真、面板没展开。
     // 后果从真值读出来再断言，一步都没选到是抛。
     type Btns = Record<string, { clicked: boolean }>
-    const hits: { name: string; i: number; pressed: string }[] = []
+    // 两种起因分开数：上一次按下落在按钮上（拖出框松手），与上一次按下也落在空处（残留的 clicked）。
+    const hits: { name: string; i: number; pressed: string; residual: boolean }[] = []
     for (const [name, trace] of TRACES) {
       trace.ticks.forEach((t, i) => {
         const prev = trace.ticks[i - 1]
@@ -269,12 +270,17 @@ describe('逐帧比对要的那一帧：只有 tick 步画', () => {
         if (input.e !== 'release' || prev === undefined || prev.isUnfolded !== false) return
         // 此刻在屏幕上的按钮取真值上一步的 onScreen（原版字段名），落点照 DOM 盒子判。
         const onScreen = START_BUTTONS.filter((b) => (prev.onScreen as string[]).includes(JAVA_BUTTON_NAME[b.key])).map((b) => b.key)
-        if (buttonAt({ ...createStartPanelState(), buttons: onScreen }, input.x!, input.y!) !== null) return
+        const empty = (x: number, y: number) => buttonAt({ ...createStartPanelState(), buttons: onScreen }, x, y) === null
+        if (!empty(input.x!, input.y!)) return
         const pressed = Object.entries(prev.buttons as Btns).filter(([k, b]) => k !== 'back' && b.clicked).map(([k]) => k)
-        if (pressed.length === 1) hits.push({ name, i, pressed: pressed[0]! })
+        if (pressed.length !== 1) return
+        // 往回找最近那一次按下，看它落没落在按钮上。
+        const lastPress = trace.ticks.slice(0, i).reverse().find((r) => r.input[0]!.e === 'press')!.input[0] as { x: number; y: number }
+        hits.push({ name, i, pressed: pressed[0]!, residual: empty(lastPress.x!, lastPress.y!) })
       })
     }
-    expect(hits.length, '没有一份真值走到「松在空处」').toBeGreaterThan(0)
+    expect(hits.some((h) => !h.residual), '没有一份真值走到「在按钮上按下、松在空处」').toBe(true)
+    expect(hits.some((h) => h.residual), '没有一份真值走到「残留的 clicked、按下松开都在空处」').toBe(true)
     for (const { name, i, pressed } of hits) {
       const truth = TRACES.get(name)!.ticks[i]!
       expect((truth.scroll as { isStop: boolean }).isStop, `${name} 第 ${i} 步：真值里卷轴开播了`).toBe(false)

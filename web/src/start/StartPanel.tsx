@@ -101,6 +101,9 @@ export interface StartPanelHandlers {
   readonly moveCursor: (x: number, y: number) => void
 }
 
+/** `MouseEvent.button` → 它在 `buttons` 里占的那一位（左 1、中 4、右 2，与 `app/App.tsx` 同一张表）。 */
+const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16]
+
 /**
  * 一个 DOM 事件落在哪颗按钮上 —— 命中判定归 DOM（按钮元素占的就是命中框，见 `buttons.ts`），
  * 这里只顺着 `target` 往上找。禁用的那颗按空处算，与悬停同一个口径（ADR-0001 的 start-exit-disabled）。
@@ -141,6 +144,14 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
   useEffect(() => () => grabRef.current?.(), [])
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!handlers) return
+    // 拦截还挂着、而这一下之外没按着别的键：上一次的松手丢在窗口外了，回来没动就又按下。
+    // 先补上那一下松手（落点是见到它的这一刻），再送这次按下 —— 与 `App.tsx` 的 `grabRelease`
+    // 里 `onPress` 同一个判法（按下看的是**别的**键，`isMouseGrab`）。
+    const own = BUTTON_BITS[event.button] ?? 0
+    if (grabRef.current !== null && (event.buttons & ~own) === 0) {
+      grabRef.current()
+      handlers.release(buttonOf(event.target))
+    }
     handlers.press(buttonOf(event.target))
     if (grabRef.current !== null) return
     const onUp = (e: MouseEvent) => {
