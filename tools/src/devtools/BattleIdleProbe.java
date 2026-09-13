@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import battle.BattlePanel;
-import battle.Enemy;
 import battle.Hero;
 import main.GameLauncher;
 
@@ -61,7 +60,7 @@ import main.GameLauncher;
 public final class BattleIdleProbe {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3 && args.length != 5 || !args[0].equals("idle")) {
+        if ((args.length != 3 && args.length != 5) || !args[0].equals("idle")) {
             System.err.println("用法：idle <第一场剧本> <空推拍数> [<第二场剧本> <第二场拍数>]");
             System.exit(2);
         }
@@ -107,20 +106,7 @@ public final class BattleIdleProbe {
         System.out.println("# 空推 " + n + " 拍，其中 " + changedTicks + " 拍有字段变化");
 
         if (second == null) return;
-        TraceScript s2 = TraceScript.load(second);
-        BattleDriver.plantMathRandom(s2.seed);
-        Enemy[] e = new Enemy[3];
-        for (int i = 0; i < 3; i++) {
-            String spec = s2.enemies.get(i);
-            if (spec == null) continue;
-            int slash = spec.lastIndexOf('/');
-            e[i] = new Enemy(spec.substring(0, slash), Integer.parseInt(spec.substring(slash + 1)), bp);
-        }
-        bp.initial(s2.background,
-                s2.party.contains("zhang") ? GameLauncher.zhangXiaoFan : null,
-                s2.party.contains("yu") ? GameLauncher.yuJie : null,
-                s2.party.contains("lu") ? GameLauncher.luXueQi : null,
-                e[0], e[1], e[2]);
+        BattleCarryProbe.openSecond(bp, TraceScript.load(second));
         for (int i = 0; i < m; i++) {
             d.pumpAndPaint();
             System.out.println("第二场第 " + i + " 拍 " + dump(bp, tap));
@@ -139,10 +125,10 @@ public final class BattleIdleProbe {
                 out.put("bp." + f.getName(), String.valueOf(v));
             } else if (v instanceof List) {
                 out.put("bp." + f.getName() + ".size", String.valueOf(((List<?>) v).size()));
-            } else if (v != null && inBattle(v.getClass())) {
+            } else if (v != null && isBattleClass(v.getClass())) {
                 out.put("bp." + f.getName(), "非空");
                 leaves(out, "bp." + f.getName(), v);
-            } else if (inBattle(f.getType())) {
+            } else if (isBattleClass(f.getType())) {
                 out.put("bp." + f.getName(), "null");
             }
         }
@@ -180,8 +166,10 @@ public final class BattleIdleProbe {
         Field f = c.getDeclaredField(name);
         f.setAccessible(true);
         StringBuilder sb = new StringBuilder();
+        // 按下标记，不记 identityHashCode：两个 JVM 各跑一遍再 diff，那个哈希对不上。
+        int i = 0;
         for (Object item : (List<?>) f.get(null)) {
-            sb.append(Integer.toHexString(System.identityHashCode(item)));
+            sb.append(i++);
             for (Field g : fields(item.getClass())) {
                 if (!Modifier.isStatic(g.getModifiers()) && isLeaf(g.getType())) sb.append(',').append(g.get(item));
             }
@@ -193,7 +181,7 @@ public final class BattleIdleProbe {
     /** 沿继承链、只到 battle / shop / devtools 包为止的全部字段（跳过 JPanel 那一大串）。 */
     private static List<Field> fields(Class<?> c) {
         List<Field> fs = new ArrayList<>();
-        for (; c != null && (inBattle(c) || c.getName().startsWith("shop.") || c.getName().startsWith("devtools."));
+        for (; c != null && (isBattleClass(c) || c.getName().startsWith("shop.") || c.getName().startsWith("devtools."));
                 c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
                 f.setAccessible(true);
@@ -203,7 +191,7 @@ public final class BattleIdleProbe {
         return fs;
     }
 
-    private static boolean inBattle(Class<?> c) { return c.getName().startsWith("battle."); }
+    private static boolean isBattleClass(Class<?> c) { return c.getName().startsWith("battle."); }
 
     private static boolean isLeaf(Class<?> t) {
         return t.isPrimitive() || t == String.class || Number.class.isAssignableFrom(t) || t == Boolean.class;

@@ -111,20 +111,7 @@ public final class BattleCarryProbe {
         }
         System.err.println("[carry] 第一场 " + s1.name + " 跑了 " + steps + " 步，接着在同一块面板上开 " + s2.name);
 
-        BattleDriver.plantMathRandom(s2.seed);
-        // 照 FightEvent：英雄是 GameLauncher 上那三个，怪物现 new、挂在同一块面板上。
-        Enemy[] e = new Enemy[3];
-        for (int i = 0; i < 3; i++) {
-            String spec = s2.enemies.get(i);
-            if (spec == null) continue;
-            int slash = spec.lastIndexOf('/');
-            e[i] = new Enemy(spec.substring(0, slash), Integer.parseInt(spec.substring(slash + 1)), bp);
-        }
-        bp.initial(s2.background,
-                s2.party.contains("zhang") ? GameLauncher.zhangXiaoFan : null,
-                s2.party.contains("yu") ? GameLauncher.yuJie : null,
-                s2.party.contains("lu") ? GameLauncher.luXueQi : null,
-                e[0], e[1], e[2]);
+        openSecond(bp, s2);
         if (clear) {
             // 对照组：其余一步不差，只把缓冲清回 TYPE_INT_ARGB 的初值（全透明）。
             // carry 与 carry --clear 之差于是**只**来自缓冲 —— 与 fresh 比的话还混着
@@ -139,6 +126,26 @@ public final class BattleCarryProbe {
             }
         }
         dump(out, frames, d);
+    }
+
+    /**
+     * 在同一块面板上照 {@code FightEvent} 开第二场：随机数先播回第二场剧本的种子，英雄是
+     * {@code GameLauncher} 上那三个，怪物现 new、挂在同一块面板上。{@link BattleIdleProbe} 也用它。
+     */
+    static void openSecond(BattlePanel bp, TraceScript s2) {
+        BattleDriver.plantMathRandom(s2.seed);
+        Enemy[] e = new Enemy[3];
+        for (int i = 0; i < 3; i++) {
+            String spec = s2.enemies.get(i);
+            if (spec == null) continue;
+            int slash = spec.lastIndexOf('/');
+            e[i] = new Enemy(spec.substring(0, slash), Integer.parseInt(spec.substring(slash + 1)), bp);
+        }
+        bp.initial(s2.background,
+                s2.party.contains("zhang") ? GameLauncher.zhangXiaoFan : null,
+                s2.party.contains("yu") ? GameLauncher.yuJie : null,
+                s2.party.contains("lu") ? GameLauncher.luXueQi : null,
+                e[0], e[1], e[2]);
     }
 
     private static void fresh(File second, int frames, File out) throws Exception {
