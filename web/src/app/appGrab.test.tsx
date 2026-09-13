@@ -5,6 +5,7 @@ import type { Panel } from '../game/session'
 import type { MenuInput } from '../menu/step'
 import type { ShopInput } from '../shop/step'
 import type { SaveLoadInput } from '../saveload/step'
+import type { BattlePointer } from '../battle/step'
 
 /**
  * App 那一层的 mouse grab（xl-z4f 做了菜单，xl-o9z 收拢到三块宿主）：**松手派给按下时
@@ -22,6 +23,7 @@ import type { SaveLoadInput } from '../saveload/step'
 const menuInput = vi.fn<(input: MenuInput) => void>()
 const shopInput = vi.fn<(input: ShopInput) => void>()
 const lsInput = vi.fn<(input: SaveLoadInput) => void>()
+const battleMouse = vi.fn<(input: BattlePointer) => void>()
 const panel = { current: 'ls' as Panel }
 
 vi.mock('../game/useGame', () => ({
@@ -34,7 +36,7 @@ vi.mock('../game/useGame', () => ({
     menuTitleAt: () => null,
     shopLoading: false,
     shopInput,
-    click: () => {},
+    battleMouse,
     scene: null,
     restart: () => {},
     saveLoad: null,
@@ -51,6 +53,7 @@ beforeEach(() => {
   menuInput.mockClear()
   shopInput.mockClear()
   lsInput.mockClear()
+  battleMouse.mockClear()
   panel.current = 'ls'
 })
 afterEach(cleanup)
@@ -126,4 +129,23 @@ describe('App 的 mouse grab', () => {
       expect(spy.mock.calls.map(([i]) => i.e)).toEqual(['press', 'release'])
     })
   }
+
+  it('战斗画布（xl-qqw）：移动 / 按下 / 按住移动 / 松手分开送，松手落在画布外也归战斗', () => {
+    panel.current = 'battle'
+    render(<App />)
+    const host = screen.getByTestId('battle-host')
+    stubBox(host, { left: 0, top: 0, width: 1024, height: 640 })
+    fireEvent.mouseMove(host, { clientX: 10, clientY: 20, buttons: 0 })
+    fireEvent.mouseDown(host, { clientX: 514, clientY: 325 })
+    // 按住左键移动是 `mouseDragged`：原版那一支不停帧，与 `mouseMoved` 不是一回事。
+    fireEvent.mouseMove(host, { clientX: 60, clientY: 60, buttons: 1 })
+    // 拖出画布再松手 —— 宿主自己收不到这一下，原版照样派给按下时那个组件。
+    fireEvent.mouseUp(window, { clientX: 1100, clientY: 60 })
+    expect(battleMouse.mock.calls.map(([i]) => i)).toEqual([
+      { e: 'move', x: 10, y: 20 },
+      { e: 'press', x: 514, y: 325 },
+      { e: 'drag', x: 60, y: 60 },
+      { e: 'release', x: 1100, y: 60 },
+    ])
+  })
 })

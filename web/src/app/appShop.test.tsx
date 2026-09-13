@@ -38,7 +38,7 @@ vi.mock('../game/useGame', () => ({
     menuTitleAt: () => null,
     shopInput: game.shopInput,
     shopLoading: game.shopLoading,
-    click: () => {},
+    battleMouse: () => {},
     scene: null,
     restart: () => {},
     saveLoad: null,

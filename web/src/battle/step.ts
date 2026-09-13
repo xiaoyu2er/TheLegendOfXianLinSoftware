@@ -40,7 +40,20 @@ import type {
  * 键盘只有 J 这一个：原版 `BattlePanel.keyPressed` 里就只有 `VK_J` 一支，
  * 别的键 `GameLauncher` 转过来也什么都不做。
  */
-export type BattleInput = BattleClick | BattleDebugKey
+export type BattleInput = BattleClick | BattlePointer | BattleDebugKey
+
+/**
+ * **分开来的**一个鼠标事件（xl-qqw），与原版 `BattlePanel.setMouse()` 挂的四个回调
+ * 一一对应：`mouseMoved` / `mouseDragged` / `mousePressed` / `mouseReleased`。
+ *
+ * 玩家那一侧（`app/App.tsx`）送的是这一种；真值里 `mouse` 那条指令导出的也是
+ * 这一种。`click` 是导出器那几条老指令焊死的三连发，留着给老真值回放。
+ */
+export interface BattlePointer {
+  readonly e: 'move' | 'drag' | 'press' | 'release'
+  readonly x: number
+  readonly y: number
+}
 
 export interface BattleClick {
   readonly e: 'click'
@@ -106,9 +119,15 @@ export function applyBattleInput(w: BattleWorld, input: BattleInput): void {
     debugKill(w)
     return
   }
+  if (input.e === 'move') return mouseMoved(w, input.x, input.y)
+  if (input.e === 'drag') return mouseDragged(w, input.x, input.y)
+  if (input.e === 'press') return mousePressed(w, input.x, input.y)
+  if (input.e === 'release') return mouseReleased(w, input.x, input.y)
   // 类型上到这里只剩 click，但真值是 `as unknown as` 断言进来的 JSON（`trace.ts`），
   // 导出器哪天多记一种输入，要在这里响，不能当成点击往下走。
-  if (input.e !== 'click') throw new Error(`战斗只认 click / key 输入，实际 ${String((input as { e: unknown }).e)}`)
+  if (input.e !== 'click') {
+    throw new Error(`战斗只认 click / move / drag / press / release / key 输入，实际 ${String((input as { e: unknown }).e)}`)
+  }
   mouseMoved(w, input.x, input.y)
   mousePressed(w, input.x, input.y)
   // 点按钮（控制台与两个菜单）是移入 + 按下 + 松开，点怪物只有移入 + 按下。
@@ -137,6 +156,17 @@ function mouseMoved(w: BattleWorld, x: number, y: number): void {
   if (w.skillMenu.isDraw) skillMenuMoveIn(w, x, y)
   if (w.drugMenu.isDraw) drugMenuMoveIn(w, x, y)
   selectorMoveIn(w, x, y)
+}
+
+/**
+ * `mouseDragged`：与 `mouseMoved` 逐句相同，**只少最后那句**
+ * `enemySlector.checkMoveIn` —— 按着键拖过怪物，怪物不停帧（xl-qqw）。
+ */
+function mouseDragged(w: BattleWorld, x: number, y: number): void {
+  w.currentX = x
+  w.currentY = y
+  if (w.skillMenu.isDraw) skillMenuMoveIn(w, x, y)
+  if (w.drugMenu.isDraw) drugMenuMoveIn(w, x, y)
 }
 
 function mousePressed(w: BattleWorld, x: number, y: number): void {

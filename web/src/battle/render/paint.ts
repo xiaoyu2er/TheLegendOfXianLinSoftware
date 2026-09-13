@@ -120,7 +120,7 @@ export function createPaintState(w: BattleWorld): PaintState {
  */
 export function applyPaintInput(w: BattleWorld, p: PaintState, input: BattleInput): void {
   // 那三个是**鼠标**监听器；J 键走的是 `keyPressed`，一张贴图都不碰。
-  if (input.e !== 'click') return
+  if (input.e === 'key') return
   // 三个监听器都先判 `command.isDraw`，不画就整段跳过。
   if (!w.command.isDraw) return
   const buttons: [CommandButtonKey, GameButton][] = [
@@ -129,6 +129,14 @@ export function applyPaintInput(w: BattleWorld, p: PaintState, input: BattleInpu
     ['defend', w.command.defend],
     ['thing', w.command.thing],
   ]
+  // 分开来的一个事件（xl-qqw）就是**一个**监听器：`isMoveIn`（移动与拖动两个回调
+  // 都调它）框里换待点；`isPressedButton` 框里换按下；`isRelesedButton` 框里换回
+  // 待点。三个的 else 都是换回常态。
+  if (input.e !== 'click') {
+    const onHitOf: ButtonVariant = input.e === 'press' ? 3 : 2
+    for (const [key, b] of buttons) p.buttons[key] = hitsButton(b, input.x, input.y) ? onHitOf : 1
+    return
+  }
   // 一条输入 = 三个监听器**顺序**跑完（`step.ts` 的 `applyInput` 就是这么配的：
   // 移入 + 按下，点按钮时再加一次松开）。三个都写同样这四颗按钮，所以**最后
   // 一次写入说了算**，前面几次一个字节都留不下。原先照着三个监听器写了三遍

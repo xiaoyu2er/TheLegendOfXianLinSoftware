@@ -79,6 +79,8 @@ const IMPLEMENTED: readonly string[] = [
   'battle-script39',
   // xl-byy：战斗里真的用药（剧本的 `drugs` 预置存货）。
   'battle-drugs',
+  // xl-qqw：分开来的鼠标事件（悬停、按住拖开再松手、拖过怪物不停帧）。
+  'battle-mouse',
 ]
 
 /**

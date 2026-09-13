@@ -4,7 +4,7 @@ import { createSfxPlayer } from '../audio/sfxPlayer'
 import { battleTextureIds } from '../battle/render/assets'
 import type { BattleRenderer } from '../battle/render/battleRenderer'
 import { battleDrawList } from '../battle/render/drawList'
-import type { BattleInput } from '../battle/step'
+import type { BattleInput, BattlePointer } from '../battle/step'
 import type { BattleWorld } from '../battle/types'
 import { exitsReady, loadedSceneSource, prepareExits, rememberScene } from '../data/loadedScenes'
 import { resetParty } from '../fakes/party'
@@ -14,7 +14,6 @@ import type { SceneRenderer } from '../scene/sceneRenderer'
 import { TICK_MS, createWorld } from '../state/step'
 import type { DialogueState } from '../state/dialogue'
 import type { InputEvent, World } from '../state/types'
-import { battleClick } from './battleInput'
 import { enemyNamesOf, enemySpriteSize, prepareEnemySprites, spritesReady } from './enemySprites'
 import { toInputEvent } from './keyboard'
 import {
@@ -96,18 +95,19 @@ export interface GameView {
   /** 菜单贴图还在载入 —— 另外三页的整屏背景走按需加载，翻页时会有这几十毫秒。 */
   readonly menuLoading: boolean
   /**
-   * 舞台**逻辑坐标**里的一次点击。战斗面板才用得到；别的面板收下就丢掉。
+   * 战斗画布上的一次鼠标事件（舞台**逻辑坐标**）：移动 / 拖动 / 按下 / 松开分开送
+   * （xl-qqw —— 之前只收按下、当场合成一次点击，于是没有悬停，拖开再松手也做不出来）。
+   * 战斗面板没开着就丢掉；松手见 `routeByGrab`。
    *
    * 换算（客户端坐标 → 1024×640）由调用方做：只有它知道画布被缩放了多少
    * （见 `stage/Stage.tsx`）。这一层收的一律是逻辑坐标，与真值里的坐标同一
    * 套 —— 中间多一次换算，就多一处"点得中点不中"说不清的地方。
    */
-  readonly click: (x: number, y: number) => void
+  readonly battleMouse: (input: BattlePointer) => void
   /**
    * 菜单里的一次鼠标事件（舞台**逻辑坐标**）。菜单没开着时收下就丢掉。
    *
-   * 与 `click` 分开是因为菜单要的是**三种事件**（按下 / 松开 / 移动），
-   * 而战斗那一侧只认按下 —— 合成一个入口就得在这一层猜"这一下算哪种"。
+   * 与 `battleMouse` 分开是因为两边的输入是两套类型，各自进各自那一队。
    */
   readonly menuInput: (input: MenuInput) => void
   /**
@@ -188,7 +188,7 @@ const SESSION_DEPS: SessionDeps = {
 }
 
 /** 收鼠标、会握 grab 的三个面板。 */
-type GrabOwner = 'menu' | 'shop' | 'ls'
+type GrabOwner = 'menu' | 'shop' | 'ls' | 'battle'
 
 export function useGame(
   renderer: SceneRenderer | null,
@@ -215,7 +215,7 @@ export function useGame(
   const glowSinceRef = useRef<(number | null)[]>(Array.from({ length: SAVE_SLOT_COUNT }, () => null))
   const sessionRef = useRef<Session | null>(null)
   const queueRef = useRef<InputEvent[]>([])
-  /** 战斗那一侧这一拍收到的输入：鼠标点击，外加调试外挂键 J。 */
+  /** 战斗那一侧这一拍收到的输入：四种鼠标事件，外加调试外挂键 J。 */
   const battleInputsRef = useRef<BattleInput[]>([])
   /** 菜单里的鼠标事件，攒到下一拍。**没有键盘那一种。** */
   const menuInputRef = useRef<MenuInput[]>([])
@@ -839,11 +839,8 @@ export function useGame(
     openLoadRef.current = true
   }
 
-  const click = (x: number, y: number): void => {
-    const world = sessionRef.current?.battle?.world
-    if (!world || sessionRef.current?.panel !== 'battle') return
-    battleInputsRef.current.push(battleClick(world, x, y))
-  }
+  /** 战斗画布上的一次鼠标事件。面板没开着就丢掉；松手见 `routeByGrab`。 */
+  const battleMouse = (input: BattlePointer): void => routeByGrab<BattleInput>('battle', input, battleInputsRef)
 
   /**
    * 菜单里的一次鼠标事件（舞台**逻辑坐标**）。
@@ -875,7 +872,7 @@ export function useGame(
     battleLoading,
     menuLoading,
     shopLoading,
-    click,
+    battleMouse,
     menuInput,
     menuTitleAt,
     shopInput,
