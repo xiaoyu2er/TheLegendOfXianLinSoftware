@@ -157,6 +157,16 @@ public final class BattleScreenProbe {
         before.setPreferredSize(bp.getPreferredSize());
         Fill panelBg = new Fill(UIManager.getColor("Panel.background"));
         Fill black = new Fill(Color.BLACK);
+        // xl-eit：-Dprobe.presentBg=RRGGBB 把替身自己的底色改掉（原版 BattlePanel 没改过，
+        // 是 Panel.background），量第 1 帧起下面是不是「被重画的那块面板自己的底色」。
+        String presentBgHex = System.getProperty("probe.presentBg");
+        Fill presentBg = null;
+        if (presentBgHex != null) {
+            Color pc = new Color(Integer.parseInt(presentBgHex, 16));
+            present.setBackground(pc);
+            presentBg = new Fill(pc);
+            presentBg.setPreferredSize(bp.getPreferredSize());
+        }
         // 原版面板一行都没改这几样（src/ 里没有 setOpaque / setDoubleBuffered），这里核一遍。
         if (present.isOpaque() != bp.isOpaque() || present.isDoubleBuffered() != bp.isDoubleBuffered()
                 || !present.getPreferredSize().equals(bp.getPreferredSize())) {
@@ -167,6 +177,7 @@ public final class BattleScreenProbe {
 
         CardLayout cards = new CardLayout();
         JFrame[] frame = new JFrame[1];
+        final Fill presentBgCard = presentBg;
         SwingUtilities.invokeAndWait(() -> {
             JFrame f = new JFrame("xl-ads 上屏探针");
             Container c = f.getContentPane();
@@ -175,6 +186,7 @@ public final class BattleScreenProbe {
             c.add("battle", present);
             c.add("panelBg", panelBg);
             c.add("black", black);
+            if (presentBgCard != null) c.add("presentBg", presentBgCard);
             f.setResizable(false);
             f.pack();
             f.setLocation(40, 40);
@@ -192,6 +204,13 @@ public final class BattleScreenProbe {
         save(grab(robot, panelBg), out, "underlay-panelBg.png");
         show(cards, frame[0], "black");
         save(grab(robot, black), out, "underlay-black.png");
+        if (presentBg != null) {
+            show(cards, frame[0], "presentBg");
+            save(grab(robot, presentBg), out, "underlay-presentBg.png");
+        } else {
+            // 上一轮带着开关跑过的目录里留着它，diff 会把它当成这一轮的候选。
+            new File(out, "underlay-presentBg.png").delete();
+        }
         show(cards, frame[0], "before");
         save(grab(robot, before), out, "underlay-before-again.png");
 
@@ -326,6 +345,41 @@ public final class BattleScreenProbe {
         // 第 1 帧起下面是什么：上一帧的屏幕（不透明面板重画不清底），还是又一次底色。
         // 判法同上，两个候选的预测差出 6 倍容差以上的像素才数。
         BufferedImage bgShot = ci[1];
+        // xl-eit：带 -Dprobe.presentBg 截过的话，多一个候选「替身自己的底色」，三者两两可分才数。
+        File ownFile = new File(dir, "underlay-presentBg.png");
+        BufferedImage own = ownFile.isFile() ? read(ownFile) : null;
+        if (own != null) {
+            for (int i = 0; i < frames; i++) {
+                BufferedImage prev = i == 0 ? ci[1] : read(new File(dir, String.format(Locale.ROOT, "screen-%03d.png", i - 1)));
+                BufferedImage s = read(new File(dir, String.format(Locale.ROOT, "screen-%03d.png", i)));
+                BufferedImage v = read(new File(dir, String.format(Locale.ROOT, "web-%03d.png", i)));
+                BufferedImage b = read(new File(dir, String.format(Locale.ROOT, "buf-%03d.png", i)));
+                // 第 1 帧起缓冲 alpha 已高，三个预测彼此差不出 6 倍容差（上面那种判法分母为 0）。
+                // 这里改数「离哪个预测最近」，只数预测两两差出 2 倍容差以上的像素；分母照样打印。
+                int sep = 0, nearPrev = 0, nearBg = 0, nearOwn = 0;
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        int a = b.getRGB(x, y) >>> 24;
+                        if (!edge[y * w + x] || a == 255) continue;
+                        int pp = blend(v.getRGB(x, y), prev.getRGB(x, y), a);
+                        int pb = blend(v.getRGB(x, y), bgShot.getRGB(x, y), a);
+                        int po = blend(v.getRGB(x, y), own.getRGB(x, y), a);
+                        if (maxChannelDelta(po, pb) <= 2 * tol) continue;
+                        if (i > 0 && (maxChannelDelta(pp, pb) <= 2 * tol || maxChannelDelta(pp, po) <= 2 * tol)) continue;
+                        sep++;
+                        int sv = s.getRGB(x, y);
+                        int dp = i > 0 ? maxChannelDelta(sv, pp) : Integer.MAX_VALUE;
+                        int db = maxChannelDelta(sv, pb), dq = maxChannelDelta(sv, po);
+                        if (dq < db && dq < dp) nearOwn++;
+                        else if (db < dq && db < dp) nearBg++;
+                        else if (dp < db && dp < dq) nearPrev++;
+                    }
+                }
+                System.out.println("[presentBg] 第 " + i + " 帧候选两两差出 " + (2 * tol) + " 的边像素：" + sep
+                        + (sep == 0 ? "（判不出）" : "") + "；最近的是 上一帧屏幕 " + (i == 0 ? "-" : String.valueOf(nearPrev))
+                        + "、内容面板底色 " + nearBg + "、替身自己的底色 " + nearOwn);
+            }
+        }
         for (int i = 1; i < frames; i++) {
             BufferedImage prev = read(new File(dir, String.format(Locale.ROOT, "screen-%03d.png", i - 1)));
             BufferedImage s = read(new File(dir, String.format(Locale.ROOT, "screen-%03d.png", i)));
