@@ -3,7 +3,7 @@
 `web/src` 生产代码里每一处浏览器平台 API 的调用点，各自是原版哪一处的对应物、还是原版根本没有的加法（xl-03x.22）。
 `docs/original-primitives.md`（xl-03x.20）的另一半：那一份从原版出发，这一份从 web 出发。
 
-读数（2026-09-13）：共 133 行命中、50 个单元（对应 38 · 已登记 36 · 工程 59 · 未核 0）
+读数（2026-09-13）：共 135 行命中、50 个单元（对应 40 · 已登记 36 · 工程 59 · 未核 0）
 
 **分母不在这里写**：哪几类算「浏览器平台 API」，是 `web/src/test/webPrimitives.test.ts` 里 `PRIMITIVES` 那张正则表定的
 （事件 / 键盘 / 指针 / 定时 / 时钟 / 存储 / 地址 / 全屏 / 视口 / 全局 / 音频 / 图片 / 元素 / 无障碍 / 伪类，外加今天应当零命中的「生命周期」），
@@ -24,22 +24,22 @@
 
 | 调用点 | 类 | 判定 | 证据 |
 |---|---|---|---|
-| `web/src/app/App.tsx:73` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
+| `web/src/app/App.tsx:76` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
 | `web/src/app/App.tsx:375,376,377,381,382,383` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28；对应 `BattlePanel.java:369`、`MenuPanel.java:116`、`LoadAndSavePanel.java:188`、`ShopPanel.java:200`、`EquipmentShopPanel.java:276`），grab 期间别的宿主不收移动；`mousemove` 与 `mousedown` 挂在捕获阶段，窗口外松了手（window 收不到 mouseup，原版照样收到）之后头一下没按键的移动或新按下当场补上松手（xl-bwl，坐标是见到的那一刻）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
-| `web/src/app/App.tsx:421` | 元素 | 工程 | 外壳 `div` |
-| `web/src/app/App.tsx:437` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
-| `web/src/app/App.tsx:438` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
-| `web/src/app/App.tsx:445` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
-| `web/src/app/App.tsx:446` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
-| `web/src/app/App.tsx:447` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
-| `web/src/app/App.tsx:448` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
+| `web/src/app/App.tsx:442` | 元素 | 工程 | 外壳 `div` |
+| `web/src/app/App.tsx:458` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
+| `web/src/app/App.tsx:459` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
+| `web/src/app/App.tsx:466` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
+| `web/src/app/App.tsx:467` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
+| `web/src/app/App.tsx:468` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
+| `web/src/app/App.tsx:469` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
 | `web/src/app/App.tsx:476,477` | 事件 | 对应 `src/shop/ShopPanel.java:173` | 两家店的按下 / 移动（装备店是 `EquipmentShopPanel.java:249` 同形的一段）；按住任一键移动送 `drag`（`ShopPanel.java:200`，只记坐标不跑 `isMoveIn`，xl-bwl）。**松手不在宿主上**，走上面那一行的 `grabRelease`（xl-o9z） |
 | `web/src/app/App.tsx:484,485` | 事件 | 对应 `src/start/LoadAndSavePanel.java:161` | 按 `buttons` 分开 `mouseDragged` 与 `mouseMoved`，任一键都算拖动（xl-bwl）；松手同样走 `grabRelease`（xl-o9z） |
-| `web/src/app/App.tsx:480,489,494,499,504` | 元素 / 无障碍 | 已登记 `ADR-0001#loading-notices` | 「正在载入 …」与渲染失败那一行（**xl-03x.22 补登**） |
-| `web/src/app/App.tsx:485` | 事件 | 工程 | `<StartPanel onNewGame onLoad>` 是组件 prop，不是浏览器事件 —— 正则的误报，如实记下 |
-| `web/src/app/App.tsx:515,555,582,583` | 元素 / 无障碍 / 事件 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏、操作提示、放大方式切换（**xl-03x.22 补登**） |
-| `web/src/app/App.tsx:517,527,531,533,541,545,548` | 元素 / 事件 | 工程 | 场景 / 商店两个选择器，只在开发模式或 `?dev` 下渲染（`app/devTools.ts`） |
-| `web/src/app/App.tsx:574,576` | 事件 / 无障碍 | 已登记 `ADR-0001#stage-scales-to-window` | 全屏按钮 |
+| `web/src/app/App.tsx:501,510,515,520,525` | 元素 / 无障碍 | 已登记 `ADR-0001#loading-notices` | 「正在载入 …」与渲染失败那一行（**xl-03x.22 补登**） |
+| `web/src/app/App.tsx:506` | 事件 | 工程 | `<StartPanel onNewGame onLoad>` 是组件 prop，不是浏览器事件 —— 正则的误报，如实记下 |
+| `web/src/app/App.tsx:536,576,603,604` | 元素 / 无障碍 / 事件 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏、操作提示、放大方式切换（**xl-03x.22 补登**） |
+| `web/src/app/App.tsx:538,548,552,554,562,566,569` | 元素 / 事件 | 工程 | 场景 / 商店两个选择器，只在开发模式或 `?dev` 下渲染（`app/devTools.ts`） |
+| `web/src/app/App.tsx:595,597` | 事件 / 无障碍 | 已登记 `ADR-0001#stage-scales-to-window` | 全屏按钮 |
 | `web/src/app/devTools.ts:11` | 地址 / 全局 | 工程 | `?dev` 开关 |
 | `web/src/audio/bgmPlayer.ts:59,99` | 键盘 / 指针 / 事件 | 已登记 `ADR-0001#bgm-waits-for-gesture` | 自动播放被挡时等第一次手势（**xl-03x.22 补登**） |
 | `web/src/audio/bgmPlayer.ts:62` | 音频 | 对应 `src/media/MusicPlayer.java:71` | 背景音乐开播（`play()` 里 `sourceDataLine.start()`）；web 只有一个播放对象、换 `src` |

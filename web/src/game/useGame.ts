@@ -823,6 +823,8 @@ export function useGame(
    *
    * App 那一层只记按下那一刻的外接矩形（换算坐标用），**归谁只在这里定**。
    *
+   * @exception ADR-0001#drag-not-grabbed-to-hidden-panel
+   *
    * ⚠️ **拖动照当前面板过滤，是一处有意的差异**（xl-bwl 登记）：Swing 把 MOUSE_DRAGGED
    * 也按 grab 派，按下之后面板被切走，藏着的那块照样收拖动。四块各自为什么看不出来：
    *
