@@ -108,15 +108,21 @@ public final class BattleIdleProbe {
      * 第 {@code menuAt} 拍照 {@code ScenePanel.keyPressed} 的 ESC 那一句调
      * {@code GameLauncher.switchTo("menu")}。每拍只打印变了的这几样：切面板观察点、
      * {@code GameLauncher.currentPanel} 是哪一块、{@code SCENE_SIGNAL}、背景音乐曲名，
-     * 以及**背景音乐一共 play 了几次** —— {@code MusicPlayer.play} 每次都
+     * 以及**立起场景之后背景音乐又 play 了几次**（两次 {@code initiation} 里的不算） —— {@code MusicPlayer.play} 每次都
      * {@code new File} 再 {@code getAudioInputStream}，所以它的 {@code audioInputStream}
      * 换了一个对象就是又从文件头开了一次。曲名在第二次 play 前后是同一首，只看曲名看不出来。
      *
      * 立起来的只是这三块面板，不是 {@code GameLauncher}（那是 xl-x0t）：切面板仍然由
      * {@link BattleDriver} 装的 {@link PanelTap} 记名字、不碰容器。场景的定时器冻着不推
      * （NPC 走不走与这里要量的无关）；菜单那四条 {@code FatherPanel} 线程照跑，它们只推帧。
+     * 进了菜单之后场景仍然每拍 {@code step()}：原版 {@code ScenePanel.run()} 的循环体不看
+     * {@code currentPanel}（读代码），菜单盖在上面时它照跑。
      */
     private static void rescene(File first, int n, int menuAt) throws Exception {
+        if (menuAt != -1 && (menuAt < 0 || menuAt > n)) {
+            ExportTrace.die("第几拍进菜单要在 0.." + n + " 之内，或 -1；给的是 " + menuAt
+                    + " —— 越界的话永远不进菜单，读数与「一直待在场景」同形");
+        }
         TraceScript s1 = TraceScript.load(first);
         BattleDriver d = new BattleDriver(s1);
         int steps = 0;
@@ -137,8 +143,14 @@ public final class BattleIdleProbe {
         GameLauncher.menuPanel = new menu.MenuPanel(GameLauncher.zhangXiaoFan, GameLauncher.luXueQi, GameLauncher.yuJie);
 
         Object bgm = staticField("media.MusicReader", "background");
-        Object[] lastStream = {BattleDriver.get(bgm, "audioInputStream")};
-        int[] plays = {0};
+        Object lastStream = BattleDriver.get(bgm, "audioInputStream");
+        // MusicPlayer.play 吞掉一切异常：解码器没在 classpath 上时流对象永远不换，
+        // play 次数恒为 0 —— 与「没再 play」同形。立场景那两次 initiation 本该已经 play 过。
+        if (lastStream == null) {
+            ExportTrace.die("立完场景 BGM 的 audioInputStream 还是 null —— MusicPlayer.play 没开成流"
+                    + "（多半是 mp3spi / jl1.0 不在 classpath 上），play 次数这一列量不了");
+        }
+        int plays = 0;
         System.out.println("# 第一场 " + s1.name + "：" + steps + " 步，原版已切面板 1 次（scenePanel）；"
                 + "场景 = 大地图，SCENE_SIGNAL=" + GameLauncher.SCENE_SIGNAL + "，此刻 BGM " + BattleDriver.get(bgm, "currentPlayingBGM"));
 
@@ -149,10 +161,10 @@ public final class BattleIdleProbe {
             for (int k = 0; k < SCENE_STEPS_PER_BATTLE_TICK; k++) {
                 sp.step();
                 Object s = BattleDriver.get(bgm, "audioInputStream");
-                if (s != lastStream[0]) {
-                    plays[0]++;
-                    lastStream[0] = s;
-                    System.out.println("  第 " + i + " 拍场景第 " + k + " 步：BGM play 第 " + plays[0] + " 次 "
+                if (s != lastStream) {
+                    plays++;
+                    lastStream = s;
+                    System.out.println("  第 " + i + " 拍场景第 " + k + " 步：BGM play 第 " + plays + " 次 "
                             + BattleDriver.get(bgm, "currentPlayingBGM"));
                 }
             }
@@ -160,13 +172,13 @@ public final class BattleIdleProbe {
                     + " current=" + panelName(GameLauncher.currentPanel, sp)
                     + " SCENE_SIGNAL=" + GameLauncher.SCENE_SIGNAL
                     + " timeCode=" + BattleDriver.get(BattleDriver.get(d.panel(), "victoryReminder"), "timeCode")
-                    + " plays=" + plays[0];
+                    + " plays=" + plays;
             // timeCode 每拍都在变，比较时去掉它，只在别的东西变了时打印
             String key = cur.replaceAll(" timeCode=\\d+", "");
             if (!key.equals(prev)) System.out.println("第 " + i + " 拍：" + cur);
             prev = key;
         }
-        System.out.println("# 空推 " + n + " 拍，BGM 共 play " + plays[0] + " 次");
+        System.out.println("# 空推 " + n + " 拍，BGM 共 play " + plays + " 次");
     }
 
     private static String panelName(Object p, Object sp) {
