@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { posix, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
@@ -32,6 +32,14 @@ import type { BakeStamp } from './bakeStamp'
 
 const STAMP = stamp as BakeStamp
 const REPO = repoPath()
+/** 只为解析符号（常量、import、参数）建程序：不要标准库与类型，`node:fs` 解析不到也无妨。 */
+const PROGRAM_OPTIONS: ts.CompilerOptions = {
+  noLib: true,
+  types: [],
+  noEmit: true,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+}
 
 describe('烘焙指纹', () => {
   it('烘焙器的源码闭包与烘焙时逐字节一致', () => {
@@ -177,10 +185,7 @@ describe('烘焙指纹', () => {
     const SCANNERS = new Set(['readdirSync', 'readdir', 'opendirSync', 'opendir', 'globSync', 'glob', 'listFiles'])
     const closure = bakerSources(REPO)
     expect(closure).toContain(PRIMITIVE)
-    const program = ts.createProgram(
-      closure.map((f) => resolve(REPO, f)),
-      { noLib: true, types: [], noEmit: true, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler },
-    )
+    const program = ts.createProgram(closure.map((f) => resolve(REPO, f)), PROGRAM_OPTIONS)
     const scanned = scannedDirs(program, REPO)
     const found: string[] = []
     const escaped: string[] = []
@@ -290,30 +295,44 @@ describe('烘焙指纹', () => {
  * - 字符串字面量、不带插值的模板；
  * - `const` 常量，顺着 import 跨文件（导出的 `IMAGE_ROOT` 与没导出的 `DRUG_PICTURE_DIR`
  *   一样，读的都是扫描实参真正指向的那个定义，不是手抄的原文）；
- * - 具名函数的参数：回到闭包里**每一处调用它的地方**取那个位置的实参（没传就取默认值），
- *   所以一个函数拿参数扫两个目录会解析成两条；
- * - 从 `node:path` / `node:url` 导入的 `resolve` / `join` / `dirname` / `fileURLToPath`，
- *   以及 `import.meta.url` —— 烘焙器的 `REPO` 就是从它自己的文件位置这么算出来的。
+ * - 具名函数的参数：回到程序里**每一处直接调用它的地方**取那个位置的实参（没传就取默认值），
+ *   所以一个函数拿参数扫两个目录会解析成两条。那个函数要是还被当成值用了（`dirs.forEach(f)`、
+ *   存进变量、再导出），经那条路扫到的目录这里数不到 —— 抛；
+ * - 从 `node:path` / `node:url` 导入的 `resolve` / `dirname` / `fileURLToPath`，以及
+ *   `import.meta.url` —— 烘焙器的 `REPO` 就是从它自己的文件位置这么算出来的。
  *
- * 路径在一个以 `/` 为仓库根的虚拟文件系统里算；算出来不落在根下的（或正好是根）也抛。
+ * 路径在一个以 `/` 为仓库根的虚拟文件系统里算。`resolve` 的实参里一个绝对路径都没有，
+ * 运行时就是相对 cwd 的 —— 抛；最后算出来的不落在根下（裸相对路径同理）或正好是根，也抛。
  */
 function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at: string) => string[] {
   const checker = program.getTypeChecker()
+  const target = (node: ts.Node): ts.Symbol | undefined => {
+    const symbol = checker.getSymbolAtLocation(node)
+    return symbol !== undefined && symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol
+  }
+  const locate = (node: ts.Node): string => {
+    const file = node.getSourceFile()
+    return `${relative(repo, file.fileName)}:${file.getLineAndCharacterOfPosition(node.getStart()).line + 1} \`${node.getText()}\``
+  }
   const calls: ts.CallExpression[] = []
+  const names: ts.Identifier[] = []
   for (const file of program.getSourceFiles()) {
     const collect = (node: ts.Node): void => {
       if (ts.isCallExpression(node)) calls.push(node)
+      if (ts.isIdentifier(node)) names.push(node)
       ts.forEachChild(node, collect)
     }
     collect(file)
   }
   const PATH_FUNCTIONS: Record<string, (...args: string[]) => string> = {
-    resolve: (...args) => posix.resolve('/', ...args),
-    join: (...args) => posix.join(...args),
+    resolve: (...args) => {
+      if (!args.some((a) => a.startsWith('/'))) throw new Error(`resolve(${args.join(', ')}) 没有绝对路径，运行时相对 cwd`)
+      return posix.resolve(...args)
+    },
     dirname: (path = '') => posix.dirname(path),
     fileURLToPath: (url = '') => {
       if (!url.startsWith('file://')) throw new Error(`fileURLToPath 拿到的不是 file: 地址：${url}`)
-      return url.slice('file://'.length)
+      return decodeURIComponent(url.slice('file://'.length))
     },
   }
   // 被调用的是不是 `node:path` / `node:url` 里那个函数：看导入声明，不看名字 —— 本地一个
@@ -330,10 +349,7 @@ function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at
     lists.reduce<string[][]>((acc, list) => acc.flatMap((prefix) => list.map((v) => [...prefix, v])), [[]])
 
   const evaluate = (expr: ts.Expression, depth: number): string[] => {
-    const where = () => {
-      const file = expr.getSourceFile()
-      return `${relative(repo, file.fileName)}:${file.getLineAndCharacterOfPosition(expr.getStart()).line + 1} \`${expr.getText()}\``
-    }
+    const where = () => locate(expr)
     if (depth > 20) throw new Error(`解析太深（递归？）：${where()}`)
     if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || ts.isSatisfiesExpression(expr)) return evaluate(expr.expression, depth + 1)
     if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return [expr.text]
@@ -341,7 +357,7 @@ function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at
       ts.isPropertyAccessExpression(expr) && expr.name.text === 'url' &&
       ts.isMetaProperty(expr.expression) && expr.expression.keywordToken === ts.SyntaxKind.ImportKeyword
     ) {
-      return [`file:///${relative(repo, expr.getSourceFile().fileName).split(sep).join('/')}`]
+      return [`file:///${encodeURI(relative(repo, expr.getSourceFile().fileName).split(sep).join('/'))}`]
     }
     if (ts.isCallExpression(expr)) {
       const fn = pathFunction(expr.expression)
@@ -349,9 +365,7 @@ function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at
       return product(expr.arguments.map((a) => evaluate(a, depth + 1))).map((args) => fn(...args))
     }
     if (ts.isIdentifier(expr)) {
-      let symbol = checker.getSymbolAtLocation(expr)
-      if (symbol !== undefined && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol)
-      const decl = symbol?.valueDeclaration
+      const decl = target(expr)?.valueDeclaration
       if (
         decl !== undefined && ts.isVariableDeclaration(decl) && decl.initializer !== undefined &&
         ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const
@@ -360,14 +374,19 @@ function scannedDirs(program: ts.Program, repo: string): (arg: ts.Expression, at
       }
       if (decl !== undefined && ts.isParameter(decl) && ts.isFunctionDeclaration(decl.parent) && decl.parent.name !== undefined) {
         const index = decl.parent.parameters.indexOf(decl)
-        const owner = checker.getSymbolAtLocation(decl.parent.name)
-        const callers = calls.filter((call) => {
-          let callee = checker.getSymbolAtLocation(call.expression)
-          if (callee !== undefined && callee.flags & ts.SymbolFlags.Alias) callee = checker.getAliasedSymbol(callee)
-          return callee !== undefined && callee === owner
+        const owner = target(decl.parent.name)
+        // 名字只许出现在三处：它自己的声明、原样导入、被直接调用。别处出现就是被当值传走了。
+        const asValue = names.filter((id) => {
+          if (id === decl.parent.name || target(id) !== owner) return false
+          const parent = id.parent
+          if (ts.isImportSpecifier(parent) || ts.isImportClause(parent)) return false
+          return !(ts.isCallExpression(parent) && parent.expression === id)
         })
+        if (asValue.length > 0) throw new Error(`扫描参数所在的函数被当值用了，经那条路扫的目录数不到：${asValue.map(locate).join('；')}`)
+        const callers = calls.filter((call) => target(call.expression) === owner)
         if (callers.length === 0) throw new Error(`参数所在的函数在闭包里没人调用：${where()}`)
         return callers.flatMap((call) => {
+          if (call.arguments.slice(0, index + 1).some(ts.isSpreadElement)) throw new Error(`调用处用了展开实参：${locate(call)}`)
           const arg = call.arguments[index] ?? decl.initializer
           if (arg === undefined) throw new Error(`调用处没传这个参数、也没有默认值：${where()}`)
           return evaluate(arg, depth + 1)
@@ -449,6 +468,54 @@ describe('指纹本身不是空转', () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'bake-stamp-'))
     writeFileSync(resolve(dir, 'entry.ts'), "const s = 'no end\n")
     expect(() => bakerSources(dir, 'entry.ts')).toThrowError(/没闭合的字符串/)
+  })
+
+  /**
+   * `scannedDirs` 的参数分支，今天烘焙器里没有一处走得到（每处扫描的实参都是常量），
+   * 所以在临时目录里造出来验，不靠烘焙器碰巧长什么样（xl-pcg，/code-review 点到）。
+   */
+  const scansIn = (files: Record<string, string>): string[] => {
+    const dir = realpathSync(mkdtempSync(resolve(tmpdir(), 'bake-scan-')))
+    for (const [name, text] of Object.entries(files)) writeFileSync(resolve(dir, name), text)
+    const program = ts.createProgram(Object.keys(files).map((f) => resolve(dir, f)), PROGRAM_OPTIONS)
+    const scanned = scannedDirs(program, dir)
+    const out: string[] = []
+    for (const name of Object.keys(files)) {
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'readdirSync') {
+          const first = node.arguments[0]
+          if (first !== undefined) out.push(...scanned(first, name))
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(program.getSourceFile(resolve(dir, name))!)
+    }
+    return out.sort()
+  }
+  const HEADER =
+    "import { readdirSync } from 'node:fs'\nimport { resolve } from 'node:path'\nimport { fileURLToPath } from 'node:url'\n" +
+    "const ROOT = resolve(fileURLToPath(import.meta.url), '..')\n"
+
+  it('一个函数拿参数扫两个目录，解析成两条（跨文件导入的调用也算）', () => {
+    expect(
+      scansIn({
+        'scan.ts': `${HEADER}export function scan(dir: string) { return readdirSync(resolve(ROOT, dir)) }\n`,
+        'entry.ts': "import { scan } from './scan'\nscan('a')\nscan('b/c')\n",
+      }),
+    ).toEqual(['a', 'b/c'])
+  })
+
+  it('扫描参数所在的函数被当值传走，是抛，不是只数直接调用', () => {
+    expect(() =>
+      scansIn({
+        'entry.ts': `${HEADER}function scan(dir: string) { return readdirSync(resolve(ROOT, dir)) }\nscan('a')\n;['b'].forEach(scan)\n`,
+      }),
+    ).toThrowError(/被当值用了/)
+  })
+
+  it('相对 cwd 的扫描是抛，不是当成仓库根下', () => {
+    expect(() => scansIn({ 'entry.ts': `${HEADER}readdirSync('a')\n` })).toThrowError(/扫的不是仓库里的一个目录/)
+    expect(() => scansIn({ 'entry.ts': `${HEADER}readdirSync(resolve('a'))\n` })).toThrowError(/运行时相对 cwd/)
   })
 
   it('注释里的示例路径不算 import', () => {
