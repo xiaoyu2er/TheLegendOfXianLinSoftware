@@ -19,6 +19,7 @@ import { TEXT_FONT_STACK } from '../../textFont'
 import { createBufferPlan } from './bufferPlan'
 import type { BufferMode } from './bufferPlan'
 import type { DrawOp, Rect } from './drawList'
+import { presentFor } from './present'
 import { blitRectsOnto, scaledBlitPasses } from './scaledBlit'
 
 /**
@@ -69,10 +70,11 @@ import { blitRectsOnto, scaledBlitPasses } from './scaledBlit'
  * 第二场第 0 帧边上 2293 个像素超容差 8（最大差 46）、第 1 帧 49 个、第 2 帧起 0，
  * 边以外 0 个。⚠️ Web 侧 `'keep'` 这一支没有跨端比对（没有两场连打的真值），未量。
  *
- * ⚠️ 与真游戏还差一处，没有真值、没量：原版上屏是 `g.drawImage(bufferedPic)` 以
- * SrcOver 画到 Swing 上，**并不扔 alpha**；这里上屏扔 alpha，对的是真值（导出的
- * 缓冲 + 不看 alpha 的比对器）。缓冲 alpha 叠满之后两者无别 —— 跨场复用之下，只有
- * 进程里**头一场**就用半透明背景时才有叠不满的那几帧。
+ * **上屏也分两支（xl-eit）**：原版上屏是 `g.drawImage(bufferedPic)` 以 SrcOver 画到
+ * Swing 上，**并不扔 alpha**，底下是 Swing 每帧新铺的面板底色。游戏照这样上屏（盖在
+ * `Panel.background` 上）；取图页照旧反预乘、扔 alpha，对的是真值（导出的缓冲 + 不看
+ * alpha 的比对器）。怎么选、依据与读数见 `present.ts`。缓冲 alpha 叠满之后两支无别 ——
+ * 跨场复用之下，只有进程里**头一场**就用半透明背景时才有叠不满的那几帧。
  *
  * 由此来的合同：**一拍只合成一次**（原版一拍 paint 一次）。`draw` 带拍号，
  * 同一拍再调直接返回；跳过的拍由调用方补画（取图页逐拍画，游戏侧掉帧到
@@ -126,7 +128,8 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
   /** 这一拍清不清、合不合（`bufferPlan.ts`）。 */
   const plan = createBufferPlan()
   const present = new Sprite(buffer)
-  present.filters = [unpremultiplyFilter()]
+  const unpremultiply = unpremultiplyFilter()
+  present.filters = [unpremultiply]
   app.stage.addChild(present)
 
   const textures = new Map<AssetId, Texture>()
@@ -364,6 +367,11 @@ export async function createBattleRenderer(host: HTMLElement): Promise<BattleRen
       wanted.forEach((id, i) => textures.set(id, loaded[i]!))
       // 新的一场：接着画还是从全透明起步，由调用方说（文件头「跨场复用」）。
       plan.load(mode)
+      // 上屏：游戏盖在面板底色上、alpha 不扔，取图页反预乘（`present.ts`）。底色靠
+      // 渲染器每帧的清屏色铺，缓冲以普通混合（预乘 SrcOver）盖上去 —— 不用滤镜。
+      const how = presentFor(mode)
+      present.filters = how.kind === 'unpremultiply' ? [unpremultiply] : []
+      app.renderer.background.color = how.kind === 'over' ? how.background : 0x000000
     },
     draw,
     destroy(): void {
