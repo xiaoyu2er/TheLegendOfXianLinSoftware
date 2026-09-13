@@ -158,12 +158,12 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
         // 每动一个像素就对每颗按钮重跑 `isMoveIn`，而 `isPressedButton` 会把高亮停掉 —— 于是"点一下、
         // 不出框、动一动"高亮当场续播；只挂 `onMouseEnter` 就得移出去再移回来才转。按着键是
         // `mouseDragged`，它只记坐标、不跑 `isMoveIn`（舞台外按下再拖进来，原版连它都不派），所以
-        // `buttons` 非 0 不碰悬停（xl-vi8）。移出**不看键**：原版拖出框再松手，`isRelesedButton`
-        // 换回常态、高亮早被按下停了；这里没有分开的按下 / 松手（`useStartPanel` 的 `click`），
-        // 移出就是那一下的对应物。
+        // `buttons` 非 0 不碰悬停（xl-vi8）。移出**不看键**，与原版**不逐拍相同**（欠账，xl-4zo）：原版
+        // 拖出框时按下图留到松手、框外松手照样触发；这里按下 / 松手合成一次 `click`（`useStartPanel`），
+        // 移出也看键的话，拖出去松手之后悬停会卡住。
         // 命中判定仍然归 DOM（按钮元素占的就是那个命中框，见 `buttons.ts`），这里不自己算坐标。
-        onMouseMove={(event) => event.buttons === 0 && handlers?.hover(button.key)}
-        onMouseEnter={(event) => event.buttons === 0 && handlers?.hover(button.key)}
+        onMouseMove={(event) => { if (event.buttons === 0) handlers?.hover(button.key) }}
+        onMouseEnter={(event) => { if (event.buttons === 0) handlers?.hover(button.key) }}
         onMouseLeave={() => handlers?.hover(null)}
         // @exception ADR-0001#start-focus-hover
         // 键盘走到这颗上等于"鼠标移进来"：原版没有这一条（它只认坐标），

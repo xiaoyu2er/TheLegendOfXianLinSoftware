@@ -201,8 +201,11 @@ describe('开始界面', () => {
     // mouseDragged 那一支里一句 isMoveIn 都没有。
     const src = javaSource('src/start/StartPanel.java').replace(/\s+/g, '')
     const dragged = src.slice(src.indexOf('publicvoidmouseDragged('))
-    expect(dragged.indexOf('}'), '没找到 mouseDragged').toBeGreaterThan(0)
-    expect(dragged.slice(0, dragged.indexOf('}'))).not.toContain('isMoveIn')
+    // 截到监听器收尾的 `});` —— mouseDragged 是 MouseMotionAdapter 里最后一个方法。
+    const end = dragged.indexOf('});')
+    expect(end, '没找到 mouseDragged 或它的收尾').toBeGreaterThan(0)
+    expect(dragged.slice(0, end)).toContain('currentX=ex.getX();')
+    expect(dragged.slice(0, end)).not.toContain('isMoveIn')
 
     // 按着键（舞台外按下拖进来 / 面板上按下拖过来，两种在这里同形）移进、再动。
     fireEvent.mouseEnter(el, { buttons: 1 })
@@ -217,8 +220,8 @@ describe('开始界面', () => {
     expect(face()).toContain(resolveAsset(startAssetId('newGameHover')))
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 1)))
 
-    // 移出**不看键**：web 没有分开的按下 / 松手（`useStartPanel` 的 `click`），原版拖出框后
-    // 松手那一下 isRelesedButton 换回常态、高亮早被按下停了 —— 移出就是它的对应物。
+    // 移出**不看键**（与原版不逐拍相同，欠账 xl-4zo）：按下 / 松手在这里合成一次 `click`，
+    // 移出也看键的话，拖出框松手之后悬停会卡住。这一段守的是「别把移出改成看键」。
     fireEvent.mouseLeave(el, { buttons: 1 })
     expect(face()).toContain(resolveAsset(startAssetId('newGame')))
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
