@@ -223,7 +223,7 @@ export function useGame(
    * 鼠标在哪个面板上按下、还没松开 —— 「按下时那个面板」（xl-z4f 菜单，xl-o9z 收拢到
    * 三个鼠标面板）。松手照它派，不照当前面板：见 `routeByGrab`。
    */
-  const grabRef = useRef<GrabOwner | null>(null)
+  const grabRef = useRef<{ readonly owner: GrabOwner; held: number } | null>(null)
   /** 店里的鼠标事件，攒到下一拍（xl-yg6.11）。 */
   const shopInputRef = useRef<ShopInput[]>([])
   const [shopLoading, setShopLoading] = useState(false)
@@ -839,14 +839,24 @@ export function useGame(
    *   这几下拖动留不留得到下一场，没有量过。
    */
   const routeByGrab = <I extends { readonly e: string }>(owner: GrabOwner, input: I, queue: { current: I[] }): void => {
+    const grab = grabRef.current
     if (input.e === 'release') {
-      if (grabRef.current !== owner) return
-      grabRef.current = null
+      if (grab?.owner !== owner) return
+      // 和弦（xl-4xi）：每一次松手都归 grab，每一次按下都有了松手 grab 才解除。
+      grab.held -= 1
+      if (grab.held <= 0) grabRef.current = null
       queue.current.push(input)
       return
     }
+    // 和弦里的第二次按下：grab 照旧、多等一次松手。面板已经切走的话这一下按下不送 ——
+    // 与上面那条拖动同一处差异（藏着的面板收不到），松手照样送。
+    if (input.e === 'press' && grab?.owner === owner) {
+      grab.held += 1
+      if (sessionRef.current?.panel === owner) queue.current.push(input)
+      return
+    }
     if (sessionRef.current?.panel !== owner) return
-    if (input.e === 'press') grabRef.current = owner
+    if (input.e === 'press') grabRef.current = { owner, held: 1 }
     queue.current.push(input)
   }
 
