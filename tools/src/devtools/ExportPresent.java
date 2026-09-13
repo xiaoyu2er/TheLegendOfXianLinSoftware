@@ -43,8 +43,9 @@ import javax.swing.UIManager;
  * <h2>自己的判据（任一条不成立退出码 1）</h2>
  *
  * <ol>
- *   <li>alpha=255 读回的必须恰好是源色（不透明时 SrcOver 就是覆盖）；</li>
- *   <li>alpha=0 读回的必须恰好是底色 —— 这一条同时拦「根本没画上」与「底没铺上」；</li>
+ *   <li>alpha=255 读回的必须恰好是源色（不透明时 SrcOver 就是覆盖）—— 拦「根本没画上」
+ *       （没画上读回的是底色，而四种源色没有一种等于底色）；</li>
+ *   <li>alpha=0 读回的必须恰好是底色 —— 拦「底没铺上」；</li>
  *   <li>底色必须与 {@code UIManager.getColor("Panel.background")} 相同（组件底色确实来自
  *       LAF，而不是别处）。</li>
  * </ol>

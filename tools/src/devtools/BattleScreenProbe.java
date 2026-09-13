@@ -356,7 +356,7 @@ public final class BattleScreenProbe {
                 BufferedImage b = read(new File(dir, String.format(Locale.ROOT, "buf-%03d.png", i)));
                 // 第 1 帧起缓冲 alpha 已高，三个预测彼此差不出 6 倍容差（上面那种判法分母为 0）。
                 // 这里改数「离哪个预测最近」，只数预测两两差出 2 倍容差以上的像素；分母照样打印。
-                int sep = 0, nearPrev = 0, nearBg = 0, nearOwn = 0;
+                int sep = 0, nearPrev = 0, nearBg = 0, nearOwn = 0, tie = 0;
                 for (int y = 0; y < h; y++) {
                     for (int x = 0; x < w; x++) {
                         int a = b.getRGB(x, y) >>> 24;
@@ -373,11 +373,12 @@ public final class BattleScreenProbe {
                         if (dq < db && dq < dp) nearOwn++;
                         else if (db < dq && db < dp) nearBg++;
                         else if (dp < db && dp < dq) nearPrev++;
+                        else tie++;
                     }
                 }
                 System.out.println("[presentBg] 第 " + i + " 帧候选两两差出 " + (2 * tol) + " 的边像素：" + sep
                         + (sep == 0 ? "（判不出）" : "") + "；最近的是 上一帧屏幕 " + (i == 0 ? "-" : String.valueOf(nearPrev))
-                        + "、内容面板底色 " + nearBg + "、替身自己的底色 " + nearOwn);
+                        + "、内容面板底色 " + nearBg + "、替身自己的底色 " + nearOwn + "、打平 " + tie);
             }
         }
         for (int i = 1; i < frames; i++) {
