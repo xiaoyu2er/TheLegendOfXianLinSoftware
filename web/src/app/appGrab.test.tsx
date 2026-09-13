@@ -157,4 +157,41 @@ describe('App 的 mouse grab', () => {
     fireEvent.mouseMove(host, { clientX: 60, clientY: 60, buttons: 2 })
     expect(battleMouse.mock.calls.map(([i]) => i.e)).toEqual(['drag'])
   })
+
+  /**
+   * 拖出宿主之后（xl-b28）：Swing 把 MOUSE_DRAGGED 也按 grab 派给按下时那个组件，拖出
+   * 组件外照样收，坐标可以在组件外（负数、超过 1024）。宿主自己的 `onMouseMove` 这时
+   * 一个都收不到 —— 战斗四颗按钮的贴图会停在出界前那一张，直到松手。
+   *
+   * 每块宿主拖出去送的是它自己「按住移动」那一种：战斗与存读档是 `drag`，菜单与店
+   * 不分移动与拖动（原版两支逐字相同 / 宿主本来就只送 `move`）。
+   */
+  for (const [name, p, host, spy, kind] of [
+    ['战斗画布', 'battle', 'battle-host', battleMouse, 'drag'],
+    ['存读档面板', 'ls', 'ls-host', lsInput, 'drag'],
+    ['菜单', 'menu', 'menu-host', menuInput, 'move'],
+    ['店', 'shop', 'shop-host', shopInput, 'move'],
+  ] as const) {
+    it(`${name}：按下之后拖出宿主照样收拖动，宿主里的拖动不重送，松手之后画布外的移动不再收`, () => {
+      panel.current = p
+      render(<App />)
+      const el = screen.getByTestId(host)
+      stubBox(el, { left: 0, top: 0, width: 1024, height: 640 })
+      fireEvent.mouseDown(el, { clientX: 514, clientY: 325 })
+      // 宿主里的拖动冒泡到 window 上 —— 只该送一次。
+      fireEvent.mouseMove(el, { clientX: 60, clientY: 60, buttons: 1 })
+      // 拖出画布：落在宿主外（这里是 document.body），宿主的 onMouseMove 收不到。
+      fireEvent.mouseMove(document.body, { clientX: 1100, clientY: -5, buttons: 1 })
+      fireEvent.mouseUp(window, { clientX: 1100, clientY: -5 })
+      // grab 结束：画布外的移动不归任何人（Swing 的 mouseMoved 只派给指针底下的组件）。
+      fireEvent.mouseMove(document.body, { clientX: 1200, clientY: 10, buttons: 0 })
+      fireEvent.mouseMove(document.body, { clientX: 1200, clientY: 10, buttons: 1 })
+      expect(spy.mock.calls.map(([i]) => i)).toEqual([
+        { e: 'press', x: 514, y: 325 },
+        { e: kind, x: 60, y: 60 },
+        { e: kind, x: 1100, y: -5 },
+        { e: 'release', x: 1100, y: -5 },
+      ])
+    })
+  }
 })
