@@ -28,7 +28,7 @@ import type { DrugShopState, EquipShopState, ShopPanelState, ShopWorld } from '.
  * `drawIcon` 里加了赋值，这句话就不成立了 —— 而它的表现是某一列安静地慢一拍。
  */
 
-/** 真值 `input` 那一列的条目，外加三种真值里没有的。 */
+/** 真值 `input` 那一列的条目，外加几种真值里没有的（各支注释里写着）。 */
 export type ShopInput =
   | {
       readonly e: 'press' | 'release' | 'move'

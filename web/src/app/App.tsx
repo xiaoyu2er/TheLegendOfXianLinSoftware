@@ -353,7 +353,7 @@ export function App() {
     host: Element,
     box: DOMRect,
     send: (at: { x: number; y: number }) => void,
-    drag: (at: { x: number; y: number }, buttons: number) => void,
+    drag: (at: { x: number; y: number }) => void,
   ) => {
     grabRef.current?.end()
     const onRelease = (event: MouseEvent) => {
@@ -365,7 +365,7 @@ export function App() {
       if (event.buttons === 0) return onRelease(event)
       if (event.target instanceof Node && host.contains(event.target)) return
       const at = stagePointIn(box, event)
-      if (at) drag(at, event.buttons)
+      if (at) drag(at)
     }
     // 按着左键再按右键（和弦）不算：那时 `buttons` 里还有别的键。
     const onPress = (event: MouseEvent) => {
