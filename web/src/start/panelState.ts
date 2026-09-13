@@ -177,11 +177,17 @@ export function hoverStartButton(
   return same ? state : { ...state, hover, glow }
 }
 
-/** 原版 `mousePressed`：按住的那颗换成按下图、`isclicked = true`、**高亮停掉**。 */
-export function pressStartButton(state: StartPanelState, key: StartButtonKey): StartPanelState {
+/**
+ * 原版 `mousePressed`：按住的那颗换成按下图、`isclicked = true`、**高亮停掉**。
+ *
+ * `key` 为 `null` 是按在空处：那圈 `isPressedButton` 对每一颗都走框外那支，只把图换回常态，
+ * 一个 `isclicked` 都不碰（xl-4zo）。
+ */
+export function pressStartButton(state: StartPanelState, key: StartButtonKey | null): StartPanelState {
   const hover = { ...state.hover }
   const clicked = { ...state.clicked }
   for (const active of state.buttons) hover[active] = active === key
+  if (key === null) return { ...state, hover }
   clicked[key] = true
   return { ...state, hover, clicked, glow: withGlow(state, key, stopButtonAnimation) }
 }
@@ -194,16 +200,21 @@ export function pressStartButton(state: StartPanelState, key: StartButtonKey): S
  * `buttons.remove(back)`，于是「回」的 `isclicked` 没人清，**一直留着真**（xl-whk 的
  * start-about 真值第 37 步起读得到）。后果是下一次展开「关于我们」时，点任何一颗按钮
  * 松手都会走 `setButton()` 那句 `back.isIsclicked()` —— 当场收起。照抄。
+ *
+ * `key` 为 `null` 是松在空处（xl-4zo）。`setButton()` 不看坐标，所以在按钮上按下、拖出框
+ * 松手**照样触发**；而框外那支 `isRelesedButton` 只换图、不清 `isclicked`，于是那一颗的
+ * `isclicked` 从此留着真 —— 下一次在哪儿松手（哪怕按下、松开都在空处）都会再触发一次。
+ * `start-drag-out` 那份真值走到了这两件事。照抄。
  */
 export function releaseStartButton(
   state: StartPanelState,
-  key: StartButtonKey,
+  key: StartButtonKey | null,
 ): { readonly state: StartPanelState; readonly effect: StartEffect | null } {
   const acted = setButton(state)
   const hover = { ...acted.state.hover }
   const clicked = { ...acted.state.clicked }
   for (const active of acted.state.buttons) hover[active] = active === key
-  if (acted.state.buttons.includes(key)) clicked[key] = false
+  if (key !== null && acted.state.buttons.includes(key)) clicked[key] = false
   return { state: { ...acted.state, hover, clicked }, effect: acted.effect }
 }
 

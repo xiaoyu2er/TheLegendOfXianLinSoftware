@@ -25,7 +25,7 @@ import { createStartPanelState } from './panelState'
 /** 真值一行里不属于状态的列：步号、剧本指令号、这一步的输入。 */
 const NON_STATE_COLUMNS = ['t', 'ip', 'input'] as const
 
-const ALL = ['start-about', 'start-newgame', 'start-about-again', 'start-hover-end']
+const ALL = ['start-about', 'start-newgame', 'start-about-again', 'start-hover-end', 'start-drag-out']
 
 /** **已经对齐的格子 —— 手写登记。** `start-hover-end` 的 `buttons` 那一格在 {@link EXCEPTED} 里。 */
 const ALIGNED: Readonly<Record<string, readonly string[]>> = {
@@ -33,7 +33,7 @@ const ALIGNED: Readonly<Record<string, readonly string[]>> = {
   current: ALL,
   card: ALL,
   onScreen: ALL,
-  buttons: ['start-about', 'start-newgame', 'start-about-again'],
+  buttons: ['start-about', 'start-newgame', 'start-about-again', 'start-drag-out'],
   mouse: ALL,
   scroll: ALL,
   backScroll: ALL,
@@ -257,6 +257,39 @@ describe('逐帧比对要的那一帧：只有 tick 步画', () => {
     }
   })
 
+  it('松在空处照样触发、那一颗的 clicked 留着真 —— 两件都从真值读（xl-4zo）', () => {
+    // 选步只写**起因**：松手的落点不在任何一颗按钮上，而上一步有一颗 clicked 为真、面板没展开。
+    // 后果从真值读出来再断言，一步都没选到是抛。
+    type Btns = Record<string, { clicked: boolean }>
+    // 两种起因分开数：上一次按下落在按钮上（拖出框松手），与上一次按下也落在空处（残留的 clicked）。
+    const hits: { name: string; i: number; pressed: string; residual: boolean }[] = []
+    for (const [name, trace] of TRACES) {
+      trace.ticks.forEach((t, i) => {
+        const prev = trace.ticks[i - 1]
+        const input = t.input[0]!
+        if (input.e !== 'release' || prev === undefined || prev.isUnfolded !== false) return
+        // 此刻在屏幕上的按钮取真值上一步的 onScreen（原版字段名），落点照 DOM 盒子判。
+        const onScreen = START_BUTTONS.filter((b) => (prev.onScreen as string[]).includes(JAVA_BUTTON_NAME[b.key])).map((b) => b.key)
+        const empty = (x: number, y: number) => buttonAt({ ...createStartPanelState(), buttons: onScreen }, x, y) === null
+        if (!empty(input.x!, input.y!)) return
+        const pressed = Object.entries(prev.buttons as Btns).filter(([k, b]) => k !== 'back' && b.clicked).map(([k]) => k)
+        if (pressed.length !== 1) return
+        // 往回找最近那一次按下，看它落没落在按钮上。
+        const lastPress = trace.ticks.slice(0, i).reverse().find((r) => r.input[0]!.e === 'press')!.input[0] as { x: number; y: number }
+        hits.push({ name, i, pressed: pressed[0]!, residual: empty(lastPress.x!, lastPress.y!) })
+      })
+    }
+    expect(hits.some((h) => !h.residual), '没有一份真值走到「在按钮上按下、松在空处」').toBe(true)
+    expect(hits.some((h) => h.residual), '没有一份真值走到「残留的 clicked、按下松开都在空处」').toBe(true)
+    for (const { name, i, pressed } of hits) {
+      const truth = TRACES.get(name)!.ticks[i]!
+      expect((truth.scroll as { isStop: boolean }).isStop, `${name} 第 ${i} 步：真值里卷轴开播了`).toBe(false)
+      expect((truth.buttons as Btns)[pressed]!.clicked, `${name} 第 ${i} 步：真值里 ${pressed} 的 clicked 留着真`).toBe(true)
+      const ours = REPLAYED.get(name)!.rows[i]!
+      for (const group of ['scroll', 'signal', 'buttons'] as const) expect(ours[group], `${name} 第 ${i} 步 · ${group}`).toEqual(truth[group])
+    }
+  })
+
   it('「结」的悬停：与原版只差在「结」那一颗、只差在原版换了悬停图的那几步（ADR-0001 的 start-exit-disabled）', () => {
     type Btn = { image: string; clicked: boolean; glow: { frame: number; isStop: boolean } }
     type Btns = Record<string, Btn>
@@ -328,5 +361,14 @@ describe('回放件里不从真值取、而从原版源码现读的约定', () =
     replay.step({ e: 'tick' })
     // 「结」画在 (200,450)，命中框 [185,235) × [444,494)。
     expect(() => replay.step({ e: 'press', x: 210, y: 469 })).toThrow(/禁用/)
+  })
+
+  it('回放没按下就松手当场抛；按在空处不抛（xl-4zo）', () => {
+    const replay = startStartReplay('负面用例')
+    replay.step({ e: 'tick' })
+    expect(() => replay.step({ e: 'release', x: 600, y: 300 })).toThrow(/没按下/)
+    replay.step({ e: 'press', x: 600, y: 300 })
+    replay.step({ e: 'release', x: 600, y: 300 })
+    expect(replay.state.clicked).toEqual(createStartPanelState().clicked)
   })
 })

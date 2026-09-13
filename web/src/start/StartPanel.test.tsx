@@ -182,8 +182,8 @@ describe('开始界面', () => {
     tick(2)
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 1)))
     // 按一下 —— 原版 isPressedButton 把高亮停了。
-    fireEvent.mouseDown(el)
-    fireEvent.click(el)
+    fireEvent.mouseDown(el, { buttons: 1 })
+    fireEvent.mouseUp(el, { buttons: 0 })
     tick(3)
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
     // 鼠标没出框，只是动了一下。只挂 onMouseEnter 的话这里还是第 0 帧。
@@ -220,11 +220,154 @@ describe('开始界面', () => {
     expect(face()).toContain(resolveAsset(startAssetId('newGameHover')))
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 1)))
 
-    // 移出**不看键**（与原版不逐拍相同，欠账 xl-4zo）：按下 / 松手在这里合成一次 `click`，
-    // 移出也看键的话，拖出框松手之后悬停会卡住。这一段守的是「别把移出改成看键」。
+    // 移出**也看键**（xl-4zo）：按着键拖出框，原版不跑 isMoveIn，图留着。松手那一下再按落点换回来，
+    // 见下面「在按钮上按下、拖出框」那条。
     fireEvent.mouseLeave(el, { buttons: 1 })
+    expect(face()).toContain(resolveAsset(startAssetId('newGameHover')))
+    // 对照：没按着键移出，当场换回常态图。
+    fireEvent.mouseEnter(el, { buttons: 0 })
+    fireEvent.mouseLeave(el, { buttons: 0 })
     expect(face()).toContain(resolveAsset(startAssetId('newGame')))
     expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
+  })
+
+  /**
+   * 以下几条是 xl-4zo：鼠标的按下 / 松手分成两下送，松手按下那一刻挂到 window 上。
+   * 原版的读数在 `start-drag-out` 那份真值里（`startTrace.test.ts` 逐步对齐），这里守的是
+   * **组件真的把 DOM 事件送成了那两下** —— 状态机对了、组件还是合成一次 `click` 的话，
+   * 状态层判据照样全绿。
+   */
+  it('在按钮上按下、拖出框、在空处松手 —— 照样触发（原版 setButton 不看坐标，xl-4zo）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    const el = screen.getByRole('button', { name: '关于我们' })
+    const face = () => (el.querySelector('.start-button-face') as HTMLImageElement).src
+    const glow = () => (el.querySelector('.start-button-glow') as HTMLImageElement).src
+    const back = panel.querySelector('.start-back') as HTMLElement
+
+    fireEvent.mouseEnter(el)
+    tick(2)
+    fireEvent.mouseDown(el, { buttons: 1 })
+    // 按下图（= 悬停那张，原版两个实参是同一个文件）留着，高亮停了。
+    fireEvent.mouseLeave(el, { buttons: 1 })
+    fireEvent.mouseMove(back, { buttons: 1 })
+    tick(2)
+    expect(face()).toContain(resolveAsset(startAssetId('aboutHover')))
+    expect(glow()).toContain(resolveAsset(startFrameAssetId('buttonGlow', 0)))
+    expect(screen.queryByTestId('start-about')).toBeNull()
+
+    // 松在背景上 —— 不在任何一颗按钮上，浏览器也不会派 click。
+    fireEvent.mouseUp(back, { buttons: 0 })
+    expect(face(), '框外松手：图换回常态').toContain(resolveAsset(startAssetId('about')))
+    tick(1)
+    expect(screen.getByTestId('start-about').dataset.width).toBe('0')
+    tick(ABOUT_TICKS)
+    expect(screen.getByRole('button', { name: '返回标题' })).toBeInTheDocument()
+  })
+
+  it('框外松手之后 isclicked 留着真：收起之后在空处按一下松一下，又展开一次（原版就这样）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const about = () => screen.queryByTestId('start-about')
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: '关于我们' }), { buttons: 1 })
+    fireEvent.mouseUp(back, { buttons: 0 })
+    tick(ABOUT_TICKS + 1)
+    const goBack = screen.getByRole('button', { name: '返回标题' })
+    fireEvent.mouseDown(goBack, { buttons: 1 })
+    fireEvent.mouseUp(goBack, { buttons: 0 })
+    tick(ABOUT_TICKS + 1)
+    expect(about(), '「回」收起来了').toBeNull()
+
+    // 按下、松开都在空处。
+    fireEvent.mouseDown(back, { buttons: 1 })
+    fireEvent.mouseUp(back, { buttons: 0 })
+    tick(1)
+    expect(about(), '残留的 about.isclicked 让它又展开了').not.toBeNull()
+  })
+
+  it('没在面板上按下就松手（舞台外按下拖进来）：什么都不发生 —— 原版的 grab 不归这块面板', () => {
+    const onNewGame = vi.fn()
+    render(<StartPanel onNewGame={onNewGame} onLoad={() => {}} />)
+    const el = screen.getByRole('button', { name: '开始新游戏' })
+    fireEvent.mouseUp(el, { buttons: 0 })
+    tick(10 + LOAD_TICKS)
+    expect(onNewGame).not.toHaveBeenCalled()
+    // 对照：先在面板上按下，同一个松手就触发。没有这一半，mouseUp 根本没送到也是绿的。
+    fireEvent.mouseDown(el, { buttons: 1 })
+    fireEvent.mouseUp(el, { buttons: 0 })
+    tick(10 + LOAD_TICKS)
+    expect(onNewGame).toHaveBeenCalledTimes(1)
+  })
+
+  it('鼠标的 click（detail ≥ 1）不再合成一次按下 + 松手；键盘的（detail 为 0）照旧', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const el = screen.getByRole('button', { name: '关于我们' })
+    fireEvent.click(el, { detail: 1 })
+    tick(1)
+    expect(screen.queryByTestId('start-about'), '鼠标 click 自己触发了').toBeNull()
+    fireEvent.click(el, { detail: 0 })
+    tick(1)
+    expect(screen.queryByTestId('start-about'), '键盘按不动了（xl-fqm）').not.toBeNull()
+  })
+
+  it('鼠标按下不给按钮焦点 —— 焦点 = 悬停，会把按下停掉的高亮当场又转起来', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const el = screen.getByRole('button', { name: '开始新游戏' })
+    // fireEvent 的返回值是「默认动作没被取消」。
+    expect(fireEvent.mouseDown(el, { buttons: 1 })).toBe(false)
+    // 对照：面板背景上按下不拦（那里本来就没有焦点可给）。
+    const back = screen.getByTestId('start-panel').querySelector('.start-back') as HTMLElement
+    fireEvent.mouseUp(back, { buttons: 0 })
+    expect(fireEvent.mouseDown(back, { buttons: 1 })).toBe(true)
+  })
+
+  it('松手丢了（窗口外 / 禁用的「结」上）：回来头一下没按着键的移动补上那一下松手', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    const back = panel.querySelector('.start-back') as HTMLElement
+    fireEvent.mouseDown(screen.getByRole('button', { name: '关于我们' }), { buttons: 1 })
+    // 按着键的移动不算。
+    fireEvent.mouseMove(back, { buttons: 1 })
+    tick(1)
+    expect(screen.queryByTestId('start-about')).toBeNull()
+    fireEvent.mouseMove(back, { buttons: 0 })
+    tick(1)
+    expect(screen.queryByTestId('start-about')).not.toBeNull()
+  })
+
+  it('松手丢了、回来没动就又按下：先补那一下松手，再送这次按下', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const back = screen.getByTestId('start-panel').querySelector('.start-back') as HTMLElement
+    fireEvent.mouseDown(screen.getByRole('button', { name: '关于我们' }), { buttons: 1 })
+    // 左键又按下，除它之外没按着别的键 —— 上一次的松手丢了。
+    fireEvent.mouseDown(back, { button: 0, buttons: 1 })
+    tick(1)
+    expect(screen.queryByTestId('start-about'), '补上的松手让「转」触发了').not.toBeNull()
+  })
+
+  it('和弦：按着左键再按右键，不补松手 —— 那是第二个键，不是丢了松手', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const back = screen.getByTestId('start-panel').querySelector('.start-back') as HTMLElement
+    fireEvent.mouseDown(screen.getByRole('button', { name: '关于我们' }), { buttons: 1 })
+    fireEvent.mouseDown(back, { button: 2, buttons: 3 })
+    tick(1)
+    expect(screen.queryByTestId('start-about')).toBeNull()
+  })
+
+  it('卸载时把挂在 window 上的松手摘掉', () => {
+    const onNewGame = vi.fn()
+    const view = render(<StartPanel onNewGame={onNewGame} onLoad={() => {}} />)
+    const remove = vi.spyOn(window, 'removeEventListener')
+    fireEvent.mouseDown(screen.getByRole('button', { name: '开始新游戏' }), { buttons: 1 })
+    view.unmount()
+    // 连第三个参数一起比：`mousemove` 挂在捕获阶段，摘的时候漏写 `true` 就什么都没摘掉。
+    expect(remove.mock.calls.map((c) => [c[0], c[2] ?? false]).sort()).toEqual([
+      ['mousemove', true],
+      ['mouseup', false],
+    ])
+    remove.mockRestore()
   })
 
   it('键盘 Tab 过来也换图、也转高亮 —— 原版没有这条，是这里补的无障碍', () => {

@@ -323,6 +323,26 @@ describe('输入的次序', () => {
     expect(released.state.scroll.isStop).toBe(false)
   })
 
+  it('按在空处：只把图换回常态，一个 clicked 都不碰（xl-4zo）', () => {
+    let state = hoverStartButton(createStartPanelState(), 'about')
+    state = pressStartButton(state, 'newGame')
+    const pressed = pressStartButton(state, null)
+    expect(pressed.hover.newGame).toBe(false)
+    expect(pressed.hover.about).toBe(false)
+    expect(pressed.clicked).toEqual(state.clicked)
+    expect(pressed.clicked.newGame).toBe(true)
+  })
+
+  it('按在按钮上、松在空处：照样触发，而那一颗的 clicked 留着真（xl-4zo）', () => {
+    const released = releaseStartButton(pressStartButton(createStartPanelState(), 'about'), null)
+    expect(released.state.signal).toBe(2)
+    expect(released.state.scroll.isStop).toBe(false)
+    expect(released.state.clicked.about).toBe(true)
+    expect(released.state.hover.about).toBe(false)
+    // 对照：松在同一颗上会清掉。
+    expect(releaseStartButton(pressStartButton(createStartPanelState(), 'about'), 'about').state.clicked.about).toBe(false)
+  })
+
   it('没按下就松手，什么都不会发生', () => {
     const released = releaseStartButton(createStartPanelState(), 'newGame')
     expect(released.effect).toBeNull()
