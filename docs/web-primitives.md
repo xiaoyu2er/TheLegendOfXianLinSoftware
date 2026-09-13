@@ -25,7 +25,7 @@
 | 调用点 | 类 | 判定 | 证据 |
 |---|---|---|---|
 | `web/src/app/App.tsx:73` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
-| `web/src/app/App.tsx:359,360,364,365` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
+| `web/src/app/App.tsx:359,360,364,365` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28；对应 `BattlePanel.java:369`、`MenuPanel.java:116`、`LoadAndSavePanel.java:188`、`ShopPanel.java:200`、`EquipmentShopPanel.java:276`）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
 | `web/src/app/App.tsx:396` | 元素 | 工程 | 外壳 `div` |
 | `web/src/app/App.tsx:412` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
 | `web/src/app/App.tsx:413` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
