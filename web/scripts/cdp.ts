@@ -20,6 +20,12 @@ export interface Browser {
   evaluate<T>(expression: string): Promise<T>
   /** 截取页面左上角 `width × height` 的位图，返回 PNG 字节。 */
   screenshot(width: number, height: number): Promise<Uint8Array>
+  /**
+   * 对这个标签页直接发一条 CDP 命令（xl-qzx 起）。派真输入要走它 ——
+   * `Input.dispatchMouseEvent` / `Input.dispatchKeyEvent` 走浏览器的输入管线、执行默认动作，
+   * 页面里手造的 `new MouseEvent(...)` 不执行（数 click 恒 0）。
+   */
+  send<T>(method: string, params?: unknown): Promise<T>
   close(): Promise<void>
 }
 
@@ -125,6 +131,9 @@ export async function launch(url: string): Promise<Browser> {
         session,
       )
       return new Uint8Array(Buffer.from(shot.data, 'base64'))
+    },
+    send<T>(method: string, params: unknown = {}): Promise<T> {
+      return socket.send<T>(method, params, session)
     },
     async close(): Promise<void> {
       socket.close()
