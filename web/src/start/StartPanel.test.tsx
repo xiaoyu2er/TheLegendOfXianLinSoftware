@@ -730,7 +730,7 @@ describe('开始界面', () => {
 })
 
 describe('开始界面：图片的原生拖放（xl-qzx）', () => {
-  // 真 Chrome 153 里量的（`scripts/measureStartInput.ts` 的 2c）：在背景图上按下拖一段，浏览器起了
+  // 无头 Chrome 153（CDP 派输入）里量的（`scripts/measureStartInput.ts` 的 2c）：在背景图上按下拖一段，浏览器起了
   // `<img>` 的原生拖放 —— `dragstart` 之后是 `pointercancel`，mousemove 与 mouseup 一下都不再派，
   // 自绘光标冻在拖放起来那一刻，松手丢了。原版 Swing 没有拖放，`mouseDragged` 一路记坐标、
   // `mouseReleased` 照收。jsdom 不执行默认动作，拖放起不来，这里只能守「默认动作被取消了」这一层。

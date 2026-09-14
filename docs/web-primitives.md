@@ -65,11 +65,11 @@
 | `web/src/stage/Stage.tsx:63` | 元素 | 工程 | overlay 容器（里面每一样各有自己的一行） |
 | `web/src/stage/useFullscreen.ts:15,19,21,22,30,31,33` | 全屏 / 全局 / 事件 | 已登记 `ADR-0001#stage-scales-to-window` | 可全屏 |
 | `web/src/stage/useViewportSize.ts:32,33,38,39` | 视口 / 事件 / 全局 | 已登记 `ADR-0001#stage-scales-to-window` | 随窗口缩放 |
-| `web/src/start/StartPanel.tsx:207,208,212,213` | 事件 / 全局 | 对应 `src/start/StartPanel.java:192` | `mouseReleased`：面板上按下那一刻把松手挂到 window 上（Swing 的 mouse grab），落点不在任何一颗按钮上照样送 —— `setButton()` 不看坐标，拖出框松手照样触发；`buttons` 为 0 才解除，丢了 `mouseup`（窗口外 / 禁用的「结」上；「结」那半真 Chrome 153 量过、窗口外没量，xl-qzx）由下一次没按键的移动、或除自己之外没按着别的键的新按下补上（xl-4zo）；松手先记自绘鼠标坐标，grab 期间 window 上的 `mousemove` 是 `mouseDragged`（`:211`），也记 —— 舞台外照记、不裁（JDK 17 `LightweightDispatcher` 照样派给 grab，坐标只减面板偏移，xl-40m）；`start/StartPanel.test.tsx` |
+| `web/src/start/StartPanel.tsx:207,208,212,213` | 事件 / 全局 | 对应 `src/start/StartPanel.java:192` | `mouseReleased`：面板上按下那一刻把松手挂到 window 上（Swing 的 mouse grab），落点不在任何一颗按钮上照样送 —— `setButton()` 不看坐标，拖出框松手照样触发；`buttons` 为 0 才解除，丢了 `mouseup`（窗口外 / 禁用的「结」上；「结」那半无头 Chrome 153（CDP 派输入）量过、窗口外没量，xl-qzx）由下一次没按键的移动、或除自己之外没按着别的键的新按下补上（xl-4zo）；松手先记自绘鼠标坐标，grab 期间 window 上的 `mousemove` 是 `mouseDragged`（`:211`），也记 —— 舞台外照记、不裁（JDK 17 `LightweightDispatcher` 照样派给 grab，坐标只减面板偏移，xl-40m）；`start/StartPanel.test.tsx` |
 | `web/src/start/StartPanel.tsx:248,343` | 无障碍 / 元素 | 已登记 `ADR-0001#screen-reader-text` | 按钮 `aria-label`、「关于我们」的 `alt`（**xl-03x.22 补登**） |
 | `web/src/start/StartPanel.tsx:250` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 「结」禁用的理由 |
 | `web/src/start/StartPanel.tsx:260,261,262` | 事件 | 对应 `src/start/StartPanel.java:202` | `mouseMoved`；按着键的移动 / 移入 / 移出是 `mouseDragged`（`:211`，只记坐标、不跑 `isMoveIn`），不碰悬停（xl-vi8；移出 xl-4zo） |
-| `web/src/start/StartPanel.tsx:266` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 鼠标按下不给焦点：焦点 = 悬停那条加法只留给键盘，不然它会把 `isPressedButton` 刚停掉的高亮又转起来（xl-4zo）；真 Chrome 153 量过：按过之后 Tab + 回车 / 空格照按得动（xl-qzx） |
+| `web/src/start/StartPanel.tsx:266` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 鼠标按下不给焦点：焦点 = 悬停那条加法只留给键盘，不然它会把 `isPressedButton` 刚停掉的高亮又转起来（xl-4zo）；无头 Chrome 153（CDP 派输入）量过：按过之后 Tab + 回车 / 空格照按得动（xl-qzx） |
 | `web/src/start/StartPanel.tsx:271,272` | 事件 | 已登记 `ADR-0001#start-focus-hover` | 键盘焦点 = 悬停 |
 | `web/src/start/StartPanel.tsx:275` | 事件 | 已登记 `ADR-0001#start-button-hitbox-dom` | 只收键盘的激活（`detail` 为 0）：原版标题页没有键盘输入，这一条是「真 `<button>`、回车按得动」那一半（真浏览器里曾经按不动，`xl-fqm` 修了）。鼠标不走它 —— 按下 / 松手分两下送（xl-4zo） |
 | `web/src/start/StartPanel.tsx:287,296,311,317,327,353,362,378` | 无障碍 / 元素 | 工程 | 装饰图的 `alt=""`（读屏跳过） |

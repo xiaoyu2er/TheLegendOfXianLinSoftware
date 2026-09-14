@@ -44,7 +44,7 @@ import type { StartEffect, StartPanelState, StartView } from './panelState'
  * —— 等于移到了空处。所以移到禁用的按钮上按 `null` 推，原版 `isMoveIn` 只看坐标、会换图起高亮。
  * 这一差由 `start-hover-end` 那份真值走到，状态层登成例外格（`startTrace.test.ts` 的
  * `EXCEPTED`），逐帧比对登成「结」那一块的缺口（`compare/expected.ts`）。
- * 真 Chrome 153 里量过（xl-qzx，`scripts/measureStartInput.ts`）：原生 `mouseover` / `mousemove` 其实派了
+ * 无头 Chrome 153（CDP 派输入）里量过（xl-qzx，`scripts/measureStartInput.ts`）：原生 `mouseover` / `mousemove` 其实派了
  * （目标是按钮里那张 `<img>`，冒泡到面板），是 React 跳过了禁用按钮自己的处理器 —— 悬停纹丝不动，与 jsdom 一致。
  *
  * @exception ADR-0001#start-exit-disabled
@@ -54,7 +54,7 @@ import type { StartEffect, StartPanelState, StartView } from './panelState'
  * 产品的鼠标按下挂在面板上、松手挂在 window 上（`StartPanel.tsx`，xl-4zo），所以「按在空处」
  * 「在一颗上按、在别处松」都有对应物：落点不在任何一颗按钮上就按 `null` 推。仍然抛的两种：
  * 按 / 松在禁用的「结」上（浏览器对禁用的按钮不派 `mousedown` / `mouseup`，没有对应物 ——
- * 真 Chrome 153 量过，xl-qzx：只派 `pointerdown` / `pointerup`；jsdom 倒是照派，别拿它当读数），和没按下就松手（松手只在面板上按下之后才挂上）。
+ * 无头 Chrome 153（CDP 派输入）量过，xl-qzx：只派 `pointerdown` / `pointerup`；jsdom 倒是照派，别拿它当读数），和没按下就松手（松手只在面板上按下之后才挂上）。
  * 照猜一个画出来的是另一件事。
  */
 

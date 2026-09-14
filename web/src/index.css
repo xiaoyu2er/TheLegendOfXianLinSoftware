@@ -298,7 +298,7 @@ body {
    转）。`:hover` / `:focus-visible` 这两条路都进同一个状态，见
    `StartPanel.tsx` 的 onMouseEnter / onFocus。
 
-   **禁用的那颗不换**（2026-09-11 jsdom 里实测，xl-03x.12；真 Chrome 153 复量一致，xl-qzx；这里
+   **禁用的那颗不换**（2026-09-11 jsdom 里实测，xl-03x.12；无头 Chrome 153（CDP 派输入）复量一致，xl-qzx；这里
    原先写的是「也换」，没跑过）：React 对 `disabled` 的按钮连 `mouseenter` / `mousemove` 都不派发，
    于是「结」悬停不换图、高亮不转 —— 原版 `StartButton.isMoveIn` 只看坐标、
    会换。这是禁用口径连带的差，登在 ADR-0001 `start-exit-disabled` 那一行；
