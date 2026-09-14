@@ -487,6 +487,76 @@ describe('开始界面', () => {
     expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '300px', top: '200px' })
   })
 
+  /**
+   * xl-40m：原版 `mousePressed` / `mouseReleased` 头两句都是 `currentX = e.getX()`。grab 期间
+   * JDK 17 `LightweightDispatcher.processMouseEvent` 不重设目标（PRESSED / RELEASED 的 `isMouseGrab`
+   * 异或掉本键之后仍看得到按下前的状态），MOUSE_DRAGGED / MOUSE_RELEASED 照样 `retargetMouseEvent`
+   * 给这块面板，坐标只减面板的偏移、**不裁** —— 拖出舞台就是负数或超过 1024×640。
+   */
+  it('按下记坐标：没先移动就在别处按下，自绘鼠标跳到按下的地方（原版 mousePressed 头一句）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    fireEvent.mouseMove(panel, { clientX: 100, clientY: 100, buttons: 0 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '100px', top: '100px' })
+    fireEvent.mouseDown(back, { clientX: 300, clientY: 200, button: 0, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '300px', top: '200px' })
+  })
+
+  it('grab 期间拖出舞台、在舞台外松手：自绘鼠标跟到舞台外，坐标不裁（原版 mouseDragged / mouseReleased）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    // 舞台缩到一半：舞台外的点也按同一个比例换算回逻辑坐标。
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 512, height: 320 }) as DOMRect
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    fireEvent.mouseDown(back, { clientX: 50, clientY: 50, button: 0, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '100px', top: '100px' })
+    fireEvent.mouseMove(document.body, { clientX: -20, clientY: 350, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }, '拖出舞台停在了原处').toEqual({
+      left: '-40px',
+      top: '700px',
+    })
+    fireEvent.mouseUp(document.body, { clientX: 600, clientY: -15, button: 0, buttons: 0 })
+    expect({ left: cursor.style.left, top: cursor.style.top }, '松手没记坐标').toEqual({
+      left: '1200px',
+      top: '-30px',
+    })
+  })
+
+  it('和弦中途在舞台外松开一个键：那一下松手也记坐标（RELEASED 照样派给 grab）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 2, buttons: 3 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '100px', top: '100px' })
+    fireEvent.mouseUp(document.body, { clientX: 1100, clientY: 50, button: 2, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '1100px', top: '50px' })
+  })
+
+  it('对照：grab 不在这块面板上时，舞台外的移动 / 松手一概不记 —— 原版目标不是这块面板', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    fireEvent.mouseMove(panel, { clientX: 100, clientY: 100, buttons: 0 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    fireEvent.mouseUp(document.body, { clientX: 1100, clientY: 700, button: 0, buttons: 0 })
+    fireEvent.mouseMove(document.body, { clientX: 1200, clientY: 800, buttons: 0 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '100px', top: '100px' })
+    // 面板上按下、松开之后 grab 解除：再到舞台外按着键移动也不记。
+    fireEvent.mouseDown(back, { clientX: 200, clientY: 200, button: 0, buttons: 1 })
+    fireEvent.mouseUp(back, { clientX: 200, clientY: 200, button: 0, buttons: 0 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '200px', top: '200px' })
+  })
+
   it('外接矩形为 0 时一动不动 —— 不写出 `left: NaNpx`', () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
