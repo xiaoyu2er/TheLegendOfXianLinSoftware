@@ -153,9 +153,15 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 只挂一个面板上的 `onMouseUp` 不够：拖出舞台松手它收不到。反过来也不能常挂在 window 上：
    * 舞台外按下、拖进来松手，原版一下都不收（按下不在面板上，grab 不归它）。
    *
-   * `buttons` 为 0 才解除（和弦里每一下松手原版都收，都要送）。窗口外松手 / 松在禁用的「结」
-   * 上，浏览器可能一下 `mouseup` 都不派 —— 回来头一下没按着键的移动就当场补上那一下松手，
-   * 与 `app/App.tsx` 的 `grabRelease` 同一个做法；补的落点是见到它的那一刻，不是真正松手的地方。
+   * `buttons` 为 0 才解除（和弦里每一下松手原版都收，都要送）。松在禁用的「结」上，浏览器一下
+   * `mouseup` 都不派（真 Chrome 153 量过，xl-qzx：只派 `pointerup`，`click` 改派给面板；jsdom 照派）；
+   * 窗口外松手按「可能不派」写 —— ⚠️ 真窗口外没量过：CDP 派到视口外的松手 window 收得到，可那不经过
+   * 操作系统。舞台外、窗口内松手 window 照收（量过）。两种都靠回来头一下没按着键的移动当场补上
+   * 那一下松手，与 `app/App.tsx` 的 `grabRelease` 同一个做法；补的落点是见到它的那一刻，不是真正松手的地方。
+   *
+   * 面板上的 `dragstart` 一律取消（xl-qzx）：在背景图上按下拖一段，Chrome 起了 `<img>` 的原生拖放，
+   * 之后 `pointercancel`、mousemove 与 mouseup 一下都不再派 —— 自绘光标冻住、松手丢了（真 Chrome 153
+   * 量过，`scripts/measureStartInput.ts` 的 2c）。原版 Swing 没有拖放。
    *
    * 按下、松手、grab 期间的拖动都先记自绘鼠标的坐标（原版三个监听器头两句都是 `currentX = e.getX()`；补的松手记见到的那一刻）。
    * grab 期间 JDK 17 `LightweightDispatcher` 把 MOUSE_DRAGGED / MOUSE_RELEASED 照样派给这块面板，
@@ -255,7 +261,8 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
         onMouseEnter={(event) => { if (event.buttons === 0) handlers?.hover(button.key) }}
         onMouseLeave={(event) => { if (event.buttons === 0) handlers?.hover(null) }}
         // 鼠标按下不给焦点：焦点会走下面的 `onFocus` = 悬停，把 `isPressedButton` 刚停掉的高亮
-        // 当场又转起来。原版没有焦点这回事，按下就是按下。
+        // 当场又转起来。原版没有焦点这回事，按下就是按下。真 Chrome 153 量过（xl-qzx）：按过之后焦点
+        // 留在 body，Tab 从被按的那颗之后接着走，回车 / 空格照按得动。它还顺带挡了按钮里那两张图的原生拖放。
         onMouseDown={(event) => event.preventDefault()}
         // @exception ADR-0001#start-focus-hover
         // 键盘走到这颗上等于"鼠标移进来"：原版没有这一条（它只认坐标），
@@ -293,7 +300,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
 
   return (
     /* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */
-    <div className="start-panel" data-testid="start-panel" onMouseMove={onMouseMove} onMouseDown={onMouseDown}>
+    <div className="start-panel" data-testid="start-panel" onMouseMove={onMouseMove} onMouseDown={onMouseDown} onDragStart={(event) => event.preventDefault()}>
       {/*
         背景图**按原始尺寸画在 (0,0)**，与原版
         `backgroundGraphics.drawImage(backgroundImage, 0, 0, this)` 一致。
