@@ -156,20 +156,29 @@ if [ "$a_head" != "$expected_a" ]; then
   fail=1
 fi
 
-# 三轮之间：确定性。
-for r in $(seq 2 "$rounds"); do
+# 轮与轮之间：确定性。
+# ⚠️ 这里不用 $(seq 2 "$rounds")：macOS 的 seq 在 first > last 时**倒着数**（`seq 2 1`
+# 打 "2 1"，退出码 0），于是 --rounds 1 会拿第 1 轮去跟一份根本不存在的第 2 轮比，
+# 凭空多出一条 ❌。实测撞到过（xl-sij 的 T1/T2/T4 三轮篡改里都带着这条假红）。
+r=2
+while [ "$r" -le "$rounds" ]; do
   if ! diff -u "$outdir/normal1.txt" "$outdir/normal${r}.txt" > "$outdir/diff1-${r}.txt"; then
     echo >&2
     echo "❌ 第 1 轮与第 ${r} 轮不一致，差异在 $outdir/diff1-${r}.txt：" >&2
     sed 's/^/     /' "$outdir/diff1-${r}.txt" >&2
     fail=1
   fi
+  r=$((r + 1))
 done
 
 # 与期望读数对账。
 if diff -u "$EXP" "$outdir/normal1.txt" > "$outdir/diff-expected.txt"; then
   echo
-  echo "✅ 与期望读数逐行一致（$(wc -l < "$EXP" | tr -d ' ') 行），${rounds} 轮之间也一致。"
+  if [ "$rounds" -ge 2 ]; then
+    echo "✅ 与期望读数逐行一致（$(wc -l < "$EXP" | tr -d ' ') 行），${rounds} 轮之间也逐行一致。"
+  else
+    echo "✅ 与期望读数逐行一致（$(wc -l < "$EXP" | tr -d ' ') 行）。只跑了 1 轮，确定性那半没核。"
+  fi
   echo "   日志留在 $outdir"
 else
   echo >&2
