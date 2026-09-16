@@ -1,0 +1,18 @@
+# 「舞台外按着键拖进来」那几下，原版收到的按下 / 松手 —— tools/mouse-dispatch-probe.sh 的对账基准。
+#
+# 读数出处：xl-zs6，macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致（三轮的原始日志
+# 都在 xl-zs6 的 bd 评论里）。归一化 = 只留 PRESSED / RELEASED，去掉时间戳与 scr=（屏幕坐标
+# 取决于窗口落在哪；xy= 是组件内坐标，与落点无关，所以留着）。# 开头的行脚本会滤掉。
+#
+# 怎么读这六行（详见 tools/src/devtools/MouseDispatchProbe.java 的类注释）：
+#   - 头两行是 A 对照：窗口内单击必须被 start.StartPanel 收到。它没有 = 合成事件被丢了，
+#     不是「原版收不到」。
+#   - B / B2 各只剩右键那一对，且 src 是 main.GameLauncher 不是 start.StartPanel：
+#     到了窗口，但 isMouseGrab 为真、目标仍是 null，没转派给面板。
+#   - 左键那几下松手一行都没有（它按在别的窗口上），C 组一行都没有 —— 「没有」也是读数。
+PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300
+RELEASED btn=1 mex=0x0 src=start.StartPanel xy=600,300
+PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
+RELEASED btn=3 mex=0x400 src=main.GameLauncher xy=600,328
+PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
+RELEASED btn=3 mex=0x0 src=main.GameLauncher xy=600,328

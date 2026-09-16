@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# 原版鼠标事件派发探针：量「舞台外按着键拖进来」那一族的几下鼠标，原版到底收没收到、派给了谁。
+# （xl-zs6 现搭的一次性探针，xl-sij 收成可复跑的工具。）
+#
+#   tools/mouse-dispatch-probe.sh --dry-run    # 只编译两侧 + 读权限，一个事件都不发、不碰鼠标
+#   tools/mouse-dispatch-probe.sh              # 真跑：起原版、合成四组序列、与期望读数对账
+#   tools/mouse-dispatch-probe.sh --yes        # 同上，跳过「要接管鼠标」那句确认
+#   tools/mouse-dispatch-probe.sh --rounds 1   # 少跑几轮（默认 3 轮，判确定性）
+#   tools/mouse-dispatch-probe.sh --out <目录> # 日志落在哪（默认临时目录，跑完留着路径）
+#
+# ⚠️ 跑之前要先问人：它接管物理鼠标，这十几秒里光标会自己动、会真的按下去。
+#    --yes 是给「已经问过了」用的，不是默认。
+#
+# ⚠️ 权限前提（两个都要，人在「系统设置 → 隐私与安全性 → 辅助功能」里给跑它的那个终端）：
+#      CGPreflightPostEventAccess=true   能不能往 HID tap 上发合成事件
+#      AXIsProcessTrusted=true           这个进程是不是被信任的辅助功能客户端
+#    没授权时合成事件被**静默丢弃**，Java 侧同样是零事件 —— 与「原版真的收不到」长得一模一样。
+#    所以本脚本先读这两个值，再把 **A 对照**（窗口内空白处左键单击必须被 start.StartPanel 收到）
+#    当判据的一部分核一遍：A 没行 = 权限没给，不是「原版收不到」。
+#
+# ⚠️ 跑不进 CI，两条硬拦：要真窗口（-Djava.awt.headless=false，还要 StartPanel 真摆在屏幕上），
+#    要「辅助功能」授权（人在系统设置里点的，runner 上给不了）。CI 里覆盖到的只有
+#    tools/build.sh 编得过探针那个 .java；驱动器那半连编译都不在 CI 里，要 --dry-run 才编。
+#    （对照：tools/export-scaled-blit.sh 只往 BufferedImage 上画，那个是**跑得进**的。）
+#
+# 期望读数（xl-zs6，macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致）在
+# tools/mouse-dispatch/expected-events.txt，跑完自动对账；读法与限定见
+# tools/src/devtools/MouseDispatchProbe.java 的类注释。
+set -euo pipefail
+cd "$(dirname "$0")/.."
+: "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
+
+dry=0; yes=0; rounds=3; outdir=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry=1 ;;
+    --yes) yes=1 ;;
+    --rounds) shift; rounds="${1:-}" ;;
+    --out) shift; outdir="${1:-}" ;;
+    *) echo "不认识的参数：${1}，只接受 --dry-run / --yes / --rounds N / --out 目录" >&2; exit 2 ;;
+  esac
+  shift
+done
+case "$rounds" in ''|*[!0-9]*) echo "--rounds 要一个正整数，收到：${rounds}" >&2; exit 2 ;; esac
+[ "$rounds" -ge 1 ] || { echo "--rounds 至少是 1" >&2; exit 2; }
+
+EXPECTED=tools/mouse-dispatch/expected-events.txt
+[ -f "$EXPECTED" ] || { echo "找不到期望读数：${EXPECTED}" >&2; exit 1; }
+
+if [ -z "$outdir" ]; then outdir="$(mktemp -d -t xl-mouse-dispatch)"; fi
+mkdir -p "$outdir"
+
+echo "[1/4] 编译原版 + 探针（tools/build.sh）…"
+tools/build.sh >/dev/null
+
+echo "[2/4] 编译驱动器（swiftc）…"
+command -v swiftc >/dev/null || { echo "找不到 swiftc：这套东西只在 macOS 上跑" >&2; exit 1; }
+DRIVE="$outdir/drive"
+swiftc -O -o "$DRIVE" tools/mouse-dispatch/drive.swift
+
+echo "[3/4] 读权限…"
+perm="$("$DRIVE" --preflight)"
+echo "  $perm"
+ok_post=0; ok_ax=0
+case "$perm" in *"CGPreflightPostEventAccess=true"*) ok_post=1 ;; esac
+case "$perm" in *"AXIsProcessTrusted=true"*) ok_ax=1 ;; esac
+
+if [ "$dry" = 1 ]; then
+  echo "[4/4] --dry-run：两侧都编译过了，一个事件都没发。"
+  if [ "$ok_post" = 1 ] && [ "$ok_ax" = 1 ]; then
+    echo "  权限够，真跑会量得到东西。"
+  else
+    echo "  ⚠️ 权限不够：真跑会一行事件都收不到，而那与「原版真的收不到」长得一样。"
+    echo "     去「系统设置 → 隐私与安全性 → 辅助功能」把跑它的这个终端加进去。"
+  fi
+  echo "  产物：$DRIVE"
+  exit 0
+fi
+
+if [ "$ok_post" != 1 ] || [ "$ok_ax" != 1 ]; then
+  echo "权限不够（见上面那一行）。不往下跑 —— 跑了只会得到一份零事件的日志，" >&2
+  echo "而它与「原版真的收不到」长得一模一样。先去系统设置里授权。" >&2
+  exit 1
+fi
+
+if [ "$yes" != 1 ]; then
+  echo
+  echo "⚠️ 接下来这 ${rounds} 轮会**接管物理鼠标**：光标自己动、真的按下去，每轮约 15 秒。"
+  echo "   期间别动鼠标键盘。确认请输入 yes："
+  read -r ans < /dev/tty
+  [ "$ans" = "yes" ] || { echo "取消。"; exit 1; }
+fi
+
+CP="tools/build/classes:jl1.0.jar:mp3spi1.9.4.jar:tritonus_share.jar"
+
+# 归一化：只留按下 / 松手两种，去掉时间戳与屏幕坐标。
+# 去掉 scr= 的理由：它取决于窗口落在屏幕哪里（xl-zs6 那次 GEOMETRY 0,53 1024x640 →
+# scr=600,353），换一块屏幕就变；xy= 是组件内坐标，与落点无关，所以留着对账。
+normalize() {  # normalize <原始日志>
+  sed -n -E 's/^[0-9]+ (PRESSED|RELEASED) (.*) scr=[0-9-]+,[0-9-]+$/\1 \2/p' "$1"
+}
+
+# 期望读数里 # 开头的是出处与读法，滤掉再对账。
+EXP="$outdir/expected.txt"
+grep -v '^#' "$EXPECTED" > "$EXP"
+[ -s "$EXP" ] || { echo "期望读数里一条都没有（${EXPECTED} 全是注释？）" >&2; exit 1; }
+
+echo "[4/4] 跑 ${rounds} 轮…"
+for r in $(seq 1 "$rounds"); do
+  log="$outdir/events${r}.log"; geo="$outdir/geometry${r}.txt"
+  rm -f "$log" "$geo"
+  "$JAVA_HOME/bin/java" -Djava.awt.headless=false \
+    -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
+    -cp "$CP" devtools.MouseDispatchProbe "$log" "$geo" \
+    > "$outdir/game${r}.log" 2>&1 &
+  game=$!
+
+  # 等探针把几何写出来。⚠️ 判「起来了没有」看**有没有产出那个文件**，不看进程在不在：
+  # 原版启动失败时进程也会在（Swing 的 EDT 不退），两种情况分不开。
+  waited=0
+  while [ ! -s "$geo" ]; do
+    sleep 1; waited=$((waited + 1))
+    if [ "$waited" -ge 30 ]; then
+      kill "$game" 2>/dev/null || true
+      echo "第 ${r} 轮：30 秒没等到几何文件，原版多半没起来。看 $outdir/game${r}.log" >&2
+      exit 1
+    fi
+  done
+
+  "$DRIVE" "$geo" > "$outdir/drive${r}.log" 2>&1 || {
+    kill "$game" 2>/dev/null || true
+    echo "第 ${r} 轮：驱动器退出码非零，看 $outdir/drive${r}.log" >&2
+    exit 1
+  }
+  kill "$game" 2>/dev/null || true
+  wait "$game" 2>/dev/null || true
+
+  normalize "$log" > "$outdir/normal${r}.txt"
+  echo "  第 ${r} 轮：$(wc -l < "$outdir/normal${r}.txt" | tr -d ' ') 行按下/松手 · $(head -c 200 "$geo" | tr -d '\n') · $log"
+done
+
+fail=0
+
+# A 对照：头两行必须是左键那一对、且派给了 start.StartPanel。
+# 这条单列出来，是因为「一行都没有」有两个成因（权限没给 / 原版真收不到），
+# 直接丢给 diff 的话两者读起来一样。
+a_head="$(head -2 "$outdir/normal1.txt" || true)"
+expected_a="$(head -2 "$EXP")"
+if [ "$a_head" != "$expected_a" ]; then
+  echo >&2
+  echo "❌ A 对照不成立：窗口内空白处那一下左键单击没有按期望被 start.StartPanel 收到。" >&2
+  echo "   收到的头两行是：" >&2
+  printf '%s\n' "${a_head:-（一行都没有）}" | sed 's/^/     /' >&2
+  echo "   一行都没有 = 合成事件被丢了（权限 / 窗口没在最前 / 别的 app 抢了焦点），" >&2
+  echo "   **不是**「原版收不到」。整轮读数作废。" >&2
+  fail=1
+fi
+
+# 三轮之间：确定性。
+for r in $(seq 2 "$rounds"); do
+  if ! diff -u "$outdir/normal1.txt" "$outdir/normal${r}.txt" > "$outdir/diff1-${r}.txt"; then
+    echo >&2
+    echo "❌ 第 1 轮与第 ${r} 轮不一致，差异在 $outdir/diff1-${r}.txt：" >&2
+    sed 's/^/     /' "$outdir/diff1-${r}.txt" >&2
+    fail=1
+  fi
+done
+
+# 与期望读数对账。
+if diff -u "$EXP" "$outdir/normal1.txt" > "$outdir/diff-expected.txt"; then
+  echo
+  echo "✅ 与期望读数逐行一致（$(wc -l < "$EXP" | tr -d ' ') 行），${rounds} 轮之间也一致。"
+  echo "   日志留在 $outdir"
+else
+  echo >&2
+  echo "❌ 与 ${EXPECTED} 对不上：" >&2
+  sed 's/^/     /' "$outdir/diff-expected.txt" >&2
+  echo "   对不上不一定是谁错了 —— 换了 JDK、换了 macOS 版本、窗口落点变了都可能。" >&2
+  echo "   先看是哪几行，再决定是改期望还是改结论；改期望要连 xl-zs6 的读数一起重记。" >&2
+  fail=1
+fi
+
+exit "$fail"
