@@ -647,12 +647,12 @@ export function App() {
  *   它的是那一下按下，`MouseEventTargetFilter` 不收这两块，落空成 null。按在舞台外（原版是
  *   窗口外）：Swing 看不见那一下，重设它的是指针无键离开窗口的那一下 MOUSE_EXITED，界外
  *   `getMouseEventTargetImpl` 返回 null。目标是 null：这一下按下不送、不起 grab，它与别的键
- *   的松手也就一个都不送，直到全松开（xl-2yh）。macOS 实测（xl-zs6）：窗口外按下的那只键**在**回到
- *   窗口后的 `getModifiersEx` 里（右键按下那一下 `mex=0x1400`），而它自己那一下松手到不了窗口。
+ *   的松手也就一个都不送，直到全松开（xl-2yh）。macOS 实测（xl-zs6；CGEvent 合成的序列，窗口外那一下按在
+ *   另一个 app 的窗口上）：那只键**在**回窗口后的 `getModifiersEx` 里（`mex=0x1400`），而它的松手到不了窗口。
  * - grab 没挂着、按着键移到宿主上（`grabbedElsewhere`）：同一个 null 目标，`met != null` 那一块
  *   不进，一个 `mouseDragged` 都不派，直到全松开、下一下 MOUSE_MOVED 重设目标（xl-5ee）。
- *   macOS 实测（xl-zs6）：窗口外按着键移进窗口，Swing 连 DRAGGED 本身都收不到（只来一个 ENTERED，
- *   原版 `MouseAdapter` 没接它），所以是「收不到」那一种 —— 与「收得到但目标是 null」结论相同，都不派。
+ *   macOS 实测（xl-zs6；量的是「左键按在另一个 app 的窗口上、按着拖进来」这一种，CGEvent 合成）：Swing 连
+ *   DRAGGED 本身都收不到（只来一个 ENTERED，原版 `MouseAdapter` 没接它）—— 与「收得到但目标是 null」同果，都不派。
  */
 function isMouseGrab(event: { readonly type: string; readonly button: number; readonly buttons: number }): boolean {
   const own = event.type === 'mousedown' ? (BUTTON_BITS[event.button] ?? 0) : 0

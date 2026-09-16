@@ -731,12 +731,15 @@ describe('开始界面', () => {
   /**
    * xl-zs6：接着上面那条 xl-m9q 往下一步 —— **全松开那一下**。JDK 17 `LightweightDispatcher` 到这里
    * 会重设目标并把 `mouseReleased` 派给面板（`isMouseGrab` 对 RELEASED 也异或掉本键，最后一只键松开
-   * 时异或后为 0），所以票面原本担心 web 少收了一下。macOS 真机实测（openjdk 17，CGEvent 合成整段
-   * 序列，「窗口外」是另一个 app 的窗口，三轮读数一致）：那一下松手**根本到不了 Java 窗口** ——
-   * 左键按在别的窗口上，整段拖动与它的松手都归那个窗口；到得了 Java 的只有右键那两下（`src=main.GameLauncher`，
-   * 没被转派给 `start.StartPanel`）。所以原版一下都不收，web 的「不收」是对的。
+   * 时异或后为 0），所以票面原本担心 web 少收了一下。macOS 实测（openjdk 17，CGEvent 合成整段序列，
+   * 「窗口外」是另一个 app 的空白窗口，三轮读数一致）：**左键那一下松手根本到不了 Java 窗口** ——
+   * 左键按在别的窗口上，整段拖动与它的松手都归那个窗口；右键那两下**到得了**窗口，但停在 `main.GameLauncher`
+   * 上、没被转派给 `start.StartPanel`（`isMouseGrab` 为真）。两条路各自的原因不同，结果一样：面板一下都不收。
+   *
+   * ⚠️ 下面左键那一下 `mouseUp` 在 web 侧照样发给面板（浏览器里舞台外仍在同一个页面内），所以这是比真机
+   * **更严**的形状：连「事件真的来了」都不许把它当成一次松手。
    */
-  it('舞台外按着左键拖进来再按右键，全松开那两下也不收 —— 原版真机上它们到不了窗口（xl-zs6 实测）', () => {
+  it('舞台外按着左键拖进来再按右键，全松开那两下面板都不收 —— 左键那一下原版根本收不到，右键那两下收到了也不转派（xl-zs6 实测）', () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
     panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
