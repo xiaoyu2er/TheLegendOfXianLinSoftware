@@ -805,6 +805,12 @@ describe('开始界面：grab 期间在舞台外按下的第二个键（xl-bg3�
    * 起 grab 那只键的松手不受影响：实测两种顺序下它都 `src=start.StartPanel`（`isMouseGrab` 把本键
    * 异或**回去**，读到的是「按下之前」的状态，所以最后一只键松开时它仍为真、目标不重设）。
    */
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
   const setup = () => {
     render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
     const panel = screen.getByTestId('start-panel')
@@ -823,6 +829,9 @@ describe('开始界面：grab 期间在舞台外按下的第二个键（xl-bg3�
     fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
     expect(at(cursor), '拖出舞台照记坐标（xl-40m）').toEqual({ left: '1100px', top: '700px' })
     // 舞台外按下右键 —— 原版一下都收不到，自绘鼠标不该跟过去。
+    // ⚠️ 这一条的期望值等于上一行的读数，**当前实现下没有任何删法能让它红**（window 上根本没挂
+    // `mousedown`）。它守的是「别加」那个方向：照 `App.tsx` 的 `grabRelease` 在 window 上补一个捕获
+    // 阶段的 `mousedown` 并记坐标（票面给的头一个候选），它当场红 —— 实跑过。
     fireEvent.mouseDown(document.body, { clientX: 1200, clientY: 800, button: 2, buttons: 3 })
     expect(at(cursor), '舞台外按下的第二个键被当成一次 mousePressed 收了').toEqual({
       left: '1100px',
@@ -859,5 +868,75 @@ describe('开始界面：grab 期间在舞台外按下的第二个键（xl-bg3�
     expect(at(cursor), '面板上按下的第二个键没记坐标').toEqual({ left: '500px', top: '300px' })
     fireEvent.mouseUp(document.body, { clientX: 1300, clientY: 900, button: 2, buttons: 1 })
     expect(at(cursor), '面板上按下的那只键的松手没记坐标').toEqual({ left: '1300px', top: '900px' })
+  })
+
+  it('舞台外按下第二个键之后继续拖：照记坐标 —— 原版 DRAGGED 一路派给面板，不裁', () => {
+    const { back, cursor } = setup()
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    fireEvent.mouseDown(document.body, { clientX: 1200, clientY: 800, button: 2, buttons: 3 })
+    // 实测 D / D2 段：按下第二个键前后，DRAGGED 一路 `src=start.StartPanel`，x 到 1254。
+    fireEvent.mouseMove(document.body, { clientX: 1254, clientY: 303, buttons: 3 })
+    expect(at(cursor), '第二个键按下之后拖动就不记了').toEqual({ left: '1254px', top: '303px' })
+  })
+
+  /**
+   * 两条**补松手**通路（窗口外丢了 `mouseup`，回来头一下无键移动 / 新按下当场补上，xl-4zo）也要过这张
+   * 位图：丢掉的那一下若是舞台外按下的键，原版压根没有它，补上就又造出一处残余差异。
+   */
+  it('丢在窗口外的那一下是舞台外按下的键：回来头一下移动只解除 grab，不补松手', () => {
+    const { back, cursor } = setup()
+    const newGame = screen.getByRole('button', { name: '开始新游戏' })
+    const face = () => (newGame.querySelector('.start-button-face') as HTMLImageElement).src
+    // 面板上按左键起 grab，拖到舞台外按右键，再松左键 —— 左键是收下过的，这一下照送。位图到此清空，
+    // 而 grab 还挂着（右键还按着）。
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    fireEvent.mouseDown(document.body, { clientX: 1200, clientY: 800, button: 2, buttons: 3 })
+    fireEvent.mouseUp(document.body, { clientX: 1150, clientY: 720, button: 0, buttons: 2 })
+    // 拿键盘焦点把「起」点亮 —— 一次松手会按落点重设每一颗的悬停（`releaseStartButton` 里那句
+    // `hover[active] = active === key`），落在空处就是全灭。动作之前先确认它此刻真是亮的。
+    fireEvent.focus(newGame)
+    expect(face(), '「起」没被点亮，下面那条就按构造成立了').toContain(resolveAsset(startAssetId('newGameHover')))
+    // 右键的松手丢在窗口外了（注释里「窗口外松手按可能不派写」那条自设模型）。回来头一下没按着键的
+    // 移动：位图已经空了，只解除 grab，不补松手 —— 原版这一下压根没有。补了的话「起」当场灭掉。
+    fireEvent.mouseMove(document.body, { clientX: 400, clientY: 250, buttons: 0 })
+    expect(at(cursor), '补松手那一路连坐标都没记').toEqual({ left: '400px', top: '250px' })
+    expect(face(), '位图空着还补了一次松手：「起」被那一下按落点灭掉了').toContain(
+      resolveAsset(startAssetId('newGameHover')),
+    )
+  })
+
+  it('丢在窗口外的那一下是舞台外按下的键：回来头一下**按下**也只解除 grab，不补松手', () => {
+    const { back } = setup()
+    const about = () => screen.queryByTestId('start-about')
+    // 在「关于」上按下（`clicked.about` 留着真），拖到舞台外按右键，再松左键 —— 左键收下过，这一下
+    // 照送：`setButton()` 把 `aboutTimer` 起到 ABOUT_TICKS。位图到此清空，而 grab 还挂着。
+    fireEvent.mouseDown(screen.getByRole('button', { name: '关于我们' }), { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    fireEvent.mouseDown(document.body, { clientX: 1200, clientY: 800, button: 2, buttons: 3 })
+    fireEvent.mouseUp(document.body, { clientX: 1150, clientY: 720, button: 0, buttons: 2 })
+    tick(4)
+    const width = () => Number(about()?.dataset.width ?? -1)
+    const before = width()
+    expect(before, '「关于」还没揭开，下面那条就没有分辨力了').toBeGreaterThan(0)
+    // 右键的松手丢在窗口外了。回来没动就又按下（`onMouseDown` 那条补松手的通路）：位图已经空了，
+    // 只解除 grab、不补 —— 补了的话 `setButton()` 又读一次仍然为真的 `clicked.about`，把 `aboutTimer`
+    // **从头起**，揭开的那一列当场退回去。
+    fireEvent.mouseDown(back, { clientX: 300, clientY: 300, button: 0, buttons: 1 })
+    tick(1)
+    expect(width(), '位图空着还补了一次松手：表被重起，揭开的那一列退回去了').toBeGreaterThan(before)
+  })
+
+  it('grab 解除时位图清空：上一轮没收到松手的键，不该让下一轮的同一只键蒙混过关', () => {
+    const { back, cursor } = setup()
+    // 第一轮：左键在面板上按下（收下了），松手丢在窗口外，回来头一下移动补掉 —— 这一路会 end()。
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 200, clientY: 150, buttons: 0 })
+    // 第二轮：右键在面板上起 grab，左键这次按在舞台外 —— 它的松手不该被送。
+    fireEvent.mouseDown(back, { clientX: 300, clientY: 300, button: 2, buttons: 2 })
+    fireEvent.mouseDown(document.body, { clientX: 1100, clientY: 700, button: 0, buttons: 3 })
+    fireEvent.mouseUp(document.body, { clientX: 900, clientY: 600, button: 0, buttons: 2 })
+    expect(at(cursor), '上一轮的陈旧位让舞台外那只键的松手被收了').toEqual({ left: '300px', top: '300px' })
   })
 })

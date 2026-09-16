@@ -199,9 +199,12 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     // 拦截还挂着、而这一下之外没按着别的键：上一次的松手丢在窗口外了，回来没动就又按下。
     // 先补上那一下松手（落点是见到它的这一刻），再送这次按下 —— 与 `App.tsx` 的 `grabRelease`
     // 里 `onPress` 同一个判法（按下看的是**别的**键，`isMouseGrab`）。
+    // ⚠️ 位图为空就只解除、不补松手（xl-bg3）：丢在窗口外的那一下若是**舞台外按下**的键，原版
+    // 压根没有这一下，补上就又造出一处残余差异。
     if (grabRef.current !== null && !othersHeld) {
+      const owed = takenRef.current !== 0
       grabRef.current()
-      handlers.release(buttonOf(event.target))
+      if (owed) handlers.release(buttonOf(event.target))
     }
     takenRef.current |= own
     handlers.press(buttonOf(event.target))
@@ -219,8 +222,10 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     const onMove = (e: MouseEvent) => {
       moveTo(e)
       if (e.buttons !== 0) return
+      // 同上：只补面板真收下过、而松手丢在窗口外的那一下（xl-bg3）。
+      const owed = takenRef.current !== 0
       end()
-      handlers.release(buttonOf(e.target))
+      if (owed) handlers.release(buttonOf(e.target))
     }
     const end = () => {
       window.removeEventListener('mouseup', onUp)
