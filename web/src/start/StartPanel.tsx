@@ -169,7 +169,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     const othersHeld = (event.buttons & ~own) !== 0
     // 没 grab、而这一下之外还按着别的键（舞台外按下拖进来的）：`isMouseGrab` 为真，目标还是那个 null
     // —— 按下不派、不起 grab，之后的拖动与松手也就一个都不收（xl-m9q，与 `App.tsx` 的 `grabbedElsewhere`
-    // 同一判法）。⚠️ 未验证：全松开那一下 JDK 会重设目标并派松手，原版收不收得到要看平台把它送给谁。
+    // 同一判法）。全松开那一下 JDK 本会重设目标并派松手，而原版收不到它：macOS 上那一下松手到不了窗口（xl-zs6 实测）。
     if (grabRef.current === null && othersHeld) return
     const panel = event.currentTarget
     const moveTo = (e: { readonly clientX: number; readonly clientY: number }) => {
