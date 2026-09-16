@@ -729,9 +729,12 @@ describe('开始界面', () => {
   })
 
   /**
-   * xl-zs6：接着上面那条 xl-m9q 往下一步 —— **全松开那一下**。JDK 17 `LightweightDispatcher` 到这里
-   * 会重设目标并把 `mouseReleased` 派给面板（`isMouseGrab` 对 RELEASED 也异或掉本键，最后一只键松开
-   * 时异或后为 0），所以票面原本担心 web 少收了一下。macOS 实测（openjdk 17，CGEvent 合成整段序列，
+   * xl-zs6：接着上面那条 xl-m9q 往下一步 —— **全松开那一下**，票面原本担心 web 少收了一下。
+   * ⚠️ 那张票的关票理由把 JDK 那一半写反了（xl-bg3 逐行重读 `Container.java:4531` 发现）：`isMouseGrab`
+   * 对 RELEASED 是把本键异或**回去**（`getModifiersEx()` 那时已经不含它了），读到的是「按下之前」的状态
+   * —— JDK 自己的注释就叫 `wasAMouseButtonDownBeforeThisEvent`。所以最后一只键松开时它仍为**真**、
+   * 目标**不**重设，不是「异或后为 0、为假、重设成落点」。结论没变（面板一下都不收），成因是第三条。
+   * macOS 实测（openjdk 17，CGEvent 合成整段序列，
    * 「窗口外」是另一个 app 的空白窗口，三轮读数一致）：**左键那一下松手根本到不了 Java 窗口** ——
    * 左键按在别的窗口上，整段拖动与它的松手都归那个窗口；右键那两下**到得了**窗口，但停在 `main.GameLauncher`
    * 上、没被转派给 `start.StartPanel`（`isMouseGrab` 为真）。两条路各自的原因不同，结果一样：面板一下都不收。
