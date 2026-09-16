@@ -727,6 +727,41 @@ describe('开始界面', () => {
     tick(1)
     expect(scroll().dataset).toMatchObject({ sequence: 'backScroll', frame: '0' })
   })
+
+  /**
+   * xl-zs6：接着上面那条 xl-m9q 往下一步 —— **全松开那一下**。JDK 17 `LightweightDispatcher` 到这里
+   * 会重设目标并把 `mouseReleased` 派给面板（`isMouseGrab` 对 RELEASED 也异或掉本键，最后一只键松开
+   * 时异或后为 0），所以票面原本担心 web 少收了一下。macOS 实测（openjdk 17，CGEvent 合成整段序列，
+   * 「窗口外」是另一个 app 的空白窗口，三轮读数一致）：**左键那一下松手根本到不了 Java 窗口** ——
+   * 左键按在别的窗口上，整段拖动与它的松手都归那个窗口；右键那两下**到得了**窗口，但停在 `main.GameLauncher`
+   * 上、没被转派给 `start.StartPanel`（`isMouseGrab` 为真）。两条路各自的原因不同，结果一样：面板一下都不收。
+   *
+   * ⚠️ 下面左键那一下 `mouseUp` 在 web 侧照样发给面板（浏览器里舞台外仍在同一个页面内），所以这是比真机
+   * **更严**的形状：连「事件真的来了」都不许把它当成一次松手。
+   */
+  it('舞台外按着左键拖进来再按右键，全松开那两下面板都不收 —— 左键那一下原版根本收不到，右键那两下收到了也不转派（xl-zs6 实测）', () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const cursor = panel.querySelector('.start-cursor') as HTMLImageElement
+    const about = screen.getByRole('button', { name: '关于我们' })
+    fireEvent.mouseMove(panel, { clientX: 100, clientY: 100, buttons: 0 })
+    // 舞台外按着左键拖进来，再在「转」上按右键（xl-m9q：这一下不收、不起 grab）。
+    fireEvent.mouseMove(panel, { clientX: 200, clientY: 150, buttons: 1 })
+    fireEvent.mouseDown(about, { button: 2, buttons: 3 })
+    // 全松开：先松右键，再松左键，两下都落在离刚才远的地方 —— 收了的话自绘鼠标会跟过去。
+    fireEvent.mouseUp(about, { button: 2, buttons: 1, clientX: 500, clientY: 300 })
+    fireEvent.mouseUp(panel, { button: 0, buttons: 0, clientX: 700, clientY: 400 })
+    tick(1)
+    expect({ left: cursor.style.left, top: cursor.style.top }, '松手被收下了：自绘鼠标跟到了松手的落点').toEqual({
+      left: '100px',
+      top: '100px',
+    })
+    expect(screen.queryByTestId('start-about'), '按下 + 松手被当成一次点击送了进去').toBeNull()
+    // 全松开之后头一下没按着键的移动照常记 —— 原版那时目标已经重设回面板（`mouseMoved`）。
+    fireEvent.mouseMove(panel, { clientX: 320, clientY: 210, buttons: 0 })
+    expect({ left: cursor.style.left, top: cursor.style.top }).toEqual({ left: '320px', top: '210px' })
+  })
 })
 
 describe('开始界面：图片的原生拖放（xl-qzx）', () => {
