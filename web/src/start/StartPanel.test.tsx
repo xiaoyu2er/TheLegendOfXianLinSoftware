@@ -780,3 +780,81 @@ describe('开始界面：图片的原生拖放（xl-qzx）', () => {
     }
   })
 })
+
+describe('开始界面：grab 期间在舞台外按下的第二个键（xl-bg3）', () => {
+  /**
+   * 面板上按下左键起 grab，拖到舞台外，再在那里按下第二个键。
+   *
+   * 票面（xl-40m 带出来的）照 JDK 17 `LightweightDispatcher` 推的是「原版派 `mousePressed`」：
+   * `isMouseGrab` 对 MOUSE_PRESSED 异或掉本键之后左键还在 → 为真，`mouseEventTarget` 不重设、
+   * 仍是面板，`retargetMouseEvent` 把按下派给 `StartPanel.mousePressed`。**那一半只有在事件先到得了
+   * Java 窗口时才成立**，而票面自己标了「窗口外那一下操作系统送不送，平台相关，未验证」。
+   *
+   * macOS 实测（24.6.0 + openjdk 17，探针挂 `Toolkit.addAWTEventListener`，CGEvent 按 HID tap 合成
+   * 整段序列，「窗口外」是另一个 app 的空白窗口，三轮读数逐字一致）：**那一下按下一次都不到 Java**
+   * —— 它按在别的窗口上，归那个窗口。同一轮里的对照 F（拖回窗口内再按右键）读到
+   * `PRESSED btn=3 mex=0x1400 src=start.StartPanel`，所以「零」不是探针瞎了。
+   *
+   * 于是票面推断不成立，而同一次操作里有一条**票面没提的**真差异：那只键的**松手**原版也一下都收不到
+   * （D 组先松右、D2 组先松左，两种顺序下 `btn=3` 的 RELEASED 都没出现在 Java 侧），而 web 挂在 window
+   * 上的 `mouseup` 不看是哪只键，照送一次 `release`。这个 describe 守的就是它。
+   *
+   * 起 grab 那只键的松手不受影响：实测两种顺序下它都 `src=start.StartPanel`（`isMouseGrab` 把本键
+   * 异或**回去**，读到的是「按下之前」的状态，所以最后一只键松开时它仍为真、目标不重设）。
+   */
+  const setup = () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    return {
+      panel,
+      back: panel.querySelector('.start-back') as HTMLElement,
+      cursor: panel.querySelector('.start-cursor') as HTMLImageElement,
+    }
+  }
+  const at = (cursor: HTMLImageElement) => ({ left: cursor.style.left, top: cursor.style.top })
+
+  it('舞台外按下第二个键：按下与松手都不收，起 grab 那只键的松手照收（先松舞台外那只）', () => {
+    const { back, cursor } = setup()
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    expect(at(cursor), '拖出舞台照记坐标（xl-40m）').toEqual({ left: '1100px', top: '700px' })
+    // 舞台外按下右键 —— 原版一下都收不到，自绘鼠标不该跟过去。
+    fireEvent.mouseDown(document.body, { clientX: 1200, clientY: 800, button: 2, buttons: 3 })
+    expect(at(cursor), '舞台外按下的第二个键被当成一次 mousePressed 收了').toEqual({
+      left: '1100px',
+      top: '700px',
+    })
+    // 松开它 —— 同样一下都收不到。
+    fireEvent.mouseUp(document.body, { clientX: 1300, clientY: 900, button: 2, buttons: 1 })
+    expect(at(cursor), '舞台外按下的那只键的松手被收了').toEqual({ left: '1100px', top: '700px' })
+    // 再松起 grab 那只 —— 它照收（实测 `RELEASED btn=1 src=start.StartPanel`）。
+    fireEvent.mouseUp(document.body, { clientX: 300, clientY: 500, button: 0, buttons: 0 })
+    expect(at(cursor), '起 grab 那只键的松手没收').toEqual({ left: '300px', top: '500px' })
+  })
+
+  it('先松起 grab 那只键、再松舞台外那只：前者记坐标，后者不记（实测 D2 的顺序）', () => {
+    const { back, cursor } = setup()
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    fireEvent.mouseDown(document.body, { clientX: 1200, clientY: 800, button: 2, buttons: 3 })
+    fireEvent.mouseUp(document.body, { clientX: 400, clientY: 250, button: 0, buttons: 2 })
+    expect(at(cursor), '起 grab 那只键的松手没收').toEqual({ left: '400px', top: '250px' })
+    fireEvent.mouseUp(document.body, { clientX: 900, clientY: 600, button: 2, buttons: 0 })
+    expect(at(cursor), '舞台外按下的那只键的松手被收了').toEqual({ left: '400px', top: '250px' })
+    // 全松开之后 grab 解除：舞台外按着键再动就不记了（`mouseDragged` 的目标不再是这块面板）。
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    expect(at(cursor), 'grab 没解除').toEqual({ left: '400px', top: '250px' })
+  })
+
+  it('对照：第二个键按在面板上（只是松在舞台外），按下与松手都照收 —— 实测 F 组', () => {
+    const { back, cursor } = setup()
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    // 拖回面板上再按右键：实测 `PRESSED btn=3 mex=0x1400 src=start.StartPanel`，按下记坐标。
+    fireEvent.mouseDown(back, { clientX: 500, clientY: 300, button: 2, buttons: 3 })
+    expect(at(cursor), '面板上按下的第二个键没记坐标').toEqual({ left: '500px', top: '300px' })
+    fireEvent.mouseUp(document.body, { clientX: 1300, clientY: 900, button: 2, buttons: 1 })
+    expect(at(cursor), '面板上按下的那只键的松手没记坐标').toEqual({ left: '1300px', top: '900px' })
+  })
+})
