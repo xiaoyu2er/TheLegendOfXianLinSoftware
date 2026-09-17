@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { repoPath } from '../test/repoPath'
 import { BUTTON_BITS, bitOf } from './mouseButtons'
@@ -11,7 +11,7 @@ import { BUTTON_BITS, bitOf } from './mouseButtons'
  * 「别再变回两份」。
  *
  * ⚠️ 位图那一半（`grabRelease` 的 `taken` / `StartPanelView` 的 `takenRef`）**本来就是两份**，
- * 生命周期不同，这里不守它们「只有一份」，理由写在 `mouseButtons.ts` 的模块注释里。
+ * 这里不守它们「只有一份」—— 理由在 `mouseButtons.ts` 的模块注释里，只有那一份。
  */
 describe('鼠标按键位换算（xl-dnj）', () => {
   /** DOM 规范里 `buttons` 定死的五位：左 1、中 4、右 2、后退 8、前进 16。中键与右键是反着的。 */
@@ -28,40 +28,59 @@ describe('鼠标按键位换算（xl-dnj）', () => {
     const KEYS = 16
     const bits = Array.from({ length: KEYS }, (_, button) => bitOf({ button }))
     expect(bits.filter((b) => b === 0), '有键换出了 0 —— 它的按下记不进位图，松手就配不上').toEqual([])
-    // 分母是 `KEYS` 本身：撞一对，去重后就少一个。
+    // 分母是 `KEYS` 本身：撞一对，去重后就少一个。`bits.length === KEYS` 不必断言 —— 它由
+    // `Array.from({ length: KEYS })` 按构造成立，一次都不可能红（/code-review 逮到的）。
     expect(new Set(bits).size, `${KEYS} 只键换出来的位有重复 —— 两只键会被当成同一只`).toBe(KEYS)
-    expect(bits.length, '上一条的分母塌了').toBe(KEYS)
   })
 })
 
 /**
- * 两处 grab 都从这儿取换算，各自不再留副本。
+ * 每一处 DOM grab 都从这儿取换算，各自不再留副本。
  *
- * 判据先立分母（两个文件都真读到了、都非空），再查缺失 —— 不然「文件读空了」与「没有副本」
+ * **分母是现扫的，不是手写的**（dispatch.md 纪律 3）：「一处 DOM grab」= 生产代码里
+ * `window.addEventListener('mouseup', …)` 那一句 —— 按下之后把松手挂到 window 上，正是
+ * Swing mouse grab 在这一层的对应物。第三块宿主哪天也这么干，它自动进这张表，而不是
+ * 悄悄绕过一份手写名单。判定（该不该共享）仍然是人签的，写在 `mouseButtons.ts` 的注释里。
+ *
+ * 判据先立分母（真扫到了、每份都非空），再查缺失 —— 不然「一个文件都没扫到」与「没有副本」
  * 长得一模一样。
  */
-describe('换算只有一份：两处 grab 都从 stage/mouseButtons.ts 取（xl-dnj）', () => {
-  const HOSTS = ['web/src/app/App.tsx', 'web/src/start/StartPanel.tsx'] as const
-  const SOURCES = HOSTS.map((path) => ({ path, text: readFileSync(repoPath(path), 'utf8') }))
+describe('换算只有一份：每一处 DOM grab 都从 stage/mouseButtons.ts 取（xl-dnj）', () => {
+  /** `web/src` 下的生产代码（跳过测试与生成物），与 `test/webPrimitives.test.ts` 同一个口径。 */
+  const SRC = readdirSync(repoPath('web/src'), { recursive: true, encoding: 'utf8' })
+    .map((f) => f.split('\\').join('/'))
+    .filter((f) => /\.tsx?$/.test(f) && !/\.test\.|(?:^|\/)(?:test|generated|fakes)\//.test(f))
+    .sort()
+  const HOSTS = SRC.map((f) => ({ path: `web/src/${f}`, text: readFileSync(repoPath('web/src', f), 'utf8') })).filter(
+    ({ text }) => /window\.addEventListener\(\s*'mouseup'/.test(text),
+  )
 
-  it('空转要响：两个文件都读得出来，而且都真在讲 grab', () => {
-    expect(SOURCES.map((s) => s.path)).toEqual([...HOSTS])
-    for (const { path, text } of SOURCES) {
-      expect(text.length, `${path} 读空了 —— 下面两条就成了「找不到即通过」`).toBeGreaterThan(1000)
-      expect(text, `${path} 里没有 grab 那一段了，这个 describe 该改`).toContain('grabRef')
+  it('空转要响：真扫到了 DOM grab，每一处都读得出内容', () => {
+    expect(SRC.length, 'web/src 一个生产文件都没扫到 —— 下面三条全成了「找不到即通过」').toBeGreaterThan(100)
+    expect(HOSTS.length, '一处 DOM grab 都没扫到（正则死了？）').toBeGreaterThan(1)
+    // 只问「读到内容了没有」。**不设字数下限** —— 一块小宿主是合法的，拿字数当门槛会把
+    // 「新宿主进来了」误报成「文件读空了」（实测：塞一个 202 字节的第三块宿主，原先那句
+    // `> 1000` 当场红，而它想守的根本不是这件事）。
+    for (const { path, text } of HOSTS) {
+      expect(text.length, `${path} 读空了 —— 下面两条对它就成了「找不到即通过」`).toBeGreaterThan(0)
     }
   })
 
-  it('两边都 import 了共用的 bitOf', () => {
-    const missing = SOURCES.filter(({ text }) => !/import \{[^}]*\bbitOf\b[^}]*\} from '\.\.\/stage\/mouseButtons'/.test(text))
-    expect(missing.map((s) => s.path), '这个文件没从共用模块取 bitOf').toEqual([])
+  it('每一处都 import 了共用的 bitOf', () => {
+    const missing = HOSTS.filter(({ text }) => !/import \{[^}]*\bbitOf\b[^}]*\} from '[^']*\/stage\/mouseButtons'/.test(text))
+    expect(missing.map((s) => s.path), '这个文件握着 DOM grab，却没从共用模块取 bitOf').toEqual([])
   })
 
-  it('两边都不再自己声明 BUTTON_BITS / bitOf —— 再出现一份就是 Shotgun Surgery', () => {
-    const offenders = SOURCES.flatMap(({ path, text }) =>
+  /**
+   * ⚠️ 三条正则都**不锚行首、不要求 `const`**：`/code-review` 的 Spec 轴逮到过 —— 原来写的
+   * `/^const BUTTON_BITS\b/m` 只认顶格的那一种，`export const` 与缩进在组件里的副本照样漏过，
+   * 正是「找不到即通过」的形状。
+   */
+  it('每一处都不再自己声明 BUTTON_BITS / bitOf —— 再出现一份就是 Shotgun Surgery', () => {
+    const offenders = HOSTS.flatMap(({ path, text }) =>
       [
-        /^const BUTTON_BITS\b/m.test(text) ? `${path} 又声明了自己的 BUTTON_BITS` : null,
-        /^const bitOf\b/m.test(text) ? `${path} 又声明了自己的 bitOf` : null,
+        /\bBUTTON_BITS\s*(?::[^=\n]*)?=/.test(text) ? `${path} 又声明了自己的 BUTTON_BITS` : null,
+        /\bbitOf\s*(?::[^=\n]*)?=/.test(text) ? `${path} 又声明了自己的 bitOf` : null,
         /\[\s*1\s*,\s*4\s*,\s*2\s*,\s*8\s*,\s*16\s*\]/.test(text) ? `${path} 里又出现了 [1, 4, 2, 8, 16] 这张表` : null,
       ].filter((m) => m !== null),
     )

@@ -179,13 +179,10 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 「按下之前」的状态，所以最后一只键松开时它仍为真、`mouseEventTarget` 不重设（实测两种松手顺序下
    * 它都是 `src=start.StartPanel`）。
    *
-   * ⚠️ **为什么它是 `useRef`、而 `app/App.tsx` 里那一份是闭包局部量** —— 两份不是随手写成两样的
-   * （xl-dnj 判过，不合）：这块面板**没有挂在 window 上的 `mousedown` 监听**，两条补松手通路
-   * （`onMouseDown` 里那一段、`onMove` 里那一段）中前者跑在**下一次按下**里，那时上一个 grab 的
-   * `end()` 还没跑（正是它要跑的那一句），位图必须活过 `end()` —— 所以只能跨 grab 存活，并在
-   * `end()` 里显式清零。`grabRelease` 那一份的补松手通路（`onPress` / `onDrag`）是同一个 grab
-   * 自己挂在 window 上的监听，闭包还在，于是位图一个 grab 一份、用完即弃，清零那一句在那边是
-   * 死代码（xl-df1 的篡改矩阵证过）。**同一个语义，两种生命周期**；共用的只有换算那一半。
+   * ⚠️ **它必须跨 grab 存活（`useRef` 加 `end()` 里那句显式清零）**，因为走按下的那条补松手通路
+   * 在下面的 `onMouseDown` 里、跑在**下一次按下**时。`app/App.tsx` 的 `grabRelease` 里那一份是
+   * 闭包局部量 —— **同一个语义，两种生命周期，不合**；为什么，完整论证在
+   * `stage/mouseButtons.ts` 的模块注释里，只有那一份（xl-dnj）。
    */
   const takenRef = useRef(0)
   useEffect(() => () => grabRef.current?.(), [])

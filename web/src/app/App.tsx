@@ -417,15 +417,11 @@ export function App() {
      * 认出「这一只松手该不该送」，光知道还欠几次不够。`useGame.routeByGrab` 那半仍然按次数数，
      * 两边靠「送几次按下就送几次松手」对上 —— 挡掉的按下这里一次都不送，它的松手也就不欠。
      *
-     * ⚠️ **与标题页那一份 `takenRef` 是两份，而且不该合**（xl-dnj 判过）：这一份是
-     * `grabRelease` 的**闭包局部量、一个 grab 一份、用完即弃** —— 补松手的两条通路
-     * （`onPress` / `onDrag`）都是这个 grab 自己挂在 window 上的监听，跑的时候闭包还在，
-     * 所以 `endGrab` 里不需要（也不能有）清零那一句（xl-df1 的篡改矩阵证过那是死代码）。
-     * 标题页没有 window 上的 `mousedown` 监听，它那两条通路里**走按下的那一条跑在下一次按下**、
-     * 在面板自己的 `onMouseDown` 里（走移动的那一条倒是同一个闭包里的 window 监听，和这边一样）——
-     * 一条就够：位图必须活过 `end()`，于是只能是跨 grab 存活的 `useRef` 加显式清零。**同一个语义，
-     * 两种生命周期**；共用的只有换算那一半（`stage/mouseButtons.ts` 的 `BUTTON_BITS` /
-     * {@link bitOf}）。
+     * ⚠️ **这一份是闭包局部量、一个 grab 一份、用完即弃**，所以 `endGrab` 里不需要（也不能有）
+     * 清零那一句（xl-df1 的篡改矩阵证过那是死代码）。标题页那一份 `takenRef` 是跨 grab 存活的
+     * `useRef` —— **同一个语义，两种生命周期，不合**；为什么，完整论证在
+     * `stage/mouseButtons.ts` 的模块注释里，只有那一份（xl-dnj）。共用的只有换算那一半
+     * （`BUTTON_BITS` / {@link bitOf}）。
      *
      * ⚠️ 读数取自 xl-bg3 在标题页上的 macOS 实测（三轮逐字一致），**这四块宿主没有各自复量过**：
      * 它们在原版里是同一个 `JFrame` 里 `CardLayout` 的几块面板，「事件到不到得了这个窗口」由
