@@ -16,6 +16,7 @@ import { SHOP_PREVIEW_CHOICES } from '../shop/preview'
 import type { ShopPreviewChoice } from '../shop/preview'
 import { wheelRows } from '../menu/scroll'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
+import { bitOf } from '../stage/mouseButtons'
 import { useGame } from '../game/useGame'
 import type { SaveLoadNotice } from '../game/useGame'
 import { StartPanel } from '../start/StartPanel'
@@ -30,19 +31,6 @@ import { devToolsEnabled } from './devTools'
  * `''`，改掉其中一个，测试照样绿。
  */
 export const TITLE_OPTION = ''
-
-/** `MouseEvent.button`（哪个键）→ 它在 `MouseEvent.buttons` 位掩码里的那一位。中键与右键是反着的。 */
-const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16]
-
-/**
- * 这一下按的是哪只键，换成它在 `buttons` 里的那一位。
- *
- * 表上没有的键（第 6 只往后，`buttons` 规范只定到第 5 只）按 `1 << button` 兜底，**不能按 0**：
- * 位图靠「按下与松手拿到同一位」认人，给 0 等于这只键的按下记不进位图，而宿主已经把那一下送出去了 ——
- * `useGame.routeByGrab` 的计数于是永远回不到 0，grab 再也解不开。`1 << button` 从第 6 只起是
- * 32 / 64 /…，与表里那五个（1/4/2/8/16）不撞。
- */
-const bitOf = (event: { readonly button: number }): number => BUTTON_BITS[event.button] ?? 1 << event.button
 
 /**
  * 存读档面板上的几行字（xl-i06.9）。**画在 overlay 上，不画进 Pixi**：它们原版没有，
@@ -428,6 +416,12 @@ export function App() {
      * 位图而不是计数（标题页那一份 `StartPanel.tsx` 的 `takenRef` 同一个理由，xl-bg3）：要
      * 认出「这一只松手该不该送」，光知道还欠几次不够。`useGame.routeByGrab` 那半仍然按次数数，
      * 两边靠「送几次按下就送几次松手」对上 —— 挡掉的按下这里一次都不送，它的松手也就不欠。
+     *
+     * ⚠️ **这一份是闭包局部量、一个 grab 一份、用完即弃**，所以 `endGrab` 里不需要（也不能有）
+     * 清零那一句（xl-df1 的篡改矩阵证过那是死代码）。标题页那一份 `takenRef` 是跨 grab 存活的
+     * `useRef` —— **同一个语义，两种生命周期，不合**；为什么，完整论证在
+     * `stage/mouseButtons.ts` 的模块注释里，只有那一份（xl-dnj）。共用的只有换算那一半
+     * （`BUTTON_BITS` / {@link bitOf}）。
      *
      * ⚠️ 读数取自 xl-bg3 在标题页上的 macOS 实测（三轮逐字一致），**这四块宿主没有各自复量过**：
      * 它们在原版里是同一个 `JFrame` 里 `CardLayout` 的几块面板，「事件到不到得了这个窗口」由

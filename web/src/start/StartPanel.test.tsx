@@ -940,3 +940,68 @@ describe('开始界面：grab 期间在舞台外按下的第二个键（xl-bg3�
     expect(at(cursor), '上一轮的陈旧位让舞台外那只键的松手被收了').toEqual({ left: '300px', top: '300px' })
   })
 })
+
+/**
+ * `BUTTON_BITS` 只定到第 5 只键（`buttons` 规范就到这儿）。第 6 只起靠 `bitOf` 的 `1 << button`
+ * 兜底 —— 这块面板原先写的是 `BUTTON_BITS[event.button] ?? 0`，与 `app/App.tsx` 那一份不一样
+ * （xl-dnj 把两边合成了一份 `stage/mouseButtons.ts`）。
+ *
+ * 0 在这块面板上各犯一次错，下面两条一条一个：
+ *
+ * - 没 grab 时：`othersHeld = (buttons & ~0) !== 0` 恒为真，那只键**整只失灵**，按下就被挡掉；
+ * - 已有 grab 时：`takenRef |= 0` 记不进位图，按下照送、松手却被挡掉 —— 送出去的按下配不上松手，
+ *   按钮卡在按下态。
+ *
+ * ⚠️ 两条在改之前都是**红**的（`?? 0`），改成 `bitOf` 之后才绿 —— 前后对照跑过。
+ */
+describe('开始界面：第 6 只键起的 grab（xl-dnj）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+  const setup = () => {
+    render(<StartPanel onNewGame={() => {}} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    return {
+      panel,
+      back: panel.querySelector('.start-back') as HTMLElement,
+      cursor: panel.querySelector('.start-cursor') as HTMLImageElement,
+    }
+  }
+  const at = (cursor: HTMLImageElement) => ({ left: cursor.style.left, top: cursor.style.top })
+
+  it('第 6 只键单独起 grab：按下与松手都照收，不会被 `othersHeld` 当成「别的键按着」挡掉', () => {
+    const { back, cursor } = setup()
+    fireEvent.mouseMove(back, { clientX: 10, clientY: 10, buttons: 0 })
+    expect(at(cursor), '起手这一下没记 —— 下面两条就分不出「没动」和「没收」').toEqual({ left: '10px', top: '10px' })
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 5, buttons: 32 })
+    expect(at(cursor), '第 6 只键的按下被挡掉了（位图给 0 时 `othersHeld` 恒为真）').toEqual({
+      left: '100px',
+      top: '100px',
+    })
+    fireEvent.mouseUp(document.body, { clientX: 300, clientY: 400, button: 5, buttons: 0 })
+    expect(at(cursor), '第 6 只键的松手没送出去（它的位没进位图）').toEqual({ left: '300px', top: '400px' })
+  })
+
+  it('grab 挂着时在面板上按下第 6 只键：它的按下送了，松手也要送 —— 不能只送一半', () => {
+    const onNewGame = vi.fn()
+    render(<StartPanel onNewGame={onNewGame} onLoad={() => {}} />)
+    const panel = screen.getByTestId('start-panel')
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1024, height: 640 }) as DOMRect
+    const back = panel.querySelector('.start-back') as HTMLElement
+    const newGame = screen.getByRole('button', { name: '开始新游戏' })
+    // 左键在别处起 grab，再在「起」上按下第 6 只键（和弦）：这一下按下照送，`clicked.newGame` 为真。
+    fireEvent.mouseDown(back, { clientX: 50, clientY: 50, button: 0, buttons: 1 })
+    fireEvent.mouseDown(newGame, { clientX: 660, clientY: 490, button: 5, buttons: 33 })
+    // 松开第 6 只键：它的按下面板收下过，松手就得送 —— `setButton()` 读那个仍为真的 `clicked.newGame`，
+    // 卷轴开始放。位图给 0 的话这一下被当成「舞台外按下的键」挡掉，`clicked.newGame` 永远清不掉、
+    // 卷轴一拍都不走。
+    fireEvent.mouseUp(newGame, { clientX: 660, clientY: 490, button: 5, buttons: 1 })
+    expect(onNewGame, '松手还没送就先触发了 —— 下面那条就按构造成立了').not.toHaveBeenCalled()
+    tick(10 + LOAD_TICKS)
+    expect(onNewGame, '第 6 只键的松手被位图挡掉了 —— 那一下按下配不上松手').toHaveBeenCalledTimes(1)
+  })
+})
