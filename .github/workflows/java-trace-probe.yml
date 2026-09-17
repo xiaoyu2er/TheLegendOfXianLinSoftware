@@ -32,6 +32,38 @@ jobs:
           java -version 2>&1
           echo "剧本份数（现数，不写死）: $(ls tools/traces/scripts/*.json | wc -l)"
 
+      # ⚠️ 这一条是头一趟（run 35223418593）逼出来的：`--check` 在 runner 上 9 秒就挂，
+      # 原因是 `mktemp -t xl-trace` —— BSD mktemp（macOS）接受不带 X 的模板，
+      # **GNU coreutils 要求至少 3 个 X**，直接报 `too few X's in template`。
+      # 全仓 8 处都是这个形状，全部在 Linux 上会挂，只是 CI 今天还没跑到它们。
+      # 这一步把每个脚本里的 mktemp 调用**在 Linux 上实跑一次**，而不是读代码。
+      - name: 读数 0 —— tools/*.sh 里的 mktemp 在 GNU coreutils 上跑不跑得起来
+        run: |
+          fail=0
+          found=0
+          while IFS= read -r line; do
+            found=$((found + 1))
+            f="${line%%:*}"
+            cmd="$(printf '%s' "$line" | sed 's/^[^:]*:[0-9]*://')"
+            # 把 `x="$(mktemp …)"` 这种壳剥掉，只留 mktemp 那一句
+            cmd="$(printf '%s' "$cmd" | sed -E 's/.*\$\((mktemp[^)]*)\).*/\1/')"
+            set +e
+            out="$(eval "$cmd" 2>&1)"; rc=$?
+            set -e
+            if [ "$rc" = "0" ]; then
+              echo "  OK   $f: $cmd -> $out"
+              rm -rf "$out" 2>/dev/null || true
+            else
+              echo "  FAIL $f: $cmd -> (exit $rc) $out"
+              fail=1
+            fi
+          done < <(grep -rn 'mktemp' tools/*.sh)
+          # ⚠️ 一条都没扫到时**要红**：grep 没匹配到会返回空，
+          # 而「全都通过」与「一个都没查」在这里长得一模一样。
+          echo "扫到 mktemp 调用 $found 处"
+          [ "$found" -gt 0 ] || { echo "一处都没扫到 —— 是 grep 的模式坏了，不是「没有 mktemp」" >&2; exit 1; }
+          exit "$fail"
+
       - name: 编译
         run: tools/build.sh
 
@@ -54,8 +86,10 @@ jobs:
       - name: 读数 1b —— 带 xvfb 跑同一份
         id: with_xvfb
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb
+          # 头一趟实测 ubuntu-latest 上 /usr/bin/xvfb-run 已预装；留着这个兜底
+          # 是为了镜像换了也不至于静默跳过 —— 但**装不上要红**，不能当没事。
+          command -v xvfb-run >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq xvfb; }
+          command -v xvfb-run >/dev/null || { echo "xvfb-run 装不上" >&2; exit 1; }
           set +e
           xvfb-run -a tools/export-trace.sh battle-defeat-scene > /tmp/xvfb.log 2>&1
           rc=$?
@@ -104,10 +138,15 @@ jobs:
       # --check 只证明「这台机器上两个 JVM 导出的一样」，一个**稳定的**错误
       # 在它眼里和正确一模一样。「runner 导出的与本机入库的一样吗」是另一件事，
       # 而这一条才是把它接进 CI 的真正前提。
+      # ⚠️ 这一条的守卫不是「上一步 skipped」，而是「上一步**成功**」。
+      # 头一趟（run 35223418593）就栽在这里：全量 9 秒 EXIT=1、一份剧本都没导完，
+      # 而 git diff 照样是 0 —— **「什么都没导出」与「导出的一致」共用退出码 0**，
+      # 正是这个仓库反复栽的那个形状，而且是在一条专门去分辨真假的工作流里。
       - name: 读数 3 —— runner 导出的与入库的是否逐字节一致
         run: |
-          if [ "${{ steps.full.outputs.full }}" = "skipped" ]; then
-            echo "上一步没跑成，这一条**没量**。"
+          if [ "${{ steps.full.outputs.full }}" != "0" ]; then
+            echo "上一步没成功（full=${{ steps.full.outputs.full }}），这一条**没量**"
+            echo "—— 不要把这里的「无 diff」读成「一致」：没导出东西时它必然无 diff。"
             exit 0
           fi
           set +e

@@ -149,7 +149,7 @@ if [ -n "$replay" ]; then
 fi
 
 if [ -z "$outdir" ]; then
-  outdir="$(mktemp -d -t xl-mouse-dispatch)"
+  outdir="$(mktemp -d "${TMPDIR:-/tmp}/xl-mouse-dispatch.XXXXXX")"
 else
   case "$outdir" in /*) ;; *) outdir="$OLDPWD_AT_START/$outdir" ;; esac
 fi

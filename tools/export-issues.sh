@@ -39,9 +39,9 @@ OUT=tools/issue-snapshot/issues.json
 # 判据在 web/src/mainline/test/issueIdentity.test.ts（每张 open 票恰好一个）；这里**照实写**，
 # 零个、两个都照写 —— 替人补一个就等于让导出器自己签字。
 IDENT=tools/issue-snapshot/identity.json
-raw="$(mktemp -t xl-issues-raw)"
-tmp="$(mktemp -t xl-issues)"
-tmpi="$(mktemp -t xl-identity)"
+raw="$(mktemp "${TMPDIR:-/tmp}/xl-issues-raw.XXXXXX")"
+tmp="$(mktemp "${TMPDIR:-/tmp}/xl-issues.XXXXXX")"
+tmpi="$(mktemp "${TMPDIR:-/tmp}/xl-identity.XXXXXX")"
 trap 'rm -f "$raw" "$tmp" "$tmpi"' EXIT
 
 # --limit 0：bd list 默认只给 50 条，不带它快照会**静默**截断成 50 行。

@@ -35,7 +35,7 @@ run() {  # run <输出路径>
 run "$OUT"
 
 if [ "$check" = 1 ]; then
-  tmp="$(mktemp -t xl-scaled-blit)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/xl-scaled-blit.XXXXXX")"
   run "$tmp" >/dev/null
   if cmp -s "$OUT" "$tmp"; then
     echo "  确定性 OK：两次导出逐字节一致（$(wc -c < "$OUT" | tr -d ' ') 字节）"

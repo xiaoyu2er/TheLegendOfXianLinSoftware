@@ -45,7 +45,7 @@ for n in "${names[@]}"; do
   [ -f "$SCRIPTS/$n.json" ] || { echo "找不到剧本 $SCRIPTS/$n.json" >&2; exit 2; }
   run "$n" "$OUT/$n.trace.json"
   if [ "$check" = 1 ]; then
-    tmp="$(mktemp -t xl-trace)"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/xl-trace.XXXXXX")"
     run "$n" "$tmp"
     if cmp -s "$OUT/$n.trace.json" "$tmp"; then
       echo "  确定性 OK：$n 两次导出逐字节一致（$(wc -c < "$OUT/$n.trace.json" | tr -d ' ') 字节）"
