@@ -3,7 +3,7 @@
 # （xl-zs6 现搭的一次性探针，xl-sij 收成可复跑的工具。）
 #
 #   tools/mouse-dispatch-probe.sh --dry-run    # 只编译两侧 + 读权限，一个事件都不发、不碰鼠标
-#   tools/mouse-dispatch-probe.sh              # 真跑：起原版、合成四组序列、与期望读数对账
+#   tools/mouse-dispatch-probe.sh              # 真跑：起原版、合成五组序列、与期望读数对账
 #   tools/mouse-dispatch-probe.sh --yes        # 同上，跳过「要接管鼠标」那句确认
 #   tools/mouse-dispatch-probe.sh --rounds 1   # 少跑几轮（默认 3 轮，判确定性）
 #   tools/mouse-dispatch-probe.sh --out <目录> # 日志落在哪（默认临时目录，跑完留着路径）
@@ -57,6 +57,14 @@
 # 期望读数（xl-zs6，macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致）在
 # tools/mouse-dispatch/expected-events.txt，跑完自动对账；读法与限定见
 # tools/src/devtools/MouseDispatchProbe.java 的类注释。
+#
+# 退出码：0 一切如常；1 **回归**（A 对照不成立 / 与两份期望读数对不上 / 轮间不一致 / 正对照不成立）；
+# 2 参数错。两份期望读数：expected-events.txt 是 xl-zs6 量的 A / B / B2 / C，
+# expected-events-D.txt 是 xl-8eg 量的 D 组 —— 出处与限定不同，所以分两份，报错时各报各的。
+#
+# 跑完还会打一份**按 MARK 分段**的读数（tools/mouse-dispatch/reckon.py，xl-8eg 加的）。
+# 它和上面那份对账是两件事：对账只看按下 / 松手，而 D 组要量的是 **DRAGGED**，一条都进不了对账。
+# 分段读数不含计数、不含坐标（条数与坐标都不稳），只报每一段「出现过哪几种事件、派给了谁」。
 set -euo pipefail
 OLDPWD_AT_START="$PWD"
 cd "$(dirname "$0")/.."
@@ -102,6 +110,13 @@ if [ "$checkpoint" = 0 ] && [ ! -f "$EXPECTED" ]; then
   exit 1
 fi
 
+# D 组那四行出处不同（xl-8eg 量的），单独一份、单独对账。
+# ⚠️ **D 组只在默认落点上量过**：别的落点上 D 组照样会跑，但没有量过的读数可对 —— 那是
+#    「没核成」（退出码 3），不是红。两者不许共用一个码（与 ③ 那一层同一个道理）。
+EXPECTED_D=tools/mouse-dispatch/expected-events-D.txt
+d_expected=1
+if [ "$where" != outside-window ] || [ ! -f "$EXPECTED_D" ]; then d_expected=0; fi
+
 # ⚠️ 上面已经 cd 到仓库根了，所以 --out 给的相对路径要按**调用者的 cwd**解回来，
 # 否则 `--out out/` 会静悄悄落在仓库根下面，而不是你以为的那个目录。
 # --replay：拿一趟跑过的日志重跑对账。判据逻辑与真跑那条路**是同一段代码**，
@@ -144,11 +159,25 @@ outdir="$(cd "$outdir" && pwd)"
 # 期望读数里 # 开头的是出处与读法，滤掉再对账。
 # 放在这里（而不是跑之前那一步）是为了：期望读数本身不成立的话，别先把鼠标借走。
 EXP="$outdir/expected.txt"
+EXP_D="$outdir/expected-D.txt"
 if [ "$checkpoint" = 0 ]; then
 # `|| true`：一条都没滤出来时 grep 退出 1，set -e 会当场退出，下面那句守卫就**永远打不出来** ——
 # 那是一个没有任何输出的 exit 1，与「别的什么东西挂了」分不开。
 grep -v '^#' "$EXPECTED" > "$EXP" || true
 [ -s "$EXP" ] || { echo "期望读数里一条都没有（${EXPECTED} 全是注释？）" >&2; exit 1; }
+if [ "$d_expected" = 1 ]; then
+grep -v '^#' "$EXPECTED_D" > "$EXP_D" || true
+[ -s "$EXP_D" ] || { echo "D 组的读数里一条都没有（${EXPECTED_D} 全是注释？）" >&2; exit 1; }
+fi
+
+# 读数器的自检放在**借鼠标之前**：它坏了的话，跑完三轮才发现就白借了一分多钟鼠标。
+# ⚠️ 别写成 `python3 … | sed … || {…}`：`||` 读的是 **sed** 的退出码，自检红了也进不了那个分支
+#    （dispatch.md 的 1 号坑）。先落盘、再判、再打印。
+echo "[0/4] reckon.py 自检（不碰鼠标、不要权限）…"
+selftest_rc=0
+python3 tools/mouse-dispatch/reckon.py --selftest > "$outdir/reckon-selftest.log" 2>&1 || selftest_rc=$?
+sed 's/^/  /' "$outdir/reckon-selftest.log"
+[ "$selftest_rc" = 0 ] || { echo "reckon.py 自检不过 —— 分段读数不算数，先修它。" >&2; exit 1; }
 fi
 
 
@@ -209,7 +238,9 @@ if [ "$checkpoint" = 1 ]; then
   echo "[4/4] --check-point：只算落点，一个事件都不发、一下鼠标都不碰。"
 elif [ "$yes" != 1 ]; then
   echo
-  echo "⚠️ 接下来这 ${rounds} 轮会**接管物理鼠标**：光标自己动、真的按下去，每轮约 15 秒。"
+  # 「约 22 秒」是**按驱动器里的 sleep 算出来的**（合成事件 16.2 秒 + JVM 起窗口那几秒），不是实测 ——
+  # 加 D 组之前那句写的是 15 秒，同样是估算。真跑过之后按实测改这个数。
+  echo "⚠️ 接下来这 ${rounds} 轮会**接管物理鼠标**：光标自己动、真的按下去，每轮约 22 秒（估算，含 D 组）。"
   echo "   期间别动鼠标键盘。确认请输入 yes："
   read -r ans < /dev/tty
   [ "$ans" = "yes" ] || { echo "取消。"; exit 1; }
@@ -327,8 +358,13 @@ while [ "$r" -le "$rounds" ]; do
   r=$((r + 1))
 done
 
-# 与期望读数对账。
-if diff -u "$EXP" "$outdir/normal1.txt" > "$outdir/diff-expected.txt"; then
+# 与期望读数对账。两份读数出处不同（A / B / B2 / C 是 xl-zs6 量的，D 组是 xl-8eg 量的），
+# 按行数切成两段、各对各的那一份，好让报错指得出是哪一份、哪几行。
+# ⚠️ 前一段要是少了行，切点跟着挪，两段会同时红 —— 两边都响得出来，而头一条会指名是哪几行。
+n_exp="$(wc -l < "$EXP" | tr -d ' ')"
+head -n "$n_exp" "$outdir/normal1.txt" > "$outdir/normal1-abc.txt"
+tail -n "+$((n_exp + 1))" "$outdir/normal1.txt" > "$outdir/normal1-d.txt"
+if diff -u "$EXP" "$outdir/normal1-abc.txt" > "$outdir/diff-expected.txt"; then
   echo
   # ⚠️ 这句话只说第 1 轮与期望读数的关系。**「${rounds} 轮之间也一致」那半要看 $fail** ——
   #    原来这里无条件就把它打出来了，于是上面明明红着「第 1 轮与第 2 轮不一致」，
@@ -351,6 +387,79 @@ else
   fail=1
 fi
 
+# D 组那一段（xl-8eg）。⚠️ 它只在默认落点上量过，而且要有 drive*.log 才分得了段。
+skipped=${skipped:-0}
+# ── 按 MARK 分段的读数（xl-8eg）。放在这里而不是掺进上面那份对账，是因为两者问的不是同一件事：
+#    对账问「按下 / 松手逐行对不对得上那份读数」，这里问「每一段出现过哪几种事件、派给了谁」，
+#    而 D 组要量的 DRAGGED 只在后者里。理由、格式与自检都在 tools/mouse-dispatch/reckon.py。
+# ⚠️ 重放旧 fixture 时可能没有 drive*.log（分段读数要靠它的 MARK 分桶）—— 那是**没核成**，
+#    不是「D 组没事件」。与 SAMEAPPCLASS 那一条同一个形状。
+d_reckoned=1
+r=1
+while [ "$r" -le "$rounds" ]; do
+  if [ ! -s "${replay:-$outdir}/drive${r}.log" ]; then
+    echo "⚠️ 第 ${r} 轮没有 drive${r}.log（分段读数要靠它的 MARK 分桶）—— D 组这一层**没核**，不是「没事件」。" >&2
+    d_reckoned=0; skipped=1; break
+  fi
+  # ⚠️ 退出码 3 = 「结构上读不出」（格式漂了 / 一个 MARK 都没有），与「读数是空的」不是一回事，
+  #    所以这里既不能 `|| true` 吞掉，也不能让 set -e 当场退出（后面几轮就不跑了）。
+  rc=0
+  python3 tools/mouse-dispatch/reckon.py "${replay:-$outdir}/drive${r}.log" "${replay:-$outdir}/events${r}.log" \
+    > "$outdir/reckon${r}.txt" 2> "$outdir/reckon${r}.err" || rc=$?
+  if [ "$rc" != 0 ]; then
+    echo >&2
+    echo "❌ 第 ${r} 轮的分段读数读不出来（退出码 ${rc}）：" >&2
+    sed 's/^/     /' "$outdir/reckon${r}.err" >&2
+    fail=1
+  fi
+  if [ "$r" != 1 ] && ! diff -u "$outdir/reckon1.txt" "$outdir/reckon${r}.txt" > "$outdir/reckon-diff1-${r}.txt"; then
+    echo >&2
+    echo "❌ 分段读数第 1 轮与第 ${r} 轮不一致，差异在 $outdir/reckon-diff1-${r}.txt：" >&2
+    sed 's/^/     /' "$outdir/reckon-diff1-${r}.txt" >&2
+    fail=1
+  fi
+  r=$((r + 1))
+done
+
+if [ "$d_reckoned" != 0 ]; then
+# D 组有**两个正对照**，各管一件事，缺哪个 D3 那个「没有」都不止一种读法：
+#   D1 起 grab 那只键按着拖出窗口 —— 证**左键**的拖动进得了 Java（xl-40m / xl-bg3 已量过）；
+#   D5 面板里按右、拖一段、松右   —— 证**右键**的拖动进得了 Java（这套 AWT + CGEvent 组合下
+#      右键的拖动从来没量过；B / B2 量到的是右键**按下**）。
+# 与 A 对照同一个道理：「没收到」有好几个成因，长得一样。
+for ctl in D1 D5; do
+  if ! grep -q "^${ctl} .*DRAGGED.*src=start\.StartPanel" "$outdir/reckon1.txt"; then
+    echo >&2
+    echo "❌ D 组正对照不成立：${ctl} 段里没有 src=start.StartPanel 的 DRAGGED。" >&2
+    echo "   D3 段的读数整个作废 —— 那个「没有」分不出是原版收不到还是事件压根没进来。" >&2
+    fail=1
+  fi
+done
+
+echo
+echo "D 组分段读数（xl-8eg；D3 那几行**没有期望值**，两种结果都说得通，这一趟就是去取它的）："
+sed -n '/^D[0-9] /p' "$outdir/reckon1.txt" | sed 's/^/   /'
+echo "   全部分段读数：$outdir/reckon1.txt"
+
+if [ "$d_expected" = 1 ]; then
+# D 组按下 / 松手那一层单独对账（它那一份读数是 xl-8eg 量的，见 expected-events-D.txt 开头）。
+if diff -u "$EXP_D" "$outdir/normal1-d.txt" > "$outdir/diff-expected-D.txt"; then
+  echo "   D 组按下 / 松手与 ${EXPECTED_D} 逐行一致（$(wc -l < "$EXP_D" | tr -d ' ') 行）。"
+else
+  echo >&2
+  echo "❌ D 组按下 / 松手与 ${EXPECTED_D} 对不上：" >&2
+  sed 's/^/     /' "$outdir/diff-expected-D.txt" >&2
+  echo "   与上面那一份同理：对不上不一定是谁错了（换了 JDK / macOS / 窗口落点都可能）。" >&2
+  echo "   ⚠️ 改这份期望之前先想清楚：App.tsx 的 onDrag 与 StartPanel.tsx 的 onMove 正挡在" >&2
+  echo "   这份读数上（D3 段零条事件），读数变了它们也要跟着改。" >&2
+  fail=1
+fi
+else
+  echo "⚠️ D 组按下 / 松手这一层**没核**：落点 ${where} 上 D 组没有量过的读数（只有默认落点有）。"
+  skipped=1
+fi
+fi
+
 # 换落点之后，**派给原版那块窗口的行**跟默认落点比是相同还是不同 —— 这一票（xl-g9w）问的就是这个。
 # 不把「不同」做成硬失败：不同本身是个结论，不是故障；而「读数变了」那一半由上面各自的期望读数对账挡着。
 # ⚠️ 滤掉的是探针自己那块「窗口外」的窗口收到的行，剩下的才是原版窗口收到的。
@@ -365,13 +474,15 @@ fi
 #   2. **逐轮核，不是只核第 1 轮。** A 对照刚从「只核第 1 轮」改成逐轮，这里不能留在第 1 轮上 ——
 #      第 2/3 轮要是与 outside-window 不同，只看第 1 轮读不出来。
 if [ "$where" != outside-window ]; then
+  # ⚠️ 基线要**连 D 组那四行一起**：D 组也会跑，它的行同样 src=start.StartPanel、滤不掉，
+  #    只拿 A/B/B2/C 当基线的话，那四行会被读成「换落点改了结论」。
   grep -v '^#' tools/mouse-dispatch/expected-events.txt > "$outdir/baseline-expected.txt" || true
+  grep -v '^#' tools/mouse-dispatch/expected-events-D.txt >> "$outdir/baseline-expected.txt" || true
   echo
   if [ "$fail" != 0 ]; then
     echo "⚠️ 这一趟有红的（见上面），所以下面这条比对**不是结论** —— 先把红的弄清楚再看它。"
   fi
   differ=0
-  skipped=0
   r=1
   while [ "$r" -le "$rounds" ]; do
     # 探针那块窗口的组件类名：现读，读不到就硬失败。

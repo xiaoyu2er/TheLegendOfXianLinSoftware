@@ -1,0 +1,36 @@
+# D 组（xl-8eg）按下 / 松手的**实测读数** —— tools/mouse-dispatch-probe.sh 单独拿它对账。
+#
+# 读数出处：macOS 24.6.0 + openjdk 17，2026-09-16，`tools/mouse-dispatch-probe.sh --yes` 三轮，
+# 归一化之后逐字一致。与 expected-events.txt（xl-zs6 的 A / B / B2 / C 四组）分成两份，是因为
+# 两份的出处与限定不同；两份对不上都算回归，退出码都是 1。
+#
+# 序列（drive.swift 的 D 组，分六段打标）与**每一段的实测**：
+#   D0 面板里按左，起 grab          → PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300（下面第 1 行）
+#   D1 拖出窗口（起 grab 那只键按着）→ 12 条 DRAGGED btn=1 mex=0x400 src=start.StartPanel，
+#                                     xy 一路到 1254,250（越界），中间夹一条 EXITED。**正对照之一**
+#   D2 外窗上按右、再松左            → 按右**一条都没有**（它按在外窗上）；松左有行（下面第 2 行），
+#                                     mex=0x1000 = 右键还按着，xy=1254,250 是外窗中心换算到面板内坐标
+#   D3 只剩被挡掉那只键按着，拖回面板 → **Java 侧零条事件**，连 ENTERED / MOVED 都没有 ← 本票要的读数
+#   D4 松右                          → 按下 / 松手一条都没有（它按在外窗上）；只有 ENTERED / MOVED / EXITED
+#   D5 面板里按右 → 拖一段 → 松右    → PRESSED / 12 条 DRAGGED btn=3 mex=0x1000 / RELEASED（下面第 3、4 行）。
+#                                     **正对照之二**：合成的右键拖动进得了 Java，所以 D3 那个零不是它造成的
+#
+# 结论（写回 web/src/app/App.tsx 的 onDrag、web/src/start/StartPanel.tsx 的 onMove 与
+# docs/web-primitives.md）：**拖动归「起这次拖动的那只键按下时所在的那个窗口」**。起 grab 那只键
+# 松开后只剩那只在窗口外按下的键按着时，原版一条都收不到。
+#
+# ⚠️ 一处与预测不同，如实记：
+#   D5 松右的 mex 是 **0x100** 不是 0x0 —— 0x100 = META_DOWN_MASK（1<<8）。macOS 的 AWT 在右键
+#      松手时把老式的 META 修饰位带进了 getModifiersEx。**只是记下来**，没有往下追，也没有任何东西依赖它。
+#   其余三行与预测逐字相同（四行里撞对三行，错一行）。
+#
+# ⚠️ 上面每一段里的「几条」与「有哪些 ENTERED / MOVED / EXITED」都是**翻原始日志逐条数的**，
+#    不是分段读数给的（它只报「出现过哪几种」，不报条数）。这些条数**没有判据守着**，下次重跑
+#    对不上也不会红 —— 立得住、也被守着的是下面那四行。
+#
+# ⚠️ 限定：探针只驱动**标题页**，这份读数直接管的是 StartPanel.tsx 那一支；App.tsx 四块宿主仍是推理
+#    （同一个 JFrame 里 CardLayout 的几块面板，「到不到得了这个窗口」由操作系统按窗口定）。
+PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300
+RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=1254,250
+PRESSED btn=3 mex=0x1000 src=start.StartPanel xy=600,300
+RELEASED btn=3 mex=0x100 src=start.StartPanel xy=660,360

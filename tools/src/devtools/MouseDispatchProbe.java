@@ -47,7 +47,7 @@ import main.GameLauncher;
  *
  * <h2>复现（仓库根目录）</h2>
  *
- * 别手工拼：整套（编译、权限预检、四组序列、三轮、与期望读数对账）都在
+ * 别手工拼：整套（编译、权限预检、五组序列、三轮、与期望读数对账、分段读数）都在
  *
  * <pre>
  *   tools/mouse-dispatch-probe.sh --dry-run    # 只编译 + 读权限，不碰鼠标
@@ -65,7 +65,8 @@ import main.GameLauncher;
  *
  * <h2>期望读数（xl-zs6，macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致）</h2>
  *
- * 驱动器那四组序列跑完，日志里的按下 / 松手<b>一共六行</b>，去掉时间戳与屏幕坐标之后：
+ * 驱动器的 A / B / B2 / C 四组跑完，日志里的按下 / 松手<b>一共六行</b>，去掉时间戳与屏幕坐标之后
+ * （D 组是后加的，见下一节 —— 它那两行还是预测）：
  *
  * <pre>
  *   PRESSED  btn=1 mex=0x400  src=start.StartPanel   xy=600,300     ← A 对照
@@ -133,6 +134,67 @@ import main.GameLauncher;
  * {@code mex=0x1000}（左键没算成按着）。两者都被判据拦下了，而拦它们的是<b>逐轮</b>的 A 对照与
  * 轮间比对 —— 所以<b>三轮逐字一致这件事本身就是判据的一半</b>，不是装饰。跑它的时候别动鼠标键盘，
  * 也别让别的 agent 同时跑它。
+
+ * <h2>D 组：起 grab 那只键松开之后的拖动（xl-8eg，已量）</h2>
+ *
+ * 上面六行答的是「<b>起 grab 那只键按着</b>拖出去」。xl-df1 之后多出一支没量过的：<b>起 grab
+ * 那只键已经松开、只剩那只在舞台外按下（因而被挡掉）的键还按着</b>，这时候的拖动原版收不收得到。
+ * 两种结果都说得通 —— 操作系统按「哪只键起的那次拖动」派给别的窗口（原版一条都没有），还是
+ * 仍按窗口的隐式 grab 送进来（原版照收）—— 所以不能靠推。
+ *
+ * <p>驱动器为此加了第五组序列（D），分六段打标：
+ *
+ * <pre>
+ *   D0 内按左：在面板里按下，起 grab
+ *   D1 拖出：起 grab 那只键按着          ← 正对照，xl-40m 已量到 DRAGGED 一路 src=start.StartPanel
+ *   D2 外按右、再松左
+ *   D3 拖回：只剩被挡掉的那只键按着      ← 要量的就是这一段
+ *   D4 松右、之后的移动
+ *   D5 面板里按右 → 拖一段 → 松右       ← 第二个正对照：合成的**右键**拖动进不进得来
+ * </pre>
+ *
+ * <p><b>D 组的答案不在上面那份对账里</b>：{@code normalize} 只留按下 / 松手，而这里要的是
+ * {@code DRAGGED}。它由 {@code tools/mouse-dispatch/reckon.py} 按 {@code MARK} 的时间戳分段给出，
+ * 每段只报「出现过哪几种 {@code &lt;事件 btn mex src&gt;}」—— <b>不含计数、不含坐标</b>，因为移动那批的
+ * 条数本来就不稳（见上一段），而零 / 非零与「派给了谁」是稳的。
+ *
+ * <h3>读数（2026-09-16，macOS 24.6.0 + openjdk 17，三轮逐字一致）</h3>
+ *
+ * <pre>
+ *   D0  PRESSED  btn=1 mex=0x400  src=start.StartPanel xy=600,300
+ *   D1  DRAGGED  btn=1 mex=0x400  src=start.StartPanel ×12，xy 一路到 1254,250（中间夹一条 EXITED）
+ *   D2  按右：一条都没有；松左：RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=1254,250
+ *   D3  <b>零条事件</b>，连 ENTERED / MOVED 都没有          ← 本票要的读数
+ *   D4  按下 / 松手一条都没有（只有 ENTERED / MOVED / EXITED）
+ *   D5  PRESSED btn=3 mex=0x1000 / DRAGGED btn=3 mex=0x1000 ×12 / RELEASED btn=3 mex=0x100
+ * </pre>
+ *
+ * <p><b>结论：拖动归「起这次拖动的那只键按下时所在的那个窗口」。</b>起 grab 那只键松开之后只剩
+ * 那只在窗口外按下的键按着时，原版一条都收不到 —— web 侧因此在 {@code App.tsx} 的 {@code onDrag}
+ * 与 {@code StartPanel.tsx} 的 {@code onMove} 上按位图挡住了这一支。
+ * 逐字的那四行在 {@code tools/mouse-dispatch/expected-events-D.txt}，原始日志入库在
+ * {@code tools/mouse-dispatch/replay-fixture/xl-8eg-D组三轮}，可以 {@code --replay} 重放。
+ *
+ * <p>⚠️ <b>D 组只在默认落点（{@code outside-window}）上量过</b>：换 {@code --where} 之后
+ * D 组照样会跑，但那两支没有量过的读数，脚本会把它报成「没核成」（退出码 3），不当成红。
+ *
+ * <p>⚠️ 一条与预测不同、如实记下的：D5 松右的 {@code mex} 是 <b>0x100</b>（{@code META_DOWN_MASK}，
+ * 1&lt;&lt;8），不是 0x0 —— macOS 的 AWT 在右键松手时把老式的 META 修饰位带进了
+ * {@code getModifiersEx}。只是记下来，没有往下追，也没有任何东西依赖它。
+ *
+ * <p>读法与 A 对照同构，而且要<b>两个</b>正对照：D1 只证得了「合成的<b>左</b>键拖动进得了 Java 窗口」，
+ * D3 空着还剩一解 —— 合成的 {@code rightMouseDragged} 在这套 AWT + CGEvent 组合下根本到不了探针
+ * （这件事仓库里从没量过；B / B2 量到的是右键<b>按下</b>）。所以加了 D5：全程在面板里、除右键外
+ * 没有别的键。<b>D1 与 D5 都有 {@code DRAGGED}、而 D3 没有，才叫量到了「原版收不到」</b>；
+ * 缺任一个正对照，D3 那个「没有」都不止一种读法。脚本把这两条都当判据核，核不过整轮 D 组作废。
+ *
+ * <p><b>按下 / 松手那一层的读数单独放</b>：{@code tools/mouse-dispatch/expected-events-D.txt}
+ * （出处与限定跟 {@code expected-events.txt} 那四组不同，所以分两份，报错时各报各的）。
+ *
+ * <p>⚠️ <b>探针只驱动标题页</b>（{@code src=start.StartPanel}）。D 组的读数直接管的是
+ * {@code web/src/start/StartPanel.tsx} 那一支；{@code web/src/app/App.tsx} 的四块宿主仍然是<b>推理</b>
+ * （同一个 {@code JFrame} 里 {@code CardLayout} 的几块面板，「到不到得了这个窗口」由操作系统按窗口定）。
+ * 写回读数时别把这一份当成四块宿主的实测。
  *
  * <h2>⚠️ 这套东西跑不进 CI</h2>
  *

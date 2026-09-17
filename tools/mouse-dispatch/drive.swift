@@ -1,8 +1,13 @@
 // 「舞台外按着键拖进来」那一族票的鼠标序列驱动器（xl-zs6 现搭，xl-sij 收进来，xl-g9w 加落点开关）。
 //
 // 它做两件事：
+//   ⚠️ 探针只驱动**标题页**（src=start.StartPanel）。所以 D 组量到的读数直接管的是
+//      web/src/start/StartPanel.tsx 那一支；web/src/app/App.tsx 那四块宿主仍然是**推理**
+//      （同一个 JFrame 里 CardLayout 的几块面板，「到不到得了这个窗口」由操作系统按窗口定）。
+//      写回读数时别把这一份当成四块宿主的实测。
+//
 //   1. 按 `--where` 选一个「窗口外」的落点（见下面那张表），
-//   2. 用 CGEvent 往 HID tap 上合成四组序列（A 对照 / B / B2 / C，见下），
+//   2. 用 CGEvent 往 HID tap 上合成五组序列（A 对照 / B / B2 / C / D，见下），
 //      让原版那侧的 devtools.MouseDispatchProbe 记下它到底收到了哪几下。
 //
 // ⚠️ 它接管物理鼠标：跑的这十几秒里光标会自己动、会真的按下去。跑之前要先问人。
@@ -40,12 +45,19 @@
 //    构造上就发生不了。而「铺满整块屏幕但仍在同一个 Space 的普通窗口」是另一个 app 的普通窗口，
 //    等价于 outside-window 那一支。⚠️ 这一段是**推理，没量过** —— 标在这里，不要当成读数转抄。
 //
-// 四组序列（每组之间把光标挪回落点、停 0.7 秒，让上一组的状态落定）：
+// 五组序列（每组之间把光标挪回落点、停 0.7 秒，让上一组的状态落定；D 组内部再按段打标，
+// 段间停 0.25 秒 —— 分段读数按 MARK 的时间戳分桶，掉队的事件会被算进下一桶）：
+//
+// ⚠️ **D 组只在默认落点上量过**（xl-8eg）。换 `--where` 之后 D 组照样会跑，但那两支没有量过的
+//    读数，外面的脚本把它报成「没核成」（退出码 3），不当成红。
 //
 //     A  对照：窗口内空白处左键单击                      —— 必须被 start.StartPanel 收到
 //     B  票面顺序：外按左 → 拖进 → 按右 → 松右 → 松左
 //     B2 换松手顺序：外按左 → 拖进 → 按右 → 松左 → 松右
 //     C  外按左 → 拖进 → 只松左
+//     D  内按左 → 拖出 → 外按右 → 松左 → 只剩右键拖回 → 松右，末尾再加一段右键正对照
+//        （xl-8eg；D3 段是要量的，D1 与 D5 两段是它的正对照 —— 一个证左键拖动进得来、
+//         一个证右键拖动进得来，缺任一个，D3 那个「没有」都不止一种读法）
 //
 // 落点 (600,300) 是面板内坐标，离所有按钮都远 —— 标题页上「结」那个按钮会 System.exit。
 //
@@ -229,12 +241,18 @@ func post(_ t: CGEventType, _ p: CGPoint, _ b: CGMouseButton) {
     usleep(80_000)
 }
 func at(_ p: CGPoint, _ dx: Double) -> CGPoint { CGPoint(x: p.x + dx, y: p.y + dx) }
-func dragLeft(from a: CGPoint, to b: CGPoint) {
+// 12 步匀速拖一段。⚠️ 拖动的事件类型要跟**当前按着的那只键**走（macOS 分
+// leftMouseDragged / rightMouseDragged / otherMouseDragged），传错了合成出来的是另一件事。
+func drag(_ type: CGEventType, _ button: CGMouseButton, from a: CGPoint, to b: CGPoint) {
     for i in 1...12 {
         let t = Double(i) / 12
-        post(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t), .left)
+        post(type, CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t), button)
     }
 }
+func dragLeft(from a: CGPoint, to b: CGPoint) { drag(.leftMouseDragged, .left, from: a, to: b) }
+// 分组之间停一下，让上一段的事件在下一个 MARK 之前落定 —— 对账是按 MARK 的时间戳
+// 分桶的（tools/mouse-dispatch/reckon.py），掉队的事件会被算进下一桶。
+func settlePhase() { usleep(250_000) }
 func settleOutside() { post(.mouseMoved, O, .left); usleep(700_000) }
 
 DispatchQueue.global().async {
@@ -259,6 +277,45 @@ DispatchQueue.global().async {
     mark("C：外按左 → 拖进 → 松左")
     post(.leftMouseDown, O, .left); dragLeft(from: O, to: P); post(.leftMouseUp, P, .left)
     post(.mouseMoved, at(P, 3), .left); post(.mouseMoved, at(P, 6), .left)
+    settleOutside()
+
+    // D 组（xl-8eg）：**起 grab 那只键松开后、只剩那只被挡掉的键按着时的拖动**，原版收不收得到。
+    // 分五段打标，因为其中两段互为对照：
+    //   D1 起 grab 那只键（左，按在面板**里**）按着拖出去 —— 已量过：越界 DRAGGED 一路
+    //      src=start.StartPanel（xl-40m / xl-bg3），所以它是**这一轮的正对照**；
+    //   D3 右键在外窗上按下、左键松开之后，只剩右键按着拖回面板 —— **本票要量的就是这一段**。
+    //   D5 面板里按右 → 拖一段 → 松右（全程在面板里）—— 证「合成的**右键**拖动进得了 Java」。
+    // D1 与 D5 都有 DRAGGED 而 D3 没有，才叫量到了「原版收不到」；缺任一个正对照，D3 那个
+    //「没有」就不止一种读法（事件压根没进来 / 右键拖动这套组合本来就到不了）。
+    // ⚠️ D3 的读数**没有期望值**：两种结果都说得通，这一趟就是去取它的
+    //（见 tools/mouse-dispatch/expected-events-D.txt）。
+    mark("D0 内按左：在面板里按下，起 grab")
+    post(.mouseMoved, P, .left); post(.leftMouseDown, P, .left)
+    settlePhase()
+    mark("D1 拖出：起 grab 那只键按着（正对照，已量过 xl-40m）")
+    dragLeft(from: P, to: O)
+    settlePhase()
+    mark("D2 外按右、再松左：外窗上按下第二个键，然后松掉起 grab 那只键")
+    post(.rightMouseDown, O, .right); post(.leftMouseUp, O, .left)
+    settlePhase()
+    mark("D3 拖回：只剩被挡掉的那只键按着（xl-8eg 要量的就是这一段）")
+    drag(.rightMouseDragged, .right, from: O, to: P)
+    settlePhase()
+    mark("D4 松右、之后的移动")
+    post(.rightMouseUp, P, .right)
+    post(.mouseMoved, at(P, 3), .left); post(.mouseMoved, at(P, 6), .left)
+    settleOutside()
+
+    // D5 是 D3 的**第二个正对照，管另一件事**：D1 只证「合成的**左**键拖动进得了 Java 窗口」。
+    // D3 空着还有一解 —— 合成的 rightMouseDragged 在这套 AWT + CGEvent 组合下根本到不了探针
+    //（仓库里从没量过右键的拖动；B / B2 量到的是右键**按下**，而且那一下按在窗口里）。
+    // 这一段全程在面板里、除右键外没有别的键按着：它有 DRAGGED 而 D3 没有，「原版收不到」才立得住。
+    // 落点 at(P,60) = 面板内 (660,360)，四个按钮的命中框在 x 185–235 与 785–835，都不沾。
+    mark("D5 右键正对照：面板里按右 → 拖一段 → 松右（全程在面板里，没有别的键）")
+    post(.mouseMoved, P, .right); post(.rightMouseDown, P, .right)
+    drag(.rightMouseDragged, .right, from: P, to: at(P, 60))
+    post(.rightMouseUp, at(P, 60), .right)
+    post(.mouseMoved, at(P, 63), .left)
     settleOutside()
 
     mark("END")

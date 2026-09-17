@@ -504,11 +504,16 @@ describe('App 的 mouse grab：舞台外按下的第二个键（xl-df1）', () =
   /** 舞台里、宿主外的一处落点（overlay 盖着的地方）；舞台外的那一处在 x=1100，舞台宽 1024。 */
   const IN_STAGE_OFF_HOST = { clientX: 500, clientY: 300 }
   const OUTSIDE_STAGE = { clientX: 1100, clientY: 20 }
+  /**
+   * 第五列是这块宿主**拖动**那一路的出口名：菜单的 `mouseMoved` 与 `mouseDragged` 在原版里
+   * 逐字相同，所以它送的是 `move`，另外三块送 `drag`（见 `docs/web-primitives.md` 的台账）。
+   * 写进表里而不是在断言里分支 —— 猜错一块就红，而不是被一句 `toContain` 盖过去。
+   */
   const HOSTS = [
-    ['战斗画布', 'battle', 'battle-host', battleMouse],
-    ['存读档面板', 'ls', 'ls-host', lsInput],
-    ['菜单', 'menu', 'menu-host', menuInput],
-    ['店', 'shop', 'shop-host', shopInput],
+    ['战斗画布', 'battle', 'battle-host', battleMouse, 'drag'],
+    ['存读档面板', 'ls', 'ls-host', lsInput, 'drag'],
+    ['菜单', 'menu', 'menu-host', menuInput, 'move'],
+    ['店', 'shop', 'shop-host', shopInput, 'drag'],
   ] as const
 
   const startGrab = (p: Panel, host: string) => {
@@ -520,7 +525,7 @@ describe('App 的 mouse grab：舞台外按下的第二个键（xl-df1）', () =
     return el
   }
 
-  for (const [name, p, host, spy] of HOSTS) {
+  for (const [name, p, host, spy, dragOut] of HOSTS) {
     it(`${name}：舞台外按下右键 —— 按下与它的松手都不送，起 grab 那只键的松手照送（先松舞台外那只）`, () => {
       startGrab(p, host)
       fireEvent.mouseDown(document.body, { ...OUTSIDE_STAGE, button: 2, buttons: 3 })
@@ -553,6 +558,37 @@ describe('App 的 mouse grab：舞台外按下的第二个键（xl-df1）', () =
       // 右键在窗口外松开，这里一个事件都没有；回来头一下没按键的移动。
       fireEvent.mouseMove(document.body, { clientX: 200, clientY: 210, buttons: 0 })
       expect(spy.mock.calls.map(([i]) => i.e), '给舞台外那只键补了一次原版根本没有的松手').toEqual(['press', 'release'])
+    })
+
+    /**
+     * 起 grab 那只键松开之后、**只剩那只被挡掉的键还按着**时的拖动（xl-8eg）。读数与两个正对照
+     * 见 `start/StartPanel.test.tsx` 里同名的那一条 —— 实测 D3 段 **Java 侧零条事件**，三轮一致。
+     * ⚠️ 探针只驱动**标题页**，这四块宿主同样没有各自复量过（与上面那几条同一句限定）。
+     */
+    it(`${name}：起 grab 那只键松开后、只剩舞台外按下的那只按着 —— 这时的拖动一条都不送`, () => {
+      startGrab(p, host)
+      fireEvent.mouseDown(document.body, { ...OUTSIDE_STAGE, button: 2, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 0, buttons: 2 })
+      fireEvent.mouseMove(document.body, { clientX: 300, clientY: 310, buttons: 2 })
+      expect(spy.mock.calls.map(([i]) => i), '只剩被挡掉那只键按着的拖动被送了').toEqual([
+        { e: 'press', x: 20, y: 20 },
+        { e: 'release', x: 50, y: 60 },
+      ])
+    })
+
+    it(`${name}：对照 —— 第二个键按在舞台里，松掉起 grab 那只之后的拖动照送`, () => {
+      startGrab(p, host)
+      fireEvent.mouseDown(document.body, { ...IN_STAGE_OFF_HOST, button: 2, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 0, buttons: 2 })
+      // ⚠️ 这一支没量过（D 组量的是被挡掉的那只键），按 `isMouseGrab` 推。它守的是「别改过头」：
+      // 上面那条只该挡住位图为空那一支。
+      fireEvent.mouseMove(document.body, { clientX: 300, clientY: 310, buttons: 2 })
+      expect(spy.mock.calls.map(([i]) => i), '舞台里按下的那只键还按着，拖动却被挡掉了').toEqual([
+        { e: 'press', x: 20, y: 20 },
+        { e: 'press', x: 500, y: 300 },
+        { e: 'release', x: 50, y: 60 },
+        { e: dragOut, x: 300, y: 310 },
+      ])
     })
 
     it(`${name}：对照 —— 第二个键按在舞台里、宿主外，按下与松手都照送`, () => {
