@@ -341,8 +341,10 @@ fi
 
 # 换落点之后，**派给原版那块窗口的行**跟默认落点比是相同还是不同 —— 这一票（xl-g9w）问的就是这个。
 # 不把「不同」做成硬失败：不同本身是个结论，不是故障；而「读数变了」那一半由上面各自的期望读数对账挡着。
-# ⚠️ 滤掉的是驱动 / 探针自己那块「窗口外」的窗口（same-app-window 那一支是 javax.swing.JFrame），
-#    剩下的才是原版窗口收到的。
+# ⚠️ 滤掉的是探针自己那块「窗口外」的窗口收到的行，剩下的才是原版窗口收到的。
+#    **那个类名不写死在这里，由探针自己报**（日志里的 SAMEAPPCLASS 一行）—— 写死的话，
+#    探针那边一换窗口类，滤不掉的行就被当成「原版收到的」，而那份输出**看起来仍然正常**
+#    （/code-review Spec 轴逮到的）。报不出来就硬失败，不退回一个猜出来的类名。
 #
 # ⚠️ **两条纪律，都是这一段头一版没做到、被 /code-review 逮回来的**（与上面那句结论话术一模一样的毛病）：
 #   1. **这一趟有红的时候，这句话不是结论。** 头一版只看 normal1.txt 存不存在、不看 $fail，
@@ -357,10 +359,30 @@ if [ "$where" != outside-window ]; then
     echo "⚠️ 这一趟有红的（见上面），所以下面这条比对**不是结论** —— 先把红的弄清楚再看它。"
   fi
   differ=0
+  skipped=0
   r=1
   while [ "$r" -le "$rounds" ]; do
-    # `|| true`：一行都没滤剩时 grep 退出 1，set -e 会当场退出，下面那几句就永远打不出来。
-    grep -v 'src=javax\.swing\.JFrame' "$outdir/normal${r}.txt" > "$outdir/original-window${r}.txt" || true
+    # 探针那块窗口的组件类名：现读，读不到就硬失败。
+    # `|| true` + 空判：grep 没匹配到时退出 1，set -e 会当场把脚本杀掉，下面那句话就永远打不出来。
+    outside_class=""
+    if [ "$where" = same-app-window ]; then
+      src_log="${replay:-$outdir}/events${r}.log"
+      outside_class="$(grep -m1 '^SAMEAPPCLASS ' "$src_log" | cut -d' ' -f2 || true)"
+      if [ -z "$outside_class" ]; then
+        # 读不到就**跳过这一条，并且不给结论** —— 不猜一个类名顶上。
+        # 「跳过」与「相同」长得不一样：跳过会打这句话，而 ⇒ 结论那一行根本不出现。
+        echo "⚠️ 第 ${r} 轮：${src_log} 里没有 SAMEAPPCLASS 那一行，不知道该滤掉哪块窗口的行 ——" >&2
+        echo "   这一条比对**没核**（不是「相同」）。多半是旧版本探针出的日志；重跑一趟就有了。" >&2
+        skipped=1
+        r=$((r + 1))
+        continue
+      fi
+    fi
+    if [ -n "$outside_class" ]; then
+      grep -v "src=${outside_class} " "$outdir/normal${r}.txt" > "$outdir/original-window${r}.txt" || true
+    else
+      cp "$outdir/normal${r}.txt" "$outdir/original-window${r}.txt"
+    fi
     if diff -u "$outdir/baseline-expected.txt" "$outdir/original-window${r}.txt" > "$outdir/diff-vs-outside-window-${r}.txt"; then
       echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window${r}.txt" | tr -d ' ') 行与 outside-window 的期望读数**逐字相同**。"
     else
@@ -370,7 +392,9 @@ if [ "$where" != outside-window ]; then
     fi
     r=$((r + 1))
   done
-  if [ "$fail" = 0 ]; then
+  if [ "$fail" = 0 ] && [ "$skipped" != 0 ]; then
+    echo "⇒ 没有结论：有轮次的比对没核成（见上面的 ⚠️）。"
+  elif [ "$fail" = 0 ]; then
     if [ "$differ" = 0 ]; then
       echo "⇒ 结论：${rounds} 轮都一样 —— **换落点不改结论**。"
     else

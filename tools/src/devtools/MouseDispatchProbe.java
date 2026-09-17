@@ -238,6 +238,10 @@ public class MouseDispatchProbe {
                 throw new RuntimeException(ex);
             }
             out.println("SAMEAPP " + b.x + "," + b.y + " " + b.width + "x" + b.height);
+            // 把这块窗口的**组件类名**自己写出去：对账时要把它收到的行滤掉、只留原版窗口那几行，
+            // 而把类名写死在外面的脚本里的话，这里一换类，滤不掉的行就被当成「原版收到的」——
+            // 而那份输出**看起来仍然正常**。于是让它自己报名，外面现读。
+            out.println("SAMEAPPCLASS " + f.getClass().getName());
         });
     }
 
