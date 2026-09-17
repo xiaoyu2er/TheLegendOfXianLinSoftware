@@ -2,11 +2,15 @@ package devtools;
 
 import java.awt.AWTEvent;
 import java.awt.EventQueue;
+import java.awt.GraphicsEnvironment;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.event.MouseEvent;
 import java.io.FileWriter;
 import java.io.PrintWriter;
+
+import javax.swing.JFrame;
 
 import main.GameLauncher;
 
@@ -30,7 +34,7 @@ import main.GameLauncher;
  * <h2>怎么量</h2>
  *
  * <pre>
- *   devtools.MouseDispatchProbe &lt;事件日志&gt; &lt;几何文件&gt;
+ *   devtools.MouseDispatchProbe &lt;事件日志&gt; &lt;几何文件&gt; [&lt;另一块窗口的几何文件&gt;]
  * </pre>
  *
  * 每一个 {@code MOUSE_EVENT_MASK | MOUSE_MOTION_EVENT_MASK} 的事件写一行：
@@ -98,14 +102,47 @@ import main.GameLauncher;
  * 它是组件内坐标：{@code 600,300} 与 {@code 600,328} 差的 28 是面板在窗口里的纵向偏移，
  * 与窗口落点无关。
  *
- * <h2>D 组：还没量的那一支（xl-8eg）</h2>
+ * <h2>换落点：量过哪几支、结论变没变（xl-g9w）</h2>
+ *
+ * 上面那份读数有一条限定：「窗口外」是<b>驱动器自己开的那块空白窗口</b>（另一个 app 的普通窗口）。
+ * {@code drive --where} 现在能换落点，三支的处境各不相同：
+ *
+ * <ul>
+ *   <li><b>{@code outside-window}（默认）</b> —— 就是 xl-zs6 量的那一种。</li>
+ *   <li><b>{@code same-app-window} —— 量过了，结论<b>相同</b></b>（macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致）。
+ *       这一支的「窗口外」是<b>同一个 JVM 自己多开的另一块 {@link javax.swing.JFrame}</b>（由
+ *       {@link #openSameAppWindow} 开，位置尺寸与驱动器那块一样），于是两支只差一件事：那块窗口归谁。
+ *       把读数里 {@code src} 是那块 {@code JFrame} 的行滤掉，<b>剩下的六行与上面那六行逐字相同</b>
+ *       （实跑 {@code diff} 退出码 0，不是看着像；脚本跑完会把这一条当场打出来）。也就是说：
+ *       左键那一下的按下 / 松手 / 整段 {@code DRAGGED} <b>照样一次都不到原版窗口</b>，右键那两下照样停在
+ *       {@code main.GameLauncher}。不同的只有<b>那块 {@code JFrame} 自己</b>收到了那几下（连松手也归它，
+ *       {@code xy} 是它自己坐标系里的负数）。逐字读数与读法在
+ *       {@code tools/mouse-dispatch/expected-events-same-app-window.txt}。
+ *       对 web 端的意思：{@code grabbedElsewhere} 押的那个口径在同一个 app 的另一块窗口上也成立。</li>
+ *   <li><b>{@code desktop} —— 还没量过。</b> 驱动器会现扫一个「周围 30 像素内无窗口」的点，
+ *       主屏被最大化窗口铺满时它<b>硬失败</b>并把挡路的窗口列出来（2026-09-16 当场就是这个处境）。
+ *       不硬挑一个点，是因为挑错了会落在别人的窗口上，<b>而那份读数看起来仍然正常</b>。
+ *       借鼠标之前可以先用 {@code tools/mouse-dispatch-probe.sh --check-point --where desktop} 问清楚。</li>
+ *   <li><b>原生全屏 app —— 构造上量不了。</b> macOS 把全屏的 app 放进<b>自己的 Space</b>，
+ *       原版窗口同时不在屏幕上，「在外面按下、拖进原版窗口」发生不了；而「铺满屏幕但仍在同一个
+ *       Space 的普通窗口」等价于 {@code outside-window} 那一支。<b>⚠️ 这一条是推理，没量过。</b></li>
+ * </ul>
+ *
+ * <h2>⚠️ 它不是每一轮都量得到（xl-g9w 实测）</h2>
+ *
+ * 13 轮里有 2 轮被别的窗口抢走了焦点：一轮整轮<b>零事件</b>，一轮的 B 组读到
+ * {@code mex=0x1000}（左键没算成按着）。两者都被判据拦下了，而拦它们的是<b>逐轮</b>的 A 对照与
+ * 轮间比对 —— 所以<b>三轮逐字一致这件事本身就是判据的一半</b>，不是装饰。跑它的时候别动鼠标键盘，
+ * 也别让别的 agent 同时跑它。
+
+ * <h2>D 组：起 grab 那只键松开之后的拖动（xl-8eg，已量）</h2>
  *
  * 上面六行答的是「<b>起 grab 那只键按着</b>拖出去」。xl-df1 之后多出一支没量过的：<b>起 grab
  * 那只键已经松开、只剩那只在舞台外按下（因而被挡掉）的键还按着</b>，这时候的拖动原版收不收得到。
  * 两种结果都说得通 —— 操作系统按「哪只键起的那次拖动」派给别的窗口（原版一条都没有），还是
  * 仍按窗口的隐式 grab 送进来（原版照收）—— 所以不能靠推。
  *
- * <p>驱动器为此加了第五组序列（D），分五段打标：
+ * <p>驱动器为此加了第五组序列（D），分六段打标：
  *
  * <pre>
  *   D0 内按左：在面板里按下，起 grab
@@ -135,7 +172,11 @@ import main.GameLauncher;
  * <p><b>结论：拖动归「起这次拖动的那只键按下时所在的那个窗口」。</b>起 grab 那只键松开之后只剩
  * 那只在窗口外按下的键按着时，原版一条都收不到 —— web 侧因此在 {@code App.tsx} 的 {@code onDrag}
  * 与 {@code StartPanel.tsx} 的 {@code onMove} 上按位图挡住了这一支。
- * 逐字的那四行在 {@code tools/mouse-dispatch/expected-events-D.txt}。
+ * 逐字的那四行在 {@code tools/mouse-dispatch/expected-events-D.txt}，原始日志入库在
+ * {@code tools/mouse-dispatch/replay-fixture/xl-8eg-D组三轮}，可以 {@code --replay} 重放。
+ *
+ * <p>⚠️ <b>D 组只在默认落点（{@code outside-window}）上量过</b>：换 {@code --where} 之后
+ * D 组照样会跑，但那两支没有量过的读数，脚本会把它报成「没核成」（退出码 3），不当成红。
  *
  * <p>⚠️ 一条与预测不同、如实记下的：D5 松右的 {@code mex} 是 <b>0x100</b>（{@code META_DOWN_MASK}，
  * 1&lt;&lt;8），不是 0x0 —— macOS 的 AWT 在右键松手时把老式的 META 修饰位带进了
@@ -180,8 +221,8 @@ import main.GameLauncher;
 public class MouseDispatchProbe {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 2) {
-            System.err.println("用法：devtools.MouseDispatchProbe <事件日志> <几何文件>");
+        if (args.length != 2 && args.length != 3) {
+            System.err.println("用法：devtools.MouseDispatchProbe <事件日志> <几何文件> [另一块窗口的几何文件]");
             System.exit(2);
         }
         // autoFlush：进程是被外面 kill 掉的，缓冲住的行会连同「到底收到没有」一起丢掉，
@@ -209,6 +250,60 @@ public class MouseDispatchProbe {
                 throw new RuntimeException(ex);
             }
             out.println("GEOMETRY " + p.x + "," + p.y + " " + w + "x" + h);
+        });
+
+        if (args.length == 3) {
+            openSameAppWindow(args[2], out);
+        }
+    }
+
+    /**
+     * 开一块**同一个 JVM 的另一个顶层窗口**，把它的屏幕几何写进 {@code path}（{@code x y 宽 高}）。
+     *
+     * <p>给 {@code drive --where same-app-window} 用：那一下「窗口外」的按下落在这块窗口上。
+     * 它与 {@code drive} 自己开的那块空白窗口**位置与尺寸完全一样**（面板右边 80 像素、下移 100、300x300），
+     * 于是两支只差一件事：那块窗口归谁。
+     *
+     * <p>⚙️ 它不改 {@code src/}：只是在同一个 JVM 里多开一块与原版无关的 {@link JFrame}。
+     *
+     * <p>❗ 落不进屏幕、或者与面板叠在一起了，就**硬失败**—— 叠上了的话那一下按下
+     * 落在哪一块由 z 序定，而那份读数**看起来仍然是一份正常的读数**。
+     */
+    static void openSameAppWindow(String path, PrintWriter out) throws Exception {
+        EventQueue.invokeAndWait(() -> {
+            Point p = GameLauncher.startPanel.getLocationOnScreen();
+            int x = p.x + GameLauncher.startPanel.getWidth() + 80;
+            int y = p.y + 100;
+            JFrame f = new JFrame("xl-g9w same-app outside");
+            f.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+            f.setBounds(x, y, 300, 300);
+            f.setVisible(true);
+            Rectangle b = f.getBounds();
+            Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                    .getDefaultScreenDevice().getDefaultConfiguration().getBounds();
+            Rectangle panel = new Rectangle(p.x, p.y,
+                    GameLauncher.startPanel.getWidth(), GameLauncher.startPanel.getHeight());
+            // ⚙️ 这两条用 System.exit 而不是抛：抛出去只是让 main 挂掉，而 EDT 不是守护线程，
+            // JVM 照活着 —— 外面的脚本只会干等 30 秒再报「原版多半没起来」，
+            //    与真的没起来同形。（脚本那边同时加了一条：进程没了就当场报，不等超时。）
+            if (!screen.contains(b)) {
+                System.err.println("另一块窗口 " + b + " 没完全落在屏幕 " + screen + " 里");
+                System.exit(2);
+            }
+            if (b.intersects(panel)) {
+                System.err.println("另一块窗口 " + b + " 与面板 " + panel + " 叠在一起了 —— 这一下按下落在哪一块说不准");
+                System.exit(2);
+            }
+            try (PrintWriter g = new PrintWriter(new FileWriter(path))) {
+                g.println(b.x + " " + b.y + " " + b.width + " " + b.height);
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+            out.println("SAMEAPP " + b.x + "," + b.y + " " + b.width + "x" + b.height);
+            // 把这块窗口的**组件类名**自己写出去：对账时要把它收到的行滤掉、只留原版窗口那几行，
+            // 而把类名写死在外面的脚本里的话，这里一换类，滤不掉的行就被当成「原版收到的」——
+            // 而那份输出**看起来仍然正常**。于是让它自己报名，外面现读。
+            out.println("SAMEAPPCLASS " + f.getClass().getName());
         });
     }
 
