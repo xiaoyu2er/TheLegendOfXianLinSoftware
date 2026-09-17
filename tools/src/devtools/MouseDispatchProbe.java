@@ -81,8 +81,13 @@ import main.GameLauncher;
  *   <li><b>右键那两下有行，而 {@code src} 是 {@code main.GameLauncher} 不是
  *       {@code start.StartPanel}</b> —— 到了窗口，但 {@code isMouseGrab} 为真、目标仍是 null，
  *       没转派给面板；</li>
- *   <li><b>C 组（只松左键）一行都没有</b>，连 {@code DRAGGED} 都没有，只来一个
- *       {@code ENTERED}（原版的 {@code MouseAdapter} 没接）。</li>
+ *   <li><b>C 组（只松左键）按下 / 松手一行都没有</b>，连 {@code DRAGGED} 都没有 —— 那一组里
+ *       Java 侧只收到了 {@code ENTERED}、几行松手之后的 {@code MOVED} 与一个 {@code EXITED}
+ *       （原版的 {@code MouseAdapter} 没接 {@code ENTERED}）。⚠️ xl-zs6 的关票理由里那句
+ *       「只来一个 {@code ENTERED}」按字面复核对不上：那一轮 C 组还跟着四行 {@code MOVED}
+ *       与一行 {@code EXITED}，而 xl-sij 重跑时是<b>三行</b> —— 成立的是「按下 / 松手与
+ *       {@code DRAGGED} 一个都没有」。移动那批的条数本来就不稳（系统会合并），这也是
+ *       对账只取按下 / 松手的第二个理由。</li>
  * </ul>
  *
  * <p>屏幕坐标与 {@code MOVED} / {@code ENTERED} / {@code EXITED} / {@code CLICKED} 那些行

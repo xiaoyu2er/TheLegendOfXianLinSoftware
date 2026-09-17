@@ -27,19 +27,22 @@
 # tools/mouse-dispatch/expected-events.txt，跑完自动对账；读法与限定见
 # tools/src/devtools/MouseDispatchProbe.java 的类注释。
 set -euo pipefail
+OLDPWD_AT_START="$PWD"
 cd "$(dirname "$0")/.."
 : "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
 
 dry=0; yes=0; rounds=3; outdir=""
+# ⚠️ 带值的参数要自己检查值在不在：写成 `shift; rounds="${1:-}"` 再靠末尾那个 shift，
+# 值缺失时 set -e 会在那个 shift 上先退出，下面那句「要一个正整数」**永远打不出来** ——
+# 静默 exit 1 与「参数校验响了」长得不一样，但与「别的什么东西挂了」长得一样。
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dry-run) dry=1 ;;
-    --yes) yes=1 ;;
-    --rounds) shift; rounds="${1:-}" ;;
-    --out) shift; outdir="${1:-}" ;;
+    --dry-run) dry=1; shift ;;
+    --yes) yes=1; shift ;;
+    --rounds) [ $# -ge 2 ] || { echo "--rounds 后面要跟一个正整数" >&2; exit 2; }; rounds="$2"; shift 2 ;;
+    --out) [ $# -ge 2 ] || { echo "--out 后面要跟一个目录" >&2; exit 2; }; outdir="$2"; shift 2 ;;
     *) echo "不认识的参数：${1}，只接受 --dry-run / --yes / --rounds N / --out 目录" >&2; exit 2 ;;
   esac
-  shift
 done
 case "$rounds" in ''|*[!0-9]*) echo "--rounds 要一个正整数，收到：${rounds}" >&2; exit 2 ;; esac
 [ "$rounds" -ge 1 ] || { echo "--rounds 至少是 1" >&2; exit 2; }
@@ -47,8 +50,24 @@ case "$rounds" in ''|*[!0-9]*) echo "--rounds 要一个正整数，收到：${ro
 EXPECTED=tools/mouse-dispatch/expected-events.txt
 [ -f "$EXPECTED" ] || { echo "找不到期望读数：${EXPECTED}" >&2; exit 1; }
 
-if [ -z "$outdir" ]; then outdir="$(mktemp -d -t xl-mouse-dispatch)"; fi
+# ⚠️ 上面已经 cd 到仓库根了，所以 --out 给的相对路径要按**调用者的 cwd**解回来，
+# 否则 `--out out/` 会静悄悄落在仓库根下面，而不是你以为的那个目录。
+if [ -z "$outdir" ]; then
+  outdir="$(mktemp -d -t xl-mouse-dispatch)"
+else
+  case "$outdir" in /*) ;; *) outdir="$OLDPWD_AT_START/$outdir" ;; esac
+fi
 mkdir -p "$outdir"
+outdir="$(cd "$outdir" && pwd)"
+
+# 期望读数里 # 开头的是出处与读法，滤掉再对账。
+# 放在这里（而不是跑之前那一步）是为了：期望读数本身不成立的话，别先把鼠标借走。
+EXP="$outdir/expected.txt"
+# `|| true`：一条都没滤出来时 grep 退出 1，set -e 会当场退出，下面那句守卫就**永远打不出来** ——
+# 那是一个没有任何输出的 exit 1，与「别的什么东西挂了」分不开。
+grep -v '^#' "$EXPECTED" > "$EXP" || true
+[ -s "$EXP" ] || { echo "期望读数里一条都没有（${EXPECTED} 全是注释？）" >&2; exit 1; }
+
 
 echo "[1/4] 编译原版 + 探针（tools/build.sh）…"
 tools/build.sh >/dev/null
@@ -100,11 +119,6 @@ normalize() {  # normalize <原始日志>
   sed -n -E 's/^[0-9]+ (PRESSED|RELEASED) (.*) scr=[0-9-]+,[0-9-]+$/\1 \2/p' "$1"
 }
 
-# 期望读数里 # 开头的是出处与读法，滤掉再对账。
-EXP="$outdir/expected.txt"
-grep -v '^#' "$EXPECTED" > "$EXP"
-[ -s "$EXP" ] || { echo "期望读数里一条都没有（${EXPECTED} 全是注释？）" >&2; exit 1; }
-
 echo "[4/4] 跑 ${rounds} 轮…"
 for r in $(seq 1 "$rounds"); do
   log="$outdir/events${r}.log"; geo="$outdir/geometry${r}.txt"
@@ -136,6 +150,12 @@ for r in $(seq 1 "$rounds"); do
   wait "$game" 2>/dev/null || true
 
   normalize "$log" > "$outdir/normal${r}.txt"
+  # ⚠️ 归一化那条 sed 匹配不到任何东西时也是「零行 + 退出码 0」，与「一行事件都没收到」
+  # 产出同一个空文件。两者的成因完全不同（日志格式漂了 vs 合成事件被丢了），分开报。
+  if [ ! -s "$outdir/normal${r}.txt" ] && [ -s "$log" ]; then
+    echo "  ⚠️ 第 ${r} 轮：原始日志有 $(wc -l < "$log" | tr -d ' ') 行，归一化后一条都不剩 ——" >&2
+    echo "     多半是探针的输出格式变了（normalize 那条 sed 对不上），不是没收到事件。" >&2
+  fi
   echo "  第 ${r} 轮：$(wc -l < "$outdir/normal${r}.txt" | tr -d ' ') 行按下/松手 · $(head -c 200 "$geo" | tr -d '\n') · $log"
 done
 
@@ -144,7 +164,7 @@ fail=0
 # A 对照：头两行必须是左键那一对、且派给了 start.StartPanel。
 # 这条单列出来，是因为「一行都没有」有两个成因（权限没给 / 原版真收不到），
 # 直接丢给 diff 的话两者读起来一样。
-a_head="$(head -2 "$outdir/normal1.txt" || true)"
+a_head="$(head -2 "$outdir/normal1.txt")"
 expected_a="$(head -2 "$EXP")"
 if [ "$a_head" != "$expected_a" ]; then
   echo >&2
@@ -159,7 +179,7 @@ fi
 # 轮与轮之间：确定性。
 # ⚠️ 这里不用 $(seq 2 "$rounds")：macOS 的 seq 在 first > last 时**倒着数**（`seq 2 1`
 # 打 "2 1"，退出码 0），于是 --rounds 1 会拿第 1 轮去跟一份根本不存在的第 2 轮比，
-# 凭空多出一条 ❌。实测撞到过（xl-sij 的 T1/T2/T4 三轮篡改里都带着这条假红）。
+# 凭空多出一条 ❌。xl-sij 那趟三次 --rounds 1 的篡改跑里都带着这条假红（读数在 xl-sij 的 bd 评论里）。
 r=2
 while [ "$r" -le "$rounds" ]; do
   if ! diff -u "$outdir/normal1.txt" "$outdir/normal${r}.txt" > "$outdir/diff1-${r}.txt"; then

@@ -59,7 +59,13 @@ guard geo.count == 4 else {
     FileHandle.standardError.write("几何文件要四个数（x y 宽 高），读到 \(geo.count) 个\n".data(using: .utf8)!)
     exit(2)
 }
-let (px, py, pw) = (geo[0], geo[1], geo[2])
+let (px, py, pw, ph) = (geo[0], geo[1], geo[2], geo[3])
+// 落点写死在面板内的 (600,300)，所以面板本身得比它大 —— 面板小了的话光标会落到窗口外，
+// 量出来的是另一件事，而那份读数**看起来仍然是一份正常的读数**。
+guard 600 < pw, 300 < ph else {
+    FileHandle.standardError.write("面板只有 \(pw)x\(ph)，装不下落点 (600,300)\n".data(using: .utf8)!)
+    exit(2)
+}
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)

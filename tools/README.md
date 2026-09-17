@@ -22,7 +22,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # build.sh 默认就是这个路
 | `tools/export-trace.sh [名字…] [--check]` | 在原版上执行声明式剧本，逐 tick 导出行为真值到 `tools/traces/out/`；`--check` 跑两遍验证逐字节一致 |
 | `tools/compare-frames.sh [名字…]` | 跨端逐帧比对：同一份剧本在原版与 Web 版各出 N 帧，逐帧算差异，报告首个偏离帧号；`--self-check` 故意改坏一处渲染验流水线响不响。见 `docs/frame-compare.md` |
 | `tools/speed-probe.sh [倍率…]` | 两端时间加速倍率的墙钟线性度实测 |
-| `tools/mouse-dispatch-probe.sh [--dry-run]` | 原版鼠标事件派发探针：合成「舞台外按着键拖进来」那一族的序列，量原版到底收没收到、派给了谁。**接管物理鼠标、要辅助功能授权、跑不进 CI**，见下 |
+| `tools/mouse-dispatch-probe.sh [--dry-run\|--yes\|--rounds N\|--out 目录]` | 原版鼠标事件派发探针：合成「舞台外按着键拖进来」那一族的序列，量原版到底收没收到、派给了谁。**接管物理鼠标、要辅助功能授权、跑不进 CI**，见下 |
 | `tools/to-webp.sh <src> <dst>` | 把取景器产出的 PNG 批量转 WebP q80 |
 | `tools/bd-spawn.sh <issue-id>…` | 为 issue 开 worktree、认领、在新的 iTerm 标签页启动 Claude 会话 |
 
