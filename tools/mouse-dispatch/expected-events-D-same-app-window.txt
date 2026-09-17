@@ -1,0 +1,28 @@
+# 落点 = 原版那个 JVM 自己多开的另一块 JFrame（`--where same-app-window`）时，
+# **D 组**（xl-8eg 那五段序列）按下 / 松手的实测读数。
+# tools/mouse-dispatch-probe.sh 在 `--where same-app-window` 上拿它单独对账。
+#
+# 读数出处：xl-23v，macOS 24.6.0 + openjdk 17，2026-09-17，三轮逐字一致。
+# 每一段是什么，见 tools/mouse-dispatch/expected-events-D.txt 的头注（默认落点那份）。
+#
+# **与默认落点的关系：不要照头注推，脚本已经逐轮核过了。** 跑 `--where same-app-window` 时打的
+# 那条 📐 比对，基准是 expected-events.txt + expected-events-D.txt 两份接起来的十行；把这块 JFrame
+# 收到的行滤掉之后，**派给原版窗口的十行与那个基准逐字相同**（2026-09-17 三轮都相同，实跑不是看着像）。
+#
+# **不同的只有「另一块窗口自己收到了什么」**（与 expected-events-same-app-window.txt 那一支同理）：
+#
+#   - D2「在外面按右」：那一下右键 PRESSED 落在这块 JFrame 上（xy=150,150 是它自己的中心），
+#     而在默认落点那一支里它**一行都没有**（按在别的 app 的窗口上，Java 根本看不见）；
+#   - D3 段：只剩被挡掉那只键按着拖回面板时，原版那块窗口**一条都收不到** —— 与默认落点相同；
+#     收到拖动的是这块 JFrame（DRAGGED btn=3，见分段读数），因为 grab 归按下时那块窗口；
+#   - D4「松右」：那一下 RELEASED 派给这块 JFrame，xy=-504,200 是**它自己坐标系里的负数**
+#     （松手时光标已经在原版窗口上，可仍旧派给按下时那块窗口）。
+#
+# 对 web 端的意思与 expected-events-same-app-window.txt 那段一样：`grabbedElsewhere` 的口径
+# 在同一个 app 的另一块窗口上也成立 —— 连 D 组这几段也成立。
+PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300
+PRESSED btn=3 mex=0x1400 src=javax.swing.JFrame xy=150,150
+RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=1254,250
+RELEASED btn=3 mex=0x0 src=javax.swing.JFrame xy=-504,200
+PRESSED btn=3 mex=0x1000 src=start.StartPanel xy=600,300
+RELEASED btn=3 mex=0x100 src=start.StartPanel xy=660,360

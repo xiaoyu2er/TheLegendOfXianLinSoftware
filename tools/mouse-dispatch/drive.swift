@@ -19,7 +19,7 @@
 // 用法（由 tools/mouse-dispatch-probe.sh 调，不必手工拼）：
 //
 //     swiftc -O -o <可执行文件> tools/mouse-dispatch/drive.swift
-//     <可执行文件> <几何文件> [--where <落点>] [--outside-geometry <文件>]
+//     <可执行文件> <几何文件> [--where <落点>] [--outside-geometry <文件>] [--outside-point X,Y]
 //     <可执行文件> --preflight          # 只打印两个权限读数就退出，一个事件都不发
 //     <可执行文件> <几何文件> --where <落点> --dry-point
 //                                       # 只把「窗口外」那一下的落点算出来打印，**一下鼠标都不碰**。
@@ -35,6 +35,11 @@
 //     desktop          落在**露出来的桌面**上。本驱动器不开窗；落点由 CGWindowList 现扫出来
 //                      （要求周围 30 像素内没有任何在屏窗口），扫不到就**硬失败**并让人挪窗口 ——
 //                      随便挑一个点的话，很可能落在别人的窗口上，而那份读数**看起来仍然正常**。
+//                      ⚠️ **落点会在轮与轮之间漂**（xl-23v 实测：三轮扫到 3320,1260 / 1220 / 1180，
+//                      每轮往上跳一个 40 像素的扫描格 —— 光标停在右下角之后 Dock 之类的窗口冒了出来）。
+//                      漂了之后 D2「松左」那一行的 xy 跟着变，于是「三轮逐字一致」量的是**扫描器的环境**，
+//                      不是原版的派发。所以 probe.sh 把第 1 轮扫到的点用 `--outside-point` 钉给后面几轮；
+//                      钉住的点**照样校验**，被盖住就硬失败（不是静默漂过去）。
 //     same-app-window  落在**原版自己那个 JVM 开的另一块窗口**上（探针用 --extra-window 开的那块），
 //                      几何由 `--outside-geometry` 给。这一种是三支里唯一可能与另两支**结论不同**的：
 //                      按下落在同一个进程的另一个顶层窗口上，Java 收得到，只是收它的是另一个
@@ -92,6 +97,9 @@ var geoPath: String? = nil
 var whereMode = "outside-window"
 var outsideGeoPath: String? = nil
 var dryPoint = false
+/// 钉住的「窗口外」落点（只对 desktop 有意义）。给了就不再现扫 —— 但**仍然照样校验**它是不是
+/// 露出来的桌面，盖住了就硬失败。理由见 findDesktopPoint 上面那段。
+var outsidePoint: CGPoint? = nil
 var i = 1
 while i < args.count {
     switch args[i] {
@@ -103,6 +111,11 @@ while i < args.count {
         outsideGeoPath = args[i + 1]; i += 2
     case "--dry-point":
         dryPoint = true; i += 1
+    case "--outside-point":
+        guard i + 1 < args.count else { die("--outside-point 后面要跟一个 X,Y") }
+        let parts = args[i + 1].split(separator: ",").compactMap { Double($0) }
+        guard parts.count == 2 else { die("--outside-point 要 X,Y 两个数，收到：\(args[i + 1])") }
+        outsidePoint = CGPoint(x: parts[0], y: parts[1]); i += 2
     default:
         guard geoPath == nil else { die("多余的参数：\(args[i])") }
         geoPath = args[i]; i += 1
@@ -134,8 +147,20 @@ let app = NSApplication.shared
 /// 扫不到就硬失败 —— 随便挑一个点的话多半落在别人的窗口上，而那份读数看起来仍然正常。
 func onScreenWindows() -> [[String: Any]] {
     // .excludeDesktopElements 把桌面自己那块窗口与桌面图标排除在「障碍」之外 —— 它们正是我们要落上去的东西。
-    (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-     as? [[String: Any]]) ?? []
+    let all = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+               as? [[String: Any]]) ?? []
+    // ⚠️ **光标自己也是一块在屏窗口**（owner "Window Server"，约 17x23，跟着光标走），而驱动器
+    //    每一轮结束时正把光标停在落点上 —— 下一轮扫描就把它当成障碍，落点往上让一个 40 像素的格。
+    //    xl-23v 实测到的就是这个：三轮扫到 3320,1260 / 1220 / 1180，单调往上跳，于是 D2「松左」
+    //    那一行的 xy 跟着变、三轮对不上，**读起来像原版的派发不确定**。
+    //    光标层按构造挡不住任何点击（点下去直接穿过去落到底下那块窗口），所以它不是障碍。
+    //    ⚠️ **只排这一层，不排别的**，所以判的是 `!= cursorLevel` 而不是 `< cursorLevel`：光标之上
+    //    还住着别的东西，而它们是真挡得住点击的 —— 实测这台机器上「百度输入法」的候选窗在
+    //    layer 2147483631，比光标还高一层，写成 `<` 就把它一并当成「没挡」了。
+    //    **放宽一个判据与收紧它长得一样，只是方向反了**，而放宽那边的代价是一份落在别人窗口上、
+    //    却看起来完全正常的读数。（实测：`!=` 时 40 块在屏窗口剩 39，`<` 时剩 38。）
+    let cursorLevel = Int(CGWindowLevelForKey(.cursorWindow))
+    return all.filter { (($0[kCGWindowLayer as String] as? Int) ?? 0) != cursorLevel }
 }
 
 /// 扫不到桌面时，把**挡在主屏上的那几块窗口**按面积从大到小列出来（谁的、多大、在哪）。
@@ -153,6 +178,35 @@ func describeBlockers() -> String {
     return rows.prefix(10).map {
         "     \($0.0)  \(Int($0.1.minX)),\(Int($0.1.minY)) \(Int($0.1.width))x\(Int($0.1.height))"
     }.joined(separator: "\n")
+}
+
+/// 一个点周围 `margin` 像素内有没有在屏窗口。扫描与「钉住的点还作不作数」用的是同一段判断 ——
+/// 两边分开写的话，钉住那条路可能比扫描那条路松，而松掉的那份读数看起来仍然正常。
+func isDesktopPoint(_ p: CGPoint, margin: CGFloat) -> Bool {
+    for w in onScreenWindows() {
+        guard let b = w[kCGWindowBounds as String] as? [String: Any],
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
+        if r.insetBy(dx: -margin, dy: -margin).contains(p) { return false }
+    }
+    return true
+}
+
+/// 盖住某个点的窗口**逐块列出来**（谁的、多大、在哪）。
+/// ⚠️ 不要拿 describeBlockers() 顶这件事：它只列面积 > 10 万的大窗口，而盖住一个点的
+/// 常常是一小块（xl-23v 实测：钉住的点被盖住时，describeBlockers 列出来的那一块根本不含那个点）——
+/// **一份不含真凶的挡路名单，与一份正确的名单长得一样**。
+func describeCovering(_ p: CGPoint, margin: CGFloat) -> String {
+    var rows: [String] = []
+    for w in onScreenWindows() {
+        guard let b = w[kCGWindowBounds as String] as? [String: Any],
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
+        if r.insetBy(dx: -margin, dy: -margin).contains(p) {
+            rows.append("     \(w[kCGWindowOwnerName as String] as? String ?? "?")  " +
+                        "\(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height))")
+        }
+    }
+    return rows.isEmpty ? "     （一块都列不出来 —— 那就不是「被盖住」，是这段判断本身错了）"
+                        : rows.joined(separator: "\n")
 }
 
 func findDesktopPoint(margin: CGFloat) -> CGPoint {
@@ -207,7 +261,17 @@ case "outside-window":
     O = CGPoint(x: ox + 150, y: oy + 150)   // 外窗中心
 case "desktop":
     app.setActivationPolicy(.accessory)     // 不开窗，也别在 Dock 里冒出来
-    O = findDesktopPoint(margin: 30)
+    if let pinned = outsidePoint {
+        // 钉住的点**照样校验**：环境在两轮之间变了（Dock 冒出来、别的窗口挪过来）的话，
+        // 这一下就落在别人的窗口上了，而那份读数看起来仍然是一份正常的读数。
+        guard isDesktopPoint(pinned, margin: 30) else {
+            die("钉住的落点 \(Int(pinned.x)),\(Int(pinned.y)) 现在被窗口盖住了 —— 这一下会落在别人的窗口上。\n" +
+                "   盖住它的（周围 \(Int(30)) 像素内）是：\n" + describeCovering(pinned, margin: 30))
+        }
+        O = pinned
+    } else {
+        O = findDesktopPoint(margin: 30)
+    }
 case "same-app-window":
     app.setActivationPolicy(.accessory)
     guard let outsideGeoPath else { die("--where same-app-window 要配一个 --outside-geometry <文件>") }

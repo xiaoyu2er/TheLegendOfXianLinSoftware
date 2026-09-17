@@ -1,14 +1,14 @@
-# 四份存下来的原始日志：让 `--replay` 那半判据**不用借鼠标**也能跑一遍
+# 存下来的原始日志：让 `--replay` 那半判据**不用借鼠标**也能跑一遍
 
-`tools/mouse-dispatch-probe.sh` 真跑一趟要接管物理鼠标十几秒，所以它的对账那半平时
+`tools/mouse-dispatch-probe.sh` 真跑一趟要接管物理鼠标一分多钟，所以它的对账那半平时
 没人跑得起。`--replay` 把对账从「跑一趟」里拆出来：拿存好的 `events*.log` 重新归一化、
-重新对账，**一下鼠标都不碰**。前三份是 xl-g9w 实跑存下来的
-（macOS 24.6.0 + openjdk 17，2026-09-16；一份默认落点，两份 `same-app-window`），
-它们钉住的是**三种不同的退出状态**，不是「红绿两面」；第四份是 xl-8eg 的 D 组三轮，
-见下面单独一节。
+重新对账，**一下鼠标都不碰**。
 
-对账分三层，四份 fixture 各钉住一组（前三份钉退出状态，第四份钉 D 组分段读数），
-**退出码三态、互不共用**：
+每一份钉住的是**一个不同的状态**，不是「红绿两面」。⚠️ **退出码写在下面那张表里，
+改这个 README 时逐个跑一遍对一下，别照抄上一版的数字** —— 这一段就这么错过一次
+（合并 xl-8eg 之后没人重跑，README 还写着 `默认落点四轮 → 0`）。
+
+对账分三层，**退出码三态、互不共用**；下面那张表里每一份 fixture 各钉住其中一种状态：
 
 | 层 | 核的是什么 |
 |---|---|
@@ -22,42 +22,48 @@
 | `1` | **有红**：量到了，但读数不对 / A 对照不成立 / 轮间不一致 |
 | `3` | **有一层没核成**：不是错了，是没观测到 —— 不许与 `0` 共用 |
 
+| fixture | 落点 | 退出码 | 它钉住的是 |
+|---|---|---|---|
+| `默认落点四轮` | outside-window | `3` | ①② 过（6 行、四轮逐字一致）；③ 对默认落点本来就不跑；**D 那一层没核成** —— 录在 D 组序列存在之前，没有 `drive*.log`、分不了段 |
+| `same-app-window三轮` | same-app-window | `0` | 三层全过 + D 组两层都核得成。xl-23v 重录的，是这一支唯一到得了 `0` 的一份 |
+| `same-app-window无SAMEAPPCLASS` | same-app-window | `3` | ③ **没核成**：录在探针开始写 `SAMEAPPCLASS` 之前，脚本不知道该滤掉哪块窗口的行，于是**跳过并且不给结论** |
+| `第二轮被抢` | same-app-window | `1` | 第 2 轮整轮零事件（当时被别的窗口抢走了焦点）：① 当场点名、② 轮间不一致。**有红压过没核成，所以是 1 不是 3** |
+| `desktop三轮` | desktop | `0` | 桌面那一支的读数，以及 ③ 的**第三种判词「只差落点坐标」** —— 六份里唯一走这条分支的 |
+| `xl-8eg-D组三轮` | outside-window | `0` | D 组分段读数（D3 段零条事件 + 两个正对照） |
+
+上面这张表是 2026-09-17 逐个跑出来的读数。复跑：
+
 ```bash
-# EXIT=3 —— ①② 都过（6 行、四轮逐字一致），③ 对默认落点本来就不跑；**D 那一层没核成**：
-#           这份日志录在 D 组序列存在之前，没有 drive*.log，分不了段。
-tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/默认落点四轮
-
-# EXIT=3 —— ①② 都过（12 行、三轮逐字一致），③ 与 D 两层都**没核成**：
-#           这份日志录在探针开始写 SAMEAPPCLASS 之前（③ 不知道该滤掉哪块窗口的行），
-#           也录在 D 组存在之前（没有 drive*.log）。
-tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/三轮一致 \
-  --where same-app-window
-
-# EXIT=1 —— 第 2 轮整轮零事件（当时被别的窗口抢走了焦点）：① 当场点名、② 轮间不一致。
-#           有红压过没核成，所以是 1 不是 3。
-tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/第二轮被抢 \
-  --where same-app-window
-
-# EXIT=0 —— 四份里**唯一一个 0**，见下面「第四份」那一节。
-tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/xl-8eg-D组三轮
+FX=tools/mouse-dispatch/replay-fixture
+tools/mouse-dispatch-probe.sh --replay $FX/默认落点四轮                                   # 3
+tools/mouse-dispatch-probe.sh --replay $FX/same-app-window三轮        --where same-app-window  # 0
+tools/mouse-dispatch-probe.sh --replay $FX/same-app-window无SAMEAPPCLASS --where same-app-window  # 3
+tools/mouse-dispatch-probe.sh --replay $FX/第二轮被抢                 --where same-app-window  # 1
+tools/mouse-dispatch-probe.sh --replay $FX/desktop三轮                --where desktop          # 0
+tools/mouse-dispatch-probe.sh --replay $FX/xl-8eg-D组三轮                                  # 0
 ```
 
-⚠️ **前三份的退出码会随对账层数增加而变，这是设计，不是坏掉。** `默认落点四轮` 原先是 `0`，
+⚠️ **旧样本的退出码会随对账层数增加而变，这是设计，不是坏掉。** `默认落点四轮` 原先是 `0`，
 xl-8eg 给对账加上 D 那一层之后变成 `3` —— 它录的时候还没有 D 组序列，所以缺 `drive*.log`、
 分不了段。**「新加了一层，旧样本没观测到那一层」正是 `3` 要表达的意思**，与 `1`（有东西错了）
-分开。这三份**结构性地到不了 0**：要 0 就得拿现在的探针与驱动器重录一整套，那要借鼠标。
-改这个 README 时**逐个跑一遍对一下**，别照抄上一版的数字 —— 这一段就是这么错过一次的。
+分开。它与 `same-app-window无SAMEAPPCLASS` **结构性地到不了 0**，那是它们的岗位，不是缺陷：
+一份「没核成」的样本本身就是判据 —— 没有它，这套三层对账的第三个码就没人守着。
 
 ⚠️ **那个 `3` 是主干验收逮出来的**：它原先是 `0` —— 脚本自己打着「⇒ 没有结论」，退出码却与
 「核过且一致」一模一样，而 README 里还写着「退出码 0」。于是「第三层一条都没核成」会被读成
 「核过且一致」，**正是这套三层对账本身要防的形状**。修法不是把它变成 `1`（那等于把「没观测到」
 说成「有东西错了」，又混一次），而是给它第三个码。
 
-⚠️ 四份日志**都没有 `SAMEAPPCLASS` 行**（录在那之前）。对两份默认落点的（`默认落点四轮`、
-`xl-8eg-D组三轮`）无所谓 —— ③ 本来就不跑；对 `same-app-window` 那两份，③ 就是靠这个缺口
-暴露出来的。下趟借到鼠标时顺手重录 `same-app-window` 那两份，
-它们的 ③ 就会从「没核成」变成核得成（xl-23v，多花约 48 秒）—— 但要真变成 `0`，还得同时
-带上 D 组序列录出 `drive*.log`，否则 D 那一层仍然「没核成」。
+⚠️ **`same-app-window` 那两份是故意留着一新一旧的。** `same-app-window无SAMEAPPCLASS`
+（原名 `三轮一致`）录在探针开始写 `SAMEAPPCLASS` 之前，它钉的是「读不到该滤掉哪块窗口的行时，
+③ **跳过并且不给结论**」这条分支 —— 换掉它就没人守这条了。xl-23v 重录的
+`same-app-window三轮` 带着 `SAMEAPPCLASS` 与 `drive*.log`，③ 与 D 两层都核得成，是这一支
+唯一到得了 `0` 的一份。**两份各有各的岗位，不是一份取代另一份。**
+
+⚠️ 那次重录**没有**让它从 `3` 变成 `0`，光靠重录也做不到：D 组的期望读数原先只有默认落点一份，
+非默认落点一律「没核成」，于是 `desktop` 与 `same-app-window` 两支**结构性地到不了 0**。
+xl-23v 把 D 组的期望读数改成了**每个落点一份**（`expected-events-D-<落点>.txt`，与 A/B/B2/C
+那份同形），这两支才有可能到 `0`。
 
 `默认落点四轮` 是补给一句话的证据（/code-review Spec 轴提的）：`expected-events.txt` 的头注
 写着「xl-g9w 复跑 4 轮、逐行一致、读数未改」，而那句原先**只有陈述、没有可复跑的东西**，
@@ -73,16 +79,33 @@ xl-8eg 给对账加上 D 那一层之后变成 `3` —— 它录的时候还没�
    「第 1 轮与第 2 轮不一致」、下面还跟一句「3 轮之间也逐行一致」。退出码一直是对的，
    **只有那句话是假的** —— 而人读的是那句话。
 
-## 第四份：`xl-8eg-D组三轮` —— 唯一带 `drive*.log` 的一份
+## `desktop三轮` —— ③ 那个「只差落点坐标」的唯一样本
+
+桌面那一支跟默认落点比**必然**差一行：D2「在外面按右、再松左」松手那一行的 `xy` 就是
+**落点换算到面板内坐标**（这一趟是落点 `3320,1260`、面板左上角 `0,53` ⇒ `3320,1207`；默认落点
+那一支是 `1254,250`，因为它的「窗口外」是驱动器自己开在固定位置的那块窗口）。
+
+③ 原来只会 `diff` 一下然后打「**换落点改了结论**」——**而那句话是这张票唯一的结论句，
+README 与那几处代码注释转抄的就是它**。照抄就把「按构造必然不同的一个坐标」说成了
+「原版的派发不一样」。现在由 `tools/mouse-dispatch/cmp-vs-outside.py` 分三种判词：
+`相同` / `只差落点坐标` / `不同`，落点**现算**（`drive*.log` 的 `WHERE` 减 `events*.log` 的
+`GEOMETRY`），算不出来就一行都不摘、报「没有结论」。重放这一份会打出摘掉了哪一行、摘的理由 ——
+**「摘过」与「本来就一样」不许长得一样。**
+
+它同时也是桌面那一支读数的可复跑证据（与 `默认落点四轮`、`xl-8eg-D组三轮` 同一个道理：
+一句「三轮逐字一致」只有陈述、没有可复跑的东西，是不够的）。
+
+## `xl-8eg-D组三轮` —— 头一份带 `drive*.log` 的
 
 ```bash
 # EXIT=0 —— ①② 过，且 **D 组分段读数核得成**（这一份就是为了钉住它）
 tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/xl-8eg-D组三轮
 ```
 
-它比前三份多一类文件：**`drive{1,2,3}.log`**（每份 12 行 `MARK`）。D 组的分段读数靠驱动器
+它比早先那几份多一类文件：**`drive{1,2,3}.log`**（每份 12 行 `MARK`）。D 组的分段读数靠驱动器
 打的这些 `MARK` 时间戳把事件分进 D0…D5 六个桶，**没有它就分不了段** —— 缺 `drive*.log` 的
-fixture 在 D 那一层报「没核成」（`3`），不是红。前三份录在 D 组存在之前，所以都没有。
+fixture 在 D 那一层报「没核成」（`3`），不是红。`默认落点四轮`、`same-app-window无SAMEAPPCLASS`
+与 `第二轮被抢` 录在 D 组存在之前，所以都没有。
 
 它钉住的那句结论是 **D3 段零条事件**：起 grab 那只键松开后、只剩被挡掉那只键按着时的拖动，
 原版一条都收不到。重放会把六段逐段打出来，其中：

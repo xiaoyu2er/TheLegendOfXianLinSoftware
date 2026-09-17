@@ -1,0 +1,25 @@
+# 落点 = **露出来的桌面**（`--where desktop`）—— tools/mouse-dispatch-probe.sh 的对账基准之一。
+#
+# 读数出处：xl-23v，macOS 24.6.0 + openjdk 17，2026-09-17，`--yes --rounds 3 --where desktop`，
+# 三轮逐字一致。落点是驱动器现扫出来的 **3320,1260**（主屏 3360x1418，右下角一块露出来的桌面）。
+# 归一化 = 只留 PRESSED / RELEASED，去掉时间戳与 scr=。# 开头的行脚本会滤掉。
+#
+# **结论：下面这六行与 tools/mouse-dispatch/expected-events.txt（outside-window）逐字相同。**
+# 也就是说，那一下按在**桌面**上还是按在**另一个 app 的空白窗口**上，原版窗口收到的东西一模一样：
+#
+#   - 左键那一下按下 / 松手 / 整段 DRAGGED 一次都没到原版窗口；
+#   - 右键那两下照样到窗口、照样停在 main.GameLauncher（isMouseGrab 为真、目标仍是 null）。
+#
+# ⚠️ 三轮逐字一致这件事**是修出来的，不是一跑就有的**（xl-23v 实测）：落点由 CGWindowList 现扫，
+#    而**光标自己也是一块在屏窗口**（owner "Window Server"，约 17x23），驱动器每轮把光标停在落点上，
+#    下一轮就把它当成障碍、往上让一个 40 像素的扫描格 —— 头一趟三轮扫到 3320,1260 / 1220 / 1180，
+#    D2「松左」那行的 xy 跟着变，读起来像**原版的派发不确定**。两处修法都在 drive.swift 里：
+#    扫描排除光标层；第 1 轮扫到的点用 --outside-point 钉给后面几轮（钉住的点照样校验）。
+#
+# 头两行仍是 A 对照：窗口内单击必须被 start.StartPanel 收到。它没有 = 合成事件被丢了。
+PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300
+RELEASED btn=1 mex=0x0 src=start.StartPanel xy=600,300
+PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
+RELEASED btn=3 mex=0x400 src=main.GameLauncher xy=600,328
+PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
+RELEASED btn=3 mex=0x0 src=main.GameLauncher xy=600,328

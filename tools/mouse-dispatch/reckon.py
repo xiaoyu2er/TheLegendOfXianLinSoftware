@@ -48,6 +48,11 @@ def parse_marks(text):
     return marks
 
 
+#: 探针写在事件之前的元信息行（`<名字> <值...>`）。加新的元信息行时要往这里加一个名字，
+#: 否则它会被数成「认不出来」而不是被跳过 —— 而那会把整份分段读数作废。
+META_PREFIXES = {'GEOMETRY', 'SAMEAPP', 'SAMEAPPCLASS'}
+
+
 def parse_events(text):
     """事件日志 → ([(毫秒, '事件 btn= mex= src=')], 认不出的行数)。
 
@@ -58,7 +63,16 @@ def parse_events(text):
     for line in text.splitlines():
         if not line.strip():
             continue
-        if line.startswith('GEOMETRY '):
+        # 探针在事件之前先写几行**元信息**（几何 / 另一块窗口的几何与类名）。它们不是事件，
+        # 也不是「格式漂了」—— 名单写在这里，名单之外的仍然算 junk。
+        # ⚠️ 原先只跳 GEOMETRY，于是 same-app-window 那一支多出来的 SAMEAPP / SAMEAPPCLASS
+        #    两行被数成「认不出来」，整份分段读数当场作废（退出码 3）——**只有那一个落点会撞到**，
+        #    默认落点上一次都不会响（xl-23v 实跑现撞到的）。
+        # ⚠️ 要连**后面那半**一起要：裸一行 `GEOMETRY`（没有值）不是元信息，是格式真漂了 ——
+        #    只看头一个词的话它会被静默跳过，而那正是「放宽了一个判据」的样子
+        #    （/code-review 逮到的；原先写的是 startswith('GEOMETRY ')，带着那个空格）。
+        head, _, tail = line.partition(' ')
+        if head in META_PREFIXES and tail.strip():
             continue
         f = line.split()
         name = f[1] if len(f) > 1 else ''
@@ -164,6 +178,20 @@ def _selftest():
         ('两个同名 MARK → 不算数', log('1000 MARK D1 拖出', '2000 MARK D1 拖出'), log(d1),
          '同名的 MARK', ['D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
                         'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel']),
+        # 探针的元信息行不是事件、也不是「格式漂了」。⚠️ 这一条是 xl-23v 实跑撞出来的：
+        # SAMEAPP / SAMEAPPCLASS 只在 same-app-window 那一支出现，默认落点上永远不会响。
+        ('探针的元信息行不算 junk', drive,
+         log('SAMEAPP 1104,153 300x300', 'SAMEAPPCLASS javax.swing.JFrame', d1), None, [
+            'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
+            'D3 拖回 | ' + EMPTY, 'D4 收尾 | ' + EMPTY]),
+        # 反面一：名单之外的元信息行**仍然要算 junk**。只加不减地放宽的话，真格式漂了也不会响。
+        ('名单外的元信息行仍算 junk', drive, log('SAMEAPPTITLE 标题页', d1), '认不出来', [
+            'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
+            'D3 拖回 | ' + EMPTY, 'D4 收尾 | ' + EMPTY]),
+        # 反面二：名单里的名字但**后面没有值** —— 那是格式漂了，不是元信息。
+        ('裸一行 GEOMETRY 算 junk', drive, log('GEOMETRY', d1), '认不出来', [
+            'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
+            'D3 拖回 | ' + EMPTY, 'D4 收尾 | ' + EMPTY]),
         ('时间戳压在 MARK 上 → 归后一段', drive, log('2000 ' + d3.split(' ', 1)[1]), None, [
             'D1 拖出 | ' + EMPTY,
             'D3 拖回 | DRAGGED btn=0 mex=0x1000 src=start.StartPanel',

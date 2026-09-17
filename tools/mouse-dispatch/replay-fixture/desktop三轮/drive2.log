@@ -1,0 +1,13 @@
+PERMISSIONS CGPreflightPostEventAccess=true AXIsProcessTrusted=true
+WHERE desktop outside=3320,1260 panel=600,353
+1789655775281 MARK A 对照：窗口内空白处左键单击
+1789655776413 MARK B 票面：外按左 → 拖进 → 按右 → 松右 → 松左
+1789655778695 MARK B2：外按左 → 拖进 → 按右 → 松左 → 松右
+1789655780964 MARK C：外按左 → 拖进 → 松左
+1789655783081 MARK D0 内按左：在面板里按下，起 grab
+1789655783501 MARK D1 拖出：起 grab 那只键按着（正对照，已量过 xl-40m）
+1789655784757 MARK D2 外按右、再松左：外窗上按下第二个键，然后松掉起 grab 那只键
+1789655785180 MARK D3 拖回：只剩被挡掉的那只键按着（xl-8eg 要量的就是这一段）
+1789655786427 MARK D4 松右、之后的移动
+1789655787463 MARK D5 右键正对照：面板里按右 → 拖一段 → 松右（全程在面板里，没有别的键）
+1789655789584 MARK END

@@ -8,6 +8,8 @@
 #   tools/mouse-dispatch-probe.sh --rounds 1   # 少跑几轮（默认 3 轮，判确定性）
 #   tools/mouse-dispatch-probe.sh --out <目录> # 日志落在哪（默认临时目录，跑完留着路径）
 #   tools/mouse-dispatch-probe.sh --where desktop          # 换「窗口外」那一下的落点
+#                                              # ⚠️ desktop 的落点是现扫的，会在轮与轮之间漂 ——
+#                                              # 第 1 轮扫到什么就钉给后面几轮（见跑轮那一段）。
 #   tools/mouse-dispatch-probe.sh --where same-app-window  # 同上；三个落点各有一份期望读数
 #   tools/mouse-dispatch-probe.sh --replay <目录>  # 拿存过的日志重跑对账，**一下鼠标都不碰**
 #   tools/mouse-dispatch-probe.sh --check-point --where desktop
@@ -110,12 +112,17 @@ if [ "$checkpoint" = 0 ] && [ ! -f "$EXPECTED" ]; then
   exit 1
 fi
 
-# D 组那四行出处不同（xl-8eg 量的），单独一份、单独对账。
-# ⚠️ **D 组只在默认落点上量过**：别的落点上 D 组照样会跑，但没有量过的读数可对 —— 那是
-#    「没核成」（退出码 3），不是红。两者不许共用一个码（与 ③ 那一层同一个道理）。
-EXPECTED_D=tools/mouse-dispatch/expected-events-D.txt
+# D 组那几行出处不同（默认落点那份是 xl-8eg 量的），单独一份、单独对账。
+# **每个落点一份**，与上面的 EXPECTED 同一个形状 —— D 组在每个落点上跑出来的读数**不一样**
+# （xl-23v 实测：desktop 那一支 D2 松左那行的 xy 是落点换算到面板内坐标；same-app-window 那一支
+# 多出三行派给另一块 JFrame 的）。没有那份读数就是「没核成」（退出码 3），不是红。
+if [ "$where" = outside-window ]; then
+  EXPECTED_D=tools/mouse-dispatch/expected-events-D.txt
+else
+  EXPECTED_D="tools/mouse-dispatch/expected-events-D-${where}.txt"
+fi
 d_expected=1
-if [ "$where" != outside-window ] || [ ! -f "$EXPECTED_D" ]; then d_expected=0; fi
+[ -f "$EXPECTED_D" ] || d_expected=0
 
 # ⚠️ 上面已经 cd 到仓库根了，所以 --out 给的相对路径要按**调用者的 cwd**解回来，
 # 否则 `--out out/` 会静悄悄落在仓库根下面，而不是你以为的那个目录。
@@ -173,11 +180,15 @@ fi
 # 读数器的自检放在**借鼠标之前**：它坏了的话，跑完三轮才发现就白借了一分多钟鼠标。
 # ⚠️ 别写成 `python3 … | sed … || {…}`：`||` 读的是 **sed** 的退出码，自检红了也进不了那个分支
 #    （dispatch.md 的 1 号坑）。先落盘、再判、再打印。
-echo "[0/4] reckon.py 自检（不碰鼠标、不要权限）…"
+echo "[0/4] reckon.py + cmp-vs-outside.py 自检（不碰鼠标、不要权限）…"
 selftest_rc=0
 python3 tools/mouse-dispatch/reckon.py --selftest > "$outdir/reckon-selftest.log" 2>&1 || selftest_rc=$?
 sed 's/^/  /' "$outdir/reckon-selftest.log"
 [ "$selftest_rc" = 0 ] || { echo "reckon.py 自检不过 —— 分段读数不算数，先修它。" >&2; exit 1; }
+cmp_selftest_rc=0
+python3 tools/mouse-dispatch/cmp-vs-outside.py --selftest > "$outdir/cmp-selftest.log" 2>&1 || cmp_selftest_rc=$?
+sed 's/^/  /' "$outdir/cmp-selftest.log"
+[ "$cmp_selftest_rc" = 0 ] || { echo "cmp-vs-outside.py 自检不过 —— 换落点那条结论不算数，先修它。" >&2; exit 1; }
 fi
 
 
@@ -249,6 +260,12 @@ fi
 CP="tools/build/classes:jl1.0.jar:mp3spi1.9.4.jar:tritonus_share.jar"
 
 echo "[4/4] 跑 ${rounds} 轮（落点 ${where}）…"
+# desktop 的落点是**现扫**出来的，而扫到哪个点取决于当时屏幕上有哪些窗口 —— 它在轮与轮之间会漂
+# （xl-23v 实测：3320,1260 / 1220 / 1180，每轮往上跳一个扫描格，光标停在右下角之后 Dock 冒了出来）。
+# 漂了之后 D2「松左」那一行的 xy 跟着变，于是「三轮逐字一致」核的是**扫描器的环境**，不是原版的派发。
+# 所以第 1 轮扫到什么就钉给后面几轮。⚠️ 钉住不等于放松：驱动器拿到 --outside-point 之后**照样校验**
+# 那个点还是不是露出来的桌面，被盖住就硬失败 —— 环境在中途变了要**响**，不是悄悄落到别人窗口上。
+pinned_point=""
 for r in $(seq 1 "$rounds"); do
   log="$outdir/events${r}.log"; geo="$outdir/geometry${r}.txt"; samegeo="$outdir/samegeo${r}.txt"
   rm -f "$log" "$geo" "$samegeo"
@@ -257,6 +274,7 @@ for r in $(seq 1 "$rounds"); do
   #    但同一族的写法不值得在两边各留一个形状。
   probe_args=("$log" "$geo")
   drive_args=("--where" "$where")
+  [ -n "$pinned_point" ] && drive_args+=("--outside-point" "$pinned_point")
   [ "$checkpoint" = 1 ] && drive_args+=("--dry-point")
   waitfor=("$geo")
   if [ "$where" = same-app-window ]; then
@@ -301,6 +319,18 @@ for r in $(seq 1 "$rounds"); do
   }
   kill "$game" 2>/dev/null || true
   wait "$game" 2>/dev/null || true
+
+  # 第 1 轮扫到的落点钉给后面几轮。⚠️ 只对 desktop 做：另两支的落点由几何算出来，本来就不漂，
+  # 钉它只会多一条能把真差异盖掉的路。读不到 WHERE 那一行就**不钉**（回到现扫），
+  # 而不是钉一个猜出来的点。
+  if [ "$where" = desktop ] && [ -z "$pinned_point" ]; then
+    pinned_point="$(sed -n -E 's/^WHERE .* outside=([0-9-]+,[0-9-]+) .*$/\1/p' "$outdir/drive${r}.log" | head -1)"
+    if [ -n "$pinned_point" ]; then
+      echo "    落点钉住：${pinned_point}（后面几轮复用这一个，驱动器会再校验它没被窗口盖住）"
+    else
+      echo "    ⚠️ 第 ${r} 轮的 drive${r}.log 里读不到 WHERE 那一行 —— 后面几轮各自现扫，落点可能漂。" >&2
+    fi
+  fi
 
   normalize "$log" > "$outdir/normal${r}.txt"
   # ⚠️ 归一化那条 sed 匹配不到任何东西时也是「零行 + 退出码 0」，与「一行事件都没收到」
@@ -455,7 +485,7 @@ else
   fail=1
 fi
 else
-  echo "⚠️ D 组按下 / 松手这一层**没核**：落点 ${where} 上 D 组没有量过的读数（只有默认落点有）。"
+  echo "⚠️ D 组按下 / 松手这一层**没核**：找不到 ${EXPECTED_D} —— 落点 ${where} 上 D 组还没量过。"
   skipped=1
 fi
 fi
@@ -506,20 +536,53 @@ if [ "$where" != outside-window ]; then
     else
       cp "$outdir/normal${r}.txt" "$outdir/original-window${r}.txt"
     fi
-    if diff -u "$outdir/baseline-expected.txt" "$outdir/original-window${r}.txt" > "$outdir/diff-vs-outside-window-${r}.txt"; then
-      echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window${r}.txt" | tr -d ' ') 行与 outside-window 的期望读数**逐字相同**。"
-    else
-      differ=1
-      echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的行与 outside-window 的期望读数**不同**，差异在 $outdir/diff-vs-outside-window-${r}.txt："
-      sed 's/^/     /' "$outdir/diff-vs-outside-window-${r}.txt"
+    # 落点换算到面板内坐标：D2「在外面按右、再松左」松手那一行的 xy 就是它，**换个落点必然不同**。
+    # 现算（drive 日志的 WHERE + 事件日志的 GEOMETRY），不写死；算不出来就传空，那时 cmp-vs-outside
+    # 一行都不摘（「没有结论」不许退回「相同」）。
+    src_drive="${replay:-$outdir}/drive${r}.log"
+    src_events="${replay:-$outdir}/events${r}.log"
+    point=""
+    o_xy="$(sed -n -E 's/^WHERE .* outside=([0-9-]+),([0-9-]+) .*$/\1 \2/p' "$src_drive" 2>/dev/null | head -1 || true)"
+    g_xy="$(sed -n -E 's/^GEOMETRY ([0-9-]+),([0-9-]+) .*$/\1 \2/p' "$src_events" 2>/dev/null | head -1 || true)"
+    if [ -n "$o_xy" ] && [ -n "$g_xy" ]; then
+      point="$(( ${o_xy%% *} - ${g_xy%% *} )),$(( ${o_xy##* } - ${g_xy##* } ))"
     fi
+    cmp_out="$outdir/diff-vs-outside-window-${r}.txt"
+    cmp_rc=0
+    python3 tools/mouse-dispatch/cmp-vs-outside.py \
+      "$outdir/baseline-expected.txt" "$outdir/original-window${r}.txt" "$point" > "$cmp_out" 2>&1 || cmp_rc=$?
+    verdict="$(head -1 "$cmp_out")"
+    # ⚠️ **状态看退出码，话看判词**。原先只 `head -1` 匹配字符串、`cmp_rc` 赋了值没人用 ——
+    #    判词一改错字，「没核成」就会落进 `*)` 变成「不同」（/code-review 逮到的）。
+    case "$cmp_rc" in
+      3) # 没核成：算不出落点，有行判不了。**要进末尾那个三态退出**，不然它与「核过且一致」同形。
+         echo "📐 第 ${r} 轮 · 落点 ${where}：这一条**没核成**（${verdict}）："
+         tail -n +2 "$cmp_out" | sed 's/^/     /'
+         skipped=1
+         r=$((r + 1)); continue ;;
+    esac
+    case "$verdict" in
+      相同)
+        echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window${r}.txt" | tr -d ' ') 行与 outside-window 的期望读数**逐字相同**。" ;;
+      只差落点坐标)
+        # ⚠️ 这一支**不算「改了结论」**，但也不许打成「逐字相同」—— 摘掉了哪一行、摘的理由是什么，
+        #    必须当场打出来，否则「摘过」与「本来就一样」又长得一样了。
+        echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window${r}.txt" | tr -d ' ') 行里，除落点坐标那一处外与 outside-window 的期望读数**逐字相同**："
+        tail -n +2 "$cmp_out" | sed 's/^/     /' ;;
+      *)
+        # ⚠️ 「不同」**故意不做成硬失败**：不同本身是一个结论，不是故障（读数变没变那一半由上面
+        #    各自的期望读数对账挡着，那一层红了才是 fail）。但它必须出现在结论那一行里。
+        differ=1
+        echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的行与 outside-window 的期望读数**不同**（判词：${verdict}），明细在 ${cmp_out}："
+        tail -n +2 "$cmp_out" | sed 's/^/     /' ;;
+    esac
     r=$((r + 1))
   done
   if [ "$fail" = 0 ] && [ "$skipped" != 0 ]; then
     echo "⇒ 没有结论：有轮次的比对没核成（见上面的 ⚠️）。**退出码 3** —— 与「核过且一致」的 0、「有红」的 1 都不同。"
   elif [ "$fail" = 0 ]; then
     if [ "$differ" = 0 ]; then
-      echo "⇒ 结论：${rounds} 轮都一样 —— **换落点不改结论**。"
+      echo "⇒ 结论：${rounds} 轮都一样 —— **换落点不改结论**（落点坐标那一处按构造必然不同，见上面每轮摘出来的那几行）。"
     else
       echo "⇒ 结论：**换落点改了结论**（见上面那几轮的差异）。改注释与 README 的时候按这个写。"
     fi

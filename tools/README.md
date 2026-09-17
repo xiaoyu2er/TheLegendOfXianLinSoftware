@@ -56,15 +56,21 @@ Java 窗口」。这套东西回答后一个问题，xl-zs6 现搭、xl-sij 收�
   （**派发之前**的位置）再调 `main.Game.main`，把原版收到的每一个鼠标事件连同**派给了谁**
   落盘。不改 `src/`。于是「收到了但没转派给面板」与「压根没到窗口」在日志里长得不一样。
 - `tools/mouse-dispatch/drive.swift` —— 按 `--where` 选一个「窗口外」的落点，用 CGEvent 按 HID tap
-  合成四组序列（A 对照 / B / B2 / C）。三个落点（xl-g9w）：`outside-window`（默认，驱动器自己开的
+  合成五组序列（A 对照 / B / B2 / C / D）。三个落点（xl-g9w、xl-23v）：`outside-window`（默认，驱动器自己开的
   那块空白窗口 = 另一个 app 的普通窗口）、`desktop`（露出来的桌面，落点现扫）、`same-app-window`
   （原版那个 JVM 自己多开的另一块 `JFrame`）。认不出来的名字是**硬失败**，不猜。
-- `tools/mouse-dispatch/expected-events.txt` —— `outside-window` 那一支的读数（xl-zs6 三轮；
-  xl-g9w 在同一台机器上复跑 4 轮，逐行一致、读数未改），跑完自动对账；
-  `expected-events-same-app-window.txt` 是同 app 那一支的（xl-g9w 三轮）。
-- `tools/mouse-dispatch/replay-fixture/` —— 三份存下来的原始日志，给 `--replay` 用：
-  **不借鼠标**就能把对账那半判据跑一遍，也让上面那两句「量过几轮」各自带着可复跑的证据，
-  而不只是一句陈述。见那个目录的 README.md。
+- `tools/mouse-dispatch/expected-events*.txt` —— **每个落点两份读数**：`expected-events.txt` /
+  `expected-events-<落点>.txt` 是 A/B/B2/C 那四组，`expected-events-D.txt` /
+  `expected-events-D-<落点>.txt` 是 D 组（出处不同，所以分开对账、分开报错）。
+  出处：`outside-window` 是 xl-zs6 三轮（xl-g9w 在同一台机器上复跑 4 轮，逐行一致、读数未改），
+  `same-app-window` 是 xl-g9w 三轮 + xl-23v 补的 D 组三轮，`desktop` 是 xl-23v 三轮。
+- `tools/mouse-dispatch/cmp-vs-outside.py` —— 换落点之后跟默认落点比，分三种判词：
+  `相同` / `只差落点坐标` / `不同`。**中间那一种是必须单列的**：`desktop` 那一支必然差一行
+  （D2 松左的 `xy` 就是落点换算到面板内坐标），只会 `diff` 的话那句结论会被写成
+  「换落点改了结论」。带自检（`--selftest`，7 条，其中 3 条反面）。
+- `tools/mouse-dispatch/replay-fixture/` —— 六份存下来的原始日志，给 `--replay` 用：
+  **不借鼠标**就能把对账那半判据跑一遍，也让上面那几句「量过几轮」各自带着可复跑的证据，
+  而不只是一句陈述。每一份钉住一种退出状态，退出码那张表见那个目录的 README.md。
 
 ```bash
 tools/mouse-dispatch-probe.sh --dry-run   # 只编译两侧 + 读权限，一个事件都不发
@@ -91,10 +97,16 @@ CI 里覆盖到的只有 `tools/build.sh` 编得过探针那个 `.java`；驱动
 上画，跑在 CI 的条件下。）
 
 读数、读法与它的限定（事件是合成的；哪些落点量过、哪些没量过）写在 `MouseDispatchProbe`
-的类注释里。**换落点量过一支了**（xl-g9w）：`same-app-window` 与默认那支相比，
-**对原版那块窗口来说读数逐字相同**；`desktop` 还没量过（要先有一块露出来的桌面，
-用 `--check-point` 可以在借鼠标之前先问清楚）；原生全屏那一支**构造上量不了**
-（它在自己的 Space，原版窗口同时不在屏上）—— 最后这一句是推理，没量过。
+的类注释里。**三支落点都量过了，结论都相同**：`same-app-window`（xl-g9w）与 `desktop`（xl-23v）
+跟默认那支相比，**对原版那块窗口来说读数逐字相同** —— 桌面那一支唯一的差异是 D2 松左那一行的
+`xy`，它按构造就是落点换算到面板内坐标，脚本单独摘出来报，不算「改了结论」。
+原生全屏那一支**构造上量不了**（它在自己的 Space，原版窗口同时不在屏上）—— 这一句是推理，没量过。
+
+⚠️ `desktop` 要先有一块露出来的桌面，用 `--check-point --where desktop`（不碰鼠标）可以在借鼠标
+之前先问清楚。⚠️ 它的落点是**现扫**的，而**光标自己也是一块在屏窗口**（`Window Server`，约 17x23）——
+驱动器每轮把光标停在落点上，下一轮扫描就把它当障碍、往上让一个 40 像素的格，于是三轮读数对不上，
+**读起来像原版的派发不确定**（xl-23v 实测：3320,1260 / 1220 / 1180）。现在扫描排除光标层，
+并且第 1 轮扫到的点钉给后面几轮（钉住的点**照样校验**，被盖住就硬失败）。
 
 ## 编码
 
