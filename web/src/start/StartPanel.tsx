@@ -188,7 +188,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     const othersHeld = (event.buttons & ~own) !== 0
     // 没 grab、而这一下之外还按着别的键（舞台外按下拖进来的）：`isMouseGrab` 为真，目标还是那个 null
     // —— 按下不派、不起 grab，之后的拖动与松手也就一个都不收（xl-m9q，与 `App.tsx` 的 `grabbedElsewhere`
-    // 同一判法）。全松开那一下 JDK 本会重设目标并派松手，而原版收不到它 —— macOS 上（CGEvent 合成的序列，「窗口外」那一下按在另一个 app 的窗口上）它根本到不了 Java 窗口（xl-zs6 实测）。
+    // 同一判法）。全松开那一下 JDK 本会重设目标并派松手，而原版收不到它 —— macOS 上（CGEvent 合成的序列，「窗口外」那一下按在另一个 app 的窗口上）它根本到不了 Java 窗口（xl-zs6 实测；复跑 `tools/mouse-dispatch-probe.sh`，xl-sij）。
     if (grabRef.current === null && othersHeld) return
     const panel = event.currentTarget
     const moveTo = (e: { readonly clientX: number; readonly clientY: number }) => {
