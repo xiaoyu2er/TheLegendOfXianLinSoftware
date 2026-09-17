@@ -40,23 +40,32 @@ def compare(baseline, observed, point):
     """→ (判词, 明细行的列表)。baseline / observed 是两个字符串列表。"""
     if len(baseline) != len(observed):
         return DIFFER, ['行数不同：基准 %d 行，实测 %d 行' % (len(baseline), len(observed))]
-    excused, real = [], []
+    excused, real, unknown = [], [], []
     for i, (b, o) in enumerate(zip(baseline, observed), start=1):
         if b == o:
             continue
         b_rest, b_xy = _strip_xy(b)
         o_rest, o_xy = _strip_xy(o)
-        if b_rest == o_rest and o_xy is not None and point is not None and o_xy == point:
+        only_xy = (b_rest == o_rest and o_xy is not None)
+        if only_xy and point is not None and o_xy == point:
             excused.append((i, b_xy, o_xy))
+        elif only_xy and point is None:
+            # ⚠️ **算不出落点时，只差 xy 的那一行判不了** —— 它可能是落点（按构造必然不同），
+            #    也可能是真差异，而这两种要做的事完全相反。所以它既不许被摘掉（那是「相同」），
+            #    也不许被算成红（那是「有东西错了」）：它是**没核成**，第三个码。
+            #    这条原先落在 real 里，于是「没核成」塌进了「不同」，而三处文档写的都是「没有结论」——
+            #    /code-review 逮到的，正是这套三层对账本身要防的形状。
+            unknown.append((i, b, o))
         else:
             real.append((i, b, o))
     if real:
         return DIFFER, ['第 %d 行：\n     基准 %s\n     实测 %s' % r for r in real]
+    if unknown:
+        return NO_POINT, ['算不出这一趟的落点（drive 日志里没有 WHERE，或事件日志里没有 GEOMETRY），'
+                          '而第 %d 行只差 xy —— 判不了它是落点还是真差异。' % i
+                          for i, _b, _o in unknown]
     if not excused:
         return SAME, []
-    if point is None:
-        # 走不到这里（point 为 None 时不会有 excused），留着是为了改坏了能响。
-        return NO_POINT, ['算不出落点，可差异里有只差 xy 的行']
     return SAME_EXCEPT_POINT, [
         '第 %d 行只差 xy：基准 %s → 实测 %s，而 %s 正是这一趟的落点换算到面板内坐标 —— 按构造必然不同。'
         % (i, b_xy, o_xy, o_xy) for i, b_xy, o_xy in excused]
@@ -77,9 +86,17 @@ def _selftest():
         # 反面二：xy 是落点，可**同一行别的字段也变了** —— 不许被摘掉。
         ('落点对但 src 也变了', base,
          [base[0], 'RELEASED btn=1 mex=0x1000 src=main.GameLauncher xy=3320,1207'], '3320,1207', DIFFER),
-        # 反面三：算不出落点时不许摘 —— 「没有结论」不许退回「相同」。
-        ('算不出落点就不摘', base,
-         [base[0], 'RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=3320,1207'], None, DIFFER),
+        # 反面三：算不出落点时**既不摘也不算红** —— 「没核成」与「相同」「有红」三者互不共用。
+        ('算不出落点 → 没有结论', base,
+         [base[0], 'RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=3320,1207'], None, NO_POINT),
+        # 同样算不出落点，但差的**不只是 xy** —— 那与落点无关，照样是真的不同。
+        ('算不出落点但差的不只 xy', base,
+         [base[0], 'RELEASED btn=3 mex=0x1000 src=main.GameLauncher xy=3320,1207'], None, DIFFER),
+        # 真差异**压过**没核成：同一趟里两种都有时，先说「有东西错了」（与 probe.sh 末尾那个
+        # 三态退出同一个优先级）。
+        ('真差异压过没核成', base + ['PRESSED btn=1 mex=0x400 src=start.StartPanel xy=1,1'],
+         [base[0], 'RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=3320,1207',
+          'PRESSED btn=1 mex=0x400 src=main.GameLauncher xy=1,1'], None, DIFFER),
         ('行数不同', base, base[:1], '3320,1207', DIFFER),
         ('别的行不同', base,
          ['PRESSED btn=3 mex=0x400 src=start.StartPanel xy=600,300', base[1]], '3320,1207', DIFFER),

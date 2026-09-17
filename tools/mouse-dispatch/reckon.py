@@ -68,7 +68,11 @@ def parse_events(text):
         # ⚠️ 原先只跳 GEOMETRY，于是 same-app-window 那一支多出来的 SAMEAPP / SAMEAPPCLASS
         #    两行被数成「认不出来」，整份分段读数当场作废（退出码 3）——**只有那一个落点会撞到**，
         #    默认落点上一次都不会响（xl-23v 实跑现撞到的）。
-        if line.split(' ', 1)[0] in META_PREFIXES:
+        # ⚠️ 要连**后面那半**一起要：裸一行 `GEOMETRY`（没有值）不是元信息，是格式真漂了 ——
+        #    只看头一个词的话它会被静默跳过，而那正是「放宽了一个判据」的样子
+        #    （/code-review 逮到的；原先写的是 startswith('GEOMETRY ')，带着那个空格）。
+        head, _, tail = line.partition(' ')
+        if head in META_PREFIXES and tail.strip():
             continue
         f = line.split()
         name = f[1] if len(f) > 1 else ''
@@ -180,8 +184,12 @@ def _selftest():
          log('SAMEAPP 1104,153 300x300', 'SAMEAPPCLASS javax.swing.JFrame', d1), None, [
             'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
             'D3 拖回 | ' + EMPTY, 'D4 收尾 | ' + EMPTY]),
-        # 反面：名单之外的元信息行**仍然要算 junk**。只加不减地放宽的话，真格式漂了也不会响。
+        # 反面一：名单之外的元信息行**仍然要算 junk**。只加不减地放宽的话，真格式漂了也不会响。
         ('名单外的元信息行仍算 junk', drive, log('SAMEAPPTITLE 标题页', d1), '认不出来', [
+            'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
+            'D3 拖回 | ' + EMPTY, 'D4 收尾 | ' + EMPTY]),
+        # 反面二：名单里的名字但**后面没有值** —— 那是格式漂了，不是元信息。
+        ('裸一行 GEOMETRY 算 junk', drive, log('GEOMETRY', d1), '认不出来', [
             'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
             'D3 拖回 | ' + EMPTY, 'D4 收尾 | ' + EMPTY]),
         ('时间戳压在 MARK 上 → 归后一段', drive, log('2000 ' + d3.split(' ', 1)[1]), None, [

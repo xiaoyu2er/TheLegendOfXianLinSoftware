@@ -552,6 +552,15 @@ if [ "$where" != outside-window ]; then
     python3 tools/mouse-dispatch/cmp-vs-outside.py \
       "$outdir/baseline-expected.txt" "$outdir/original-window${r}.txt" "$point" > "$cmp_out" 2>&1 || cmp_rc=$?
     verdict="$(head -1 "$cmp_out")"
+    # ⚠️ **状态看退出码，话看判词**。原先只 `head -1` 匹配字符串、`cmp_rc` 赋了值没人用 ——
+    #    判词一改错字，「没核成」就会落进 `*)` 变成「不同」（/code-review 逮到的）。
+    case "$cmp_rc" in
+      3) # 没核成：算不出落点，有行判不了。**要进末尾那个三态退出**，不然它与「核过且一致」同形。
+         echo "📐 第 ${r} 轮 · 落点 ${where}：这一条**没核成**（${verdict}）："
+         tail -n +2 "$cmp_out" | sed 's/^/     /'
+         skipped=1
+         r=$((r + 1)); continue ;;
+    esac
     case "$verdict" in
       相同)
         echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window${r}.txt" | tr -d ' ') 行与 outside-window 的期望读数**逐字相同**。" ;;
@@ -561,6 +570,8 @@ if [ "$where" != outside-window ]; then
         echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window${r}.txt" | tr -d ' ') 行里，除落点坐标那一处外与 outside-window 的期望读数**逐字相同**："
         tail -n +2 "$cmp_out" | sed 's/^/     /' ;;
       *)
+        # ⚠️ 「不同」**故意不做成硬失败**：不同本身是一个结论，不是故障（读数变没变那一半由上面
+        #    各自的期望读数对账挡着，那一层红了才是 fail）。但它必须出现在结论那一行里。
         differ=1
         echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的行与 outside-window 的期望读数**不同**（判词：${verdict}），明细在 ${cmp_out}："
         tail -n +2 "$cmp_out" | sed 's/^/     /' ;;
