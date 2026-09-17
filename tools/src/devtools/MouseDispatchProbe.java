@@ -2,11 +2,15 @@ package devtools;
 
 import java.awt.AWTEvent;
 import java.awt.EventQueue;
+import java.awt.GraphicsEnvironment;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.event.MouseEvent;
 import java.io.FileWriter;
 import java.io.PrintWriter;
+
+import javax.swing.JFrame;
 
 import main.GameLauncher;
 
@@ -122,8 +126,8 @@ import main.GameLauncher;
 public class MouseDispatchProbe {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 2) {
-            System.err.println("用法：devtools.MouseDispatchProbe <事件日志> <几何文件>");
+        if (args.length != 2 && args.length != 3) {
+            System.err.println("用法：devtools.MouseDispatchProbe <事件日志> <几何文件> [另一块窗口的几何文件]");
             System.exit(2);
         }
         // autoFlush：进程是被外面 kill 掉的，缓冲住的行会连同「到底收到没有」一起丢掉，
@@ -151,6 +155,51 @@ public class MouseDispatchProbe {
                 throw new RuntimeException(ex);
             }
             out.println("GEOMETRY " + p.x + "," + p.y + " " + w + "x" + h);
+        });
+
+        if (args.length == 3) {
+            openSameAppWindow(args[2], out);
+        }
+    }
+
+    /**
+     * 开一块**同一个 JVM 的另一个顶层窗口**，把它的屏幕几何写进 {@code path}（{@code x y 宽 高}）。
+     *
+     * <p>给 {@code drive --where same-app-window} 用：那一下「窗口外」的按下落在这块窗口上。
+     * 它与 {@code drive} 自己开的那块空白窗口**位置与尺寸完全一样**（面板右边 80 像素、下移 100、300x300），
+     * 于是两支只差一件事：那块窗口归谁。
+     *
+     * <p>⚙️ 它不改 {@code src/}：只是在同一个 JVM 里多开一块与原版无关的 {@link JFrame}。
+     *
+     * <p>❗ 落不进屏幕、或者与面板叠在一起了，就**硬失败**—— 叠上了的话那一下按下
+     * 落在哪一块由 z 序定，而那份读数**看起来仍然是一份正常的读数**。
+     */
+    static void openSameAppWindow(String path, PrintWriter out) throws Exception {
+        EventQueue.invokeAndWait(() -> {
+            Point p = GameLauncher.startPanel.getLocationOnScreen();
+            int x = p.x + GameLauncher.startPanel.getWidth() + 80;
+            int y = p.y + 100;
+            JFrame f = new JFrame("xl-g9w same-app outside");
+            f.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+            f.setBounds(x, y, 300, 300);
+            f.setVisible(true);
+            Rectangle b = f.getBounds();
+            Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                    .getDefaultScreenDevice().getDefaultConfiguration().getBounds();
+            Rectangle panel = new Rectangle(p.x, p.y,
+                    GameLauncher.startPanel.getWidth(), GameLauncher.startPanel.getHeight());
+            if (!screen.contains(b)) {
+                throw new IllegalStateException("另一块窗口 " + b + " 没完全落在屏幕 " + screen + " 里");
+            }
+            if (b.intersects(panel)) {
+                throw new IllegalStateException("另一块窗口 " + b + " 与面板 " + panel + " 叠在一起了");
+            }
+            try (PrintWriter g = new PrintWriter(new FileWriter(path))) {
+                g.println(b.x + " " + b.y + " " + b.width + " " + b.height);
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+            out.println("SAMEAPP " + b.x + "," + b.y + " " + b.width + "x" + b.height);
         });
     }
 

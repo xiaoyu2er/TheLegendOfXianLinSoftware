@@ -7,6 +7,20 @@
 #   tools/mouse-dispatch-probe.sh --yes        # 同上，跳过「要接管鼠标」那句确认
 #   tools/mouse-dispatch-probe.sh --rounds 1   # 少跑几轮（默认 3 轮，判确定性）
 #   tools/mouse-dispatch-probe.sh --out <目录> # 日志落在哪（默认临时目录，跑完留着路径）
+#   tools/mouse-dispatch-probe.sh --where desktop          # 换「窗口外」那一下的落点
+#   tools/mouse-dispatch-probe.sh --where same-app-window  # 同上；三个落点各有一份期望读数
+#
+# 三个落点（xl-g9w 加进来；认不出来的名字是硬失败，不猜 —— 默认掉的话，
+# 「量的其实是另一种落点」与真读数长得一模一样）：
+#
+#   outside-window   （默认）驱动器自己开的那块空白窗口 —— 另一个 app 的普通窗口。xl-zs6 量的就是它。
+#   desktop          露出来的桌面（落点由驱动器现扫，扫不到就硬失败让人挪窗口）。
+#   same-app-window  原版那个 JVM 自己多开的另一块 JFrame —— 三支里唯一可能与另两支结论不同的。
+#
+# ⚠️ 原生全屏 app 那一种**量不了，而且不是「难」是「不存在」**：macOS 的原生全屏把那个 app
+#    放进自己的 Space，原版窗口同时不在屏幕上，「在外面按下、拖进原版窗口」构造上发生不了；
+#    而「铺满屏幕但仍在同一个 Space 的普通窗口」等价于 outside-window 那一支。
+#    ⚠️ 这一段是**推理，没量过**。
 #
 # ⚠️ 跑之前要先问人：它接管物理鼠标，这十几秒里光标会自己动、会真的按下去。
 #    --yes 是给「已经问过了」用的，不是默认。
@@ -31,7 +45,8 @@ OLDPWD_AT_START="$PWD"
 cd "$(dirname "$0")/.."
 : "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
 
-dry=0; yes=0; rounds=3; outdir=""
+dry=0; yes=0; rounds=3; outdir=""; where=outside-window
+KNOWN_WHERE="outside-window desktop same-app-window"
 # ⚠️ 带值的参数要自己检查值在不在：写成 `shift; rounds="${1:-}"` 再靠末尾那个 shift，
 # 值缺失时 set -e 会在那个 shift 上先退出，下面那句「要一个正整数」**永远打不出来** ——
 # 静默 exit 1 与「参数校验响了」长得不一样，但与「别的什么东西挂了」长得一样。
@@ -41,13 +56,25 @@ while [ $# -gt 0 ]; do
     --yes) yes=1; shift ;;
     --rounds) [ $# -ge 2 ] || { echo "--rounds 后面要跟一个正整数" >&2; exit 2; }; rounds="$2"; shift 2 ;;
     --out) [ $# -ge 2 ] || { echo "--out 后面要跟一个目录" >&2; exit 2; }; outdir="$2"; shift 2 ;;
-    *) echo "不认识的参数：${1}，只接受 --dry-run / --yes / --rounds N / --out 目录" >&2; exit 2 ;;
+    --where) [ $# -ge 2 ] || { echo "--where 后面要跟一个落点名：${KNOWN_WHERE}" >&2; exit 2; }; where="$2"; shift 2 ;;
+    *) echo "不认识的参数：${1}，只接受 --dry-run / --yes / --rounds N / --out 目录 / --where 落点" >&2; exit 2 ;;
   esac
 done
 case "$rounds" in ''|*[!0-9]*) echo "--rounds 要一个正整数，收到：${rounds}" >&2; exit 2 ;; esac
 [ "$rounds" -ge 1 ] || { echo "--rounds 至少是 1" >&2; exit 2; }
 
-EXPECTED=tools/mouse-dispatch/expected-events.txt
+# 认不出来的落点是硬失败，不退回默认。
+case " ${KNOWN_WHERE} " in
+  *" ${where} "*) ;;
+  *) echo "不认识的落点 --where ${where}，只接受：${KNOWN_WHERE}" >&2; exit 2 ;;
+esac
+
+# 每个落点一份期望读数：默认那一支沿用原来的文件名（xl-zs6 的读数，不动），另两支各一份。
+if [ "$where" = outside-window ]; then
+  EXPECTED=tools/mouse-dispatch/expected-events.txt
+else
+  EXPECTED="tools/mouse-dispatch/expected-events-${where}.txt"
+fi
 [ -f "$EXPECTED" ] || { echo "找不到期望读数：${EXPECTED}" >&2; exit 1; }
 
 # ⚠️ 上面已经 cd 到仓库根了，所以 --out 给的相对路径要按**调用者的 cwd**解回来，
@@ -119,29 +146,43 @@ normalize() {  # normalize <原始日志>
   sed -n -E 's/^[0-9]+ (PRESSED|RELEASED) (.*) scr=[0-9-]+,[0-9-]+$/\1 \2/p' "$1"
 }
 
-echo "[4/4] 跑 ${rounds} 轮…"
+echo "[4/4] 跑 ${rounds} 轮（落点 ${where}）…"
 for r in $(seq 1 "$rounds"); do
-  log="$outdir/events${r}.log"; geo="$outdir/geometry${r}.txt"
-  rm -f "$log" "$geo"
+  log="$outdir/events${r}.log"; geo="$outdir/geometry${r}.txt"; samegeo="$outdir/samegeo${r}.txt"
+  rm -f "$log" "$geo" "$samegeo"
+  # same-app-window：让探针在同一个 JVM 里多开一块 JFrame 当「窗口外」，几何写进 $samegeo。
+  # ⚠️ 参数用数组，别用裸变量 —— zsh 不拆词（dispatch.md 坑 10.5），这个脚本虽然是 bash，
+  #    但同一族的写法不值得在两边各留一个形状。
+  probe_args=("$log" "$geo")
+  drive_args=("--where" "$where")
+  waitfor=("$geo")
+  if [ "$where" = same-app-window ]; then
+    probe_args+=("$samegeo")
+    drive_args+=("--outside-geometry" "$samegeo")
+    waitfor+=("$samegeo")
+  fi
   "$JAVA_HOME/bin/java" -Djava.awt.headless=false \
     -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
-    -cp "$CP" devtools.MouseDispatchProbe "$log" "$geo" \
+    -cp "$CP" devtools.MouseDispatchProbe "${probe_args[@]}" \
     > "$outdir/game${r}.log" 2>&1 &
   game=$!
 
   # 等探针把几何写出来。⚠️ 判「起来了没有」看**有没有产出那个文件**，不看进程在不在：
   # 原版启动失败时进程也会在（Swing 的 EDT 不退），两种情况分不开。
   waited=0
-  while [ ! -s "$geo" ]; do
+  while :; do
+    missing=0
+    for f in "${waitfor[@]}"; do [ -s "$f" ] || missing=1; done
+    [ "$missing" = 0 ] && break
     sleep 1; waited=$((waited + 1))
     if [ "$waited" -ge 30 ]; then
       kill "$game" 2>/dev/null || true
-      echo "第 ${r} 轮：30 秒没等到几何文件，原版多半没起来。看 $outdir/game${r}.log" >&2
+      echo "第 ${r} 轮：30 秒没等到几何文件（${waitfor[*]}），原版多半没起来。看 $outdir/game${r}.log" >&2
       exit 1
     fi
   done
 
-  "$DRIVE" "$geo" > "$outdir/drive${r}.log" 2>&1 || {
+  "$DRIVE" "$geo" "${drive_args[@]}" > "$outdir/drive${r}.log" 2>&1 || {
     kill "$game" 2>/dev/null || true
     echo "第 ${r} 轮：驱动器退出码非零，看 $outdir/drive${r}.log" >&2
     exit 1
@@ -156,7 +197,7 @@ for r in $(seq 1 "$rounds"); do
     echo "  ⚠️ 第 ${r} 轮：原始日志有 $(wc -l < "$log" | tr -d ' ') 行，归一化后一条都不剩 ——" >&2
     echo "     多半是探针的输出格式变了（normalize 那条 sed 对不上），不是没收到事件。" >&2
   fi
-  echo "  第 ${r} 轮：$(wc -l < "$outdir/normal${r}.txt" | tr -d ' ') 行按下/松手 · $(head -c 200 "$geo" | tr -d '\n') · $log"
+  echo "  第 ${r} 轮：$(wc -l < "$outdir/normal${r}.txt" | tr -d ' ') 行按下/松手 · $(head -c 200 "$geo" | tr -d '\n') · $(grep '^WHERE ' "$outdir/drive${r}.log" || true) · $log"
 done
 
 fail=0
@@ -204,6 +245,7 @@ else
   echo >&2
   echo "❌ 与 ${EXPECTED} 对不上：" >&2
   sed 's/^/     /' "$outdir/diff-expected.txt" >&2
+  echo "   （落点是 ${where}，期望读数是 ${EXPECTED}）" >&2
   echo "   对不上不一定是谁错了 —— 换了 JDK、换了 macOS 版本、窗口落点变了都可能。" >&2
   echo "   先看是哪几行，再决定是改期望还是改结论；改期望要连 xl-zs6 的读数一起重记。" >&2
   fail=1
