@@ -494,6 +494,10 @@ describe('App 的 mouse grab', () => {
  *
  * 起 grab 那只键不受影响：`isMouseGrab` 把本键异或**回去**，读的是按下之前的状态，最后一只键
  * 松开时它仍为真、目标不重设（实测两种松手顺序下它都是 `src=start.StartPanel`）。
+ *
+ * ⚠️ **换落点量过一支了（xl-g9w）**：换成**同一个 app 的另一块窗口**，对原版那块窗口来说读数**逐字相同**；
+ * **桌面那一支仍没量过**（xl-23v），原生全屏那一支构造上量不了（推理，没量过）。哪几支量过、逐字读数与
+ * 读法只有一处源头：`MouseDispatchProbe` 类注释 + `tools/mouse-dispatch/expected-events-same-app-window.txt`。
  */
 describe('App 的 mouse grab：舞台外按下的第二个键（xl-df1）', () => {
   const FULL = { left: 0, top: 0, width: 1024, height: 640 }

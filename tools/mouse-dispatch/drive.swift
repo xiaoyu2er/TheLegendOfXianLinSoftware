@@ -1,9 +1,7 @@
-// 「舞台外按着键拖进来」那一族票的鼠标序列驱动器（xl-zs6 现搭，xl-sij 收进来）。
+// 「舞台外按着键拖进来」那一族票的鼠标序列驱动器（xl-zs6 现搭，xl-sij 收进来，xl-g9w 加落点开关）。
 //
 // 它做两件事：
-//   1. 在原版窗口右边开一块**自己的**空白窗口当「窗口外」—— 按下只落在它自己的窗口上，
-//      不去点用户桌面上的东西。⚠️ 这个落点是读数的限定之一：换成桌面、全屏 app 或
-//      同一个 app 的另一块窗口，都没量过。
+//   1. 按 `--where` 选一个「窗口外」的落点（见下面那张表），
 //   2. 用 CGEvent 往 HID tap 上合成四组序列（A 对照 / B / B2 / C，见下），
 //      让原版那侧的 devtools.MouseDispatchProbe 记下它到底收到了哪几下。
 //
@@ -16,10 +14,33 @@
 // 用法（由 tools/mouse-dispatch-probe.sh 调，不必手工拼）：
 //
 //     swiftc -O -o <可执行文件> tools/mouse-dispatch/drive.swift
-//     <可执行文件> <几何文件>            # 几何文件由探针写：x y 宽 高，全局坐标、左上原点
+//     <可执行文件> <几何文件> [--where <落点>] [--outside-geometry <文件>]
 //     <可执行文件> --preflight          # 只打印两个权限读数就退出，一个事件都不发
+//     <可执行文件> <几何文件> --where <落点> --dry-point
+//                                       # 只把「窗口外」那一下的落点算出来打印，**一下鼠标都不碰**。
+//                                       # desktop 那一支扫不到桌面时，它连带把挡路的窗口列出来 ——
+//                                       # 这样「去挪哪一块窗口」不用人自己猜。
 //
-// 四组序列（每组之间把光标挪回外窗、停 0.7 秒，让上一组的状态落定）：
+// 几何文件由探针写：x y 宽 高，全局坐标、左上原点。
+//
+// 三种落点（`--where`，认不出来的名字是**硬失败**，不猜；这一点照抄 ExportTrace 对 driver 的处置）：
+//
+//     outside-window   （默认）在原版窗口右边开一块**自己的**空白窗口 —— 「另一个 app 的窗口」。
+//                      按下只落在它自己的窗口上，不去点用户桌面上的东西。这是 xl-zs6 量的那一种。
+//     desktop          落在**露出来的桌面**上。本驱动器不开窗；落点由 CGWindowList 现扫出来
+//                      （要求周围 30 像素内没有任何在屏窗口），扫不到就**硬失败**并让人挪窗口 ——
+//                      随便挑一个点的话，很可能落在别人的窗口上，而那份读数**看起来仍然正常**。
+//     same-app-window  落在**原版自己那个 JVM 开的另一块窗口**上（探针用 --extra-window 开的那块），
+//                      几何由 `--outside-geometry` 给。这一种是三支里唯一可能与另两支**结论不同**的：
+//                      按下落在同一个进程的另一个顶层窗口上，Java 收得到，只是收它的是另一个
+//                      LightweightDispatcher。web 端 grabbedElsewhere 的口径押在它上面。
+//
+// ⚠️ **原生全屏 app 那一种量不了，而且不是「难」是「不存在」**：macOS 的原生全屏把那个 app
+//    放进**自己的 Space**，原版窗口同时不在屏幕上，于是「在外面按下、拖进原版窗口」这件事
+//    构造上就发生不了。而「铺满整块屏幕但仍在同一个 Space 的普通窗口」是另一个 app 的普通窗口，
+//    等价于 outside-window 那一支。⚠️ 这一段是**推理，没量过** —— 标在这里，不要当成读数转抄。
+//
+// 四组序列（每组之间把光标挪回落点、停 0.7 秒，让上一组的状态落定）：
 //
 //     A  对照：窗口内空白处左键单击                      —— 必须被 start.StartPanel 收到
 //     B  票面顺序：外按左 → 拖进 → 按右 → 松右 → 松左
@@ -33,6 +54,11 @@
 import Cocoa
 
 let args = CommandLine.arguments
+
+func die(_ s: String, _ code: Int32 = 2) -> Never {
+    FileHandle.standardError.write((s + "\n").data(using: .utf8)!)
+    exit(code)
+}
 
 func permissions() -> (post: Bool, ax: Bool) {
     (CGPreflightPostEventAccess(), AXIsProcessTrusted())
@@ -48,37 +74,154 @@ if args.contains("--preflight") {
     exit(0)
 }
 
-guard args.count == 2 else {
-    FileHandle.standardError.write("用法：drive <几何文件> | drive --preflight\n".data(using: .utf8)!)
-    exit(2)
+let KNOWN_WHERE = ["outside-window", "desktop", "same-app-window"]
+
+var geoPath: String? = nil
+var whereMode = "outside-window"
+var outsideGeoPath: String? = nil
+var dryPoint = false
+var i = 1
+while i < args.count {
+    switch args[i] {
+    case "--where":
+        guard i + 1 < args.count else { die("--where 后面要跟一个落点名：\(KNOWN_WHERE.joined(separator: " / "))") }
+        whereMode = args[i + 1]; i += 2
+    case "--outside-geometry":
+        guard i + 1 < args.count else { die("--outside-geometry 后面要跟一个文件") }
+        outsideGeoPath = args[i + 1]; i += 2
+    case "--dry-point":
+        dryPoint = true; i += 1
+    default:
+        guard geoPath == nil else { die("多余的参数：\(args[i])") }
+        geoPath = args[i]; i += 1
+    }
+}
+// 认不出来的落点是硬失败，不退回默认 —— 默认掉的话，一份「量的其实是另一种落点」的读数
+// 和真读数长得一模一样。
+guard KNOWN_WHERE.contains(whereMode) else {
+    die("不认识的落点 --where \(whereMode)，只接受：\(KNOWN_WHERE.joined(separator: " / "))")
+}
+guard let geoPath else { die("用法：drive <几何文件> [--where <落点>] [--outside-geometry <文件>] | drive --preflight") }
+
+func readGeometry(_ path: String, _ what: String) -> (Double, Double, Double, Double) {
+    guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { die("读不了\(what)：\(path)") }
+    let nums = text.split(whereSeparator: { $0 == " " || $0 == "\n" }).compactMap { Double($0) }
+    guard nums.count == 4 else { die("\(what)要四个数（x y 宽 高），读到 \(nums.count) 个：\(path)") }
+    return (nums[0], nums[1], nums[2], nums[3])
 }
 
-let geo = try! String(contentsOfFile: args[1], encoding: .utf8)
-    .split(whereSeparator: { $0 == " " || $0 == "\n" }).map { Double($0)! }
-guard geo.count == 4 else {
-    FileHandle.standardError.write("几何文件要四个数（x y 宽 高），读到 \(geo.count) 个\n".data(using: .utf8)!)
-    exit(2)
-}
-let (px, py, pw, ph) = (geo[0], geo[1], geo[2], geo[3])
+let (px, py, pw, ph) = readGeometry(geoPath, "几何文件")
 // 落点写死在面板内的 (600,300)，所以面板本身得比它大 —— 面板小了的话光标会落到窗口外，
 // 量出来的是另一件事，而那份读数**看起来仍然是一份正常的读数**。
-guard 600 < pw, 300 < ph else {
-    FileHandle.standardError.write("面板只有 \(pw)x\(ph)，装不下落点 (600,300)\n".data(using: .utf8)!)
-    exit(2)
-}
+guard 600 < pw, 300 < ph else { die("面板只有 \(pw)x\(ph)，装不下落点 (600,300)") }
+let panelRect = CGRect(x: px, y: py, width: pw, height: ph)
 
 let app = NSApplication.shared
-app.setActivationPolicy(.regular)
-let primaryH = NSScreen.screens[0].frame.height
-let ox = px + pw + 80, oy = py + 100   // 外窗内容区左上角（左上原点）
-let win = NSWindow(contentRect: NSRect(x: ox, y: primaryH - oy - 300, width: 300, height: 300),
-                   styleMask: [.titled], backing: .buffered, defer: false)
-win.title = "xl-zs6 outside"
-win.makeKeyAndOrderFront(nil)
 
-let O = CGPoint(x: ox + 150, y: oy + 150)   // 外窗中心 = 「窗口外」那一下的落点
+/// 现扫一个**露出来的桌面**上的点：周围 `margin` 像素内不能有任何在屏窗口。
+/// 扫不到就硬失败 —— 随便挑一个点的话多半落在别人的窗口上，而那份读数看起来仍然正常。
+func onScreenWindows() -> [[String: Any]] {
+    // .excludeDesktopElements 把桌面自己那块窗口与桌面图标排除在「障碍」之外 —— 它们正是我们要落上去的东西。
+    (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+     as? [[String: Any]]) ?? []
+}
+
+/// 扫不到桌面时，把**挡在主屏上的那几块窗口**按面积从大到小列出来（谁的、多大、在哪）。
+/// 没有这一段的话，报错只说「找不到」，而人要挪哪一块得自己猜。
+func describeBlockers() -> String {
+    let screen = CGDisplayBounds(CGMainDisplayID())
+    var rows: [(String, CGRect)] = []
+    for w in onScreenWindows() {
+        guard let b = w[kCGWindowBounds as String] as? [String: Any],
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary),
+              r.intersects(screen), r.width * r.height > 100_000 else { continue }
+        rows.append((w[kCGWindowOwnerName as String] as? String ?? "?", r))
+    }
+    rows.sort { $0.1.width * $0.1.height > $1.1.width * $1.1.height }
+    return rows.prefix(10).map {
+        "     \($0.0)  \(Int($0.1.minX)),\(Int($0.1.minY)) \(Int($0.1.width))x\(Int($0.1.height))"
+    }.joined(separator: "\n")
+}
+
+func findDesktopPoint(margin: CGFloat) -> CGPoint {
+    var blockers: [CGRect] = []
+    for w in onScreenWindows() {
+        guard let b = w[kCGWindowBounds as String] as? [String: Any],
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
+        blockers.append(r.insetBy(dx: -margin, dy: -margin))
+    }
+    let screen = CGDisplayBounds(CGMainDisplayID())
+    var best: CGPoint? = nil
+    var bestDist: CGFloat = -1
+    let panelCenter = CGPoint(x: panelRect.midX, y: panelRect.midY)
+    var y = screen.minY + 60      // 让开菜单栏
+    while y <= screen.maxY - 120 { // 让开 Dock
+        var x = screen.minX + 40
+        while x <= screen.maxX - 40 {
+            let p = CGPoint(x: x, y: y)
+            if !blockers.contains(where: { $0.contains(p) }) {
+                let d = hypot(p.x - panelCenter.x, p.y - panelCenter.y)
+                if d > bestDist { bestDist = d; best = p }
+            }
+            x += 40
+        }
+        y += 40
+    }
+    guard let p = best else {
+        die("屏幕上找不到一块露出来的桌面（周围 \(Int(margin)) 像素内无窗口）—— 把别的窗口挪开或最小化再跑。\n" +
+            "   不硬挑一个点：挑错了会落在别人的窗口上，而那份读数看起来仍然是一份正常的读数。\n" +
+            "   主屏上挡着的窗口（按面积，最多列 10 块）：\n" + describeBlockers())
+    }
+    return p
+}
+
+let O: CGPoint          // 「窗口外」那一下的落点
+/// 持着自己那块空白窗口，**不是为了用它，是为了别让它死**：没人持的 NSWindow
+/// 会被释放掉，那一下「窗口外」就落到它后面的东西上了 —— 而那份读数看起来仍然正常。
+var ownWindow: NSWindow? = nil
+
+switch whereMode {
+case "outside-window":
+    let primaryH = NSScreen.screens[0].frame.height
+    let ox = px + pw + 80, oy = py + 100   // 外窗内容区左上角（左上原点）
+    if !dryPoint {                          // --dry-point 连这块窗口都不开
+        app.setActivationPolicy(.regular)
+        let win = NSWindow(contentRect: NSRect(x: ox, y: primaryH - oy - 300, width: 300, height: 300),
+                           styleMask: [.titled], backing: .buffered, defer: false)
+        win.title = "xl-zs6 outside"
+        win.makeKeyAndOrderFront(nil)
+        ownWindow = win
+    }
+    O = CGPoint(x: ox + 150, y: oy + 150)   // 外窗中心
+case "desktop":
+    app.setActivationPolicy(.accessory)     // 不开窗，也别在 Dock 里冒出来
+    O = findDesktopPoint(margin: 30)
+case "same-app-window":
+    app.setActivationPolicy(.accessory)
+    guard let outsideGeoPath else { die("--where same-app-window 要配一个 --outside-geometry <文件>") }
+    let (ox, oy, ow, oh) = readGeometry(outsideGeoPath, "另一块窗口的几何")
+    let other = CGRect(x: ox, y: oy, width: ow, height: oh)
+    // 「外面」得真在外面：两块窗口叠上了的话，那一下按下落在哪一块由 z 序定，
+    // 而那份读数看起来仍然是一份正常的读数。
+    guard !other.intersects(panelRect) else {
+        die("另一块窗口 \(other) 与原版面板 \(panelRect) 叠在一起了 —— 这一下按下落在哪一块说不准。")
+    }
+    O = CGPoint(x: other.midX, y: other.midY)
+default:
+    die("不该走到这里：\(whereMode)")   // 上面已经拦过了
+}
+_ = ownWindow   // 引用一下，把「赋了值没人用」的警告压掉；理由见上面那段注释。
+
 let P = CGPoint(x: px + 600, y: py + 300)   // 面板 (600,300)，离所有按钮都远
 let src = CGEventSource(stateID: .hidSystemState)
+
+print("WHERE \(whereMode) outside=\(Int(O.x)),\(Int(O.y)) panel=\(Int(P.x)),\(Int(P.y))")
+fflush(stdout)
+
+if dryPoint {
+    // 只算落点，不发事件、不碰鼠标。落点算不出来的那一支上面已经硬失败过了。
+    exit(0)
+}
 
 func mark(_ s: String) { print("\(Int(Date().timeIntervalSince1970 * 1000)) MARK \(s)"); fflush(stdout) }
 func post(_ t: CGEventType, _ p: CGPoint, _ b: CGMouseButton) {

@@ -183,6 +183,10 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 在下面的 `onMouseDown` 里、跑在**下一次按下**时。`app/App.tsx` 的 `grabRelease` 里那一份是
    * 闭包局部量 —— **同一个语义，两种生命周期，不合**；为什么，完整论证在
    * `stage/mouseButtons.ts` 的模块注释里，只有那一份（xl-dnj）。
+   *
+   * ⚠️ **换落点量过一支了（xl-g9w）**：换成**同一个 app 的另一块窗口**，对原版那块窗口来说读数**逐字相同**；
+   * **桌面那一支仍没量过**（xl-23v），原生全屏那一支构造上量不了（推理，没量过）。哪几支量过、逐字读数与
+   * 读法只有一处源头：`MouseDispatchProbe` 类注释 + `tools/mouse-dispatch/expected-events-same-app-window.txt`。
    */
   const takenRef = useRef(0)
   useEffect(() => () => grabRef.current?.(), [])
@@ -196,7 +200,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     const othersHeld = (event.buttons & ~own) !== 0
     // 没 grab、而这一下之外还按着别的键（舞台外按下拖进来的）：`isMouseGrab` 为真，目标还是那个 null
     // —— 按下不派、不起 grab，之后的拖动与松手也就一个都不收（xl-m9q，与 `App.tsx` 的 `grabbedElsewhere`
-    // 同一判法）。全松开那一下 JDK 本会重设目标并派松手，而原版收不到它 —— macOS 上（CGEvent 合成的序列，「窗口外」那一下按在另一个 app 的窗口上）它根本到不了 Java 窗口（xl-zs6 实测；复跑 `tools/mouse-dispatch-probe.sh`，xl-sij）。
+    // 同一判法）。全松开那一下 JDK 本会重设目标并派松手，而原版收不到它 —— macOS 上（CGEvent 合成的序列，「窗口外」那一下按在另一个 app 的窗口上）它根本到不了 Java 窗口（xl-zs6 实测；复跑 `tools/mouse-dispatch-probe.sh`，xl-sij）。换成同一个 app 的另一块窗口，对原版那块窗口来说读数逐字相同（xl-g9w，`--where same-app-window`）；桌面那一支仍没量过。
     if (grabRef.current === null && othersHeld) return
     const panel = event.currentTarget
     const moveTo = (e: { readonly clientX: number; readonly clientY: number }) => {
