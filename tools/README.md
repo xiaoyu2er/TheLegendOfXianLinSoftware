@@ -22,6 +22,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # build.sh 默认就是这个路
 | `tools/export-trace.sh [名字…] [--check]` | 在原版上执行声明式剧本，逐 tick 导出行为真值到 `tools/traces/out/`；`--check` 跑两遍验证逐字节一致 |
 | `tools/compare-frames.sh [名字…]` | 跨端逐帧比对：同一份剧本在原版与 Web 版各出 N 帧，逐帧算差异，报告首个偏离帧号；`--self-check` 故意改坏一处渲染验流水线响不响。见 `docs/frame-compare.md` |
 | `tools/speed-probe.sh [倍率…]` | 两端时间加速倍率的墙钟线性度实测 |
+| `tools/mouse-dispatch-probe.sh [--dry-run\|--yes\|--rounds N\|--out 目录]` | 原版鼠标事件派发探针：合成「舞台外按着键拖进来」那一族的序列，量原版到底收没收到、派给了谁。**接管物理鼠标、要辅助功能授权、跑不进 CI**，见下 |
 | `tools/to-webp.sh <src> <dst>` | 把取景器产出的 PNG 批量转 WebP q80 |
 | `tools/bd-spawn.sh <issue-id>…` | 为 issue 开 worktree、认领、在新的 iTerm 标签页启动 Claude 会话 |
 
@@ -45,6 +46,41 @@ tools/bd-spawn.sh xl-9bd.1 xl-9bd.2      # 真开两个
 但没有 `/beads:*` 那 22 个斜杠命令，也没有 `beads:task-agent`。
 需要时用 `--config-dir` 覆盖。
 
+## 原版鼠标事件派发探针：mouse-dispatch-probe.sh
+
+「舞台外按着键拖进来」那一族票（xl-2yh、xl-m9q、xl-zs6、xl-5ee）的票面上反复出现
+「平台未验证」——源码只答得了「事件到了 Java 之后派给谁」，答不了「这一下到没到得了
+Java 窗口」。这套东西回答后一个问题，xl-zs6 现搭、xl-sij 收进来：
+
+- `tools/src/devtools/MouseDispatchProbe.java` —— 挂 `Toolkit.addAWTEventListener`
+  （**派发之前**的位置）再调 `main.Game.main`，把原版收到的每一个鼠标事件连同**派给了谁**
+  落盘。不改 `src/`。于是「收到了但没转派给面板」与「压根没到窗口」在日志里长得不一样。
+- `tools/mouse-dispatch/drive.swift` —— 在原版窗口右边开一块**自己的**空白窗口当「窗口外」，
+  用 CGEvent 按 HID tap 合成四组序列（A 对照 / B / B2 / C）。
+- `tools/mouse-dispatch/expected-events.txt` —— xl-zs6 那三轮的读数，跑完自动对账。
+
+```bash
+tools/mouse-dispatch-probe.sh --dry-run   # 只编译两侧 + 读权限，一个事件都不发
+tools/mouse-dispatch-probe.sh             # 真跑（默认三轮），跑前会问一句
+```
+
+**⚠ 跑之前要先问人**：它接管物理鼠标，那十几秒里光标自己动、真的按下去。
+
+**⚠ 权限前提**：`CGPreflightPostEventAccess` 与 `AXIsProcessTrusted` 都要为真（人在
+「系统设置 → 隐私与安全性 → 辅助功能」里给跑它的那个终端）。**没授权时合成事件被静默
+丢弃，Java 侧同样是零事件 —— 与「原版真的收不到」长得一模一样。** 所以 **A 对照**
+（窗口内空白处左键单击必须被 `start.StartPanel` 收到）是判据的一部分，不是装饰；
+脚本起手读那两个权限、末尾单独核 A 对照，就是为此。
+
+**⚠ 跑不进 CI**，两条硬拦：要真窗口（`-Djava.awt.headless=false`，还要 `StartPanel`
+真摆在屏幕上有屏幕坐标可算），要辅助功能授权（人在系统设置里点的，runner 上给不了）。
+CI 里覆盖到的只有 `tools/build.sh` 编得过探针那个 `.java`；驱动器那半连编译都不在 CI 里，
+要 `--dry-run` 才编。（对照 `tools/export-scaled-blit.sh`：那个只往 `BufferedImage`
+上画，跑在 CI 的条件下。）
+
+读数、读法与它的限定（事件是合成的、「窗口外」是另一个 app 的空白窗口、换落点没量过）
+写在 `MouseDispatchProbe` 的类注释里。
+
 ## 编码
 
 源码本身是 **GBK**，编译必须 `-encoding GBK`。
@@ -56,6 +92,7 @@ tools/bd-spawn.sh xl-9bd.1 xl-9bd.2      # 真开两个
 ## 目录
 
 - `src/devtools/ExportGroundTruth.java` — 真值导出器（Q15 的黄金基线）
+- `src/devtools/MouseDispatchProbe.java` — 原版鼠标事件派发探针（收不收得到 / 派给谁），与 `mouse-dispatch/drive.swift`、`mouse-dispatch/expected-events.txt` 配套
 - `src/devtools/ExportTrace.java` — 行为 trace 导出器：在虚拟时钟上驱动原版，逐 tick 录状态
 - `src/devtools/TraceScript.java` — 声明式剧本的模型与加载
 - `src/devtools/VirtualTimer.java` `VirtualClock.java` — 挂在虚拟时钟上的 `javax.swing.Timer` 替身
