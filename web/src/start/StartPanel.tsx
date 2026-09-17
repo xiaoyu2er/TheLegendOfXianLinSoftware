@@ -179,6 +179,13 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 起 grab 那只键的松手不受影响，落在舞台外也照送：`isMouseGrab` 把本键异或**回去**，读到的是
    * 「按下之前」的状态，所以最后一只键松开时它仍为真、`mouseEventTarget` 不重设（实测两种松手顺序下
    * 它都是 `src=start.StartPanel`）。
+   *
+   * ⚠️ **换落点量过一支了（xl-g9w）**：把「窗口外」换成**同一个 app 的另一块窗口**（原版那个 JVM 自己
+   * 多开的一块 `JFrame`，位置尺寸与驱动器那块一样），对**原版那块窗口**来说读数**逐字相同** —— 左键的
+   * 按下 / 松手 / `DRAGGED` 照样一下都不到，右键那两下照样停在 `main.GameLauncher`。不同的只有那块
+   * `JFrame` 自己收到了那几下。**桌面那一支仍没量过**（主屏被最大化窗口铺满时探针硬失败，要人先露出
+   * 一块桌面）；原生全屏那一支**构造上量不了**（它在自己的 Space，原版窗口同时不在屏上）—— 这一句是推理。
+   * 复跑：`tools/mouse-dispatch-probe.sh --where same-app-window`。
    */
   const takenRef = useRef(0)
   useEffect(() => () => grabRef.current?.(), [])
@@ -188,7 +195,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     const othersHeld = (event.buttons & ~own) !== 0
     // 没 grab、而这一下之外还按着别的键（舞台外按下拖进来的）：`isMouseGrab` 为真，目标还是那个 null
     // —— 按下不派、不起 grab，之后的拖动与松手也就一个都不收（xl-m9q，与 `App.tsx` 的 `grabbedElsewhere`
-    // 同一判法）。全松开那一下 JDK 本会重设目标并派松手，而原版收不到它 —— macOS 上（CGEvent 合成的序列，「窗口外」那一下按在另一个 app 的窗口上）它根本到不了 Java 窗口（xl-zs6 实测；复跑 `tools/mouse-dispatch-probe.sh`，xl-sij）。
+    // 同一判法）。全松开那一下 JDK 本会重设目标并派松手，而原版收不到它 —— macOS 上（CGEvent 合成的序列，「窗口外」那一下按在另一个 app 的窗口上）它根本到不了 Java 窗口（xl-zs6 实测；复跑 `tools/mouse-dispatch-probe.sh`，xl-sij）。换成同一个 app 的另一块窗口，对原版那块窗口来说读数逐字相同（xl-g9w，`--where same-app-window`）；桌面那一支仍没量过。
     if (grabRef.current === null && othersHeld) return
     const panel = event.currentTarget
     const moveTo = (e: { readonly clientX: number; readonly clientY: number }) => {

@@ -1,0 +1,41 @@
+# 落点 = **原版那个 JVM 自己多开的另一块 JFrame**（`--where same-app-window`）——
+# tools/mouse-dispatch-probe.sh 的对账基准之一。
+#
+# 读数出处：xl-g9w，macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致。归一化 = 只留
+# PRESSED / RELEASED，去掉时间戳与 scr=。# 开头的行脚本会滤掉。
+#
+# ⚠️ 这一支与 outside-window（另一个 app 的窗口）**只差一件事：那块「窗口外」的窗口归谁**。
+# 位置与尺寸是一样的（面板右边 80 像素、下移 100、300x300），探针会核它没跟面板叠上。
+#
+# **结论：对原版那块窗口来说，两支读数逐字相同。** 把下面这 12 行里 src 是
+# javax.swing.JFrame 的六行滤掉，剩下的六行与 tools/mouse-dispatch/expected-events.txt
+# 逐字一致（实跑 diff 退出码 0，不是看着像）。也就是说：
+#
+#   - 左键那一下按下 / 松手 / 整段 DRAGGED **一次都没到原版窗口**，跟落在别的 app 上一样；
+#   - 右键那两下照样到窗口、照样停在 main.GameLauncher（isMouseGrab 为真、目标仍是 null）；
+#   - 原版窗口收到的 ENTERED 同样带着 mex=0x400（知道左键按着），MOVED / EXITED 也一样。
+#
+# **不同的只有「另一块窗口自己收到了什么」**，而那块窗口跟原版没有任何关系：
+#
+#   - 它收到左键的 PRESSED（xy=150,150 是它自己的中心）、12 次 DRAGGED、以及 RELEASED；
+#   - 那个 RELEASED 的 xy=-504,200 是**它自己的坐标系**里的负数 —— 松手时光标在原版窗口上，
+#     可松手仍旧派给按下时那块窗口（Swing 的 mouse grab，只是这次跨的是两个顶层窗口）；
+#   - C 组（只松左键）在这一支里有一对 PRESSED / RELEASED，而在 outside-window 那一支里
+#     一行都没有 —— 差别全在这块窗口上，原版窗口那边两支都是零。
+#
+# 对 web 端的意思：`grabbedElsewhere` 押的「另一块宿主收下了 grab，这一块什么都不收」
+# 这个口径，在**同一个 app 的另一块窗口**上也成立，不只是在另一个 app 上成立。
+#
+# 头两行仍是 A 对照：窗口内单击必须被 start.StartPanel 收到。它没有 = 合成事件被丢了。
+PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300
+RELEASED btn=1 mex=0x0 src=start.StartPanel xy=600,300
+PRESSED btn=1 mex=0x400 src=javax.swing.JFrame xy=150,150
+PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
+RELEASED btn=3 mex=0x400 src=main.GameLauncher xy=600,328
+RELEASED btn=1 mex=0x0 src=javax.swing.JFrame xy=-504,200
+PRESSED btn=1 mex=0x400 src=javax.swing.JFrame xy=150,150
+PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
+RELEASED btn=1 mex=0x1000 src=javax.swing.JFrame xy=-504,200
+RELEASED btn=3 mex=0x0 src=main.GameLauncher xy=600,328
+PRESSED btn=1 mex=0x400 src=javax.swing.JFrame xy=150,150
+RELEASED btn=1 mex=0x0 src=javax.swing.JFrame xy=-504,200

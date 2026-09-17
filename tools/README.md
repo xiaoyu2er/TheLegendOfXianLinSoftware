@@ -55,13 +55,23 @@ Java 窗口」。这套东西回答后一个问题，xl-zs6 现搭、xl-sij 收�
 - `tools/src/devtools/MouseDispatchProbe.java` —— 挂 `Toolkit.addAWTEventListener`
   （**派发之前**的位置）再调 `main.Game.main`，把原版收到的每一个鼠标事件连同**派给了谁**
   落盘。不改 `src/`。于是「收到了但没转派给面板」与「压根没到窗口」在日志里长得不一样。
-- `tools/mouse-dispatch/drive.swift` —— 在原版窗口右边开一块**自己的**空白窗口当「窗口外」，
-  用 CGEvent 按 HID tap 合成四组序列（A 对照 / B / B2 / C）。
-- `tools/mouse-dispatch/expected-events.txt` —— xl-zs6 那三轮的读数，跑完自动对账。
+- `tools/mouse-dispatch/drive.swift` —— 按 `--where` 选一个「窗口外」的落点，用 CGEvent 按 HID tap
+  合成四组序列（A 对照 / B / B2 / C）。三个落点（xl-g9w）：`outside-window`（默认，驱动器自己开的
+  那块空白窗口 = 另一个 app 的普通窗口）、`desktop`（露出来的桌面，落点现扫）、`same-app-window`
+  （原版那个 JVM 自己多开的另一块 `JFrame`）。认不出来的名字是**硬失败**，不猜。
+- `tools/mouse-dispatch/expected-events.txt` —— `outside-window` 那一支的读数（xl-zs6 三轮），
+  跑完自动对账；`expected-events-same-app-window.txt` 是同 app 那一支的（xl-g9w 三轮）。
+- `tools/mouse-dispatch/replay-fixture/` —— 两份存下来的原始日志（一绿一红），给 `--replay` 用：
+  **不借鼠标**就能把对账那半判据跑一遍。见那个目录的 README.md。
 
 ```bash
 tools/mouse-dispatch-probe.sh --dry-run   # 只编译两侧 + 读权限，一个事件都不发
 tools/mouse-dispatch-probe.sh             # 真跑（默认三轮），跑前会问一句
+tools/mouse-dispatch-probe.sh --where same-app-window   # 换落点；每个落点一份期望读数
+
+# 下面这两条**一下鼠标都不碰**：
+tools/mouse-dispatch-probe.sh --check-point --where desktop   # 起原版拿几何、只把落点算出来
+tools/mouse-dispatch-probe.sh --replay <目录>                  # 拿存过的日志重跑对账
 ```
 
 **⚠ 跑之前要先问人**：它接管物理鼠标，那十几秒里光标自己动、真的按下去。
@@ -78,8 +88,11 @@ CI 里覆盖到的只有 `tools/build.sh` 编得过探针那个 `.java`；驱动
 要 `--dry-run` 才编。（对照 `tools/export-scaled-blit.sh`：那个只往 `BufferedImage`
 上画，跑在 CI 的条件下。）
 
-读数、读法与它的限定（事件是合成的、「窗口外」是另一个 app 的空白窗口、换落点没量过）
-写在 `MouseDispatchProbe` 的类注释里。
+读数、读法与它的限定（事件是合成的；哪些落点量过、哪些没量过）写在 `MouseDispatchProbe`
+的类注释里。**换落点量过一支了**（xl-g9w）：`same-app-window` 与默认那支相比，
+**对原版那块窗口来说读数逐字相同**；`desktop` 还没量过（要先有一块露出来的桌面，
+用 `--check-point` 可以在借鼠标之前先问清楚）；原生全屏那一支**构造上量不了**
+（它在自己的 Space，原版窗口同时不在屏上）—— 最后这一句是推理，没量过。
 
 ## 编码
 

@@ -16,6 +16,10 @@
 //     swiftc -O -o <可执行文件> tools/mouse-dispatch/drive.swift
 //     <可执行文件> <几何文件> [--where <落点>] [--outside-geometry <文件>]
 //     <可执行文件> --preflight          # 只打印两个权限读数就退出，一个事件都不发
+//     <可执行文件> <几何文件> --where <落点> --dry-point
+//                                       # 只把「窗口外」那一下的落点算出来打印，**一下鼠标都不碰**。
+//                                       # desktop 那一支扫不到桌面时，它连带把挡路的窗口列出来 ——
+//                                       # 这样「去挪哪一块窗口」不用人自己猜。
 //
 // 几何文件由探针写：x y 宽 高，全局坐标、左上原点。
 //
@@ -75,6 +79,7 @@ let KNOWN_WHERE = ["outside-window", "desktop", "same-app-window"]
 var geoPath: String? = nil
 var whereMode = "outside-window"
 var outsideGeoPath: String? = nil
+var dryPoint = false
 var i = 1
 while i < args.count {
     switch args[i] {
@@ -84,6 +89,8 @@ while i < args.count {
     case "--outside-geometry":
         guard i + 1 < args.count else { die("--outside-geometry 后面要跟一个文件") }
         outsideGeoPath = args[i + 1]; i += 2
+    case "--dry-point":
+        dryPoint = true; i += 1
     default:
         guard geoPath == nil else { die("多余的参数：\(args[i])") }
         geoPath = args[i]; i += 1
@@ -113,12 +120,32 @@ let app = NSApplication.shared
 
 /// 现扫一个**露出来的桌面**上的点：周围 `margin` 像素内不能有任何在屏窗口。
 /// 扫不到就硬失败 —— 随便挑一个点的话多半落在别人的窗口上，而那份读数看起来仍然正常。
-func findDesktopPoint(margin: CGFloat) -> CGPoint {
+func onScreenWindows() -> [[String: Any]] {
     // .excludeDesktopElements 把桌面自己那块窗口与桌面图标排除在「障碍」之外 —— 它们正是我们要落上去的东西。
-    let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                as? [[String: Any]]) ?? []
+    (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+     as? [[String: Any]]) ?? []
+}
+
+/// 扫不到桌面时，把**挡在主屏上的那几块窗口**按面积从大到小列出来（谁的、多大、在哪）。
+/// 没有这一段的话，报错只说「找不到」，而人要挪哪一块得自己猜。
+func describeBlockers() -> String {
+    let screen = CGDisplayBounds(CGMainDisplayID())
+    var rows: [(String, CGRect)] = []
+    for w in onScreenWindows() {
+        guard let b = w[kCGWindowBounds as String] as? [String: Any],
+              let r = CGRect(dictionaryRepresentation: b as CFDictionary),
+              r.intersects(screen), r.width * r.height > 100_000 else { continue }
+        rows.append((w[kCGWindowOwnerName as String] as? String ?? "?", r))
+    }
+    rows.sort { $0.1.width * $0.1.height > $1.1.width * $1.1.height }
+    return rows.prefix(10).map {
+        "     \($0.0)  \(Int($0.1.minX)),\(Int($0.1.minY)) \(Int($0.1.width))x\(Int($0.1.height))"
+    }.joined(separator: "\n")
+}
+
+func findDesktopPoint(margin: CGFloat) -> CGPoint {
     var blockers: [CGRect] = []
-    for w in info {
+    for w in onScreenWindows() {
         guard let b = w[kCGWindowBounds as String] as? [String: Any],
               let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { continue }
         blockers.append(r.insetBy(dx: -margin, dy: -margin))
@@ -142,7 +169,8 @@ func findDesktopPoint(margin: CGFloat) -> CGPoint {
     }
     guard let p = best else {
         die("屏幕上找不到一块露出来的桌面（周围 \(Int(margin)) 像素内无窗口）—— 把别的窗口挪开或最小化再跑。\n" +
-            "   不硬挑一个点：挑错了会落在别人的窗口上，而那份读数看起来仍然是一份正常的读数。")
+            "   不硬挑一个点：挑错了会落在别人的窗口上，而那份读数看起来仍然是一份正常的读数。\n" +
+            "   主屏上挡着的窗口（按面积，最多列 10 块）：\n" + describeBlockers())
     }
     return p
 }
@@ -152,14 +180,16 @@ var ownWindow: NSWindow? = nil
 
 switch whereMode {
 case "outside-window":
-    app.setActivationPolicy(.regular)
     let primaryH = NSScreen.screens[0].frame.height
     let ox = px + pw + 80, oy = py + 100   // 外窗内容区左上角（左上原点）
-    let win = NSWindow(contentRect: NSRect(x: ox, y: primaryH - oy - 300, width: 300, height: 300),
-                       styleMask: [.titled], backing: .buffered, defer: false)
-    win.title = "xl-zs6 outside"
-    win.makeKeyAndOrderFront(nil)
-    ownWindow = win
+    if !dryPoint {                          // --dry-point 连这块窗口都不开
+        app.setActivationPolicy(.regular)
+        let win = NSWindow(contentRect: NSRect(x: ox, y: primaryH - oy - 300, width: 300, height: 300),
+                           styleMask: [.titled], backing: .buffered, defer: false)
+        win.title = "xl-zs6 outside"
+        win.makeKeyAndOrderFront(nil)
+        ownWindow = win
+    }
     O = CGPoint(x: ox + 150, y: oy + 150)   // 外窗中心
 case "desktop":
     app.setActivationPolicy(.accessory)     // 不开窗，也别在 Dock 里冒出来
@@ -185,6 +215,11 @@ let src = CGEventSource(stateID: .hidSystemState)
 
 print("WHERE \(whereMode) outside=\(Int(O.x)),\(Int(O.y)) panel=\(Int(P.x)),\(Int(P.y))")
 fflush(stdout)
+
+if dryPoint {
+    // 只算落点，不发事件、不碰鼠标。落点算不出来的那一支上面已经硬失败过了。
+    exit(0)
+}
 
 func mark(_ s: String) { print("\(Int(Date().timeIntervalSince1970 * 1000)) MARK \(s)"); fflush(stdout) }
 func post(_ t: CGEventType, _ p: CGPoint, _ b: CGMouseButton) {

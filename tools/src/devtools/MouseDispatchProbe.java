@@ -34,7 +34,7 @@ import main.GameLauncher;
  * <h2>怎么量</h2>
  *
  * <pre>
- *   devtools.MouseDispatchProbe &lt;事件日志&gt; &lt;几何文件&gt;
+ *   devtools.MouseDispatchProbe &lt;事件日志&gt; &lt;几何文件&gt; [&lt;另一块窗口的几何文件&gt;]
  * </pre>
  *
  * 每一个 {@code MOUSE_EVENT_MASK | MOUSE_MOTION_EVENT_MASK} 的事件写一行：
@@ -100,6 +100,39 @@ import main.GameLauncher;
  * 只在按下 / 松手那几行上核过，移动那批只有第一轮的完整日志。{@code xy=} 留在对账里是因为
  * 它是组件内坐标：{@code 600,300} 与 {@code 600,328} 差的 28 是面板在窗口里的纵向偏移，
  * 与窗口落点无关。
+ *
+ * <h2>换落点：量过哪几支、结论变没变（xl-g9w）</h2>
+ *
+ * 上面那份读数有一条限定：「窗口外」是<b>驱动器自己开的那块空白窗口</b>（另一个 app 的普通窗口）。
+ * {@code drive --where} 现在能换落点，三支的处境各不相同：
+ *
+ * <ul>
+ *   <li><b>{@code outside-window}（默认）</b> —— 就是 xl-zs6 量的那一种。</li>
+ *   <li><b>{@code same-app-window} —— 量过了，结论<b>相同</b></b>（macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致）。
+ *       这一支的「窗口外」是<b>同一个 JVM 自己多开的另一块 {@link javax.swing.JFrame}</b>（由
+ *       {@link #openSameAppWindow} 开，位置尺寸与驱动器那块一样），于是两支只差一件事：那块窗口归谁。
+ *       把读数里 {@code src} 是那块 {@code JFrame} 的行滤掉，<b>剩下的六行与上面那六行逐字相同</b>
+ *       （实跑 {@code diff} 退出码 0，不是看着像；脚本跑完会把这一条当场打出来）。也就是说：
+ *       左键那一下的按下 / 松手 / 整段 {@code DRAGGED} <b>照样一次都不到原版窗口</b>，右键那两下照样停在
+ *       {@code main.GameLauncher}。不同的只有<b>那块 {@code JFrame} 自己</b>收到了那几下（连松手也归它，
+ *       {@code xy} 是它自己坐标系里的负数）。逐字读数与读法在
+ *       {@code tools/mouse-dispatch/expected-events-same-app-window.txt}。
+ *       对 web 端的意思：{@code grabbedElsewhere} 押的那个口径在同一个 app 的另一块窗口上也成立。</li>
+ *   <li><b>{@code desktop} —— 还没量过。</b> 驱动器会现扫一个「周围 30 像素内无窗口」的点，
+ *       主屏被最大化窗口铺满时它<b>硬失败</b>并把挡路的窗口列出来（2026-09-16 当场就是这个处境）。
+ *       不硬挑一个点，是因为挑错了会落在别人的窗口上，<b>而那份读数看起来仍然正常</b>。
+ *       借鼠标之前可以先用 {@code tools/mouse-dispatch-probe.sh --check-point --where desktop} 问清楚。</li>
+ *   <li><b>原生全屏 app —— 构造上量不了。</b> macOS 把全屏的 app 放进<b>自己的 Space</b>，
+ *       原版窗口同时不在屏幕上，「在外面按下、拖进原版窗口」发生不了；而「铺满屏幕但仍在同一个
+ *       Space 的普通窗口」等价于 {@code outside-window} 那一支。<b>⚠️ 这一条是推理，没量过。</b></li>
+ * </ul>
+ *
+ * <h2>⚠️ 它不是每一轮都量得到（xl-g9w 实测）</h2>
+ *
+ * 13 轮里有 2 轮被别的窗口抢走了焦点：一轮整轮<b>零事件</b>，一轮的 B 组读到
+ * {@code mex=0x1000}（左键没算成按着）。两者都被判据拦下了，而拦它们的是<b>逐轮</b>的 A 对照与
+ * 轮间比对 —— 所以<b>三轮逐字一致这件事本身就是判据的一半</b>，不是装饰。跑它的时候别动鼠标键盘，
+ * 也别让别的 agent 同时跑它。
  *
  * <h2>⚠️ 这套东西跑不进 CI</h2>
  *
