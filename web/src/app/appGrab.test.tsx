@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { GameView } from '../game/useGame'
@@ -6,6 +7,7 @@ import type { MenuInput } from '../menu/step'
 import type { ShopInput } from '../shop/step'
 import type { SaveLoadInput } from '../saveload/step'
 import type { BattlePointer } from '../battle/step'
+import { repoPath } from '../test/repoPath'
 
 /**
  * App 那一层的 mouse grab（xl-z4f 做了菜单，xl-o9z 收拢到三块宿主）：**松手派给按下时
@@ -466,5 +468,208 @@ describe('App 的 mouse grab', () => {
     fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 2, buttons: 3 })
     fireEvent.mouseMove(el, { clientX: 50, clientY: 60, buttons: 0 })
     expect(lsInput.mock.calls.map(([i]) => i.e)).toEqual(['press', 'press', 'release', 'release', 'move'])
+  })
+})
+
+/**
+ * grab 期间在**舞台外**按下的第二个键（xl-df1，标题页那一份是 xl-bg3）。
+ *
+ * 原版这四块是同一个 `JFrame` 里 `CardLayout` 的四块面板，而 `CardLayout.layoutContainer`
+ * 把当前那块 `setBounds` 到 `parent.width/height` 减边距（JDK 17；这里 hgap/vgap 与内容面板
+ * 的 insets 都是 0）—— **当前面板就是整个内容面板**。所以「宿主外」在原版里分两半，而这一层
+ * 原先把它们当成了一回事：
+ *
+ * - **舞台里、宿主外**（overlay 上的提示字、露出来的另一块宿主）：仍是同一块内容面板。
+ *   grab 期间 `LightweightDispatcher.processMouseEvent` 的 `isMouseGrab` 为真、`mouseEventTarget`
+ *   不重设，按下与松手都派给 grab 的主人 —— 照送，这一半原先就是对的；
+ * - **舞台外**（letterbox、工具条、页面别处）＝ 原版的窗口外：那一下按在别的窗口上、归那个
+ *   窗口，Java 侧**一条都没有**。按下与它的松手都不该送，而原先两下都送了。
+ *
+ * 读数：xl-bg3 在 macOS 24.6.0 + openjdk 17 上量的三轮（CGEvent 按 HID tap 合成整段序列，
+ * 「窗口外」是另一个 app 的空白窗口，复跑 `tools/mouse-dispatch-probe.sh`）——「窗口外按下的
+ * 第二个键，按下与松手 Java 一条都收不到」，同一轮里拖回窗口内再按右键读到
+ * `PRESSED btn=3 src=start.StartPanel`，所以那个「零」不是探针瞎了。⚠️ 那是在**标题页**上量的，
+ * 这四块宿主**没有各自复量过**：「事件到不到得了这个窗口」由操作系统按窗口定、与当前显示哪一块
+ * 面板无关 —— 这一句是推理，不是读数。
+ *
+ * 起 grab 那只键不受影响：`isMouseGrab` 把本键异或**回去**，读的是按下之前的状态，最后一只键
+ * 松开时它仍为真、目标不重设（实测两种松手顺序下它都是 `src=start.StartPanel`）。
+ */
+describe('App 的 mouse grab：舞台外按下的第二个键（xl-df1）', () => {
+  const FULL = { left: 0, top: 0, width: 1024, height: 640 }
+  /** 舞台里、宿主外的一处落点（overlay 盖着的地方）；舞台外的那一处在 x=1100，舞台宽 1024。 */
+  const IN_STAGE_OFF_HOST = { clientX: 500, clientY: 300 }
+  const OUTSIDE_STAGE = { clientX: 1100, clientY: 20 }
+  const HOSTS = [
+    ['战斗画布', 'battle', 'battle-host', battleMouse],
+    ['存读档面板', 'ls', 'ls-host', lsInput],
+    ['菜单', 'menu', 'menu-host', menuInput],
+    ['店', 'shop', 'shop-host', shopInput],
+  ] as const
+
+  const startGrab = (p: Panel, host: string) => {
+    panel.current = p
+    render(<App />)
+    const el = screen.getByTestId(host)
+    stubBox(el, FULL)
+    fireEvent.mouseDown(el, { clientX: 20, clientY: 20, button: 0, buttons: 1 })
+    return el
+  }
+
+  for (const [name, p, host, spy] of HOSTS) {
+    it(`${name}：舞台外按下右键 —— 按下与它的松手都不送，起 grab 那只键的松手照送（先松舞台外那只）`, () => {
+      startGrab(p, host)
+      fireEvent.mouseDown(document.body, { ...OUTSIDE_STAGE, button: 2, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 1200, clientY: 30, button: 2, buttons: 1 })
+      fireEvent.mouseUp(window, { clientX: 40, clientY: 40, button: 0, buttons: 0 })
+      expect(spy.mock.calls.map(([i]) => i), '舞台外按下的那只键，按下或松手被收了').toEqual([
+        { e: 'press', x: 20, y: 20 },
+        { e: 'release', x: 40, y: 40 },
+      ])
+    })
+
+    it(`${name}：先松起 grab 那只键、再松舞台外那只 —— 后者一下都不送，grab 照样解除`, () => {
+      startGrab(p, host)
+      fireEvent.mouseDown(document.body, { ...OUTSIDE_STAGE, button: 2, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 0, buttons: 2 })
+      fireEvent.mouseUp(window, { clientX: 70, clientY: 80, button: 2, buttons: 0 })
+      // grab 解除了：宿主外的拖动不再归它 —— 没解除的话这一下会多出一条 drag / move，
+      // 所以「解除了」这件事由下面那个 toEqual 的**长度**扛着，不必另写一句。
+      fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 90, buttons: 1 })
+      expect(spy.mock.calls.map(([i]) => i), '舞台外那只键的松手被收了，或 grab 没解除').toEqual([
+        { e: 'press', x: 20, y: 20 },
+        { e: 'release', x: 50, y: 60 },
+      ])
+    })
+
+    it(`${name}：舞台外那只键的松手丢在窗口外 —— 回来头一下没按键的移动不补它`, () => {
+      startGrab(p, host)
+      fireEvent.mouseDown(document.body, { ...OUTSIDE_STAGE, button: 2, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 0, buttons: 2 })
+      // 右键在窗口外松开，这里一个事件都没有；回来头一下没按键的移动。
+      fireEvent.mouseMove(document.body, { clientX: 200, clientY: 210, buttons: 0 })
+      expect(spy.mock.calls.map(([i]) => i.e), '给舞台外那只键补了一次原版根本没有的松手').toEqual(['press', 'release'])
+    })
+
+    it(`${name}：对照 —— 第二个键按在舞台里、宿主外，按下与松手都照送`, () => {
+      startGrab(p, host)
+      fireEvent.mouseDown(document.body, { ...IN_STAGE_OFF_HOST, button: 2, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 600, clientY: 400, button: 2, buttons: 1 })
+      fireEvent.mouseUp(window, { clientX: 30, clientY: 30, button: 0, buttons: 0 })
+      expect(spy.mock.calls.map(([i]) => i), '舞台里、宿主外那一下被当成舞台外挡掉了').toEqual([
+        { e: 'press', x: 20, y: 20 },
+        { e: 'press', x: 500, y: 300 },
+        { e: 'release', x: 600, y: 400 },
+        { e: 'release', x: 30, y: 30 },
+      ])
+    })
+
+    it(`${name}：对照 —— 舞台里按下的第二个键，松手丢在窗口外，回来头一下移动补得上`, () => {
+      startGrab(p, host)
+      fireEvent.mouseDown(document.body, { ...IN_STAGE_OFF_HOST, button: 2, buttons: 3 })
+      fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 0, buttons: 2 })
+      fireEvent.mouseMove(document.body, { clientX: 200, clientY: 210, buttons: 0 })
+      expect(spy.mock.calls.map(([i]) => i.e), '舞台里按下的那只键，丢在窗口外的松手没补上').toEqual(['press', 'press', 'release', 'release'])
+    })
+  }
+
+  /**
+   * 边界：舞台的右下角**不含**外接矩形那一线（`clientX < box.right`）。挨着的两下，
+   * 一下在里一下在外 —— 上面那几条用的 x=500 与 x=1100 离边界都很远，只有这一条能说
+   * 「界划在哪儿」。
+   */
+  it('边界：x=1023 算舞台里、x=1024 算舞台外', () => {
+    startGrab('battle', 'battle-host')
+    fireEvent.mouseDown(document.body, { clientX: 1023, clientY: 300, button: 2, buttons: 3 })
+    fireEvent.mouseUp(window, { clientX: 1023, clientY: 300, button: 2, buttons: 1 })
+    fireEvent.mouseDown(document.body, { clientX: 1024, clientY: 300, button: 1, buttons: 5 })
+    fireEvent.mouseUp(window, { clientX: 1024, clientY: 300, button: 1, buttons: 1 })
+    fireEvent.mouseUp(window, { clientX: 10, clientY: 10, button: 0, buttons: 0 })
+    expect(battleMouse.mock.calls.map(([i]) => i), '界划错了一格：x=1023 被当成舞台外，或 x=1024 被当成舞台里').toEqual([
+      { e: 'press', x: 20, y: 20 },
+      { e: 'press', x: 1023, y: 300 },
+      { e: 'release', x: 1023, y: 300 },
+      { e: 'release', x: 10, y: 10 },
+    ])
+  })
+
+  /**
+   * 舞台外按下的那一下**不占 `useGame.routeByGrab` 的计数**：那一层按「送了几次按下就等
+   * 几次松手」数（`grab.held`），这里多送一次按下、少送一次松手，它的 grab 就永远解除不了。
+   * 判据是下一次干净的点击照样送得出来 —— 上面那一层还卡着的话，这一下会被当成和弦。
+   */
+  it('舞台外按下的那一下不入按下 / 松手的账：下一次干净的点击照常', () => {
+    const el = startGrab('battle', 'battle-host')
+    fireEvent.mouseDown(document.body, { ...OUTSIDE_STAGE, button: 2, buttons: 3 })
+    fireEvent.mouseUp(window, { clientX: 1200, clientY: 30, button: 2, buttons: 1 })
+    fireEvent.mouseUp(window, { clientX: 40, clientY: 40, button: 0, buttons: 0 })
+    battleMouse.mockClear()
+    fireEvent.mouseDown(el, { clientX: 70, clientY: 80, button: 0, buttons: 1 })
+    fireEvent.mouseUp(window, { clientX: 70, clientY: 80, button: 0, buttons: 0 })
+    expect(battleMouse.mock.calls.map(([i]) => i), '上一轮舞台外那一下把按下 / 松手的账记岔了').toEqual([
+      { e: 'press', x: 70, y: 80 },
+      { e: 'release', x: 70, y: 80 },
+    ])
+  })
+
+  /**
+   * `BUTTON_BITS` 只定到第 5 只键（`buttons` 规范就到这儿）。第 6 只起的 grab 若拿到位位图 0，
+   * 位图就空着：宿主已经送出那一下按下，而全松开时 `endWithReleases` 一次松手都不补 ——
+   * `useGame.routeByGrab` 的计数回不到 0，grab 再也解不开。`bitOf` 用 `1 << button` 兜底。
+   */
+  it('第 6 只键起的 grab：按下与松手照样一对一，不会把账挂住', () => {
+    const el = startGrab('battle', 'battle-host')
+    fireEvent.mouseUp(window, { clientX: 20, clientY: 20, button: 0, buttons: 0 })
+    battleMouse.mockClear()
+    fireEvent.mouseDown(el, { clientX: 30, clientY: 40, button: 5, buttons: 32 })
+    fireEvent.mouseUp(window, { clientX: 50, clientY: 60, button: 5, buttons: 0 })
+    expect(battleMouse.mock.calls.map(([i]) => i), '第 6 只键的松手没送出去（位图里没有它）').toEqual([
+      { e: 'press', x: 30, y: 40 },
+      { e: 'release', x: 50, y: 60 },
+    ])
+  })
+})
+
+/**
+ * `insideStage` 拿的是**宿主**按下那一刻的外接矩形，而它讲的是**舞台**（＝原版那个窗口）。
+ * 两者今天逐像素相等，靠的是 `index.css` 里那条链：`.stage-panel` 与 `.stage-canvas-host`
+ * 都是 `width/height: 100%`，一路铺到 `.stage`（宽高由 JS 按 1024:640 算好）。
+ *
+ * **这一段就是那条链的判据。** 上面 51 条一律把宿主 `stubBox` 成整个舞台，所以宿主哪天缩小
+ * 一圈，它们全绿，而 `insideStage` 悄悄退回「宿主外」—— 正是票面警告的那条区分丢掉的样子。
+ *
+ * 读的是样式表文本：jsdom 不加载样式表，量不到渲染结果。手法与 `app/stageCursor.test.ts` 同。
+ * ⚠️ 看不见的：组件里的内联 `style`（今天这两个类名上一处都没有）与真浏览器里的实际布局。
+ */
+describe('宿主的矩形就是舞台的矩形（xl-df1）', () => {
+  const CSS = readFileSync(repoPath('web/src/index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const RULES = [...CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({ selector: m[1]!.trim(), body: m[2]! }))
+  /** 铺满父元素的这条链上的每一环。`.stage` 自己的宽高是 JS 现算的，不在这儿核。 */
+  const CHAIN = ['.stage-canvas-host', '.stage-panel']
+  const decl = (body: string, prop: string): string | undefined =>
+    new RegExp(`(?:^|;|\\s)${prop}\\s*:\\s*([^;]+)`).exec(body)?.[1]?.trim()
+
+  it('空转要响：这两个类名在 index.css 里真读得出来', () => {
+    expect(RULES.length, '样式表解析坏了 —— 下面几条就成了「找不到即通过」').toBeGreaterThan(10)
+    for (const sel of CHAIN) {
+      expect(RULES.filter((r) => r.selector === sel), `index.css 里应当恰好一条 ${sel} 规则`).toHaveLength(1)
+    }
+  })
+
+  it('这条链上每一环都是 width/height 100% —— 少一环、改成别的值都要红', () => {
+    const wrong = CHAIN.flatMap((sel) => {
+      const body = RULES.find((r) => r.selector === sel)!.body
+      return (['width', 'height'] as const)
+        .filter((prop) => decl(body, prop) !== '100%')
+        .map((prop) => `${sel} 的 ${prop} 是「${decl(body, prop) ?? '没写'}」，不是 100%`)
+    })
+    expect(wrong).toEqual([])
+  })
+
+  it('没有别的规则把这两环缩回去（padding / border / margin / transform / inset）', () => {
+    const SHRINK = ['padding', 'border', 'margin', 'transform', 'inset', 'top', 'left', 'max-width', 'max-height']
+    const offenders = RULES.filter((r) => r.selector.split(',').some((part) => CHAIN.includes(part.trim())))
+      .flatMap((r) => SHRINK.filter((prop) => decl(r.body, prop) !== undefined).map((prop) => `${r.selector} 写了 ${prop}`))
+    expect(offenders).toEqual([])
   })
 })

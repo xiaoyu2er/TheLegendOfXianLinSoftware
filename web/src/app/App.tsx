@@ -35,6 +35,16 @@ export const TITLE_OPTION = ''
 const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16]
 
 /**
+ * 这一下按的是哪只键，换成它在 `buttons` 里的那一位。
+ *
+ * 表上没有的键（第 6 只往后，`buttons` 规范只定到第 5 只）按 `1 << button` 兜底，**不能按 0**：
+ * 位图靠「按下与松手拿到同一位」认人，给 0 等于这只键的按下记不进位图，而宿主已经把那一下送出去了 ——
+ * `useGame.routeByGrab` 的计数于是永远回不到 0，grab 再也解不开。`1 << button` 从第 6 只起是
+ * 32 / 64 /…，与表里那五个（1/4/2/8/16）不撞。
+ */
+const bitOf = (event: { readonly button: number }): number => BUTTON_BITS[event.button] ?? 1 << event.button
+
+/**
  * 存读档面板上的几行字（xl-i06.9）。**画在 overlay 上，不画进 Pixi**：它们原版没有，
  * 是这一层对浏览器存储那几种状态的表态 —— 混进画布就会被当成原版画面去比。
  *
@@ -269,6 +279,35 @@ export function App() {
   const stagePoint = (event: ReactMouseEvent<HTMLDivElement>): { x: number; y: number } | null =>
     stagePointIn(event.currentTarget.getBoundingClientRect(), event)
 
+  /**
+   * 这一下落在**舞台**里没有 —— 舞台就是原版那个窗口（`GameLauncher` 的内容面板，
+   * `CardLayout` 把当前那块面板铺满它，JDK 17 `CardLayout.layoutContainer` 逐个
+   * `setBounds` 到 `parent.width/height` 减边距，而这里边距与 hgap/vgap 都是 0）。
+   *
+   * 所以**「宿主外」不等于「窗口外」**：舞台里、宿主外（overlay 上的提示字、露出来的
+   * 另一块宿主）在原版仍是同一块内容面板，grab 期间的按下照派给 grab 的主人；舞台外
+   * （letterbox、工具条、页面别处）才是原版的窗口外。
+   *
+   * 按外接矩形算，不看落在哪个元素上：舞台上叠着 overlay，按元素判会把提示字算成宿主外的另一块地方。
+   *
+   * ⚠️ 传进来的是**宿主**按下那一刻的矩形，不是舞台自己的。今天两者逐像素相等 —— `.stage-panel`
+   * 与 `.stage-canvas-host` 都是 `width/height: 100%`，一路铺到 `.stage`。**那条 CSS 链是这个函数
+   * 名副其实的前提，它自己不守，判据在 `app/appGrab.test.tsx` 的「宿主的矩形就是舞台的矩形」那一段**：
+   * 宿主哪天缩小一圈，这里就悄悄退回「宿主外」，而所有测试照绿（测试一律把宿主 stub 成整个舞台）。
+   *
+   * ⚠️ 「舞台外 ＝ 原版的窗口外」是**建模选择**，不是从 JDK 推出来的：原版 `pack()` 之后压根没有
+   * letterbox 与工具条这两块地方，web 独有的区域算在窗口的哪一侧得有人裁。这一层沿用既有口径
+   * （`isMouseGrab` 的注释里那句「按在舞台外（原版是窗口外）」，xl-2yh / xl-m9q）。
+   */
+  const insideStage = (
+    hostBox: DOMRect,
+    event: { readonly clientX: number; readonly clientY: number },
+  ): boolean =>
+    event.clientX >= hostBox.left &&
+    event.clientX < hostBox.right &&
+    event.clientY >= hostBox.top &&
+    event.clientY < hostBox.bottom
+
   /** 客户端坐标 → 舞台逻辑坐标，按给定的外接矩形换算。矩形是空的（藏着）就 `null`。 */
   const stagePointIn = (
     box: DOMRect,
@@ -296,7 +335,11 @@ export function App() {
     view.battleMouse({ e: kind, x: at.x, y: at.y })
     if (type === 'press') {
       const host = event.currentTarget
-      grabRelease(host, box, (p) => view.battleMouse({ e: 'release', ...p }), (p) => view.battleMouse({ e: 'drag', ...p }), (p) => view.battleMouse({ e: 'press', ...p }))
+      grabRelease(host, box, bitOf(event), {
+        release: (p) => view.battleMouse({ e: 'release', ...p }),
+        drag: (p) => view.battleMouse({ e: 'drag', ...p }),
+        press: (p) => view.battleMouse({ e: 'press', ...p }),
+      })
     }
   }
 
@@ -317,7 +360,12 @@ export function App() {
     setMenuTitle(view.menuTitleAt(at.x, at.y))
     if (e === 'press') {
       const host = event.currentTarget
-      grabRelease(host, box, (p) => view.menuInput({ e: 'release', ...p }), (p) => view.menuInput({ e: 'move', ...p }), (p) => view.menuInput({ e: 'press', ...p }))
+      grabRelease(host, box, bitOf(event), {
+        release: (p) => view.menuInput({ e: 'release', ...p }),
+        // 菜单那一支没有单独的 drag：原版 `mouseDragged` 与 `mouseMoved` 两段逐字相同。
+        drag: (p) => view.menuInput({ e: 'move', ...p }),
+        press: (p) => view.menuInput({ e: 'press', ...p }),
+      })
     }
   }
 
@@ -347,48 +395,91 @@ export function App() {
    * `buttons` 为 0，或者一次除自己之外没按着别的键的新按下。见到就当场补上那一下松手
    * （xl-bwl），两个监听挂在捕获阶段，赶在宿主自己收这一下之前。⚠️ 补的坐标是见到它的
    * 那一刻，不是真正松手的地方（窗口外，这一层无从得知）—— 残余差异，如实记下。
+   *
+   * grab 期间在**舞台外**按下的第二个键，按下与松手原版一下都收不到：那一下按在别的窗口上、
+   * 归那个窗口，Java 侧一条事件都没有（xl-bg3 在 macOS 上量的是标题页，同一个 JFrame、
+   * 同一条操作系统的路，读数与当前显示哪一块 `CardLayout` 面板无关 —— ⚠️ **这四块宿主没有
+   * 各自复量过**，见 `takenRef` 那段）。所以按下要按 {@link insideStage} 挡掉，松手要按
+   * 「这个 grab 收下过按下的那几只键」那张位图挡掉。拖动不挡：同一轮实测越界 `DRAGGED`
+   * 一路 `src=start.StartPanel`，按着键拖出窗口操作系统照样送进来（xl-40m / xl-bg3）。
    */
   const grabRef = useRef<{ readonly host: Element; readonly end: () => void } | null>(null)
   const grabRelease = (
     host: Element,
     box: DOMRect,
-    send: (at: { x: number; y: number }) => void,
-    drag: (at: { x: number; y: number }) => void,
-    press: (at: { x: number; y: number }) => void,
+    /** 起这个 grab 的那只键在 `buttons` 里的那一位。 */
+    ownBit: number,
+    /** 这块宿主的三条出口，按下那一刻就定了（归哪个面板在 `useGame.routeByGrab` 定）。 */
+    to: {
+      readonly release: (at: { x: number; y: number }) => void
+      readonly drag: (at: { x: number; y: number }) => void
+      readonly press: (at: { x: number; y: number }) => void
+    },
   ) => {
     // 和弦（xl-4xi）：grab 挂着时又按下一个键，Swing 的 `isMouseGrab` 看的是「这一下之前
     // 有没有键按着」—— 有，于是这一下按下也归 grab、grab 照旧。落在同一块宿主上时宿主自己
     // 已经送了这一下，这里只是不另起一个 grab；落在别处的由下面的 `onPress` 送。
     if (grabRef.current !== null) return
-    // 按下却还没见到松手的次数。窗口外松了手要补的是**每一个**键的松手，原版每一下都收得到；
-    // `useGame.routeByGrab` 也按次数数，两边对不上它的 grab 就解除不了。
-    let held = 1
+    /**
+     * 这个 grab **收下过按下**的那几只键（位图，与 `BUTTON_BITS` 同一张表；起 grab 那只键
+     * `own` 一开始就在里面）。只有它们的松手才送 `release` —— 舞台外按下的第二个键不在里面，
+     * 原版那一下按在别的窗口上，按下与松手 Java 一条都收不到，而浏览器照样把两下都派给 window。
+     *
+     * 位图而不是计数（标题页那一份 `StartPanel.tsx` 的 `takenRef` 同一个理由，xl-bg3）：要
+     * 认出「这一只松手该不该送」，光知道还欠几次不够。`useGame.routeByGrab` 那半仍然按次数数，
+     * 两边靠「送几次按下就送几次松手」对上 —— 挡掉的按下这里一次都不送，它的松手也就不欠。
+     *
+     * ⚠️ 读数取自 xl-bg3 在标题页上的 macOS 实测（三轮逐字一致），**这四块宿主没有各自复量过**：
+     * 它们在原版里是同一个 `JFrame` 里 `CardLayout` 的几块面板，「事件到不到得了这个窗口」由
+     * 操作系统按窗口定，与当前显示哪一块无关 —— 这一句是推理，不是读数。
+     */
+    let taken = ownBit
     const at = (event: MouseEvent) => stagePointIn(box, event)
     const sendOneRelease = (event: MouseEvent) => {
-      held = Math.max(held - 1, 0)
       const p = at(event)
-      if (p) send(p)
+      if (p) to.release(p)
     }
-    /** 所有键都松开了：解除 grab，还欠几次松手就补几次（别的键可能是在窗口外松开的）。 */
+    /**
+     * 所有键都松开了：解除 grab，位图里还欠几只键的松手就补几次（别的键可能是在窗口外松开的）。
+     * 位图空着就一次都不补 —— 欠着的那几只若是舞台外按下的，原版压根没有这一下。
+     */
     const endWithReleases = (event: MouseEvent) => {
+      let owed = 0
+      for (let bits = taken; bits !== 0; bits >>= 1) owed += bits & 1
       endGrab()
-      for (let n = Math.max(held, 1); n > 0; n--) sendOneRelease(event)
+      for (let n = owed; n > 0; n--) sendOneRelease(event)
     }
     // 每一次松手都派给 grab；要等**所有键都松开**（`buttons` 为 0）grab 才解除（xl-4xi）。
-    const onRelease = (event: MouseEvent) => (event.buttons === 0 ? endWithReleases(event) : sendOneRelease(event))
+    const onRelease = (event: MouseEvent) => {
+      if (event.buttons === 0) return endWithReleases(event)
+      const bit = bitOf(event)
+      // 这只键的按下这个 grab 没收下（舞台外按下的第二个键）：它的松手也不收。
+      if ((taken & bit) === 0) return
+      taken &= ~bit
+      sendOneRelease(event)
+    }
+    /**
+     * 拖动一条都不挡：xl-40m / xl-bg3 同一轮实测，按着键拖出窗口操作系统照样送进来，越界
+     * `DRAGGED` 一路 `src=start.StartPanel`、x 到 1254（舞台宽 1024）。
+     *
+     * ⚠️ **那一轮量的是「起 grab 那只键按着」拖出去**。起 grab 那只键已经松开、只剩被挡掉的那只
+     * （舞台外按下的）还按着时的拖动，**没有量过**，这里照送 —— 登记为未量，不是读数。
+     */
     const onDrag = (event: MouseEvent) => {
       if (event.buttons === 0) return endWithReleases(event)
       if (event.target instanceof Node && host.contains(event.target)) return
       const p = at(event)
-      if (p) drag(p)
+      if (p) to.drag(p)
     }
     // 除这一下自己之外没按着别的键：上一次的松手丢在窗口外了。按着别的键就是和弦。
     const onPress = (event: MouseEvent) => {
       if (!isMouseGrab(event)) return endWithReleases(event)
-      held += 1
+      // 舞台外（原版是窗口外）按下的第二个键：原版一下都收不到，这里也一下都不收（xl-bg3）。
+      if (!insideStage(box, event)) return
+      taken |= bitOf(event)
       if (event.target instanceof Node && host.contains(event.target)) return
       const p = at(event)
-      if (p) press(p)
+      if (p) to.press(p)
     }
     const endGrab = () => {
       window.removeEventListener('mouseup', onRelease)
@@ -421,7 +512,13 @@ export function App() {
     const send = inShopPreview ? shop.input : view.shopInput
     // 按住任一键移动是 `mouseDragged`：两家店那一支只记坐标，不跑 `isMoveIn`（xl-bwl）。
     send({ e: e === 'move' && event.buttons !== 0 ? 'drag' : e, x: at.x, y: at.y })
-    if (e === 'press') grabRelease(event.currentTarget, box, (p) => send({ e: 'release', ...p }), (p) => send({ e: 'drag', ...p }), (p) => send({ e: 'press', ...p }))
+    if (e === 'press') {
+      grabRelease(event.currentTarget, box, bitOf(event), {
+        release: (p) => send({ e: 'release', ...p }),
+        drag: (p) => send({ e: 'drag', ...p }),
+        press: (p) => send({ e: 'press', ...p }),
+      })
+    }
   }
 
   /**
@@ -440,7 +537,11 @@ export function App() {
     view.lsInput({ e: kind, x: at.x, y: at.y })
     if (e === 'press') {
       const host = event.currentTarget
-      grabRelease(host, box, (p) => view.lsInput({ e: 'release', ...p }), (p) => view.lsInput({ e: 'drag', ...p }), (p) => view.lsInput({ e: 'press', ...p }))
+      grabRelease(host, box, bitOf(event), {
+        release: (p) => view.lsInput({ e: 'release', ...p }),
+        drag: (p) => view.lsInput({ e: 'drag', ...p }),
+        press: (p) => view.lsInput({ e: 'press', ...p }),
+      })
     }
   }
 
@@ -659,6 +760,6 @@ export function App() {
  *   `MouseAdapter` 本来就没接 ENTERED。复跑 `tools/mouse-dispatch-probe.sh`（xl-sij）。
  */
 function isMouseGrab(event: { readonly type: string; readonly button: number; readonly buttons: number }): boolean {
-  const own = event.type === 'mousedown' ? (BUTTON_BITS[event.button] ?? 0) : 0
+  const own = event.type === 'mousedown' ? bitOf(event) : 0
   return (event.buttons & ~own) !== 0
 }
