@@ -284,8 +284,6 @@ export function App() {
     box: DOMRect,
     event: { readonly clientX: number; readonly clientY: number },
   ): boolean =>
-    box.width > 0 &&
-    box.height > 0 &&
     event.clientX >= box.left &&
     event.clientX < box.right &&
     event.clientY >= box.top &&
@@ -448,7 +446,6 @@ export function App() {
       window.removeEventListener('mouseup', onRelease)
       window.removeEventListener('mousemove', onDrag, true)
       window.removeEventListener('mousedown', onPress, true)
-      taken = 0
       grabRef.current = null
     }
     grabRef.current = { host, end: endGrab }
