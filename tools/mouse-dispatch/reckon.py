@@ -62,7 +62,13 @@ def parse_events(text):
             continue
         f = line.split()
         name = f[1] if len(f) > 1 else ''
-        if len(f) < 6 or not f[0].isdigit() or not (name in KNOWN or (name.startswith('ID') and name[2:].isdigit())):
+        shape = (len(f) >= 6 and f[0].isdigit()
+                 and (name in KNOWN or (name.startswith('ID') and name[2:].isdigit()))
+                 # ⚠️ 前缀也要核，不能只数字段个数：探针要是在 btn 前面多插一列，
+                 # `btn=` / `mex=` / `src=` 会整体右移一位，下面那句 join 照样拼得出一行，
+                 # src 被静默丢掉 —— 那是一份**看起来正常**的错读数（/code-review 逮到的）。
+                 and f[2].startswith('btn=') and f[3].startswith('mex=') and f[4].startswith('src='))
+        if not shape:
             junk += 1
             continue
         if name not in KINDS:
@@ -77,8 +83,13 @@ def reckon(drive_text, events_text):
     events, junk = parse_events(events_text)
 
     problem = None
+    names = [name for _, name in marks]
     if not marks:
         problem = '驱动器日志里一个 MARK 都没有 —— 分不了段，下面这份读数不算数'
+    elif len(set(names)) != len(names):
+        # 桶是拿 MARK 的**文本**当键的，重名会静默并成一桶：两段的读数混在一行里，
+        # 而那一行读起来和「这一段就是这样」一模一样。
+        problem = '驱动器日志里有同名的 MARK —— 它们会并成一桶，分段读数不算数'
     elif junk:
         problem = '事件日志里有 %d 行认不出来 —— 多半是探针的输出格式漂了，不是「没收到」' % junk
     elif not events:
@@ -112,7 +123,7 @@ def reckon(drive_text, events_text):
 # ---------------------------------------------------------------- 自检
 
 def _selftest():
-    """六个合成用例。**不碰鼠标、不要辅助功能授权**，随时可跑。
+    """一批合成用例（条数末尾自己报）。**不碰鼠标、不要辅助功能授权**，随时可跑。
 
     前两条是这套东西的要害：D3 段有 DRAGGED 与没有 DRAGGED，**输出必须长得不一样** ——
     xl-8eg 这一趟就是去分辨这两种，它们要是同形，跑了也白跑。
@@ -144,6 +155,15 @@ def _selftest():
         # 不算数」，不是「什么都没有」。（这条期望值起初写成空列表，自检当场逮到。）
         ('一个 MARK 都没有', log('PERMISSIONS x'), log(d1), '一个 MARK 都没有', [
             '（第一个 MARK 之前） | DRAGGED btn=0 mex=0x400 src=start.StartPanel']),
+        # 多插一列：字段个数够、事件名也认得，只有前缀对不上 —— 不核前缀的话 src 会被静默丢掉。
+        ('探针多插了一列 → 算格式漂了', drive,
+         log('1500 DRAGGED id=7 btn=0 mex=0x400 src=start.StartPanel xy=1,2 scr=1,2'), '认不出来', [
+            'D1 拖出 | ' + EMPTY, 'D3 拖回 | ' + EMPTY, 'D4 收尾 | ' + EMPTY]),
+        # 同名 MARK：两段会并成一桶，读起来像「这一段就是这样」。
+        # 症状就在期望值里：同一条读数被**打了两遍**（两段并成了一桶），而单看任一行都正常。
+        ('两个同名 MARK → 不算数', log('1000 MARK D1 拖出', '2000 MARK D1 拖出'), log(d1),
+         '同名的 MARK', ['D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel',
+                        'D1 拖出 | DRAGGED btn=0 mex=0x400 src=start.StartPanel']),
         ('时间戳压在 MARK 上 → 归后一段', drive, log('2000 ' + d3.split(' ', 1)[1]), None, [
             'D1 拖出 | ' + EMPTY,
             'D3 拖回 | DRAGGED btn=0 mex=0x1000 src=start.StartPanel',
@@ -161,19 +181,44 @@ def _selftest():
             print('   要的：' + ' ⏎ '.join(want_lines))
         else:
             print('✅ %s（%s，%d 行）' % (name, problem or '没有要报的', len(lines)))
-    # 头两条同形的话，这一趟量什么都分辨不出来 —— 单独再核一遍，别只靠上面逐条对文本。
-    a, _ = reckon(*cases[0][1:3])
-    b, _ = reckon(*cases[1][1:3])
-    if a == b:
-        bad += 1
-        print('❌ 「D3 收得到」与「D3 收不到」两份读数**逐字相同** —— 这个脚本分辨不了本票要量的东西')
-    else:
-        print('✅ 「D3 收得到」与「D3 收不到」两份读数不同形')
+    # ⚠️ 这里原先还有一条「两份读数不同形」的断言，**它是按构造成立的**（/code-review 逮到）：
+    # 头两条用例的期望文本本来就逐字不同，上面又逐条核过，两条过就推出不同形，永远红不了。
+    # 真正在守这件事的是**头两条用例的期望文本本身** —— 它们只差 D3 那一行，改坏任何一边都红。
+    bad_main, n_main = _selftest_main()
+    bad += bad_main
     if bad:
         print('自检 %d 条不过。' % bad)
         return 1
-    print('自检 %d 条全过。' % (len(cases) + 1))
+    print('自检 %d 条全过。' % (len(cases) + n_main))
     return 0
+
+
+def _selftest_main():
+    """走一遍 main()，核退出码 —— 上面那批只调 reckon()，而 probe.sh 判的是退出码。→ (不过的条数, 条数)"""
+    import tempfile, os
+    bad = n = 0
+    drive = 'PERMISSIONS ok\n1000 MARK D1 拖出\n2000 MARK D3 拖回\n'
+    good = '1500 DRAGGED btn=0 mex=0x400 src=start.StartPanel xy=1,2 scr=1,2\n'
+    for name, ev, want in (('main 正常 → 0', good, 0), ('main 格式漂了 → 3', '1500 DRAGGED src=x\n', 3)):
+        d = tempfile.mkdtemp()
+        dv, evp = os.path.join(d, 'drive.log'), os.path.join(d, 'events.log')
+        open(dv, 'w', encoding='utf-8').write(drive)
+        open(evp, 'w', encoding='utf-8').write(ev)
+        devnull = open(os.devnull, 'w')
+        so, se = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = devnull, devnull
+        try:
+            got = main(['reckon.py', dv, evp])
+        finally:
+            sys.stdout, sys.stderr = so, se
+            devnull.close()
+        n += 1
+        if got == want:
+            print('✅ %s' % name)
+        else:
+            bad += 1
+            print('❌ %s：拿到 %d' % (name, got))
+    return bad, n
 
 
 def main(argv):

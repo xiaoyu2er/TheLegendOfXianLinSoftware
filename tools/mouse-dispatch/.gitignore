@@ -1,0 +1,2 @@
+# reckon.py 被当模块 import 时（编辑器 / 工具链）留下的字节码，不入库。
+__pycache__/

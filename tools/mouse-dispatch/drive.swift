@@ -1,6 +1,11 @@
 // 「舞台外按着键拖进来」那一族票的鼠标序列驱动器（xl-zs6 现搭，xl-sij 收进来）。
 //
 // 它做两件事：
+//   ⚠️ 探针只驱动**标题页**（src=start.StartPanel）。所以 D 组量到的读数直接管的是
+//      web/src/start/StartPanel.tsx 那一支；web/src/app/App.tsx 那四块宿主仍然是**推理**
+//      （同一个 JFrame 里 CardLayout 的几块面板，「到不到得了这个窗口」由操作系统按窗口定）。
+//      写回读数时别把这一份当成四块宿主的实测。
+//
 //   1. 在原版窗口右边开一块**自己的**空白窗口当「窗口外」—— 按下只落在它自己的窗口上，
 //      不去点用户桌面上的东西。⚠️ 这个落点是读数的限定之一：换成桌面、全屏 app 或
 //      同一个 app 的另一块窗口，都没量过。
@@ -25,7 +30,9 @@
 //     B  票面顺序：外按左 → 拖进 → 按右 → 松右 → 松左
 //     B2 换松手顺序：外按左 → 拖进 → 按右 → 松左 → 松右
 //     C  外按左 → 拖进 → 只松左
-//     D  内按左 → 拖出 → 外按右 → 松左 → 只剩右键拖回 → 松右（xl-8eg；D1 段是正对照，D3 段是要量的）
+//     D  内按左 → 拖出 → 外按右 → 松左 → 只剩右键拖回 → 松右，末尾再加一段右键正对照
+//        （xl-8eg；D3 段是要量的，D1 与 D5 两段是它的正对照 —— 一个证左键拖动进得来、
+//         一个证右键拖动进得来，缺任一个，D3 那个「没有」都不止一种读法）
 //
 // 落点 (600,300) 是面板内坐标，离所有按钮都远 —— 标题页上「结」那个按钮会 System.exit。
 //
@@ -130,9 +137,11 @@ DispatchQueue.global().async {
     //   D1 起 grab 那只键（左，按在面板**里**）按着拖出去 —— 已量过：越界 DRAGGED 一路
     //      src=start.StartPanel（xl-40m / xl-bg3），所以它是**这一轮的正对照**；
     //   D3 右键在外窗上按下、左键松开之后，只剩右键按着拖回面板 —— **本票要量的就是这一段**。
-    // D1 有 DRAGGED 而 D3 没有，才叫量到了「原版收不到」；两段都没有 = 事件根本没进来
-    //（探针瞎了），与 A 对照同一个道理。⚠️ D3 的读数**没有期望值**：两种结果都说得通，
-    // 这一趟就是去取它的（见 tools/mouse-dispatch/expected-events.txt 开头）。
+    //   D5 面板里按右 → 拖一段 → 松右（全程在面板里）—— 证「合成的**右键**拖动进得了 Java」。
+    // D1 与 D5 都有 DRAGGED 而 D3 没有，才叫量到了「原版收不到」；缺任一个正对照，D3 那个
+    //「没有」就不止一种读法（事件压根没进来 / 右键拖动这套组合本来就到不了）。
+    // ⚠️ D3 的读数**没有期望值**：两种结果都说得通，这一趟就是去取它的
+    //（见 tools/mouse-dispatch/expected-events-D.txt）。
     mark("D0 内按左：在面板里按下，起 grab")
     post(.mouseMoved, P, .left); post(.leftMouseDown, P, .left)
     settlePhase()
@@ -148,6 +157,18 @@ DispatchQueue.global().async {
     mark("D4 松右、之后的移动")
     post(.rightMouseUp, P, .right)
     post(.mouseMoved, at(P, 3), .left); post(.mouseMoved, at(P, 6), .left)
+    settleOutside()
+
+    // D5 是 D3 的**第二个正对照，管另一件事**：D1 只证「合成的**左**键拖动进得了 Java 窗口」。
+    // D3 空着还有一解 —— 合成的 rightMouseDragged 在这套 AWT + CGEvent 组合下根本到不了探针
+    //（仓库里从没量过右键的拖动；B / B2 量到的是右键**按下**，而且那一下按在窗口里）。
+    // 这一段全程在面板里、除右键外没有别的键按着：它有 DRAGGED 而 D3 没有，「原版收不到」才立得住。
+    // 落点 at(P,60) = 面板内 (660,360)，四个按钮的命中框在 x 185–235 与 785–835，都不沾。
+    mark("D5 右键正对照：面板里按右 → 拖一段 → 松右（全程在面板里，没有别的键）")
+    post(.mouseMoved, P, .right); post(.rightMouseDown, P, .right)
+    drag(.rightMouseDragged, .right, from: P, to: at(P, 60))
+    post(.rightMouseUp, at(P, 60), .right)
+    post(.mouseMoved, at(P, 63), .left)
     settleOutside()
 
     mark("END")

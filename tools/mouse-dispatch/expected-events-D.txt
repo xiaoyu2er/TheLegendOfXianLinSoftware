@@ -1,0 +1,28 @@
+# D 组（xl-8eg）按下 / 松手的**预测**，不是读数 —— tools/mouse-dispatch-probe.sh 单独拿它对账。
+#
+# ⚠️ 与 expected-events.txt 分开放，就是为了让两种红分得开：那一份对不上 = **回归**（退出码 1），
+#    这一份对不上 = **预测被实测推翻**（退出码 4），而后者正是本票要的读数，不是谁错了。
+#
+# 序列（drive.swift 的 D 组，分六段打标）：
+#   D0 面板里按左，起 grab            → 预测有行，与 A 对照逐字同一下（依据最硬的一条）
+#   D1 拖出窗口（起 grab 那只键按着）  → 正对照，拖动不进这份对账（见下）
+#   D2 外窗上按右、再松左              → 按右预测**一行都没有**（B / B2 量到外窗上按下的键 Java
+#                                        一条都收不到，xl-bg3 / xl-zs6；这里是同一件事换只键，**推的**）；
+#                                        松左预测 Java 照收，mex=0x1000 是「右键还按着」，
+#                                        xy 由外窗中心换算到面板内坐标（1024+230=1254；100+150=250），
+#                                        与窗口落在屏幕哪里无关 —— **推的**
+#   D3 只剩被挡掉那只键按着，拖回      → **本票要量的**，答案是 DRAGGED，不在这份对账里
+#   D4 松右                            → 预测**一行都没有**（它按在外窗上）—— **推的**
+#   D5 面板里按右 → 拖一段 → 松右      → 右键的正对照，两下预测都有行，src=start.StartPanel
+#
+# ⚠️ 本票真正要量的 **DRAGGED 一条都不在这里**（normalize 只留按下 / 松手）。那一半看跑完打出来的
+#    「D 组分段读数」（tools/mouse-dispatch/reckon.py）：D3 段有没有 DRAGGED 就是答案，
+#    D1（左键进得来）与 D5（右键进得来）两段是它的正对照。
+#
+# 放行实测之后：把下面这几行按实测改写，并把 D3 的读数写回 web/src/app/App.tsx 的 onDrag 注释、
+# web/src/start/StartPanel.tsx 的 takenRef 注释与 docs/web-primitives.md —— ⚠️ 探针只驱动标题页，
+# 读数直接管的是 StartPanel.tsx 那一支，App.tsx 四块宿主仍是推理。
+PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300
+RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=1254,250
+PRESSED btn=3 mex=0x1000 src=start.StartPanel xy=600,300
+RELEASED btn=3 mex=0x0 src=start.StartPanel xy=660,360
