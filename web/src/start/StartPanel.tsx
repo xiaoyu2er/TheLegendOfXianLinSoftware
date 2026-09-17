@@ -168,6 +168,19 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 坐标只减面板偏移、不裁：拖出舞台就是负数或超过 1024×640，光标画到画面外去（xl-40m）。
    */
   const grabRef = useRef<(() => void) | null>(null)
+  /**
+   * grab 期间这块面板**收下过按下**的那几只键（位图，与 `BUTTON_BITS` 同一张表）。只有它们的松手才
+   * 送 `release`（xl-bg3）。舞台外按下的第二个键不在里面：原版那一下按在别的窗口上，按下与松手都
+   * 到不了 Java 窗口，面板一下都不收 —— 而浏览器照样把两下都派给 window。macOS 实测三轮（CGEvent
+   * 按 HID tap 合成整段序列，「窗口外」是另一个 app 的空白窗口）：那只键的 PRESSED / RELEASED 在
+   * Java 侧一条都没有，而同一轮里拖回窗口内再按右键读到 `PRESSED btn=3 mex=0x1400 src=start.StartPanel`
+   * —— 所以那个「零」不是探针瞎了。票面照 JDK 推的「原版派 mousePressed」因此不成立。
+   *
+   * 起 grab 那只键的松手不受影响，落在舞台外也照送：`isMouseGrab` 把本键异或**回去**，读到的是
+   * 「按下之前」的状态，所以最后一只键松开时它仍为真、`mouseEventTarget` 不重设（实测两种松手顺序下
+   * 它都是 `src=start.StartPanel`）。
+   */
+  const takenRef = useRef(0)
   useEffect(() => () => grabRef.current?.(), [])
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!handlers) return
@@ -186,27 +199,39 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     // 拦截还挂着、而这一下之外没按着别的键：上一次的松手丢在窗口外了，回来没动就又按下。
     // 先补上那一下松手（落点是见到它的这一刻），再送这次按下 —— 与 `App.tsx` 的 `grabRelease`
     // 里 `onPress` 同一个判法（按下看的是**别的**键，`isMouseGrab`）。
+    // ⚠️ 位图为空就只解除、不补松手（xl-bg3）：丢在窗口外的那一下若是**舞台外按下**的键，原版
+    // 压根没有这一下，补上就又造出一处残余差异。
     if (grabRef.current !== null && !othersHeld) {
+      const owed = takenRef.current !== 0
       grabRef.current()
-      handlers.release(buttonOf(event.target))
+      if (owed) handlers.release(buttonOf(event.target))
     }
+    takenRef.current |= own
     handlers.press(buttonOf(event.target))
     if (grabRef.current !== null) return
     const onUp = (e: MouseEvent) => {
+      const bit = BUTTON_BITS[e.button] ?? 0
+      const taken = (takenRef.current & bit) !== 0
+      takenRef.current &= ~bit
       if (e.buttons === 0) end()
+      // 这只键的按下面板没收到（舞台外按下的第二个键，xl-bg3）：它的松手也不收，坐标也不记。
+      if (!taken) return
       moveTo(e)
       handlers.release(buttonOf(e.target))
     }
     const onMove = (e: MouseEvent) => {
       moveTo(e)
       if (e.buttons !== 0) return
+      // 同上：只补面板真收下过、而松手丢在窗口外的那一下（xl-bg3）。
+      const owed = takenRef.current !== 0
       end()
-      handlers.release(buttonOf(e.target))
+      if (owed) handlers.release(buttonOf(e.target))
     }
     const end = () => {
       window.removeEventListener('mouseup', onUp)
       window.removeEventListener('mousemove', onMove, true)
       grabRef.current = null
+      takenRef.current = 0
     }
     grabRef.current = end
     window.addEventListener('mouseup', onUp)
