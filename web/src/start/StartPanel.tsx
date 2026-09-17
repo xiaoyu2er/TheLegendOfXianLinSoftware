@@ -4,6 +4,7 @@ import { startAssetId, startFrameAssetId } from '../assets/ids'
 import type { StartSequenceName } from '../assets/ids'
 import { resolveAsset } from '../assets/resolve'
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../stage/constants'
+import { bitOf } from '../stage/mouseButtons'
 import {
   HIT_OFFSET_X,
   HIT_OFFSET_Y,
@@ -101,9 +102,6 @@ export interface StartPanelHandlers {
   readonly moveCursor: (x: number, y: number) => void
 }
 
-/** `MouseEvent.button` → 它在 `buttons` 里占的那一位（左 1、中 4、右 2，与 `app/App.tsx` 同一张表）。 */
-const BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16]
-
 /**
  * 一个 DOM 事件落在哪颗按钮上 —— 命中判定归 DOM（按钮元素占的就是命中框，见 `buttons.ts`），
  * 这里只顺着 `target` 往上找。禁用的那颗按空处算，与悬停同一个口径（ADR-0001 的 start-exit-disabled）。
@@ -169,7 +167,8 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    */
   const grabRef = useRef<(() => void) | null>(null)
   /**
-   * grab 期间这块面板**收下过按下**的那几只键（位图，与 `BUTTON_BITS` 同一张表）。只有它们的松手才
+   * grab 期间这块面板**收下过按下**的那几只键（位图，与 `stage/mouseButtons.ts` 的 `BUTTON_BITS`
+   * 同一张表，经 {@link bitOf} 换算）。只有它们的松手才
    * 送 `release`（xl-bg3）。舞台外按下的第二个键不在里面：原版那一下按在别的窗口上，按下与松手都
    * 到不了 Java 窗口，面板一下都不收 —— 而浏览器照样把两下都派给 window。macOS 实测三轮（CGEvent
    * 按 HID tap 合成整段序列，「窗口外」是另一个 app 的空白窗口）：那只键的 PRESSED / RELEASED 在
@@ -179,12 +178,24 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 起 grab 那只键的松手不受影响，落在舞台外也照送：`isMouseGrab` 把本键异或**回去**，读到的是
    * 「按下之前」的状态，所以最后一只键松开时它仍为真、`mouseEventTarget` 不重设（实测两种松手顺序下
    * 它都是 `src=start.StartPanel`）。
+   *
+   * ⚠️ **为什么它是 `useRef`、而 `app/App.tsx` 里那一份是闭包局部量** —— 两份不是随手写成两样的
+   * （xl-dnj 判过，不合）：这块面板**没有挂在 window 上的 `mousedown` 监听**，两条补松手通路
+   * （`onMouseDown` 里那一段、`onMove` 里那一段）中前者跑在**下一次按下**里，那时上一个 grab 的
+   * `end()` 还没跑（正是它要跑的那一句），位图必须活过 `end()` —— 所以只能跨 grab 存活，并在
+   * `end()` 里显式清零。`grabRelease` 那一份的补松手通路（`onPress` / `onDrag`）是同一个 grab
+   * 自己挂在 window 上的监听，闭包还在，于是位图一个 grab 一份、用完即弃，清零那一句在那边是
+   * 死代码（xl-df1 的篡改矩阵证过）。**同一个语义，两种生命周期**；共用的只有换算那一半。
    */
   const takenRef = useRef(0)
   useEffect(() => () => grabRef.current?.(), [])
   const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!handlers) return
-    const own = BUTTON_BITS[event.button] ?? 0
+    // 换算共用 `stage/mouseButtons.ts`（xl-dnj）。⚠️ 这里原先写的是 `BUTTON_BITS[event.button] ?? 0`，
+    // 第 6 只键起会拿到 0，而 0 在下面两处各犯一次错：`buttons & ~0` 恒非零，没 grab 时那只键**整只
+    // 失灵**；已有 grab 时它的按下照送、松手却被位图挡掉（按钮卡在按下态）。`bitOf` 的 `1 << button`
+    // 兜底把两处一起补上，判据见 `StartPanel.test.tsx` 里「第 6 只键」那两条。
+    const own = bitOf(event)
     const othersHeld = (event.buttons & ~own) !== 0
     // 没 grab、而这一下之外还按着别的键（舞台外按下拖进来的）：`isMouseGrab` 为真，目标还是那个 null
     // —— 按下不派、不起 grab，之后的拖动与松手也就一个都不收（xl-m9q，与 `App.tsx` 的 `grabbedElsewhere`
@@ -210,7 +221,7 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
     handlers.press(buttonOf(event.target))
     if (grabRef.current !== null) return
     const onUp = (e: MouseEvent) => {
-      const bit = BUTTON_BITS[e.button] ?? 0
+      const bit = bitOf(e)
       const taken = (takenRef.current & bit) !== 0
       takenRef.current &= ~bit
       if (e.buttons === 0) end()
