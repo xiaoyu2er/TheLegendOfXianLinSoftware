@@ -24,22 +24,22 @@
 
 | 调用点 | 类 | 判定 | 证据 |
 |---|---|---|---|
-| `web/src/app/App.tsx:76` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
-| `web/src/app/App.tsx:446,447,448,452,453,454` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28；对应 `BattlePanel.java:369`、`MenuPanel.java:116`、`LoadAndSavePanel.java:188`、`ShopPanel.java:200`、`EquipmentShopPanel.java:276`），grab 期间别的宿主不收移动；`mousemove` 与 `mousedown` 挂在捕获阶段，窗口外松了手（window 收不到 mouseup，原版照样收到）之后头一下没按键的移动或新按下当场补上松手（xl-bwl，坐标是见到的那一刻）；和弦（按着一个键再按另一个）照 `Container.java` 的 `isMouseGrab`：第二次按下也归 grab，每一次松手都派给 grab，所有键都松开才解除，窗口外松开按按下次数补松手（xl-4xi）；grab 开始之前舞台外就按着别的键，再在宿主上按下：`isMouseGrab` 为真、`mouseEventTarget` 不重设，目标是最后一个不在 grab 里的事件定的（不收鼠标的面板上那一下按下 / 无键离开窗口那一下 MOUSE_EXITED，都是 null），于是这一下按下不送、不起 grab，它与别的键的松手一个都不送（xl-2yh；macOS 实测，CGEvent 合成的序列、窗口外那一下按在另一个 app 的窗口上：那只键**在**回窗口后的 `getModifiersEx` 里，`mex=0x1400`，而它自己那一下松手到不了窗口，xl-zs6；复跑 `tools/mouse-dispatch-probe.sh`，xl-sij）；没有 grab 时按着键移到宿主上：MOUSE_DRAGGED 的 `isMouseGrab` 按着键恒为真、从不重设目标，目标同样是 null，一个 `mouseDragged` 都不派，全松开之后的移动照常（xl-5ee）；grab 期间在**舞台外**按下的第二个键，按下与松手原版一下都收不到 —— 那一下按在别的窗口上、归那个窗口（xl-bg3 在标题页上的 macOS 实测三轮，复跑 `tools/mouse-dispatch-probe.sh`；⚠️ 这四块宿主没有各自复量过，「到不到得了这个窗口」由操作系统按窗口定、与当前显示哪一块 `CardLayout` 面板无关是**推理**）：按下按舞台外接矩形挡掉，松手靠「这个 grab 收下过按下的那几只键」那张位图挡掉，位图空着时窗口外那条补松手的通路也一次都不补（xl-df1）。**「宿主外」不等于「窗口外」**：`CardLayout.layoutContainer` 把当前那块面板铺满整个内容面板，所以舞台里、宿主外（overlay、露出来的另一块宿主）在原版仍是同一块面板，按下照送；拖动不挡，按着键拖出窗口操作系统照样送进来（xl-40m / xl-bg3 实测越界 `DRAGGED` 一路 `src=start.StartPanel`）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
-| `web/src/app/App.tsx:513` | 元素 | 工程 | 外壳 `div` |
-| `web/src/app/App.tsx:529` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
-| `web/src/app/App.tsx:530` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
-| `web/src/app/App.tsx:537` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
-| `web/src/app/App.tsx:538` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
-| `web/src/app/App.tsx:539` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
-| `web/src/app/App.tsx:540` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
-| `web/src/app/App.tsx:547,548` | 事件 | 对应 `src/shop/ShopPanel.java:173` | 两家店的按下 / 移动（装备店是 `EquipmentShopPanel.java:249` 同形的一段）；按住任一键移动送 `drag`（`ShopPanel.java:200`，只记坐标不跑 `isMoveIn`，xl-bwl）。**松手不在宿主上**，走上面那一行的 `grabRelease`（xl-o9z） |
-| `web/src/app/App.tsx:555,556` | 事件 | 对应 `src/start/LoadAndSavePanel.java:161` | 按 `buttons` 分开 `mouseDragged` 与 `mouseMoved`，任一键都算拖动（xl-bwl）；松手同样走 `grabRelease`（xl-o9z） |
-| `web/src/app/App.tsx:572,581,586,591,596` | 元素 / 无障碍 | 已登记 `ADR-0001#loading-notices` | 「正在载入 …」与渲染失败那一行（**xl-03x.22 补登**） |
-| `web/src/app/App.tsx:577` | 事件 | 工程 | `<StartPanel onNewGame onLoad>` 是组件 prop，不是浏览器事件 —— 正则的误报，如实记下 |
-| `web/src/app/App.tsx:607,647,674,675` | 元素 / 无障碍 / 事件 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏、操作提示、放大方式切换（**xl-03x.22 补登**） |
-| `web/src/app/App.tsx:609,619,623,625,633,637,640` | 元素 / 事件 | 工程 | 场景 / 商店两个选择器，只在开发模式或 `?dev` 下渲染（`app/devTools.ts`） |
-| `web/src/app/App.tsx:666,668` | 事件 / 无障碍 | 已登记 `ADR-0001#stage-scales-to-window` | 全屏按钮 |
+| `web/src/app/App.tsx:86` | 元素 / 无障碍 | 已登记 `ADR-0001#saveload-notices` | 存读档面板上那几行 `role="status"` |
+| `web/src/app/App.tsx:485,486,487,491,492,493` | 事件 / 全局 | 对应 `src/menu/MenuPanel.java:100` | `mouseReleased`：松手按「按下那一刻」的组件派（Swing 的 mouse grab）。菜单是 xl-z4f，商店与存读档两块宿主 xl-o9z 收拢进同一个 `grabRelease`（归谁在 `useGame.routeByGrab` 定），战斗画布 xl-qqw 接进来（`BattlePanel.java:331`，拖出画布再松手照样触发）；按下到松手之间 window 上同时挂 `mousemove`，拖出宿主的 `mouseDragged` 也按 grab 派（xl-b28；对应 `BattlePanel.java:369`、`MenuPanel.java:116`、`LoadAndSavePanel.java:188`、`ShopPanel.java:200`、`EquipmentShopPanel.java:276`），grab 期间别的宿主不收移动；`mousemove` 与 `mousedown` 挂在捕获阶段，窗口外松了手（window 收不到 mouseup，原版照样收到）之后头一下没按键的移动或新按下当场补上松手（xl-bwl，坐标是见到的那一刻）；和弦（按着一个键再按另一个）照 `Container.java` 的 `isMouseGrab`：第二次按下也归 grab，每一次松手都派给 grab，所有键都松开才解除，窗口外松开按按下次数补松手（xl-4xi）；grab 开始之前舞台外就按着别的键，再在宿主上按下：`isMouseGrab` 为真、`mouseEventTarget` 不重设，目标是最后一个不在 grab 里的事件定的（不收鼠标的面板上那一下按下 / 无键离开窗口那一下 MOUSE_EXITED，都是 null），于是这一下按下不送、不起 grab，它与别的键的松手一个都不送（xl-2yh；macOS 实测，CGEvent 合成的序列、窗口外那一下按在另一个 app 的窗口上：那只键**在**回窗口后的 `getModifiersEx` 里，`mex=0x1400`，而它自己那一下松手到不了窗口，xl-zs6；复跑 `tools/mouse-dispatch-probe.sh`，xl-sij）；没有 grab 时按着键移到宿主上：MOUSE_DRAGGED 的 `isMouseGrab` 按着键恒为真、从不重设目标，目标同样是 null，一个 `mouseDragged` 都不派，全松开之后的移动照常（xl-5ee）；grab 期间在**舞台外**按下的第二个键，按下与松手原版一下都收不到 —— 那一下按在别的窗口上、归那个窗口（xl-bg3 在标题页上的 macOS 实测三轮，复跑 `tools/mouse-dispatch-probe.sh`；⚠️ 这四块宿主没有各自复量过，「到不到得了这个窗口」由操作系统按窗口定、与当前显示哪一块 `CardLayout` 面板无关是**推理**）：按下按舞台外接矩形挡掉，松手靠「这个 grab 收下过按下的那几只键」那张位图挡掉，位图空着时窗口外那条补松手的通路也一次都不补（xl-df1）。**「宿主外」不等于「窗口外」**：`CardLayout.layoutContainer` 把当前那块面板铺满整个内容面板，所以舞台里、宿主外（overlay、露出来的另一块宿主）在原版仍是同一块面板，按下照送；拖动不挡，按着键拖出窗口操作系统照样送进来（xl-40m / xl-bg3 实测越界 `DRAGGED` 一路 `src=start.StartPanel`）；`app/appMenu.test.tsx`、`app/appGrab.test.tsx` |
+| `web/src/app/App.tsx:562` | 元素 | 工程 | 外壳 `div` |
+| `web/src/app/App.tsx:578` | 事件 | 对应 `src/battle/BattlePanel.java:309` | 战斗画布的鼠标按下 |
+| `web/src/app/App.tsx:579` | 事件 | 对应 `src/battle/BattlePanel.java:350` | 战斗画布的 `mouseMoved`；按住左键时按 `buttons` 分成 `mouseDragged`（`:369`，少一句 `enemySlector.checkMoveIn`）（xl-qqw）；`app/appGrab.test.tsx`、`battle/pointer.test.ts` |
+| `web/src/app/App.tsx:586` | 事件 | 对应 `src/menu/MenuPanel.java:93` | 菜单 `mousePressed` |
+| `web/src/app/App.tsx:587` | 事件 | 对应 `src/menu/MenuPanel.java:109` | 菜单 `mouseMoved`（与 `mouseDragged` 两支逐字相同） |
+| `web/src/app/App.tsx:588` | 事件 | 已登记 `ADR-0001#list-clipped-with-scrollbar` | 滚轮：原版没有这种输入 |
+| `web/src/app/App.tsx:589` | 无障碍 | 已登记 `ADR-0001#start-exit-disabled` | 天书页「确认离开」禁用的理由挂在宿主 `title` 上 |
+| `web/src/app/App.tsx:596,597` | 事件 | 对应 `src/shop/ShopPanel.java:173` | 两家店的按下 / 移动（装备店是 `EquipmentShopPanel.java:249` 同形的一段）；按住任一键移动送 `drag`（`ShopPanel.java:200`，只记坐标不跑 `isMoveIn`，xl-bwl）。**松手不在宿主上**，走上面那一行的 `grabRelease`（xl-o9z） |
+| `web/src/app/App.tsx:604,605` | 事件 | 对应 `src/start/LoadAndSavePanel.java:161` | 按 `buttons` 分开 `mouseDragged` 与 `mouseMoved`，任一键都算拖动（xl-bwl）；松手同样走 `grabRelease`（xl-o9z） |
+| `web/src/app/App.tsx:621,630,635,640,645` | 元素 / 无障碍 | 已登记 `ADR-0001#loading-notices` | 「正在载入 …」与渲染失败那一行（**xl-03x.22 补登**） |
+| `web/src/app/App.tsx:626` | 事件 | 工程 | `<StartPanel onNewGame onLoad>` 是组件 prop，不是浏览器事件 —— 正则的误报，如实记下 |
+| `web/src/app/App.tsx:656,696,723,724` | 元素 / 无障碍 / 事件 | 已登记 `ADR-0001#toolbar-under-stage` | 工具栏、操作提示、放大方式切换（**xl-03x.22 补登**） |
+| `web/src/app/App.tsx:658,668,672,674,682,686,689` | 元素 / 事件 | 工程 | 场景 / 商店两个选择器，只在开发模式或 `?dev` 下渲染（`app/devTools.ts`） |
+| `web/src/app/App.tsx:715,717` | 事件 / 无障碍 | 已登记 `ADR-0001#stage-scales-to-window` | 全屏按钮 |
 | `web/src/app/devTools.ts:11` | 地址 / 全局 | 工程 | `?dev` 开关 |
 | `web/src/audio/bgmPlayer.ts:59,99` | 键盘 / 指针 / 事件 | 已登记 `ADR-0001#bgm-waits-for-gesture` | 自动播放被挡时等第一次手势（**xl-03x.22 补登**） |
 | `web/src/audio/bgmPlayer.ts:62` | 音频 | 对应 `src/media/MusicPlayer.java:71` | 背景音乐开播（`play()` 里 `sourceDataLine.start()`）；web 只有一个播放对象、换 `src` |
