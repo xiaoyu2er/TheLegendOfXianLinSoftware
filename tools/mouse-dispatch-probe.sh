@@ -26,6 +26,10 @@
 # 期望读数（xl-zs6，macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致）在
 # tools/mouse-dispatch/expected-events.txt，跑完自动对账；读法与限定见
 # tools/src/devtools/MouseDispatchProbe.java 的类注释。
+#
+# 跑完还会打一份**按 MARK 分段**的读数（tools/mouse-dispatch/reckon.py，xl-8eg 加的）。
+# 它和上面那份对账是两件事：对账只看按下 / 松手，而 D 组要量的是 **DRAGGED**，一条都进不了对账。
+# 分段读数不含计数、不含坐标（条数与坐标都不稳），只报每一段「出现过哪几种事件、派给了谁」。
 set -euo pipefail
 OLDPWD_AT_START="$PWD"
 cd "$(dirname "$0")/.."
@@ -92,6 +96,13 @@ if [ "$dry" = 1 ]; then
     echo "  ⚠️ 权限不够：真跑会一行事件都收不到，而那与「原版真的收不到」长得一样。"
     echo "     去「系统设置 → 隐私与安全性 → 辅助功能」把跑它的这个终端加进去。"
   fi
+  # ⚠️ 别写成 `python3 … | sed … || {…}`：`||` 读的是 **sed** 的退出码，自检红了也进不了那个分支
+  #    （dispatch.md 的 1 号坑）。先落盘、再判、再打印。
+  echo "  reckon.py 自检（不碰鼠标、不要权限）："
+  selftest_rc=0
+  python3 tools/mouse-dispatch/reckon.py --selftest > "$outdir/reckon-selftest.log" 2>&1 || selftest_rc=$?
+  sed 's/^/    /' "$outdir/reckon-selftest.log"
+  [ "$selftest_rc" = 0 ] || { echo "  ❌ reckon.py 自检不过 —— 真跑出来的分段读数不算数。" >&2; exit 1; }
   echo "  产物：$DRIVE"
   exit 0
 fi
@@ -104,7 +115,7 @@ fi
 
 if [ "$yes" != 1 ]; then
   echo
-  echo "⚠️ 接下来这 ${rounds} 轮会**接管物理鼠标**：光标自己动、真的按下去，每轮约 15 秒。"
+  echo "⚠️ 接下来这 ${rounds} 轮会**接管物理鼠标**：光标自己动、真的按下去，每轮约 20 秒（含 D 组）。"
   echo "   期间别动鼠标键盘。确认请输入 yes："
   read -r ans < /dev/tty
   [ "$ans" = "yes" ] || { echo "取消。"; exit 1; }
@@ -208,5 +219,51 @@ else
   echo "   先看是哪几行，再决定是改期望还是改结论；改期望要连 xl-zs6 的读数一起重记。" >&2
   fail=1
 fi
+
+# ── 按 MARK 分段的读数（xl-8eg）。放在这里而不是掺进上面那份对账，是因为两者问的不是同一件事：
+#    对账问「按下 / 松手逐行对不对得上那份读数」，这里问「每一段出现过哪几种事件、派给了谁」，
+#    而 D 组要量的 DRAGGED 只在后者里。理由、格式与自检都在 tools/mouse-dispatch/reckon.py。
+python3 tools/mouse-dispatch/reckon.py --selftest > "$outdir/reckon-selftest.log" 2>&1 || {
+  echo >&2
+  echo "❌ reckon.py 自检不过，下面这份分段读数不算数：" >&2
+  sed 's/^/     /' "$outdir/reckon-selftest.log" >&2
+  fail=1
+}
+r=1
+while [ "$r" -le "$rounds" ]; do
+  # ⚠️ 退出码 3 = 「结构上读不出」（格式漂了 / 一个 MARK 都没有），与「读数是空的」不是一回事，
+  #    所以这里既不能 `|| true` 吞掉，也不能让 set -e 当场退出（后面几轮就不跑了）。
+  rc=0
+  python3 tools/mouse-dispatch/reckon.py "$outdir/drive${r}.log" "$outdir/events${r}.log" \
+    > "$outdir/reckon${r}.txt" 2> "$outdir/reckon${r}.err" || rc=$?
+  if [ "$rc" != 0 ]; then
+    echo >&2
+    echo "❌ 第 ${r} 轮的分段读数读不出来（退出码 ${rc}）：" >&2
+    sed 's/^/     /' "$outdir/reckon${r}.err" >&2
+    fail=1
+  fi
+  if [ "$r" != 1 ] && ! diff -u "$outdir/reckon1.txt" "$outdir/reckon${r}.txt" > "$outdir/reckon-diff1-${r}.txt"; then
+    echo >&2
+    echo "❌ 分段读数第 1 轮与第 ${r} 轮不一致，差异在 $outdir/reckon-diff1-${r}.txt：" >&2
+    sed 's/^/     /' "$outdir/reckon-diff1-${r}.txt" >&2
+    fail=1
+  fi
+  r=$((r + 1))
+done
+
+# D1 是 D 组的**正对照**：起 grab 那只键按着拖出窗口，xl-40m / xl-bg3 已量到 DRAGGED 一路
+# src=start.StartPanel。它不成立 = 这一轮的 D 组根本没量到东西，D3 段那个「没有」也就不算数
+# —— 与 A 对照同一个道理（「没收到」有两个成因，长得一样）。
+if ! grep -q '^D1 .*DRAGGED.*src=start\.StartPanel' "$outdir/reckon1.txt"; then
+  echo >&2
+  echo "❌ D 组正对照不成立：D1 段里没有 src=start.StartPanel 的 DRAGGED。" >&2
+  echo "   D3 段的读数整个作废 —— 那个「没有」分不出是原版收不到还是事件压根没进来。" >&2
+  fail=1
+fi
+
+echo
+echo "D 组分段读数（xl-8eg；D3 那几行**没有期望值**，两种结果都说得通，这一趟就是去取它的）："
+sed -n '/^D[0-4] /p' "$outdir/reckon1.txt" | sed 's/^/   /'
+echo "   全部分段读数：$outdir/reckon1.txt"
 
 exit "$fail"

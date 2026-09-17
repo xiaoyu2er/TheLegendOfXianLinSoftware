@@ -1,5 +1,8 @@
 # 「舞台外按着键拖进来」那几下，原版收到的按下 / 松手 —— tools/mouse-dispatch-probe.sh 的对账基准。
 #
+# ⚠️ 这份文件里有两种行，别混着读：前六行是 xl-zs6 的**实测读数**（A / B / B2 / C），
+#    末尾两行是 xl-8eg 的 D 组，**还是预测**，出处写在它们上面那一段。
+#
 # 读数出处：xl-zs6，macOS 24.6.0 + openjdk 17，2026-09-16，三轮逐字一致。xl-zs6 的 bd 评论里
 # 留着第一轮的**完整**日志，第二、三轮只留了 grep 出来的按下 / 松手那几行 —— 归一化之后三轮同样
 # 是下面这六行（xl-sij 逐轮重跑对过），但「移动那批也三轮一致」没人核过，别照这句去复核。归一化 = 只留 PRESSED / RELEASED，去掉时间戳与 scr=（屏幕坐标
@@ -17,3 +20,22 @@ PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
 RELEASED btn=3 mex=0x400 src=main.GameLauncher xy=600,328
 PRESSED btn=3 mex=0x1400 src=main.GameLauncher xy=600,328
 RELEASED btn=3 mex=0x0 src=main.GameLauncher xy=600,328
+#
+# ── D 组（xl-8eg 加的序列）：下面这两行是**预测，不是读数**，这一趟就是去取它们的。
+# 序列：内按左（面板里，起 grab）→ 拖出窗口 → 外窗上按右 → 松左 → 只剩右键拖回 → 松右。
+# 按下 / 松手这一层四下，各自的依据：
+#   · 内按左（面板里）：与 A 对照逐字同一下 —— 依据最硬的一条；
+#   · 外窗上按右：一行都没有。B / B2 量到「外窗上按下的那只键 Java 一条都收不到」（xl-bg3 / xl-zs6），
+#     这里是同一件事换了只键 —— **推的**；
+#   · 松左（落在外窗上，而它起的 grab 在 Java 窗口）：预测 Java 照收。mex=0x1000 是「右键还按着」，
+#     xy 由 O 点换算到面板内坐标（面板宽 1024 → 1024+230=1254；纵向 100+150=250），与窗口落在
+#     屏幕哪里无关 —— **推的**；
+#   · 松右（落在面板里，而它按在外窗上）：一行都没有 —— **推的**。
+# ⚠️ 四条里三条是推的。**这几行对不上不算回归，那就是本票要的读数**：按实测改写它们，连同
+#    web/src/app/App.tsx 的 onDrag 注释、web/src/start/StartPanel.tsx 的 takenRef 注释与
+#    docs/web-primitives.md 一起。
+# ⚠️ 本票真正要量的是 **DRAGGED**，它一条都不在这份对账里（normalize 只留按下 / 松手）。
+#    那一半看跑完打出来的「D 组分段读数」（tools/mouse-dispatch/reckon.py），D3 段有没有 DRAGGED
+#    就是答案；D1 段是它的正对照。
+PRESSED btn=1 mex=0x400 src=start.StartPanel xy=600,300
+RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=1254,250
