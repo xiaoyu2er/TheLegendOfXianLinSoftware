@@ -767,9 +767,12 @@ export function App() {
  *   又不同（系统会合并移动事件）。成立的是「按下 / 松手与 DRAGGED 一个都没有」；原版的
  *   `MouseAdapter` 本来就没接 ENTERED。复跑 `tools/mouse-dispatch-probe.sh`（xl-sij）。
  *
- * ⚠️ **换落点量过一支了（xl-g9w）**：换成**同一个 app 的另一块窗口**，对原版那块窗口来说读数**逐字相同**；
- * **桌面那一支仍没量过**（xl-23v），原生全屏那一支构造上量不了（推理，没量过）。哪几支量过、逐字读数与
- * 读法只有一处源头：`MouseDispatchProbe` 类注释 + `tools/mouse-dispatch/expected-events-same-app-window.txt`。
+ * ⚠️ **三支落点都量过了，结论都相同**（xl-g9w 的 `same-app-window`、xl-23v 的 `desktop`）：
+ * 换成**同一个 app 的另一块窗口**、或者换成**露出来的桌面**，对原版那块窗口来说读数**逐字相同**
+ * （桌面那一支唯一的差异是「在外面按右、再松左」那一下松手的 `xy` —— 它按构造就是落点换算到面板内
+ * 坐标，脚本会把这一处单独摘出来报，不算「改了结论」）。原生全屏那一支构造上量不了（推理，没量过）。
+ * 哪几支量过、逐字读数与读法只有一处源头：`MouseDispatchProbe` 类注释 +
+ * `tools/mouse-dispatch/expected-events-{same-app-window,desktop}.txt`。
  */
 function isMouseGrab(event: { readonly type: string; readonly button: number; readonly buttons: number }): boolean {
   const own = event.type === 'mousedown' ? bitOf(event) : 0

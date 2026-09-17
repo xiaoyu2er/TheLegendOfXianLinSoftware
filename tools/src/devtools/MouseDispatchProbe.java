@@ -102,7 +102,7 @@ import main.GameLauncher;
  * 它是组件内坐标：{@code 600,300} 与 {@code 600,328} 差的 28 是面板在窗口里的纵向偏移，
  * 与窗口落点无关。
  *
- * <h2>换落点：量过哪几支、结论变没变（xl-g9w）</h2>
+ * <h2>换落点：量过哪几支、结论变没变（xl-g9w、xl-23v）</h2>
  *
  * 上面那份读数有一条限定：「窗口外」是<b>驱动器自己开的那块空白窗口</b>（另一个 app 的普通窗口）。
  * {@code drive --where} 现在能换落点，三支的处境各不相同：
@@ -119,10 +119,22 @@ import main.GameLauncher;
  *       {@code xy} 是它自己坐标系里的负数）。逐字读数与读法在
  *       {@code tools/mouse-dispatch/expected-events-same-app-window.txt}。
  *       对 web 端的意思：{@code grabbedElsewhere} 押的那个口径在同一个 app 的另一块窗口上也成立。</li>
- *   <li><b>{@code desktop} —— 还没量过。</b> 驱动器会现扫一个「周围 30 像素内无窗口」的点，
- *       主屏被最大化窗口铺满时它<b>硬失败</b>并把挡路的窗口列出来（2026-09-16 当场就是这个处境）。
- *       不硬挑一个点，是因为挑错了会落在别人的窗口上，<b>而那份读数看起来仍然正常</b>。
- *       借鼠标之前可以先用 {@code tools/mouse-dispatch-probe.sh --check-point --where desktop} 问清楚。</li>
+ *   <li><b>{@code desktop} —— 量过了，结论<b>相同</b></b>（xl-23v，macOS 24.6.0 + openjdk 17，
+ *       2026-09-17，三轮逐字一致，落点 {@code 3320,1260}）。A/B/B2/C 那六行与默认落点<b>逐字相同</b>；
+ *       D 组四行里三行相同，<b>唯一不同的那一行是按构造的</b> —— D2「在外面按右、再松左」松手那一下的
+ *       {@code xy} 就是<b>落点换算到面板内坐标</b>（{@code 3320,1260} 减面板左上角 {@code 0,53} ⇒
+ *       {@code 3320,1207}；默认落点那一支是 {@code 1254,250}）。脚本把这一处单独摘出来报，
+ *       判词是「只差落点坐标」，<b>不是</b>「换落点改了结论」—— 两者不许共用一句话
+ *       （见 {@code tools/mouse-dispatch/cmp-vs-outside.py}）。逐字读数在
+ *       {@code tools/mouse-dispatch/expected-events-desktop.txt} 与 {@code …-D-desktop.txt}。
+ *       <p>⚠️ 两条前提，都得在借鼠标之前弄好：<b>主屏要有一块露出来的桌面</b>（驱动器现扫一个
+ *       「周围 30 像素内无窗口」的点，铺满时<b>硬失败</b>并列出挡路的窗口 —— 不硬挑一个点，是因为
+ *       挑错了会落在别人的窗口上，<b>而那份读数看起来仍然正常</b>；先跑
+ *       {@code tools/mouse-dispatch-probe.sh --check-point --where desktop} 问清楚，那条路不碰鼠标）；
+ *       以及<b>落点会在轮与轮之间漂</b> —— <b>光标自己也是一块在屏窗口</b>（{@code Window Server}，
+ *       约 17x23），驱动器每轮把光标停在落点上，下一轮扫描就把它当障碍、往上让一个 40 像素的格
+ *       （xl-23v 头一趟三轮扫到 {@code 3320,1260 / 1220 / 1180}，于是 D2 那行跟着变，
+ *       <b>读起来像原版的派发不确定</b>）。现在扫描排除光标层，第 1 轮扫到的点钉给后面几轮。</li>
  *   <li><b>原生全屏 app —— 构造上量不了。</b> macOS 把全屏的 app 放进<b>自己的 Space</b>，
  *       原版窗口同时不在屏幕上，「在外面按下、拖进原版窗口」发生不了；而「铺满屏幕但仍在同一个
  *       Space 的普通窗口」等价于 {@code outside-window} 那一支。<b>⚠️ 这一条是推理，没量过。</b></li>
@@ -173,10 +185,13 @@ import main.GameLauncher;
  * 那只在窗口外按下的键按着时，原版一条都收不到 —— web 侧因此在 {@code App.tsx} 的 {@code onDrag}
  * 与 {@code StartPanel.tsx} 的 {@code onMove} 上按位图挡住了这一支。
  * 逐字的那四行在 {@code tools/mouse-dispatch/expected-events-D.txt}，原始日志入库在
- * {@code tools/mouse-dispatch/replay-fixture/xl-8eg-D组三轮}，可以 {@code --replay} 重放。
+ * {@code tools/mouse-dispatch/replay-fixture/xl-8eg-D组三轮}，可以 {@code --replay} 重放；
+ * 另两个落点的在 {@code …/same-app-window三轮} 与 {@code …/desktop三轮}。
  *
- * <p>⚠️ <b>D 组只在默认落点（{@code outside-window}）上量过</b>：换 {@code --where} 之后
- * D 组照样会跑，但那两支没有量过的读数，脚本会把它报成「没核成」（退出码 3），不当成红。
+ * <p><b>D 组在三个落点上都量过了</b>（默认落点 xl-8eg；另两支 xl-23v，2026-09-17，各三轮逐字一致），
+ * 每个落点一份读数：{@code expected-events-D.txt} / {@code expected-events-D-<落点>.txt}。
+ * ⚠️ 加一个新落点时<b>要连 D 组那一份一起量</b>，否则脚本会把它报成「没核成」（退出码 3），不当成红 ——
+ * 那一层<b>没核成</b>与<b>核过且一致</b>不许共用一个退出码。
  *
  * <p>⚠️ 一条与预测不同、如实记下的：D5 松右的 {@code mex} 是 <b>0x100</b>（{@code META_DOWN_MASK}，
  * 1&lt;&lt;8），不是 0x0 —— macOS 的 AWT 在右键松手时把老式的 META 修饰位带进了
