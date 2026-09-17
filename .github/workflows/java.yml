@@ -19,14 +19,16 @@ on:
     # - 三个 jar 与 tools/*.sh：classpath 与跑法都写死在脚本里。
     paths: ['src/**', 'tools/src/**', 'tools/test/**', 'tools/build.sh', 'tools/test.sh',
             'tools/export-truth.sh', 'tools/ground-truth/**', 'script/**',
-            'image/**', 'sources/**', '*.jar', '.github/workflows/java.yml']
+            'image/**', 'sources/**', '*.jar', '.github/workflows/java.yml',
+            'tools/export-trace.sh', 'tools/traces/**']
   # 下面这份名单和上面那份逐字相同，是抄的，不是忘了去重。web.yml 里记了理由：
   # YAML 锚点更短，但 Actions 认不认锚点这个仓库没实测过，不在 CI 触发条件上
   # 冒这个险。两份漂移是静默的，改一份时另一份也要改。
   pull_request:
     paths: ['src/**', 'tools/src/**', 'tools/test/**', 'tools/build.sh', 'tools/test.sh',
             'tools/export-truth.sh', 'tools/ground-truth/**', 'script/**',
-            'image/**', 'sources/**', '*.jar', '.github/workflows/java.yml']
+            'image/**', 'sources/**', '*.jar', '.github/workflows/java.yml',
+            'tools/export-trace.sh', 'tools/traces/**']
 
 concurrency:
   group: java-${{ github.ref }}
@@ -62,6 +64,44 @@ jobs:
       - name: 真值必须无 diff
         run: git diff --exit-code -- tools/ground-truth
 
-      # export-trace.sh --check 这一趟**故意不接**：实测 2m34s，且它要
-      # -Djava.awt.headless=false（战斗驱动器要真的 Swing 组件），runner 上跑不跑
-      # 得起来没测过。一条长期红的 CI 等于没有 CI。单独一张票去测它：xl-u7b。
+      # export-trace.sh --check 现在接上了，在下面那个**并行的 job** 里。
+      # 为什么不放进这个 job：它 6 分钟，而上面这四步 44 秒。分成两个 job，
+      # 快的那条先红 —— 编译挂了不必等六分钟才看见。
+
+  # 行为层判据。xl-u7b 在真 runner 上量过才接的（run 35224054598，2026-09-17）：
+  #
+  #   不带 xvfb 跑一份 battle 剧本  → EXIT=1，跑不起来
+  #   xvfb-run -a 跑同一份          → EXIT=0
+  #   xvfb-run -a --check 全量       → EXIT=0，364 秒，确定性 OK 63 行、失败 0 行
+  #   git diff -- tools/traces/out   → 0（runner 导出的与入库的逐字节一致）
+  #
+  # 那之前它一直没接，理由是用户 2026-09-08 的裁定「别拿一个没测过的东西堵 CI」——
+  # 现在测过了。量具留在 .github/workflows/java-trace-probe.yml（只手动触发）。
+  trace:
+    runs-on: ubuntu-latest
+    # 实测 job 总长 6m47s；给一倍余量，但别无限等。
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ⚠️ **xvfb 不是可选的**：export-trace.sh 写死 -Djava.awt.headless=false
+      # （战斗驱动器要真的 Swing 组件），runner 上没有显示器，不套 xvfb 直接 EXIT=1。
+      # ubuntu-latest 上 /usr/bin/xvfb-run 已预装；装不上要红，不许静默跳过。
+      - name: 确认 xvfb 在
+        run: |
+          command -v xvfb-run >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq xvfb; }
+          command -v xvfb-run >/dev/null || { echo "xvfb-run 装不上" >&2; exit 1; }
+
+      # 这两步分开的理由与上面 export-truth 那一对**一模一样**，而且这里更要紧：
+      # --check 只证明「这一趟跑出来的东西可复现」—— 一个**稳定的**错误在它眼里
+      # 和正确一模一样。「导出来的和入库的一样吗」是另一个问题，下一步才是判据。
+      - name: 重导全部行为真值（两遍，验确定性）
+        run: xvfb-run -a tools/export-trace.sh --check
+
+      - name: 行为真值必须无 diff
+        run: git diff --exit-code -- tools/traces/out
