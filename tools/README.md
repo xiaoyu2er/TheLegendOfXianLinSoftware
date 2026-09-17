@@ -59,10 +59,12 @@ Java 窗口」。这套东西回答后一个问题，xl-zs6 现搭、xl-sij 收�
   合成四组序列（A 对照 / B / B2 / C）。三个落点（xl-g9w）：`outside-window`（默认，驱动器自己开的
   那块空白窗口 = 另一个 app 的普通窗口）、`desktop`（露出来的桌面，落点现扫）、`same-app-window`
   （原版那个 JVM 自己多开的另一块 `JFrame`）。认不出来的名字是**硬失败**，不猜。
-- `tools/mouse-dispatch/expected-events.txt` —— `outside-window` 那一支的读数（xl-zs6 三轮），
-  跑完自动对账；`expected-events-same-app-window.txt` 是同 app 那一支的（xl-g9w 三轮）。
-- `tools/mouse-dispatch/replay-fixture/` —— 两份存下来的原始日志（一绿一红），给 `--replay` 用：
-  **不借鼠标**就能把对账那半判据跑一遍。见那个目录的 README.md。
+- `tools/mouse-dispatch/expected-events.txt` —— `outside-window` 那一支的读数（xl-zs6 三轮；
+  xl-g9w 在同一台机器上复跑 4 轮，逐行一致、读数未改），跑完自动对账；
+  `expected-events-same-app-window.txt` 是同 app 那一支的（xl-g9w 三轮）。
+- `tools/mouse-dispatch/replay-fixture/` —— 三份存下来的原始日志，给 `--replay` 用：
+  **不借鼠标**就能把对账那半判据跑一遍，也让上面那两句「量过几轮」各自带着可复跑的证据，
+  而不只是一句陈述。见那个目录的 README.md。
 
 ```bash
 tools/mouse-dispatch-probe.sh --dry-run   # 只编译两侧 + 读权限，一个事件都不发

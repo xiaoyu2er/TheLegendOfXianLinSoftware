@@ -13,7 +13,14 @@ tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/三�
 # 红：第 2 轮整轮零事件（当时被别的窗口抢走了焦点）→ 退出码 1
 tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/第二轮被抢 \
   --where same-app-window
+
+# 默认落点那一支：xl-g9w 复跑的 4 轮 → 退出码 0
+tools/mouse-dispatch-probe.sh --replay tools/mouse-dispatch/replay-fixture/默认落点四轮
 ```
+
+`默认落点四轮` 是补给一句话的证据（/code-review Spec 轴提的）：`expected-events.txt` 的头注
+写着「xl-g9w 复跑 4 轮、逐行一致、读数未改」，而那句原先**只有陈述、没有可复跑的东西**，
+与旁边有 fixture 的 `same-app-window` 不对等。现在它也能被重放一遍。
 
 红的那一份**不是坏数据，是判据的样本**。它守的正是这个脚本原来看不见的两件事
 （两条都是 xl-g9w 在真跑里现撞到、再补的）：
