@@ -184,8 +184,13 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    * 键还按着时，原版那一段 **Java 侧零条事件**，连 `ENTERED` / `MOVED` 都没有 —— 拖动归「起这次
    * 拖动的那只键按下时所在的那个窗口」，而它按在别的窗口上。所以下面的 `onMove` 在位图空着、
    * 而还有键按着时一条都不收。同一轮的两个正对照排掉了「探针瞎了」：起 grab 那只键按着拖出去
-   * 读到 12 条 `DRAGGED btn=1 src=start.StartPanel`（一路到 `xy=1254,250`），面板里按右再拖
-   * 读到 12 条 `DRAGGED btn=3 src=start.StartPanel`。
+   * 读到 `DRAGGED btn=1 src=start.StartPanel`（一路到 `xy=1254,250`），面板里按右再拖读到
+   * `DRAGGED btn=3 src=start.StartPanel` —— 两段三轮都是 12 条，⚠️ **条数是翻原始日志数的**，
+   * 分段读数只报「出现过哪几种」不报条数，所以立得住、也被守着的是「非零」。
+   *
+   * ⚠️ 还有一条限定：这张位图只记**这块面板自己收到的**按下，所以「舞台里、面板外」（真有 overlay
+   * 盖着时）按下的第二个键不进位图，上面那道挡会连它的拖动一并挡掉。今天不成问题 —— 标题面板
+   * 铺满整个舞台 —— 但哪天舞台上多出一层，这一条要重看。
    *
    * ⚠️ **它必须跨 grab 存活（`useRef` 加 `end()` 里那句显式清零）**，因为走按下的那条补松手通路
    * 在下面的 `onMouseDown` 里、跑在**下一次按下**时。`app/App.tsx` 的 `grabRelease` 里那一份是

@@ -458,11 +458,13 @@ export function App() {
      * 两支各有读数（macOS 24.6.0 + openjdk 17，`tools/mouse-dispatch-probe.sh` 的 D 组）：
      *
      * - **起 grab 那只键按着**拖出窗口 —— 操作系统照样送进来，越界 `DRAGGED` 一路
-     *   `src=start.StartPanel`、x 到 1254（舞台宽 1024）；D1 段 12 条，三轮一致（xl-40m / xl-bg3）；
+     *   `src=start.StartPanel`、x 到 1254（舞台宽 1024）。xl-40m / xl-bg3 首量，xl-8eg 的 D1 段
+     *   复量到同一件事：三轮各 12 条（⚠️ **条数是翻原始日志数的**，分段读数只报「有没有」不报条数，
+     *   所以这个 12 没有判据守着 —— 立得住的是「非零」）；
      * - **起 grab 那只键已经松开、只剩那只被挡掉的（舞台外按下的）键还按着** —— D3 段
      *   **Java 侧零条事件**，连 `ENTERED` / `MOVED` 都没有，三轮一致（xl-8eg，2026-09-16）。
      *   拖动归**起这次拖动的那只键按下时所在的那个窗口**，而它按在别的窗口上。
-     *   同轮的 D5 段（面板里按右、拖、松右）读到 12 条 `DRAGGED btn=3 src=start.StartPanel`，
+     *   同轮的 D5 段（面板里按右、拖、松右）读到 `DRAGGED btn=3 src=start.StartPanel`（同样三轮各 12 条），
      *   所以那个「零」不是「右键的拖动本来就到不了 Java」。
      *
      * 于是判据就是这张位图：`taken` 为 0 = 现在按着的键全是舞台外按下、被挡掉的那几只。

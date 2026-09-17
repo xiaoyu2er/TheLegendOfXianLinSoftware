@@ -59,7 +59,7 @@ EXPECTED=tools/mouse-dispatch/expected-events.txt
 [ -f "$EXPECTED" ] || { echo "找不到期望读数：${EXPECTED}" >&2; exit 1; }
 # D 组那几行出处不同（xl-8eg 量的），单独一份、单独对账，理由写在它开头。
 EXPECTED_D=tools/mouse-dispatch/expected-events-D.txt
-[ -f "$EXPECTED_D" ] || { echo "找不到 D 组的预测：${EXPECTED_D}" >&2; exit 1; }
+[ -f "$EXPECTED_D" ] || { echo "找不到 D 组的读数：${EXPECTED_D}" >&2; exit 1; }
 
 # ⚠️ 上面已经 cd 到仓库根了，所以 --out 给的相对路径要按**调用者的 cwd**解回来，
 # 否则 `--out out/` 会静悄悄落在仓库根下面，而不是你以为的那个目录。
@@ -80,7 +80,7 @@ EXP_D="$outdir/expected-D.txt"
 grep -v '^#' "$EXPECTED" > "$EXP" || true
 [ -s "$EXP" ] || { echo "期望读数里一条都没有（${EXPECTED} 全是注释？）" >&2; exit 1; }
 grep -v '^#' "$EXPECTED_D" > "$EXP_D" || true
-[ -s "$EXP_D" ] || { echo "D 组的预测里一条都没有（${EXPECTED_D} 全是注释？）" >&2; exit 1; }
+[ -s "$EXP_D" ] || { echo "D 组的读数里一条都没有（${EXPECTED_D} 全是注释？）" >&2; exit 1; }
 
 # 读数器的自检放在**借鼠标之前**：它坏了的话，跑完三轮才发现就白借了一分多钟鼠标。
 # ⚠️ 别写成 `python3 … | sed … || {…}`：`||` 读的是 **sed** 的退出码，自检红了也进不了那个分支
