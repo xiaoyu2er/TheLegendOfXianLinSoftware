@@ -759,12 +759,9 @@ export function App() {
  *   又不同（系统会合并移动事件）。成立的是「按下 / 松手与 DRAGGED 一个都没有」；原版的
  *   `MouseAdapter` 本来就没接 ENTERED。复跑 `tools/mouse-dispatch-probe.sh`（xl-sij）。
  *
- * ⚠️ **换落点量过一支了（xl-g9w）**：把「窗口外」换成**同一个 app 的另一块窗口**（原版那个 JVM 自己
- * 多开的一块 `JFrame`，位置尺寸与驱动器那块一样），对**原版那块窗口**来说读数**逐字相同** —— 左键的
- * 按下 / 松手 / `DRAGGED` 照样一下都不到，右键那两下照样停在 `main.GameLauncher`。不同的只有那块
- * `JFrame` 自己收到了那几下。**桌面那一支仍没量过**（主屏被最大化窗口铺满时探针硬失败，要人先露出
- * 一块桌面）；原生全屏那一支**构造上量不了**（它在自己的 Space，原版窗口同时不在屏上）—— 这一句是推理。
- * 复跑：`tools/mouse-dispatch-probe.sh --where same-app-window`。
+ * ⚠️ **换落点量过一支了（xl-g9w）**：换成**同一个 app 的另一块窗口**，对原版那块窗口来说读数**逐字相同**；
+ * **桌面那一支仍没量过**（xl-23v），原生全屏那一支构造上量不了（推理，没量过）。哪几支量过、逐字读数与
+ * 读法只有一处源头：`MouseDispatchProbe` 类注释 + `tools/mouse-dispatch/expected-events-same-app-window.txt`。
  */
 function isMouseGrab(event: { readonly type: string; readonly button: number; readonly buttons: number }): boolean {
   const own = event.type === 'mousedown' ? bitOf(event) : 0

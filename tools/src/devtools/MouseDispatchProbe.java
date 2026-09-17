@@ -221,11 +221,16 @@ public class MouseDispatchProbe {
                     .getDefaultScreenDevice().getDefaultConfiguration().getBounds();
             Rectangle panel = new Rectangle(p.x, p.y,
                     GameLauncher.startPanel.getWidth(), GameLauncher.startPanel.getHeight());
+            // ⚙️ 这两条用 System.exit 而不是抛：抛出去只是让 main 挂掉，而 EDT 不是守护线程，
+            // JVM 照活着 —— 外面的脚本只会干等 30 秒再报「原版多半没起来」，
+            //    与真的没起来同形。（脚本那边同时加了一条：进程没了就当场报，不等超时。）
             if (!screen.contains(b)) {
-                throw new IllegalStateException("另一块窗口 " + b + " 没完全落在屏幕 " + screen + " 里");
+                System.err.println("另一块窗口 " + b + " 没完全落在屏幕 " + screen + " 里");
+                System.exit(2);
             }
             if (b.intersects(panel)) {
-                throw new IllegalStateException("另一块窗口 " + b + " 与面板 " + panel + " 叠在一起了");
+                System.err.println("另一块窗口 " + b + " 与面板 " + panel + " 叠在一起了 —— 这一下按下落在哪一块说不准");
+                System.exit(2);
             }
             try (PrintWriter g = new PrintWriter(new FileWriter(path))) {
                 g.println(b.x + " " + b.y + " " + b.width + " " + b.height);

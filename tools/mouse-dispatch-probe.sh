@@ -50,7 +50,7 @@ OLDPWD_AT_START="$PWD"
 cd "$(dirname "$0")/.."
 : "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
 
-dry=0; yes=0; rounds=3; outdir=""; where=outside-window; replay=""; checkpoint=0
+dry=0; yes=0; rounds=3; rounds_given=0; outdir=""; where=outside-window; replay=""; checkpoint=0
 KNOWN_WHERE="outside-window desktop same-app-window"
 # ⚠️ 带值的参数要自己检查值在不在：写成 `shift; rounds="${1:-}"` 再靠末尾那个 shift，
 # 值缺失时 set -e 会在那个 shift 上先退出，下面那句「要一个正整数」**永远打不出来** ——
@@ -59,7 +59,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1; shift ;;
     --yes) yes=1; shift ;;
-    --rounds) [ $# -ge 2 ] || { echo "--rounds 后面要跟一个正整数" >&2; exit 2; }; rounds="$2"; shift 2 ;;
+    --rounds) [ $# -ge 2 ] || { echo "--rounds 后面要跟一个正整数" >&2; exit 2; }; rounds="$2"; rounds_given=1; shift 2 ;;
     --out) [ $# -ge 2 ] || { echo "--out 后面要跟一个目录" >&2; exit 2; }; outdir="$2"; shift 2 ;;
     --where) [ $# -ge 2 ] || { echo "--where 后面要跟一个落点名：${KNOWN_WHERE}" >&2; exit 2; }; where="$2"; shift 2 ;;
     --replay) [ $# -ge 2 ] || { echo "--replay 后面要跟一个跑过的输出目录" >&2; exit 2; }; replay="$2"; shift 2 ;;
@@ -97,8 +97,17 @@ fi
 if [ -n "$replay" ]; then
   [ "$dry" = 0 ] || { echo "--replay 与 --dry-run 不能一起给" >&2; exit 2; }
   [ "$checkpoint" = 0 ] || { echo "--replay 与 --check-point 不能一起给" >&2; exit 2; }
+  # 重放的轮数由磁盘上有几份 events*.log 定，给 --rounds 只会被悄悄吞掉 —— 那是「参数没生效」
+  # 与「参数生效了」同形，所以直接报错。
+  [ "$rounds_given" = 0 ] || { echo "--replay 的轮数按目录里的 events*.log 现数，不要再给 --rounds" >&2; exit 2; }
   case "$replay" in /*) ;; *) replay="$OLDPWD_AT_START/$replay" ;; esac
   [ -d "$replay" ] || { echo "重放目录不存在：${replay}" >&2; exit 2; }
+  if [ -n "$outdir" ]; then
+    case "$outdir" in /*) abs_out="$outdir" ;; *) abs_out="$OLDPWD_AT_START/$outdir" ;; esac
+    # 往重放目录自己里写 = 把被重放的那份东西跑脏；入库的 fixture 尤其不行。
+    [ "$(cd "$replay" && pwd)" != "$(mkdir -p "$abs_out" && cd "$abs_out" && pwd)" ] || {
+      echo "--out 不能就是 --replay 那个目录（那样会把被重放的日志跑脏）" >&2; exit 2; }
+  fi
   # ⚠️ **读的目录与写的目录分开**：重放会往 outdir 里写 normal*.txt 与几个 diff，
   #    而重放的对象可能是**入库的那份 fixture** —— 就地写会把仓库弄脏，
   #    而「工作区脏了」和「跑完了」在收尾时长得很像。
@@ -226,6 +235,15 @@ for r in $(seq 1 "$rounds"); do
     for f in "${waitfor[@]}"; do [ -s "$f" ] || missing=1; done
     [ "$missing" = 0 ] && break
     sleep 1; waited=$((waited + 1))
+    # ⚠️ 先判「探针进程还在不在」，再判超时：探针自己 System.exit 掉（比如同 app 那块窗口
+    #    与面板叠上了）时，几何文件可能**已经写了一份**，只差后一份 —— 那时候干等 30 秒
+    #    再报「原版多半没起来」，与真的没起来同形。两种成因要说成两句话。
+    if ! kill -0 "$game" 2>/dev/null; then
+      wait "$game" 2>/dev/null || true
+      echo "第 ${r} 轮：探针进程已经退出，而 ${waitfor[*]} 还没齐 —— 它是自己失败退的，不是没起来。" >&2
+      echo "   看 $outdir/game${r}.log 末尾那几行。" >&2
+      exit 1
+    fi
     if [ "$waited" -ge 30 ]; then
       kill "$game" 2>/dev/null || true
       echo "第 ${r} 轮：30 秒没等到几何文件（${waitfor[*]}），原版多半没起来。看 $outdir/game${r}.log" >&2
@@ -322,19 +340,42 @@ else
 fi
 
 # 换落点之后，**派给原版那块窗口的行**跟默认落点比是相同还是不同 —— 这一票（xl-g9w）问的就是这个。
-# 不把它做成硬失败：不同本身是个结论，不是故障；而「读数变了」那一半由上面各自的期望读数对账挡着。
+# 不把「不同」做成硬失败：不同本身是个结论，不是故障；而「读数变了」那一半由上面各自的期望读数对账挡着。
 # ⚠️ 滤掉的是驱动 / 探针自己那块「窗口外」的窗口（same-app-window 那一支是 javax.swing.JFrame），
 #    剩下的才是原版窗口收到的。
-if [ "$where" != outside-window ] && [ -s "$outdir/normal1.txt" ]; then
-  # `|| true`：一行都没滤剩时 grep 退出 1，set -e 会当场退出，下面那句话就永远打不出来。
-  grep -v 'src=javax\.swing\.JFrame' "$outdir/normal1.txt" > "$outdir/original-window.txt" || true
+#
+# ⚠️ **两条纪律，都是这一段头一版没做到、被 /code-review 逮回来的**（与上面那句结论话术一模一样的毛病）：
+#   1. **这一趟有红的时候，这句话不是结论。** 头一版只看 normal1.txt 存不存在、不看 $fail，
+#      于是紧跟在「⚠️ 整趟不算过」后面照样打「逐字相同 —— 换落点不改结论」。
+#      而这句正是本票唯一的结论句，README 与那几处代码注释转抄的就是它。
+#   2. **逐轮核，不是只核第 1 轮。** A 对照刚从「只核第 1 轮」改成逐轮，这里不能留在第 1 轮上 ——
+#      第 2/3 轮要是与 outside-window 不同，只看第 1 轮读不出来。
+if [ "$where" != outside-window ]; then
   grep -v '^#' tools/mouse-dispatch/expected-events.txt > "$outdir/baseline-expected.txt" || true
   echo
-  if diff -u "$outdir/baseline-expected.txt" "$outdir/original-window.txt" > "$outdir/diff-vs-outside-window.txt"; then
-    echo "📐 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window.txt" | tr -d ' ') 行与 outside-window 的期望读数**逐字相同** —— 换落点不改结论。"
-  else
-    echo "📐 落点 ${where}：派给原版窗口的行与 outside-window 的期望读数**不同**，差异在 $outdir/diff-vs-outside-window.txt："
-    sed 's/^/     /' "$outdir/diff-vs-outside-window.txt"
+  if [ "$fail" != 0 ]; then
+    echo "⚠️ 这一趟有红的（见上面），所以下面这条比对**不是结论** —— 先把红的弄清楚再看它。"
+  fi
+  differ=0
+  r=1
+  while [ "$r" -le "$rounds" ]; do
+    # `|| true`：一行都没滤剩时 grep 退出 1，set -e 会当场退出，下面那几句就永远打不出来。
+    grep -v 'src=javax\.swing\.JFrame' "$outdir/normal${r}.txt" > "$outdir/original-window${r}.txt" || true
+    if diff -u "$outdir/baseline-expected.txt" "$outdir/original-window${r}.txt" > "$outdir/diff-vs-outside-window-${r}.txt"; then
+      echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的 $(wc -l < "$outdir/original-window${r}.txt" | tr -d ' ') 行与 outside-window 的期望读数**逐字相同**。"
+    else
+      differ=1
+      echo "📐 第 ${r} 轮 · 落点 ${where}：派给原版窗口的行与 outside-window 的期望读数**不同**，差异在 $outdir/diff-vs-outside-window-${r}.txt："
+      sed 's/^/     /' "$outdir/diff-vs-outside-window-${r}.txt"
+    fi
+    r=$((r + 1))
+  done
+  if [ "$fail" = 0 ]; then
+    if [ "$differ" = 0 ]; then
+      echo "⇒ 结论：${rounds} 轮都一样 —— **换落点不改结论**。"
+    else
+      echo "⇒ 结论：**换落点改了结论**（见上面那几轮的差异）。改注释与 README 的时候按这个写。"
+    fi
   fi
 fi
 

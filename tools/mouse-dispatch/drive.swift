@@ -176,6 +176,8 @@ func findDesktopPoint(margin: CGFloat) -> CGPoint {
 }
 
 let O: CGPoint          // 「窗口外」那一下的落点
+/// 持着自己那块空白窗口，**不是为了用它，是为了别让它死**：没人持的 NSWindow
+/// 会被释放掉，那一下「窗口外」就落到它后面的东西上了 —— 而那份读数看起来仍然正常。
 var ownWindow: NSWindow? = nil
 
 switch whereMode {
@@ -208,7 +210,7 @@ case "same-app-window":
 default:
     die("不该走到这里：\(whereMode)")   // 上面已经拦过了
 }
-_ = ownWindow
+_ = ownWindow   // 引用一下，把「赋了值没人用」的警告压掉；理由见上面那段注释。
 
 let P = CGPoint(x: px + 600, y: py + 300)   // 面板 (600,300)，离所有按钮都远
 let src = CGEventSource(stateID: .hidSystemState)
