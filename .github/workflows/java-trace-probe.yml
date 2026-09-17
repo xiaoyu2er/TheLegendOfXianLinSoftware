@@ -1,0 +1,122 @@
+name: java-trace-probe
+
+# ⚠️ **只手动触发，永远不接 push / pull_request。** 这条工作流是 xl-u7b 的**量具**，
+# 不是判据：它去 runner 上取三个读数（跑不跑得起来 / 要不要 xvfb / 耗时与确定性），
+# 好让「要不要把 export-trace.sh --check 接进 java.yml」从判断变成读数。
+# 量完之后这个文件的去留由那张票的结论决定。
+#
+# 为什么不直接往 java.yml 上加一步：用户 2026-09-08 裁定「别拿一个没测过的东西堵 CI
+# —— 一条长期红的 CI 等于没有 CI」。所以先单独量，量完再说接不接。
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # 本机全量 --check 是 2m34s；runner 上未知，给足余量但别无限等。
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 环境读数（有没有显示器、有没有 xvfb）
+        run: |
+          echo "DISPLAY=${DISPLAY:-（空）}"
+          echo "xvfb-run: $(command -v xvfb-run || echo 未安装)"
+          echo "Xvfb:     $(command -v Xvfb     || echo 未安装)"
+          java -version 2>&1
+          echo "剧本份数（现数，不写死）: $(ls tools/traces/scripts/*.json | wc -l)"
+
+      - name: 编译
+        run: tools/build.sh
+
+      # ⚠️ 下面几步**一律显式打印退出码**，不靠 step 的成功/失败着色：
+      # `continue-on-error` 会把失败的步骤显示成黄色的「成功」，而这条工作流
+      # 的全部意义就是把「跑不起来」与「跑起来了」分清楚。退出码是读数，
+      # 步骤状态不是。
+      - name: 读数 1a —— 不带 xvfb 跑一份 battle 剧本
+        id: no_xvfb
+        run: |
+          set +e
+          tools/export-trace.sh battle-defeat-scene > /tmp/no-xvfb.log 2>&1
+          rc=$?
+          set -e
+          echo "NO_XVFB_EXIT=$rc"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "---- 末尾 30 行 ----"
+          tail -30 /tmp/no-xvfb.log
+
+      - name: 读数 1b —— 带 xvfb 跑同一份
+        id: with_xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+          set +e
+          xvfb-run -a tools/export-trace.sh battle-defeat-scene > /tmp/xvfb.log 2>&1
+          rc=$?
+          set -e
+          echo "WITH_XVFB_EXIT=$rc"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "---- 末尾 30 行 ----"
+          tail -30 /tmp/xvfb.log
+
+      # 一份剧本跑得起来之后，才值得花几分钟跑全量。
+      # 这一步用哪种跑法，由上面两个读数决定 —— 两个都失败就直接跳过，
+      # 不要装作量到了。
+      - name: 读数 2 —— 全量 --check 的耗时与确定性
+        id: full
+        run: |
+          if [ "${{ steps.no_xvfb.outputs.rc }}" = "0" ]; then
+            RUNNER_PREFIX=""
+          elif [ "${{ steps.with_xvfb.outputs.rc }}" = "0" ]; then
+            RUNNER_PREFIX="xvfb-run -a"
+          else
+            echo "两种跑法都起不来（1a=${{ steps.no_xvfb.outputs.rc }} 1b=${{ steps.with_xvfb.outputs.rc }}），"
+            echo "全量这一步**没量**（不是「量到了 0」）。"
+            echo "full=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "用的跑法: ${RUNNER_PREFIX:-（不带 xvfb）}"
+          # 先把工作区洗干净：上面两步已经重导过 battle-defeat-scene，
+          # 不还原的话下面那条 git diff 分不出「runner 导得不一样」和「刚才那两步导的」。
+          git checkout -- tools/traces/out
+          git status --porcelain -- tools/traces/out | head
+          start=$(date +%s)
+          set +e
+          $RUNNER_PREFIX tools/export-trace.sh --check > /tmp/full.log 2>&1
+          rc=$?
+          set -e
+          end=$(date +%s)
+          echo "FULL_CHECK_EXIT=$rc"
+          echo "FULL_CHECK_SECONDS=$((end - start))"
+          echo "full=$rc" >> "$GITHUB_OUTPUT"
+          echo "确定性 OK 的行数: $(grep -c '确定性 OK' /tmp/full.log || true)"
+          echo "确定性失败的行数: $(grep -c '确定性失败' /tmp/full.log || true)"
+          echo "---- 末尾 40 行 ----"
+          tail -40 /tmp/full.log
+
+      # ⚠️ 这一步与上一步问的**不是同一个问题**，必须分开：
+      # --check 只证明「这台机器上两个 JVM 导出的一样」，一个**稳定的**错误
+      # 在它眼里和正确一模一样。「runner 导出的与本机入库的一样吗」是另一件事，
+      # 而这一条才是把它接进 CI 的真正前提。
+      - name: 读数 3 —— runner 导出的与入库的是否逐字节一致
+        run: |
+          if [ "${{ steps.full.outputs.full }}" = "skipped" ]; then
+            echo "上一步没跑成，这一条**没量**。"
+            exit 0
+          fi
+          set +e
+          git diff --exit-code --stat -- tools/traces/out
+          rc=$?
+          set -e
+          echo "GIT_DIFF_EXIT=$rc  （0 = 与入库逐字节一致；1 = 不一致，下面是差异）"
+          if [ "$rc" != "0" ]; then
+            git diff --stat -- tools/traces/out
+            echo "---- 头一份的前 20 行差异 ----"
+            git diff -- tools/traces/out | head -40
+          fi
