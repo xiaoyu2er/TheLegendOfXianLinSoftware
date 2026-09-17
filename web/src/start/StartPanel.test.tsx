@@ -881,6 +881,46 @@ describe('开始界面：grab 期间在舞台外按下的第二个键（xl-bg3�
   })
 
   /**
+   * 起 grab 那只键松开之后、**只剩那只被挡掉的键还按着**时的拖动（xl-8eg）。
+   *
+   * 读数：macOS 24.6.0 + openjdk 17，2026-09-16 三轮逐字一致（`tools/mouse-dispatch-probe.sh` 的
+   * D 组，D3 段）—— 那一段 **Java 侧零条事件**，连 `ENTERED` / `MOVED` 都没有。两个同轮的正对照
+   * 排掉了「探针瞎了」：D1 段（起 grab 那只键按着拖出去）12 条 `DRAGGED btn=1 src=start.StartPanel`
+   * 一路到 `xy=1254,250`，D5 段（面板里按右、拖、松右）12 条 `DRAGGED btn=3 src=start.StartPanel`。
+   * 所以拖动归**起这次拖动的那只键所按的那个窗口** —— 它按在别的窗口上，整段拖动都不归 Java。
+   */
+  it('起 grab 那只键松开后、只剩舞台外按下的那只按着：这时的拖动一条都不记 —— 实测 D3 段零条事件', () => {
+    const { back, cursor } = setup()
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseMove(document.body, { clientX: 1100, clientY: 700, buttons: 1 })
+    fireEvent.mouseDown(document.body, { clientX: 1200, clientY: 800, button: 2, buttons: 3 })
+    // 松掉起 grab 那只键（左）：它收下过，这一下照送、记坐标（实测 D2 段
+    // `RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=1254,250`）。位图到此清空，而 grab 还挂着。
+    fireEvent.mouseUp(document.body, { clientX: 1254, clientY: 250, button: 0, buttons: 2 })
+    expect(at(cursor), '起 grab 那只键的松手没送 —— 下面那条就分不出「没收」和「没动」').toEqual({
+      left: '1254px',
+      top: '250px',
+    })
+    // 只剩被挡掉的那只键按着，拖回面板里：原版一条事件都没有，坐标不该动。
+    fireEvent.mouseMove(document.body, { clientX: 500, clientY: 300, buttons: 2 })
+    expect(at(cursor), '只剩被挡掉那只键按着的拖动被收了（实测那一段 Java 零条事件）').toEqual({
+      left: '1254px',
+      top: '250px',
+    })
+  })
+
+  it('对照 —— 第二个键按在面板上：松掉起 grab 那只之后的拖动照记（位图还非空）', () => {
+    const { back, cursor } = setup()
+    fireEvent.mouseDown(back, { clientX: 100, clientY: 100, button: 0, buttons: 1 })
+    fireEvent.mouseDown(back, { clientX: 500, clientY: 300, button: 2, buttons: 3 })
+    fireEvent.mouseUp(document.body, { clientX: 600, clientY: 400, button: 0, buttons: 2 })
+    // ⚠️ 这一支**没量过**：D 组量的是被挡掉的那只键。这里按 `isMouseGrab` 推 —— grab 还在、
+    // 目标不重设，所以照送。它在这里是「别改过头」的判据：上面那条只该挡住位图为空那一支。
+    fireEvent.mouseMove(document.body, { clientX: 700, clientY: 500, buttons: 2 })
+    expect(at(cursor), '面板上按下的那只键还按着，拖动却被挡掉了').toEqual({ left: '700px', top: '500px' })
+  })
+
+  /**
    * 两条**补松手**通路（窗口外丢了 `mouseup`，回来头一下无键移动 / 新按下当场补上，xl-4zo）也要过这张
    * 位图：丢掉的那一下若是舞台外按下的键，原版压根没有它，补上就又造出一处残余差异。
    */

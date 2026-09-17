@@ -177,7 +177,15 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
    *
    * 起 grab 那只键的松手不受影响，落在舞台外也照送：`isMouseGrab` 把本键异或**回去**，读到的是
    * 「按下之前」的状态，所以最后一只键松开时它仍为真、`mouseEventTarget` 不重设（实测两种松手顺序下
-   * 它都是 `src=start.StartPanel`）。
+   * 它都是 `src=start.StartPanel`；xl-8eg 的 D2 段又读到一次
+   * `RELEASED btn=1 mex=0x1000 src=start.StartPanel xy=1254,250` —— 松在窗口外也照收）。
+   *
+   * **位图还管着拖动**（xl-8eg，2026-09-16 实测三轮）：起 grab 那只键松开之后、只剩那只被挡掉的
+   * 键还按着时，原版那一段 **Java 侧零条事件**，连 `ENTERED` / `MOVED` 都没有 —— 拖动归「起这次
+   * 拖动的那只键按下时所在的那个窗口」，而它按在别的窗口上。所以下面的 `onMove` 在位图空着、
+   * 而还有键按着时一条都不收。同一轮的两个正对照排掉了「探针瞎了」：起 grab 那只键按着拖出去
+   * 读到 12 条 `DRAGGED btn=1 src=start.StartPanel`（一路到 `xy=1254,250`），面板里按右再拖
+   * 读到 12 条 `DRAGGED btn=3 src=start.StartPanel`。
    *
    * ⚠️ **它必须跨 grab 存活（`useRef` 加 `end()` 里那句显式清零）**，因为走按下的那条补松手通路
    * 在下面的 `onMouseDown` 里、跑在**下一次按下**时。`app/App.tsx` 的 `grabRelease` 里那一份是
@@ -228,6 +236,10 @@ export function StartPanelView({ view, handlers }: StartPanelViewProps) {
       handlers.release(buttonOf(e.target))
     }
     const onMove = (e: MouseEvent) => {
+      // 位图空了、而还有键按着 = 按着的全是舞台外按下、被挡掉的那几只：原版这一段**一条事件都没有**
+      // （xl-8eg 实测 D3 段，连 ENTERED / MOVED 都没有，三轮一致），坐标也不记。判据与限定见
+      // `takenRef` 那段注释。按键全松开那一下不走这里挡 —— 松手之后的移动原版照收（实测 D4 段）。
+      if (e.buttons !== 0 && takenRef.current === 0) return
       moveTo(e)
       if (e.buttons !== 0) return
       // 同上：只补面板真收下过、而松手丢在窗口外的那一下（xl-bg3）。

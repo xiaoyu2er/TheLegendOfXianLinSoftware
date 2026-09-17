@@ -27,9 +27,9 @@
 # tools/mouse-dispatch/expected-events.txt，跑完自动对账；读法与限定见
 # tools/src/devtools/MouseDispatchProbe.java 的类注释。
 #
-# 退出码：0 一切如常；1 **回归**（A 对照不成立 / 与 expected-events.txt 对不上 / 轮间不一致 /
-# 正对照不成立）；2 参数错；4 **D 组的预测被实测推翻**（与 expected-events-D.txt 对不上）——
-# 4 不是「谁错了」，那就是 xl-8eg 要的读数，按它改写预测那几行。
+# 退出码：0 一切如常；1 **回归**（A 对照不成立 / 与两份期望读数对不上 / 轮间不一致 / 正对照不成立）；
+# 2 参数错。两份期望读数：expected-events.txt 是 xl-zs6 量的 A / B / B2 / C，
+# expected-events-D.txt 是 xl-8eg 量的 D 组 —— 出处与限定不同，所以分两份，报错时各报各的。
 #
 # 跑完还会打一份**按 MARK 分段**的读数（tools/mouse-dispatch/reckon.py，xl-8eg 加的）。
 # 它和上面那份对账是两件事：对账只看按下 / 松手，而 D 组要量的是 **DRAGGED**，一条都进不了对账。
@@ -57,7 +57,7 @@ case "$rounds" in ''|*[!0-9]*) echo "--rounds 要一个正整数，收到：${ro
 
 EXPECTED=tools/mouse-dispatch/expected-events.txt
 [ -f "$EXPECTED" ] || { echo "找不到期望读数：${EXPECTED}" >&2; exit 1; }
-# D 组那几行还是**预测**，单独一份、单独对账（退出码 4），理由写在它开头。
+# D 组那几行出处不同（xl-8eg 量的），单独一份、单独对账，理由写在它开头。
 EXPECTED_D=tools/mouse-dispatch/expected-events-D.txt
 [ -f "$EXPECTED_D" ] || { echo "找不到 D 组的预测：${EXPECTED_D}" >&2; exit 1; }
 
@@ -216,8 +216,8 @@ while [ "$r" -le "$rounds" ]; do
   r=$((r + 1))
 done
 
-# 与期望读数对账。A / B / B2 / C 四组是实测读数（对不上 = 回归），D 组那几行还是预测
-# （对不上 = 预测被推翻，那正是 xl-8eg 要的读数）。所以按行数切成两段，分开报、分开的退出码。
+# 与期望读数对账。两份读数出处不同（A / B / B2 / C 是 xl-zs6 量的，D 组是 xl-8eg 量的），
+# 按行数切成两段、各对各的那一份，好让报错指得出是哪一份、哪几行。
 # ⚠️ 前一段要是少了行，切点跟着挪，两段会同时红 —— 两边都响得出来，而头一条会指名是哪几行。
 n_exp="$(wc -l < "$EXP" | tr -d ' ')"
 head -n "$n_exp" "$outdir/normal1.txt" > "$outdir/normal1-abc.txt"
@@ -283,20 +283,17 @@ echo "D 组分段读数（xl-8eg；D3 那几行**没有期望值**，两种结�
 sed -n '/^D[0-9] /p' "$outdir/reckon1.txt" | sed 's/^/   /'
 echo "   全部分段读数：$outdir/reckon1.txt"
 
-# D 组按下 / 松手那一层的**预测**单独对账。对不上不是回归，是预测被读数推翻 —— 退出码 4，
-# 与回归的 1 分开，好让「脚本红了」只有一种含义。
-pred=0
+# D 组按下 / 松手那一层单独对账（它那一份读数是 xl-8eg 量的，见 expected-events-D.txt 开头）。
 if diff -u "$EXP_D" "$outdir/normal1-d.txt" > "$outdir/diff-expected-D.txt"; then
-  echo "   D 组按下 / 松手与预测逐行一致（$(wc -l < "$EXP_D" | tr -d ' ') 行）—— 预测这次撞对了，它现在是读数。"
+  echo "   D 组按下 / 松手与 ${EXPECTED_D} 逐行一致（$(wc -l < "$EXP_D" | tr -d ' ') 行）。"
 else
   echo >&2
-  echo "⚠️ D 组按下 / 松手与 ${EXPECTED_D} 的**预测**对不上：" >&2
+  echo "❌ D 组按下 / 松手与 ${EXPECTED_D} 对不上：" >&2
   sed 's/^/     /' "$outdir/diff-expected-D.txt" >&2
-  echo "   这不是回归 —— 那几行本来就是推的（四下里三下）。**这就是 xl-8eg 要的读数**：" >&2
-  echo "   按实测改写 ${EXPECTED_D}，并把 D3 段的 DRAGGED 读数写回 App.tsx / StartPanel.tsx /" >&2
-  echo "   docs/web-primitives.md。⚠️ 探针只驱动标题页，读数直接管的是 StartPanel.tsx 那一支。" >&2
-  pred=4
+  echo "   与上面那一份同理：对不上不一定是谁错了（换了 JDK / macOS / 窗口落点都可能）。" >&2
+  echo "   ⚠️ 改这份期望之前先想清楚：App.tsx 的 onDrag 与 StartPanel.tsx 的 onMove 正挡在" >&2
+  echo "   这份读数上（D3 段零条事件），读数变了它们也要跟着改。" >&2
+  fail=1
 fi
 
-[ "$fail" = 0 ] || exit 1
-exit "$pred"
+exit "$fail"

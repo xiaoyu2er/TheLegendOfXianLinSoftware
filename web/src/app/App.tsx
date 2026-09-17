@@ -453,14 +453,26 @@ export function App() {
       sendOneRelease(event)
     }
     /**
-     * 拖动一条都不挡：xl-40m / xl-bg3 同一轮实测，按着键拖出窗口操作系统照样送进来，越界
-     * `DRAGGED` 一路 `src=start.StartPanel`、x 到 1254（舞台宽 1024）。
+     * 拖动**按位图挡**：位图里还有键按着就照送，位图空了一条都不送。
      *
-     * ⚠️ **那一轮量的是「起 grab 那只键按着」拖出去**。起 grab 那只键已经松开、只剩被挡掉的那只
-     * （舞台外按下的）还按着时的拖动，**没有量过**，这里照送 —— 登记为未量，不是读数。
+     * 两支各有读数（macOS 24.6.0 + openjdk 17，`tools/mouse-dispatch-probe.sh` 的 D 组）：
+     *
+     * - **起 grab 那只键按着**拖出窗口 —— 操作系统照样送进来，越界 `DRAGGED` 一路
+     *   `src=start.StartPanel`、x 到 1254（舞台宽 1024）；D1 段 12 条，三轮一致（xl-40m / xl-bg3）；
+     * - **起 grab 那只键已经松开、只剩那只被挡掉的（舞台外按下的）键还按着** —— D3 段
+     *   **Java 侧零条事件**，连 `ENTERED` / `MOVED` 都没有，三轮一致（xl-8eg，2026-09-16）。
+     *   拖动归**起这次拖动的那只键按下时所在的那个窗口**，而它按在别的窗口上。
+     *   同轮的 D5 段（面板里按右、拖、松右）读到 12 条 `DRAGGED btn=3 src=start.StartPanel`，
+     *   所以那个「零」不是「右键的拖动本来就到不了 Java」。
+     *
+     * 于是判据就是这张位图：`taken` 为 0 = 现在按着的键全是舞台外按下、被挡掉的那几只。
+     * ⚠️ 「位图非空、但起 grab 那只键已经松开」那一支（第二个键按在舞台**里**）**没量过**，
+     * 照 `isMouseGrab` 推着照送 —— 登记为未量，判据在 `appGrab.test.tsx` 的「别改过头」那条对照。
+     * ⚠️ 读数取自**标题页**，这四块宿主没有各自复量过（与 `taken` 那段同一句限定）。
      */
     const onDrag = (event: MouseEvent) => {
       if (event.buttons === 0) return endWithReleases(event)
+      if (taken === 0) return
       if (event.target instanceof Node && host.contains(event.target)) return
       const p = at(event)
       if (p) to.drag(p)
