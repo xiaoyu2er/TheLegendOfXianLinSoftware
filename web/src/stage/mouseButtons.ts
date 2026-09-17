@@ -11,8 +11,9 @@
  * （`grabRelease` 里的 `taken`、`StartPanelView` 里的 `takenRef`），那两张**生命周期不同、
  * 不能合**：`grabRelease` 的补松手通路挂在 window 上、跑在同一个 grab 的闭包里，所以位图
  * 是闭包局部量、用完即弃（xl-df1 的篡改矩阵证过：给它补一句清零是死代码）；而标题页没有
- * window 上的 `mousedown` 监听，它的两条补松手通路是在**下一次按下 / 移动**里跑的，位图
- * 必须活过 `end()`，所以是一个跨 grab 存活的 `useRef`。硬并会把这处差异抹掉。
+ * window 上的 `mousedown` 监听，它那条走按下的补松手通路跑在**下一次按下**里、在面板自己的
+ * `onMouseDown` 里，位图必须活过 `end()`，所以是一个跨 grab 存活的 `useRef`。硬并会把这处
+ * 差异抹掉。
  *
  * 落在 `stage/` 是因为这是两边**都已经依赖**的目录（`app/` 与 `start/` 互不 import），
  * 而这张表讲的正是「舞台这块 DOM 上收到的那一下是哪只键」。

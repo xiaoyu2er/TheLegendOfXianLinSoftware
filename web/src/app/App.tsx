@@ -421,8 +421,9 @@ export function App() {
      * `grabRelease` 的**闭包局部量、一个 grab 一份、用完即弃** —— 补松手的两条通路
      * （`onPress` / `onDrag`）都是这个 grab 自己挂在 window 上的监听，跑的时候闭包还在，
      * 所以 `endGrab` 里不需要（也不能有）清零那一句（xl-df1 的篡改矩阵证过那是死代码）。
-     * 标题页没有 window 上的 `mousedown` 监听，它那两条通路跑在**下一次按下 / 移动**里，
-     * 位图必须活过 `end()`，于是只能是跨 grab 存活的 `useRef` 加显式清零。**同一个语义，
+     * 标题页没有 window 上的 `mousedown` 监听，它那两条通路里**走按下的那一条跑在下一次按下**、
+     * 在面板自己的 `onMouseDown` 里（走移动的那一条倒是同一个闭包里的 window 监听，和这边一样）——
+     * 一条就够：位图必须活过 `end()`，于是只能是跨 grab 存活的 `useRef` 加显式清零。**同一个语义，
      * 两种生命周期**；共用的只有换算那一半（`stage/mouseButtons.ts` 的 `BUTTON_BITS` /
      * {@link bitOf}）。
      *
