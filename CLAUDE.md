@@ -86,17 +86,36 @@ has CI too (`.github/workflows/java.yml`): `tools/build.sh`, `tools/test.sh`,
 and `tools/export-truth.sh` followed by `git diff --exit-code -- tools/ground-truth`
 — that last pair is two separate steps on purpose, because "the exporter ran"
 and "what it produced matches what is committed" are different questions and
-only the second is the check. `tools/export-trace.sh --check` is deliberately
-**not** wired up: 2m34s measured, and it needs `-Djava.awt.headless=false`
-(the battle driver wants real Swing components), which has never been tried on
-a runner. Tracked in `xl-u7b`.
+only the second is the check. **`tools/export-trace.sh --check` is now wired up
+too** (xl-u7b, 2026-09-17), as a *separate, parallel* job named `trace` — the
+`check` job's four steps take 44s while this one takes six minutes, and splitting
+them means a broken compile shows up without waiting for the traces. It needs
+`xvfb-run -a`: `export-trace.sh` hard-codes `-Djava.awt.headless=false` (the
+battle driver wants real Swing components) and a runner has no display.
 
-⚠️ **`java.yml` itself is unverified on a real runner** — every step's command
-was run locally (`tools/test.sh` forces `-Djava.awt.headless=true` precisely so
-local runs sit in CI's conditions), and both its red paths were provoked on
-purpose, but as of 2026-09-08 the workflow had never been triggered on GitHub.
-It carries `workflow_dispatch` so it can be run by hand without touching its
-`paths` list.
+The readings that made it safe to wire up were taken **on a real runner** before
+the change, not estimated (run 35224054598):
+
+| question | reading |
+|---|---|
+| does it run at all | without xvfb **exit 1**; with `xvfb-run -a` **exit 0** |
+| how long | `--check` over the full set: **364 s** (job total 6m47s) |
+| is it deterministic there | **63/63 byte-identical, 0 failures** |
+| does the runner's output match what's committed | `git diff -- tools/traces/out` → **0** |
+
+That last row is the real precondition and is *not* the same question as the one
+above it — `--check` only proves this run reproduces, and a **stable** wrong
+answer looks identical to a right one in its eyes. That was then demonstrated,
+not assumed: PR #1 deliberately corrupted one value in a committed trace, and
+**the `--check` step stayed green while the `git diff` step went red** — exactly
+the split the two steps exist for. The measuring rig lives on in
+`.github/workflows/java-trace-probe.yml` (`workflow_dispatch` only).
+
+⚠️ Two things that used to be written here as "unverified" and are **no longer
+true**, corrected 2026-09-17: `java.yml` **has** run on real runners — `gh run
+list --workflow=java.yml` goes back to 2026-09-13 and it has been green
+throughout (44–50s for the `check` job). It still carries `workflow_dispatch` so
+it can be run by hand without touching its `paths` list.
 
 **Run every Java-side command from the repo root** — the game resolves
 `script/`, `sources/`, `image/` as relative paths. `web/`'s commands run from
