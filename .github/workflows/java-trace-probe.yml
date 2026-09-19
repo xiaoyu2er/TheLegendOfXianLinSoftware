@@ -142,6 +142,42 @@ jobs:
       # 头一趟（run 35223418593）就栽在这里：全量 9 秒 EXIT=1、一份剧本都没导完，
       # 而 git diff 照样是 0 —— **「什么都没导出」与「导出的一致」共用退出码 0**，
       # 正是这个仓库反复栽的那个形状，而且是在一条专门去分辨真假的工作流里。
+      # ⚠️ 这四步是 xl-0h3 加的，问的是**另一个风险**：它想把三个金标导出器接进 CI，
+      # 而 scaled-blit 与 present 走 **Java2D 绘图** —— Linux 上的渲染结果与 macOS
+      # 是否逐字节一致，**没有人量过**。不量就接，等于往 CI 上挂一条可能永远红的判据。
+      # random 不走绘图（纯 java.util.Random），放在一起量是为了拿一个对照。
+      - name: 读数 4 —— 三个金标导出器在 Linux 上的耗时与跨平台一致性
+        run: |
+          fail=0
+          for pair in "random export-random.sh random-golden" \
+                      "scaled-blit export-scaled-blit.sh scaled-blit-golden" \
+                      "present export-present.sh present-golden"; do
+            set -- $pair
+            name=$1; script=tools/$2; golden=tools/$3
+            if [ ! -x "$script" ]; then echo "  ✗ $name: 找不到 $script"; fail=1; continue; fi
+            start=$(date +%s)
+            set +e
+            out="$("$script" 2>&1)"; rc=$?
+            set -e
+            end=$(date +%s)
+            echo "  $name: EXIT=$rc  $((end - start))s"
+            if [ "$rc" != "0" ]; then echo "$out" | tail -5; fail=1; continue; fi
+            # 这一步才是要问的：**Linux 跑出来的东西和 macOS 入库的一样吗**
+            if git diff --quiet -- "$golden"; then
+              echo "    ✓ 与入库逐字节一致（跨平台成立）"
+            else
+              echo "    ✗ **与入库不一致** —— 这一支跨平台不成立，不能就这么接进 CI"
+              git diff --stat -- "$golden"
+              git diff -- "$golden" | head -20
+              fail=1
+            fi
+            git checkout -- "$golden" 2>/dev/null || true
+          done
+          echo "FOUR_EXIT=$fail"
+          # ⚠️ 这一步**不让整条工作流红**：它是量具，读数写在上面。
+          # 但退出码要如实留在输出里，别让「量到不一致」和「量到一致」长得一样。
+          exit 0
+
       - name: 读数 3 —— runner 导出的与入库的是否逐字节一致
         run: |
           if [ "${{ steps.full.outputs.full }}" != "0" ]; then
