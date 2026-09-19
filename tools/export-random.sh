@@ -10,7 +10,8 @@
 # ⚠️ 输入不只是 ExportRandom.java：tools/traces/scripts/*.json 里每一份剧本的
 # seed 都会被采进来，出处写进各自的 note。**加一份带 seed 的剧本就要重跑这里**，
 # 哪怕种子是已有的 —— 那时只有 note 会变，web 端 javaRandom.test.ts 看不见
-# （它只核种子在不在），能抓到的只有重导之后的 git diff（xl-0h3 实测）。
+# （它逐位核每个种子的取值，但不看 note），能抓到的只有重导之后的 git diff
+# （xl-0h3 实测）。⚠️ 截至 xl-0h3，CI 还没跑这一对，接进 java.yml 交主干做。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
